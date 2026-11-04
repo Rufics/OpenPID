@@ -26,7 +26,7 @@ cargo deny check                 # cargo install cargo-deny --locked
 cargo llvm-cov --workspace --fail-under-lines 90   # cargo install cargo-llvm-cov --locked
 ```
 
-Те саме робить CI (`.github/workflows/ci.yml`): fmt, clippy з усіма lint‑ами стилю (`docs/STYLE.md`), rustdoc без попереджень, перевірка правопису (`typos`), тести на Linux/macOS/Windows, покриття ≥ 90 % рядків (усього workspace, GUI headless через `egui_kittest`), cargo‑deny, збірка артефактів для трьох ОС, SonarCloud (коли є секрет), перевірка повідомлень комітів і заголовка PR.
+Те саме робить CI (`.github/workflows/ci.yml`): fmt, clippy з усіма lint‑ами стилю (`docs/STYLE.md`), rustdoc без попереджень, перевірка правопису (`typos`), тести на Linux/macOS/Windows, покриття ≥ 90 % рядків (усього workspace, GUI headless через `egui_kittest`), cargo‑deny, збірка артефактів для трьох ОС, SonarCloud (коли є секрет), перевірка повідомлень комітів і заголовка PR. Підсумок покриття й зауважень Sonar CI публікує коментарем у PR і оновлює його на кожен push.
 
 ## Стиль коду
 
