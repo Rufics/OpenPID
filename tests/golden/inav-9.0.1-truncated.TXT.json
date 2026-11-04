@@ -1,0 +1,773 @@
+[
+  {
+    "aux_rows": {
+      "gps": 148,
+      "gps_home": 10,
+      "slow": 1654
+    },
+    "channels": [
+      {
+        "key": "acc.pitch",
+        "max": -0.004883,
+        "mean": -0.019313,
+        "min": -0.039551,
+        "name": "accSmooth[1]",
+        "unit": "g",
+        "valid": 16753
+      },
+      {
+        "key": "acc.roll",
+        "max": -0.249023,
+        "mean": -0.259866,
+        "min": -0.270996,
+        "name": "accSmooth[0]",
+        "unit": "g",
+        "valid": 16753
+      },
+      {
+        "key": "acc.yaw",
+        "max": 0.987793,
+        "mean": 0.966008,
+        "min": 0.947266,
+        "name": "accSmooth[2]",
+        "unit": "g",
+        "valid": 16753
+      },
+      {
+        "key": "battery.current",
+        "max": 1.48,
+        "mean": 1.17575,
+        "min": 0.58,
+        "name": "amperage",
+        "unit": "A",
+        "valid": 16753
+      },
+      {
+        "key": "battery.voltage",
+        "max": 12.2,
+        "mean": 12.097547,
+        "min": 12.05,
+        "name": "vbat",
+        "unit": "V",
+        "valid": 16753
+      },
+      {
+        "key": "custom:AirSpeed",
+        "max": 51.0,
+        "mean": 50.973975,
+        "min": 49.0,
+        "name": "AirSpeed",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:BaroAlt",
+        "max": 121.0,
+        "mean": 109.704113,
+        "min": 95.0,
+        "name": "BaroAlt",
+        "unit": "cm",
+        "valid": 16753
+      },
+      {
+        "key": "custom:accVib",
+        "max": 711.0,
+        "mean": 413.86092,
+        "min": 7.0,
+        "name": "accVib",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:attitude[0]",
+        "max": -17.0,
+        "mean": -20.137647,
+        "min": -26.0,
+        "name": "attitude[0]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:attitude[1]",
+        "max": 151.0,
+        "mean": 149.35713,
+        "min": 147.0,
+        "name": "attitude[1]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:attitude[2]",
+        "max": 2775.0,
+        "mean": 2748.391631,
+        "min": 2721.0,
+        "name": "attitude[2]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:fwAltD",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "fwAltD",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:fwAltI",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "fwAltI",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:fwAltOut",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "fwAltOut",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:fwAltP",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "fwAltP",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:fwPosD",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "fwPosD",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:fwPosI",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "fwPosI",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:fwPosOut",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "fwPosOut",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:fwPosP",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "fwPosP",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navEPH",
+        "max": 27.0,
+        "mean": 27.0,
+        "min": 27.0,
+        "name": "navEPH",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navEPV",
+        "max": 47.0,
+        "mean": 41.186056,
+        "min": 38.0,
+        "name": "navEPV",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navFlags",
+        "max": 5.0,
+        "mean": 5.0,
+        "min": 5.0,
+        "name": "navFlags",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navPos[0]",
+        "max": 63.0,
+        "mean": 51.968304,
+        "min": 25.0,
+        "name": "navPos[0]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navPos[1]",
+        "max": 133.0,
+        "mean": 103.285919,
+        "min": 87.0,
+        "name": "navPos[1]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navPos[2]",
+        "max": 0.0,
+        "mean": -33.685668,
+        "min": -57.0,
+        "name": "navPos[2]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navState",
+        "max": 26.0,
+        "mean": 26.0,
+        "min": 26.0,
+        "name": "navState",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navSurf",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "navSurf",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navTgtHdg",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "navTgtHdg",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navTgtPos[0]",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "navTgtPos[0]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navTgtPos[1]",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "navTgtPos[1]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navTgtPos[2]",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "navTgtPos[2]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navTgtVel[0]",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "navTgtVel[0]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navTgtVel[1]",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "navTgtVel[1]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navTgtVel[2]",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "navTgtVel[2]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navVel[0]",
+        "max": 4.0,
+        "mean": 0.162299,
+        "min": -2.0,
+        "name": "navVel[0]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navVel[1]",
+        "max": 2.0,
+        "mean": -0.145466,
+        "min": -3.0,
+        "name": "navVel[1]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:navVel[2]",
+        "max": 0.0,
+        "mean": -5.885991,
+        "min": -9.0,
+        "name": "navVel[2]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:rcData[0]",
+        "max": 1500.0,
+        "mean": 1500.0,
+        "min": 1500.0,
+        "name": "rcData[0]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:rcData[1]",
+        "max": 1500.0,
+        "mean": 1500.0,
+        "min": 1500.0,
+        "name": "rcData[1]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:rcData[2]",
+        "max": 1500.0,
+        "mean": 1499.1312,
+        "min": 1447.0,
+        "name": "rcData[2]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:rcData[3]",
+        "max": 2012.0,
+        "mean": 1720.713365,
+        "min": 990.0,
+        "name": "rcData[3]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:servo[0]",
+        "max": 1426.0,
+        "mean": 1369.261923,
+        "min": 1342.0,
+        "name": "servo[0]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:servo[1]",
+        "max": 1500.0,
+        "mean": 1500.0,
+        "min": 1500.0,
+        "name": "servo[1]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "custom:servo[2]",
+        "max": 1649.0,
+        "mean": 1620.916433,
+        "min": 1565.0,
+        "name": "servo[2]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "gyro.filtered.pitch",
+        "max": 6.0,
+        "mean": 0.362622,
+        "min": -4.0,
+        "name": "gyroADC[1]",
+        "unit": "deg/s",
+        "valid": 16753
+      },
+      {
+        "key": "gyro.filtered.roll",
+        "max": 11.0,
+        "mean": -0.659404,
+        "min": -10.0,
+        "name": "gyroADC[0]",
+        "unit": "deg/s",
+        "valid": 16753
+      },
+      {
+        "key": "gyro.filtered.yaw",
+        "max": 2.0,
+        "mean": 0.025786,
+        "min": -2.0,
+        "name": "gyroADC[2]",
+        "unit": "deg/s",
+        "valid": 16753
+      },
+      {
+        "key": "loop_iteration",
+        "max": 33504.0,
+        "mean": 16752.0,
+        "min": 0.0,
+        "name": "loopIteration",
+        "unit": "",
+        "valid": 16753
+      },
+      {
+        "key": "motor.0",
+        "max": 5.263158,
+        "mean": 2.224664,
+        "min": -5.263158,
+        "name": "motor[0]",
+        "unit": "%",
+        "valid": 16753
+      },
+      {
+        "key": "pid.f.pitch",
+        "max": -134.0,
+        "mean": -243.616248,
+        "min": -296.0,
+        "name": "axisF[1]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "pid.f.roll",
+        "max": 12.0,
+        "mean": 9.307945,
+        "min": 8.0,
+        "name": "axisF[0]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "pid.f.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisF[2]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "pid.i.pitch",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisI[1]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "pid.i.roll",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisI[0]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "pid.i.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisI[2]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "pid.p.pitch",
+        "max": -5.0,
+        "mean": -8.464633,
+        "min": -10.0,
+        "name": "axisP[1]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "pid.p.roll",
+        "max": 3.0,
+        "mean": 0.645556,
+        "min": -1.0,
+        "name": "axisP[0]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "pid.p.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisP[2]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "pid.sum.pitch",
+        "max": -140.0,
+        "mean": -252.080881,
+        "min": -306.0,
+        "name": "pidSum[1]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "pid.sum.roll",
+        "max": 15.0,
+        "mean": 9.953501,
+        "min": 7.0,
+        "name": "pidSum[0]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "pid.sum.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "pidSum[2]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "pid_error.pitch",
+        "max": -43.0,
+        "mean": -83.122963,
+        "min": -105.0,
+        "name": "pidError[1]",
+        "unit": "deg/s",
+        "valid": 16753
+      },
+      {
+        "key": "pid_error.roll",
+        "max": 17.0,
+        "mean": 6.276368,
+        "min": -4.0,
+        "name": "pidError[0]",
+        "unit": "deg/s",
+        "valid": 16753
+      },
+      {
+        "key": "pid_error.yaw",
+        "max": 2.0,
+        "mean": -0.025786,
+        "min": -2.0,
+        "name": "pidError[2]",
+        "unit": "deg/s",
+        "valid": 16753
+      },
+      {
+        "key": "rc.0",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rcCommand[0]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "rc.1",
+        "max": 0.0,
+        "mean": -137.387393,
+        "min": -200.0,
+        "name": "rcCommand[1]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "rc.2",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rcCommand[2]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "rc.3",
+        "max": 1100.0,
+        "mean": 1084.436399,
+        "min": 1050.0,
+        "name": "rcCommand[3]",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "rssi",
+        "max": 1023.0,
+        "mean": 1023.0,
+        "min": 1023.0,
+        "name": "rssi",
+        "unit": "raw",
+        "valid": 16753
+      },
+      {
+        "key": "setpoint.pitch",
+        "max": -45.0,
+        "mean": -82.760341,
+        "min": -100.0,
+        "name": "axisRate[1]",
+        "unit": "deg/s",
+        "valid": 16753
+      },
+      {
+        "key": "setpoint.roll",
+        "max": 7.0,
+        "mean": 5.616964,
+        "min": 5.0,
+        "name": "axisRate[0]",
+        "unit": "deg/s",
+        "valid": 16753
+      },
+      {
+        "key": "setpoint.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisRate[2]",
+        "unit": "deg/s",
+        "valid": 16753
+      },
+      {
+        "key": "throttle",
+        "max": 10.0,
+        "mean": 8.44364,
+        "min": 5.0,
+        "name": "throttle",
+        "unit": "%",
+        "valid": 16753
+      },
+      {
+        "key": "time",
+        "max": 482744974.0,
+        "mean": 474290305.356414,
+        "min": 465835174.0,
+        "name": "time",
+        "unit": "us",
+        "valid": 16753
+      }
+    ],
+    "corrupt_frames": 1,
+    "desync_frames": 0,
+    "duration_s": 16.9098,
+    "events": 1,
+    "firmware_revision": "INAV 9.0.1 (d44f2cf6) MICOAIR743V2",
+    "firmware_vendor": "INAV",
+    "firmware_version": "9.0.1",
+    "first_time_us": 465835174,
+    "frames": {
+      "E": {
+        "bytes": 7,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 1
+      },
+      "G": {
+        "bytes": 2794,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 148
+      },
+      "H": {
+        "bytes": 110,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 10
+      },
+      "I": {
+        "bytes": 96045,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 1048
+      },
+      "P": {
+        "bytes": 866399,
+        "corrupt": 1,
+        "desync": 0,
+        "valid": 15705
+      },
+      "S": {
+        "bytes": 79392,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 1654
+      }
+    },
+    "gaps": 0,
+    "index": 0,
+    "last_time_us": 482744974,
+    "median_dt_us": 1008.0,
+    "nominal_dt_us": 1000.0,
+    "offset_bytes": 0,
+    "profile_id": "inav",
+    "sample_rate_hz": 992.063492,
+    "samples": 16753,
+    "skipped_bytes": 23,
+    "unmapped_fields": [
+      "fwAltP",
+      "fwAltI",
+      "fwAltD",
+      "fwAltOut",
+      "fwPosP",
+      "fwPosI",
+      "fwPosD",
+      "fwPosOut",
+      "rcData[0]",
+      "rcData[1]",
+      "rcData[2]",
+      "rcData[3]",
+      "AirSpeed",
+      "accVib",
+      "attitude[0]",
+      "attitude[1]",
+      "attitude[2]",
+      "servo[0]",
+      "servo[1]",
+      "servo[2]",
+      "navState",
+      "navFlags",
+      "navEPH",
+      "navEPV",
+      "navPos[0]",
+      "navPos[1]",
+      "navPos[2]",
+      "navVel[0]",
+      "navVel[1]",
+      "navVel[2]",
+      "navTgtVel[0]",
+      "navTgtVel[1]",
+      "navTgtVel[2]",
+      "navTgtPos[0]",
+      "navTgtPos[1]",
+      "navTgtPos[2]",
+      "navTgtHdg",
+      "navSurf"
+    ]
+  }
+]

@@ -20,7 +20,7 @@ fn is_log(p: &Path) -> bool {
     )
 }
 
-/// Committed fixtures (always present).
+/// Fixtures in `tests/logs/` (Git LFS; `git lfs pull` if they are pointer files).
 pub fn committed_logs() -> Vec<PathBuf> {
     let mut v: Vec<PathBuf> = std::fs::read_dir(logs_dir())
         .unwrap()
@@ -33,23 +33,7 @@ pub fn committed_logs() -> Vec<PathBuf> {
     v
 }
 
-/// Community logs fetched by tools/fetch-community-logs.sh (optional).
-pub fn external_logs() -> Vec<PathBuf> {
-    let dir = logs_dir().join("external");
-    let mut v: Vec<PathBuf> = match std::fs::read_dir(dir) {
-        Ok(rd) => rd
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| is_log(p))
-            .collect(),
-        Err(_) => Vec::new(),
-    };
-    v.sort();
-    v
-}
-
+/// Every log fixture (all of them are committed, in Git LFS).
 pub fn all_logs() -> Vec<PathBuf> {
-    let mut v = committed_logs();
-    v.extend(external_logs());
-    v
+    committed_logs()
 }

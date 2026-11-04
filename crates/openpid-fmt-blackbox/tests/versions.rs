@@ -1,8 +1,7 @@
 //! One real log per Betaflight release line must decode cleanly and expose the
-//! channels that release introduced. Logs live in `tests/logs/` (committed) and
-//! `tests/logs/external/` (fetched by `tools/fetch-community-logs.sh`); a
-//! release whose log is absent is reported, not failed, except for the
-//! committed 4.2 fixture.
+//! channels that release introduced. Logs live in `tests/logs/` (Git LFS); a
+//! release line listed in `REQUIRED_LINES` must be present, the others are
+//! reported when absent (see docs/BLACKBOX-VERSIONS.md for what is still missing).
 #![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 mod common;
@@ -12,6 +11,9 @@ use openpid_core::{
 };
 use openpid_fmt_blackbox::BlackboxFormat;
 use std::collections::BTreeMap;
+
+/// Release lines with a committed fixture: the test fails if one stops decoding.
+const REQUIRED_LINES: [(u32, u32); 3] = [(4, 2), (4, 5), (2025, 12)];
 
 /// Release lines we track, as (major, minor).
 const RELEASE_LINES: [(u32, u32); 7] = [
@@ -139,12 +141,16 @@ fn one_log_per_betaflight_release_line() {
         .collect();
     if !missing.is_empty() {
         eprintln!(
-            "no sample log for: {} (run tools/fetch-community-logs.sh or add one)",
+            "no sample log for: {} (see docs/BLACKBOX-VERSIONS.md)",
             missing.join(", ")
         );
     }
-    assert!(
-        seen.contains_key(&(4, 2)),
-        "the committed 4.2 fixtures must always be present"
-    );
+    for line in REQUIRED_LINES {
+        assert!(
+            seen.contains_key(&line),
+            "no decoded session for the committed {}.{} fixture (git lfs pull?)",
+            line.0,
+            line.1
+        );
+    }
 }

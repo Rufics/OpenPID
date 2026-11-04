@@ -175,29 +175,26 @@ fn sliders_command() {
     assert!(!ok && err.contains("needs a file"));
     let (ok, _, err) = run(&["sliders", l.to_str().unwrap(), "--set", "nonsense"]);
     assert!(!ok && err.contains("bad --set entry"));
-    // a community 4.5 log, when fetched (tools/fetch-community-logs.sh)
-    let ext = log("external/betaflight-4.5.2-Run2.bbl");
-    if ext.exists() {
-        let f = ext.to_str().unwrap();
-        let (ok, out, err) = run(&["sliders", f]);
-        assert!(ok, "{err}");
-        assert!(
-            out.contains("simplified_master_multiplier")
-                && out.contains("computed gains:")
-                && out.contains("logged gains:")
-        );
-        let (ok, out, _) = run(&[
-            "sliders",
-            f,
-            "--set",
-            "simplified_master_multiplier=100,simplified_d_gain=100",
-            "--json",
-        ]);
-        assert!(ok);
-        let v: serde_json::Value = serde_json::from_str(&out).expect("json");
-        assert_eq!(v["result"]["pid"]["roll"]["p"], 45.0);
-        assert_eq!(v["result"]["pid"]["roll"]["d_min"], 30.0);
-        let (ok, _, err) = run(&["sliders", f, "--set", "bogus=1"]);
-        assert!(!ok && err.contains("unknown slider"));
-    }
+    // a 4.5 log with simplified tuning: every slider at 100 gives the firmware defaults
+    let f = log("betaflight-4.5.0-gps-rescue.bbl");
+    let f = f.to_str().unwrap();
+    let (ok, out, err) = run(&["sliders", f]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("simplified_master_multiplier")
+            && out.contains("computed gains:")
+            && out.contains("logged gains:")
+    );
+    let all_100 = "simplified_master_multiplier=100,simplified_pi_gain=100,simplified_i_gain=100,\
+                   simplified_d_gain=100,simplified_feedforward_gain=100,simplified_pitch_d_gain=100,\
+                   simplified_pitch_pi_gain=100,simplified_d_max_gain=100";
+    let (ok, out, _) = run(&["sliders", f, "--set", all_100, "--json"]);
+    assert!(ok);
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert_eq!(v["result"]["pid"]["roll"]["p"], 45.0);
+    assert_eq!(v["result"]["pid"]["roll"]["d"], 40.0);
+    assert_eq!(v["result"]["pid"]["roll"]["d_min"], 30.0);
+    assert_eq!(v["result"]["pid"]["pitch"]["f"], 125.0);
+    let (ok, _, err) = run(&["sliders", f, "--set", "bogus=1"]);
+    assert!(!ok && err.contains("unknown slider"));
 }
