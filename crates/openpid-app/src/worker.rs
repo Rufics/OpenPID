@@ -121,7 +121,8 @@ impl std::fmt::Debug for Worker {
 fn registry() -> FormatRegistry {
     let mut r = FormatRegistry::new();
     r.register(Box::new(openpid_fmt_blackbox::BlackboxFormat::new()))
-        .register(Box::new(openpid_fmt_csv::CsvFormat::new()));
+        .register(Box::new(openpid_fmt_csv::CsvFormat::new()))
+        .register(Box::new(openpid_fmt_ardupilot::ArdupilotFormat::new()));
     r
 }
 

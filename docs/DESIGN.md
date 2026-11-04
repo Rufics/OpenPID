@@ -33,7 +33,7 @@ OpenPID — кросплатформенний (macOS / Windows / Linux) інс�
 | Freq × throttle heatmap | ✓ | ✓ | 1 | §6.4 |
 | Freq × time heatmap (STFT) | ✓ | ✓ | 1 | §6.5 |
 | PID slider tool | ✓ | ✓ | 1 | Betaflight‑специфіка, реалізація через `FirmwareProfile` |
-| Multi‑firmware support | ✓ | ✓ | 0→2 | Betaflight/Emuflight/Rotorflight — фаза 0; ArduPilot, потім INAV — фаза 2; KISS/Fettec/QuickSilver — за наявності зразків (рішення Q2) |
+| Multi‑firmware support | ✓ | ✓ | 0→2 | Betaflight/Emuflight/Rotorflight — фаза 0; ArduPilot — зроблено (ADR‑0010, `docs/ARDUPILOT.md`), далі INAV — фаза 2; KISS/Fettec/QuickSilver — за наявності зразків (рішення Q2) |
 | RPM / dyn‑notch overlay 2D | — | ✓ | 2 | Потрібен eRPM (DShot telemetry) + pole count |
 | RPM / dyn‑notch overlay 3D | — | ✓ | 2 | 3D‑поверхня freq×throttle×amp |
 | RPM estimator | — | ✓ | 2 | Оцінка обертів з піків шуму, коли телеметрії немає |

@@ -1709,6 +1709,7 @@ dependencies = [
  "egui_plot",
  "openpid-analysis",
  "openpid-core",
+ "openpid-fmt-ardupilot",
  "openpid-fmt-blackbox",
  "openpid-fmt-csv",
  "rfd",
@@ -1720,6 +1721,7 @@ version = "0.1.0"
 dependencies = [
  "openpid-analysis",
  "openpid-core",
+ "openpid-fmt-ardupilot",
  "openpid-fmt-blackbox",
  "openpid-fmt-csv",
  "serde_json",
@@ -1741,6 +1743,14 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "openpid-fmt-ardupilot"
+version = "0.1.0"
+dependencies = [
+ "openpid-core",
+ "serde_json",
 ]
 
 [[package]]

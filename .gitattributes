@@ -4,3 +4,4 @@ tests/logs/*.bfl filter=lfs diff=lfs merge=lfs -text
 tests/logs/*.BFL filter=lfs diff=lfs merge=lfs -text
 tests/logs/*.txt filter=lfs diff=lfs merge=lfs -text
 tests/logs/*.TXT filter=lfs diff=lfs merge=lfs -text
+tests/logs/*.bin filter=lfs diff=lfs merge=lfs -text
