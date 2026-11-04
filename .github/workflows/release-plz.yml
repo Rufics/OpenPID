@@ -29,23 +29,23 @@ concurrency:
 
 jobs:
   release-plz:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.repository_owner == 'Rufics' && vars.RELEASE_APP_ID != ''
     steps:
       - name: Mint a short-lived token for the release bot
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ vars.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-11
         with:
           toolchain: 1.97.0
       - name: Release PR and git release
-        uses: release-plz/action@v0.5
+        uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

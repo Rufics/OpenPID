@@ -40,9 +40,9 @@
           { "context": "CI OK", "integration_id": 15368 },
           { "context": "fmt + clippy + docs + typos", "integration_id": 15368 },
           { "context": "conventional commits", "integration_id": 15368 },
-          { "context": "test (ubuntu-latest)", "integration_id": 15368 },
-          { "context": "test (macos-latest)", "integration_id": 15368 },
-          { "context": "test (windows-latest)", "integration_id": 15368 },
+          { "context": "test (linux)", "integration_id": 15368 },
+          { "context": "test (macos)", "integration_id": 15368 },
+          { "context": "test (windows)", "integration_id": 15368 },
           { "context": "coverage (>= 90% lines)", "integration_id": 15368 },
           { "context": "cargo deny (licences, advisories, bans)", "integration_id": 15368 }
         ]
