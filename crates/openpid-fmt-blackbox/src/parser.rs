@@ -25,6 +25,16 @@ const EVENT_INFLIGHT_ADJUSTMENT: u8 = 13;
 const EVENT_LOGGING_RESUME: u8 = 14;
 const EVENT_DISARM: u8 = 15;
 const EVENT_FLIGHT_MODE: u8 = 30;
+/// Rotorflight: main-motor governor state (one byte).
+const EVENT_GOV_STATE: u8 = 50;
+/// Rotorflight: rescue state (one byte).
+const EVENT_RESCUE_STATE: u8 = 51;
+/// Rotorflight: airborne state (one byte).
+const EVENT_AIRBORNE_STATE: u8 = 52;
+/// Rotorflight: custom data (length byte + bytes).
+const EVENT_CUSTOM_DATA: u8 = 100;
+/// Rotorflight: custom string (zero-terminated).
+const EVENT_CUSTOM_STRING: u8 = 101;
 const EVENT_LOG_END: u8 = 255;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +82,14 @@ pub enum EventData {
     },
     /// End-of-log marker.
     LogEnd,
+    /// A firmware-specific event with a known layout (Rotorflight governor,
+    /// rescue and airborne states, custom data).
+    Other {
+        /// Event name, e.g. `gov_state`.
+        name: &'static str,
+        /// Decoded payload fields.
+        data: BTreeMap<String, i64>,
+    },
 }
 
 /// One accepted frame.
@@ -518,6 +536,48 @@ impl<'a> Parser<'a> {
                 let flags = enc::read_uvb(r)?;
                 let last_flags = enc::read_uvb(r)?;
                 Some(EventData::FlightMode { flags, last_flags })
+            }
+            EVENT_GOV_STATE | EVENT_RESCUE_STATE | EVENT_AIRBORNE_STATE => {
+                let state = r.read_u8().ok_or(DecodeError::Eof)?;
+                let name = match code {
+                    EVENT_GOV_STATE => "gov_state",
+                    EVENT_RESCUE_STATE => "rescue_state",
+                    _ => "airborne_state",
+                };
+                Some(EventData::Other {
+                    name,
+                    data: [("state".to_string(), i64::from(state))].into(),
+                })
+            }
+            EVENT_CUSTOM_DATA => {
+                let len = r.read_u8().ok_or(DecodeError::Eof)?;
+                let bytes = r.read_bytes(usize::from(len)).ok_or(DecodeError::Eof)?;
+                let data = bytes
+                    .iter()
+                    .enumerate()
+                    .map(|(i, b)| (format!("byte{i}"), i64::from(*b)))
+                    .collect();
+                Some(EventData::Other {
+                    name: "custom_data",
+                    data,
+                })
+            }
+            EVENT_CUSTOM_STRING => {
+                let mut len = 0usize;
+                loop {
+                    let b = r.read_u8().ok_or(DecodeError::Eof)?;
+                    if b == 0 {
+                        break;
+                    }
+                    len += 1;
+                    if len > MAX_FRAME_LEN {
+                        return Err(DecodeError::Eof);
+                    }
+                }
+                Some(EventData::Other {
+                    name: "custom_string",
+                    data: [("length".to_string(), len as i64)].into(),
+                })
             }
             EVENT_LOG_END => {
                 let bytes = r.read_bytes(11).ok_or(DecodeError::Eof)?;
@@ -977,6 +1037,40 @@ H motorOutput:158,2047\n";
             "attempts stop once nothing decodes: {}",
             stats.corrupt_total()
         );
+
+    fn rotorflight_state_events_keep_the_stream() {
+        let mut data = HDR.as_bytes().to_vec();
+        intra(&mut data, 0, 1000, [1, 2, 3], [1200, 1300]);
+        let f0 = [0i64, 1000, 1, 2, 3, 1200, 1300];
+        data.extend_from_slice(b"E\x32\x02"); // governor state 2
+        inter(&mut data, 1250, [4, 5, 6], [1210, 1310], &f0, &f0);
+        let f1 = [2i64, 1250, 4, 5, 6, 1210, 1310];
+        data.extend_from_slice(b"E\x34\x01"); // airborne
+        data.extend_from_slice(b"E\x64\x03abc"); // custom data, 3 bytes
+        data.extend_from_slice(b"E\x65hello\x00"); // custom string
+        inter(&mut data, 1500, [7, 8, 9], [1220, 1320], &f1, &f0);
+        let f2 = [4i64, 1500, 7, 8, 9, 1220, 1320];
+        let (frames, events, stats) = collect(&data);
+        assert_eq!(frames, vec![f0.to_vec(), f1.to_vec(), f2.to_vec()]);
+        assert_eq!(stats.corrupt_total(), 0, "{stats:?}");
+        assert_eq!(stats.desync_total(), 0);
+        let names: Vec<&str> = events
+            .iter()
+            .filter_map(|e| match e {
+                EventData::Other { name, .. } => Some(*name),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "gov_state",
+                "airborne_state",
+                "custom_data",
+                "custom_string"
+            ]
+        );
+        assert!(matches!(&events[0], EventData::Other { data, .. } if data["state"] == 2));
     }
 
     #[test]

@@ -72,3 +72,20 @@
 
 Налаштування: `rollPID` = P,I,D[,FF]; `looptime` → gyro/pid Гц, `P interval` → частота логу; `gyro_lpf_hz`/`gyro_lpf_type`, `dterm_lpf_hz`/`dterm_lpf_type`, `dterm_lpf2_hz`, `gyro_notch_hz/cutoff`; `dynamicGyroNotchMinHz`/`dynamicGyroNotchQ` (Q ×0.01) → dyn notch; `rpm_gyro_*` → RPM notch; `motor_pwm_protocol` (ті самі коди, що в Betaflight), `motorOutput`.
 
+## Rotorflight
+
+Той самий контейнер, що й Betaflight, плюс події та поля гелікоптера. Розслідування #7 (2026‑11‑04): усі 11 «corrupt» кадрів фікстури 4.3.0 були **подіями `E` з кодом 50** (`FLIGHT_LOG_EVENT_GOVSTATE`, один байт стану губернатора), яких парсер не знав; після кожної губилися P‑кадри до наступного I‑кадру (82 desync, 9 розривів часу). Тепер парсер читає події Rotorflight 50/51/52 (governor / rescue / airborne state, 1 байт), 100 (custom data: довжина + байти) і 101 (custom string, `\0`‑термінований) і віддає їх як `EventKind::Other { name, data }`. Фікстура декодується без corrupt/desync і без розривів.
+
+| Поле | Канал | Одиниця |
+|------|-------|---------|
+| `motor[i]` | `motor.i` | % (лог у 0,1 %: 0…1000, **не** PWM) |
+| `setpoint[3]`, `mixer[3]` | `custom:collective`, `custom:mixer.collective` | % (±1000 → ±100) |
+| `mixer[0..2]` | `custom:mixer.roll/pitch/yaw` | % |
+| `headspeed`, `tailspeed` | `custom:headspeed`, `custom:tailspeed` | rpm |
+| `attitude[i]` | `custom:attitude.*` | deg (×0.1) |
+| `Vbat`, `Ibat` | `battery.voltage/current` | V, A (×0.01) |
+| `rcCommand[3]` | `rc.3` — стік колективу (±500) | raw |
+| `rcCommand[4]` | → похідний `throttle` (0…1000 → %) | % |
+
+`motor_poles` у 4.3 містить адресу пам'яті (`0x2000xxxx`) замість кількості полюсів — профіль відкидає значення поза 2…64. Заголовки `gyro_rpm_filter_bank_*`, `gyro_decimation_hz`, `rates_type`, `rate_limits`, `P ratio`, `Board information` потрапляють у `settings.extra`.
+
