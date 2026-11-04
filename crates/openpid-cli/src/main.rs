@@ -295,6 +295,8 @@ fn main() -> ExitCode {
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
+        // `openpid decode ... | head` closes the pipe early; that is not an error.
+        Err(e) if e.contains("Broken pipe") => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("error: {e}");
             ExitCode::FAILURE
