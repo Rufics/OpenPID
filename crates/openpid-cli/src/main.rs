@@ -14,6 +14,8 @@ openpid - blackbox log analysis toolkit
 USAGE:
     openpid info <file> [--json] [--raw] [--session N]
     openpid decode <file> [--session N] [--out <path>] [--scaled]
+    openpid run <analysis> <file> [--session N] [--epoch A..B] [--axis roll|pitch|yaw]
+                [--channel KEY] [--out <path>]
     openpid --help | --version
 
 COMMANDS:
@@ -22,8 +24,18 @@ COMMANDS:
              names (slow fields forward-filled), compatible with blackbox_decode.
              --scaled writes the canonical channels in physical units instead.
 
+    run      Run an analysis and print its result as JSON. Analyses:
+             step            step response (needs --axis, default roll)
+             psd             Welch power spectral density of --channel
+             thr-heatmap     frequency x throttle heatmap of --channel
+             stft            frequency x time heatmap of --channel
+             Channel keys look like gyro.filtered.roll, gyro.raw.pitch, pid.d.roll,
+             motor.0, debug.2 (see `openpid info`). Default: gyro.filtered.<axis>.
+
 OPTIONS:
     --session N   Restrict to session index N (0-based)
+    --epoch A..B  Analyse only seconds A to B of the session
+    --axis AXIS   roll, pitch or yaw
     --json        Machine-readable output
     --raw         Skip firmware-profile scaling and derived channels
     --out <path>  Write to a file instead of stdout
@@ -32,7 +44,11 @@ OPTIONS:
 #[derive(Debug, Default)]
 struct Args {
     command: String,
+    analysis: Option<String>,
     file: Option<PathBuf>,
+    epoch: Option<(f64, f64)>,
+    axis: Option<String>,
+    channel: Option<String>,
     session: Option<usize>,
     json: bool,
     raw: bool,
@@ -57,12 +73,30 @@ fn parse_args() -> Result<Args, String> {
                 args.session = Some(v.parse().map_err(|_| format!("bad session index: {v}"))?);
             }
             "--out" => args.out = Some(PathBuf::from(it.next().ok_or("--out needs a path")?)),
+            "--epoch" => {
+                let v = it.next().ok_or("--epoch needs A..B")?;
+                let (a, b) = v.split_once("..").ok_or("--epoch needs the form A..B")?;
+                let a: f64 = a
+                    .trim()
+                    .parse()
+                    .map_err(|_| format!("bad epoch start: {a}"))?;
+                let b: f64 = b
+                    .trim()
+                    .parse()
+                    .map_err(|_| format!("bad epoch end: {b}"))?;
+                args.epoch = Some((a, b));
+            }
+            "--axis" => args.axis = Some(it.next().ok_or("--axis needs a value")?),
+            "--channel" => args.channel = Some(it.next().ok_or("--channel needs a key")?),
             s if s.starts_with("--") => return Err(format!("unknown option {s}\n\n{USAGE}")),
             _ => {
-                if args.file.is_some() {
+                if args.command == "run" && args.analysis.is_none() {
+                    args.analysis = Some(a);
+                } else if args.file.is_some() {
                     return Err(format!("unexpected argument {a}"));
+                } else {
+                    args.file = Some(PathBuf::from(a));
                 }
-                args.file = Some(PathBuf::from(a));
             }
         }
     }
@@ -272,6 +306,104 @@ fn cmd_decode(args: &Args) -> Result<(), String> {
     sink.flush().map_err(|e| e.to_string())
 }
 
+fn parse_axis(s: Option<&str>) -> Result<openpid_core::Axis, String> {
+    match s.unwrap_or("roll") {
+        "roll" => Ok(openpid_core::Axis::Roll),
+        "pitch" => Ok(openpid_core::Axis::Pitch),
+        "yaw" => Ok(openpid_core::Axis::Yaw),
+        other => Err(format!("unknown axis {other}")),
+    }
+}
+
+fn cmd_run(args: &Args) -> Result<(), String> {
+    use openpid_analysis::{Analysis, AnalysisCtx, Epoch};
+    let analysis = args
+        .analysis
+        .as_deref()
+        .ok_or("run needs an analysis name")?;
+    let path = args.file.as_ref().ok_or("run needs a file")?;
+    let session = args.session.unwrap_or(0);
+    let (_, log) = open(
+        path,
+        &OpenOptions {
+            sessions: Some(vec![session]),
+            raw: false,
+        },
+    )?;
+    let s = log
+        .sessions
+        .iter()
+        .find(|s| s.index == session)
+        .ok_or_else(|| format!("no session {session}"))?;
+    let epoch = args.epoch.map(|(a, b)| Epoch {
+        start_s: a,
+        end_s: b,
+    });
+    let ctx = AnalysisCtx { session: s, epoch };
+    let axis = parse_axis(args.axis.as_deref())?;
+    let channel = match &args.channel {
+        Some(k) => ChannelId::parse(k).ok_or_else(|| format!("unknown channel key {k}"))?,
+        None => ChannelId::Gyro {
+            axis,
+            stage: openpid_core::GyroStage::Filtered,
+        },
+    };
+    let json = match analysis {
+        "step" => {
+            let p = openpid_analysis::StepParams {
+                axis,
+                ..Default::default()
+            };
+            serde_json::to_string_pretty(
+                &openpid_analysis::StepAnalysis
+                    .run(&ctx, &p)
+                    .map_err(|e| e.to_string())?,
+            )
+        }
+        "psd" => {
+            let p = openpid_analysis::PsdParams {
+                channel,
+                ..Default::default()
+            };
+            serde_json::to_string_pretty(
+                &openpid_analysis::PsdAnalysis
+                    .run(&ctx, &p)
+                    .map_err(|e| e.to_string())?,
+            )
+        }
+        "thr-heatmap" => {
+            let p = openpid_analysis::ThrottleHeatmapParams {
+                channel,
+                ..Default::default()
+            };
+            serde_json::to_string_pretty(
+                &openpid_analysis::ThrottleHeatmap
+                    .run(&ctx, &p)
+                    .map_err(|e| e.to_string())?,
+            )
+        }
+        "stft" => {
+            let p = openpid_analysis::StftParams {
+                channel,
+                ..Default::default()
+            };
+            serde_json::to_string_pretty(
+                &openpid_analysis::StftAnalysis
+                    .run(&ctx, &p)
+                    .map_err(|e| e.to_string())?,
+            )
+        }
+        other => return Err(format!("unknown analysis {other}\n\n{USAGE}")),
+    }
+    .map_err(|e| e.to_string())?;
+    if let Some(p) = &args.out {
+        std::fs::write(p, json).map_err(|e| format!("cannot write {}: {e}", p.display()))
+    } else {
+        println!("{json}");
+        Ok(())
+    }
+}
+
 fn main() -> ExitCode {
     let args = match parse_args() {
         Ok(a) => a,
@@ -283,6 +415,7 @@ fn main() -> ExitCode {
     let result = match args.command.as_str() {
         "info" => cmd_info(&args),
         "decode" => cmd_decode(&args),
+        "run" => cmd_run(&args),
         "--help" | "-h" | "help" => {
             print!("{USAGE}");
             Ok(())

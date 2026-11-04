@@ -13,6 +13,9 @@ rust-version = "1.88"
 openpid-core = { path = "crates/openpid-core", version = "0.1.0" }
 openpid-fmt-blackbox = { path = "crates/openpid-fmt-blackbox", version = "0.1.0" }
 openpid-fmt-csv = { path = "crates/openpid-fmt-csv", version = "0.1.0" }
+openpid-dsp = { path = "crates/openpid-dsp", version = "0.1.0" }
+openpid-analysis = { path = "crates/openpid-analysis", version = "0.1.0" }
+rustfft = "6.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

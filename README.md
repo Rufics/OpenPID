@@ -4,12 +4,14 @@
 
 ## Стан
 
-Фаза 0 (фундамент) реалізована:
+Фаза 0 (фундамент) реалізована, фаза 1 (математика та аналізи) — у роботі:
 
 - `openpid-core` — доменна модель (`FlightSession`, `Channel`, `ChannelId`, `Series`, `Timebase`, `Settings`) і trait‑и розширення (`LogFormat`, `FirmwareProfile`, `Analysis`).
 - `openpid-fmt-blackbox` — власний декодер бінарного Blackbox (усі кодування та предиктори, I/P/S/G/H/E‑кадри, валідація, ресинхронізація, rollover часу, події) та профілі прошивок Betaflight, EmuFlight, Rotorflight, INAV (базовий) і generic.
 - `openpid-fmt-csv` — читання CSV‑експорту `blackbox_decode`.
-- `openpid-cli` — `openpid info` та `openpid decode`.
+- `openpid-dsp` — FFT‑обгортка, вікна, Welch PSD, STFT, деконволюція Вінера, ресемплінг; кожна функція звірена з фікстурами NumPy/SciPy (`tests/reference`, генератор `tools/reference/make_fixtures.py`).
+- `openpid-analysis` — step response (деконволюція setpoint → gyro), PSD, heatmap freq×throttle та freq×time.
+- `openpid-cli` — `openpid info`, `openpid decode`, `openpid run`.
 
 Подальший план — у [`docs/DESIGN.md`](docs/DESIGN.md) (§12).
 
@@ -21,6 +23,10 @@ cargo build --release
 ./target/release/openpid info  path/to/LOG.BFL --json     # те саме у JSON
 ./target/release/openpid decode path/to/LOG.BBL --session 1 --out log1.csv   # сирі цілі, як blackbox_decode
 ./target/release/openpid decode path/to/LOG.BBL --scaled                     # канонічні канали у фізичних одиницях
+./target/release/openpid run step path/to/LOG.BBL --axis pitch --epoch 5..60   # step response (JSON)
+./target/release/openpid run psd  path/to/LOG.BBL --channel gyro.raw.roll      # Welch PSD
+./target/release/openpid run thr-heatmap path/to/LOG.BBL                       # freq × throttle
+./target/release/openpid run stft path/to/LOG.BBL --channel pid.d.roll         # freq × time
 ```
 
 ## Тести
@@ -29,6 +35,7 @@ cargo build --release
 cargo test --workspace            # unit, golden, конформанс, стійкість до пошкоджень
 tools/fetch-community-logs.sh     # додаткові логи спільноти (Rotorflight, EmuFlight 0.4, BF 4.3) у tests/logs/external
 OPENPID_UPDATE_GOLDEN=1 cargo test -p openpid-fmt-blackbox --test fixtures   # оновити golden‑файли після свідомої зміни
+python3 -I tools/reference/make_fixtures.py   # перегенерувати фікстури NumPy/SciPy (потрібні numpy, scipy)
 ```
 
 `tools/fetch-community-logs.sh` завантажує по одному логу на кожну лінію релізів Betaflight (4.3, 4.4, 4.5, 2025.12) та інші прошивки; тест `versions.rs` перевіряє кожну наявну версію. Матриця відмінностей формату між версіями — у [`docs/BLACKBOX-VERSIONS.md`](docs/BLACKBOX-VERSIONS.md).

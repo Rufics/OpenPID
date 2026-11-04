@@ -15,6 +15,7 @@ path = "src/main.rs"
 openpid-core = { workspace = true }
 openpid-fmt-blackbox = { workspace = true }
 openpid-fmt-csv = { workspace = true }
+openpid-analysis = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

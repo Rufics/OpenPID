@@ -1,0 +1,117 @@
+//! Welch power spectral density of one channel.
+
+use crate::prepare::prepare;
+use openpid_core::ChannelId;
+use openpid_core::analysis::{Analysis, AnalysisCtx, AnalysisError, Requirement};
+use openpid_dsp::spectrum::{WelchParams, welch};
+use openpid_dsp::{Fft, Window};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PsdParams {
+    pub channel: ChannelId,
+    /// Segment length in seconds (rounded to a 5-smooth sample count).
+    pub segment_s: f64,
+    /// Overlap as a fraction of the segment (0..1).
+    pub overlap: f64,
+    pub window: Window,
+    /// Upper frequency bound of the output (Hz); `None` keeps everything up to Nyquist.
+    pub max_hz: Option<f64>,
+}
+
+impl Default for PsdParams {
+    fn default() -> Self {
+        PsdParams {
+            channel: ChannelId::Gyro {
+                axis: openpid_core::Axis::Roll,
+                stage: openpid_core::GyroStage::Filtered,
+            },
+            segment_s: 0.25,
+            overlap: 0.5,
+            window: Window::Hann,
+            max_hz: None,
+        }
+    }
+}
+
+impl std::hash::Hash for PsdParams {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.channel.hash(state);
+        self.segment_s.to_bits().hash(state);
+        self.overlap.to_bits().hash(state);
+        format!("{:?}", self.window).hash(state);
+        self.max_hz.map(f64::to_bits).hash(state);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PsdOutput {
+    pub channel: ChannelId,
+    pub unit: String,
+    pub fs: f64,
+    pub nperseg: usize,
+    pub segments: usize,
+    pub freq: Vec<f64>,
+    /// `unit² / Hz`
+    pub power: Vec<f64>,
+    /// `10·log10(power)`
+    pub power_db: Vec<f64>,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PsdAnalysis;
+
+impl Analysis for PsdAnalysis {
+    type Params = PsdParams;
+    type Output = PsdOutput;
+
+    fn id(&self) -> &'static str {
+        "psd"
+    }
+
+    fn requires(&self) -> Vec<Requirement> {
+        vec![Requirement::Channel(ChannelId::Time)]
+    }
+
+    fn run(&self, ctx: &AnalysisCtx<'_>, p: &PsdParams) -> Result<PsdOutput, AnalysisError> {
+        if !(0.0..1.0).contains(&p.overlap) || p.segment_s <= 0.0 {
+            return Err(AnalysisError::InvalidParams(
+                "overlap must be in [0,1) and segment_s > 0".into(),
+            ));
+        }
+        let prep = prepare(ctx, &p.channel, None)?;
+        let nperseg = openpid_dsp::next_smooth((p.segment_s * prep.fs).round().max(16.0) as usize);
+        let x = prep.filled();
+        if x.len() < nperseg {
+            return Err(AnalysisError::NotEnoughData(format!(
+                "{} samples, segment needs {nperseg}",
+                x.len()
+            )));
+        }
+        let fft = Fft::new();
+        let wp = WelchParams {
+            nperseg,
+            noverlap: (p.overlap * nperseg as f64) as usize,
+            window: p.window,
+            detrend: true,
+        };
+        let psd = welch(&fft, &x, prep.fs, &wp)
+            .map_err(|e| AnalysisError::InvalidParams(e.to_string()))?;
+        let keep = p
+            .max_hz
+            .map_or(psd.freq.len(), |m| psd.freq.partition_point(|f| *f <= m));
+        let freq = psd.freq[..keep].to_vec();
+        let power = psd.power[..keep].to_vec();
+        let power_db = power.iter().map(|v| 10.0 * v.max(1e-30).log10()).collect();
+        Ok(PsdOutput {
+            channel: p.channel.clone(),
+            unit: prep.unit.to_string(),
+            fs: prep.fs,
+            nperseg,
+            segments: psd.segments,
+            freq,
+            power,
+            power_db,
+        })
+    }
+}
