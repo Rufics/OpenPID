@@ -1,6 +1,6 @@
 # OpenPID — правила для роботи з репозиторієм
 
-- **CI ніколи не залишати червоним.** Після кожного push перевіряти статус GitHub Actions; якщо червоний — виправляти негайно, перш ніж братися за іншу роботу. Перед push локально проганяти `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`.
+- **CI ніколи не залишати червоним.** Після кожного push перевіряти статус GitHub Actions; якщо червоний — виправляти негайно, перш ніж братися за іншу роботу. Перед push локально проганяти `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo deny check` (встановити: `cargo install cargo-deny --locked`).
 - Toolchain закріплено у `rust-toolchain.toml`; CI використовує ту саму версію. Оновлювати версію свідомо, окремим комітом, разом із виправленням нових lint-ів.
 - Нові залежності — лише через ADR (`docs/adr/`); dev-залежності мають бути чистим Rust із ліцензією, дозволеною в `deny.toml`.
 - Мова документів — українська, код і коментарі — англійською.
