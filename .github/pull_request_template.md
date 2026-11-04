@@ -1,5 +1,7 @@
 ## Що змінено
 
+Closes #
+
 <!-- Коротко: що і навіщо. Заголовок PR — у форматі Conventional Commits, напр. `feat(dsp): add Tukey window`. -->
 
 ## Як перевірено

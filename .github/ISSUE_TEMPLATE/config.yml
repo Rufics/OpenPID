@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Процес і дошка (Scrum)
+    url: https://github.com/Rufics/OpenPID/blob/master/docs/PROCESS.md
+    about: Як ведеться backlog, спринти, Definition of Ready/Done

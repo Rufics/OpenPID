@@ -70,5 +70,6 @@ python3 -I tools/reference/make_fixtures.py   # перегенерувати ф�
 - [`docs/DESIGN.md`](docs/DESIGN.md) — дизайн‑проєкт
 - [`docs/adr/`](docs/adr/) — архітектурні рішення
 - [`docs/OPEN-QUESTIONS.md`](docs/OPEN-QUESTIONS.md) — питання та ухвалені рішення
+- [`docs/PROCESS.md`](docs/PROCESS.md) — процес: backlog, milestones, спринти, Definition of Done
 - [`docs/BLACKBOX-VERSIONS.md`](docs/BLACKBOX-VERSIONS.md) — відмінності формату між версіями Betaflight і покриття логами
 - [`tests/logs/README.md`](tests/logs/README.md) — походження тестових логів
