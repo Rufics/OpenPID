@@ -154,8 +154,18 @@ impl App {
         open_on_start: Vec<PathBuf>,
         tab: Option<Tab>,
     ) -> Self {
-        cc.egui_ctx.set_visuals(egui::Visuals::dark());
-        let ctx = cc.egui_ctx.clone();
+        Self::with_context(&cc.egui_ctx, open_on_start, tab)
+    }
+
+    /// Builds the app on an existing egui context: what `new` does without an
+    /// eframe window, so tests can drive the UI headless (ADR-0008).
+    pub fn with_context(
+        ctx: &egui::Context,
+        open_on_start: Vec<PathBuf>,
+        tab: Option<Tab>,
+    ) -> Self {
+        ctx.set_visuals(egui::Visuals::dark());
+        let ctx = ctx.clone();
         let worker = Worker::spawn(move || ctx.request_repaint());
         let mut app = App {
             worker,
@@ -354,8 +364,9 @@ impl App {
     }
 }
 
-impl eframe::App for App {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+impl App {
+    /// One frame of the whole UI: input handling, worker results, panels and the active tab.
+    pub fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         if !self.touch_mode && ctx.input(egui::InputState::any_touches) {
             self.touch_mode = true;
@@ -374,5 +385,11 @@ impl eframe::App for App {
             Tab::Sliders => views::sliders(self, ui),
             Tab::Diagnostics => views::diagnostics(self, ui),
         });
+    }
+}
+
+impl eframe::App for App {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.frame(ui);
     }
 }
