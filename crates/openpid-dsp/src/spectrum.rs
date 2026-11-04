@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// Power spectral density, one-sided.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Psd {
+    /// Frequency axis in Hz.
     pub freq: Vec<f64>,
     /// Power density in `unit² / Hz`.
     pub power: Vec<f64>,
@@ -18,14 +19,18 @@ pub struct Psd {
 /// Parameters of [`welch`]; defaults mirror `scipy.signal.welch`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct WelchParams {
+    /// Segment length in samples.
     pub nperseg: usize,
+    /// Overlap between consecutive segments in samples.
     pub noverlap: usize,
+    /// Window applied to every segment.
     pub window: Window,
     /// Remove the mean of every segment before windowing (`detrend="constant"`).
     pub detrend: bool,
 }
 
 impl WelchParams {
+    /// scipy defaults for a given segment length: 50 % overlap, Hann, detrend.
     pub fn new(nperseg: usize) -> Self {
         WelchParams {
             nperseg,
@@ -125,12 +130,17 @@ pub fn amplitude_spectrum(fft: &Fft, x: &[f64], window: Window) -> Vec<f64> {
 pub struct Spectrogram {
     /// Centre time of every segment, seconds from the first sample.
     pub time: Vec<f64>,
+    /// Frequency axis in Hz.
     pub freq: Vec<f64>,
     /// Row-major `[time][freq]` amplitudes.
     pub amp: Vec<f64>,
 }
 
 impl Spectrogram {
+    /// Amplitude of segment `ti` at frequency bin `fi`.
+    ///
+    /// # Panics
+    /// Panics if the indices are out of range.
     pub fn get(&self, ti: usize, fi: usize) -> f64 {
         self.amp[ti * self.freq.len() + fi]
     }

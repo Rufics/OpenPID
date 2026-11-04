@@ -6,6 +6,7 @@ pub mod emuflight;
 pub mod generic;
 pub mod inav;
 pub mod rotorflight;
+pub mod sliders;
 
 use openpid_core::ProfileRegistry;
 

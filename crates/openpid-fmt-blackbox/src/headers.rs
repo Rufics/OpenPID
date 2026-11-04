@@ -13,21 +13,28 @@ const MAX_HEADER_LINE: usize = 16 * 1024;
 /// Definition of the fields of one frame type.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FrameDef {
+    /// Field names in frame order.
     pub names: Vec<String>,
+    /// Whether each field is signed.
     pub signed: Vec<bool>,
+    /// Predictor id per field.
     pub predictors: Vec<u8>,
+    /// Encoding id per field.
     pub encodings: Vec<u8>,
 }
 
 impl FrameDef {
+    /// Number of fields.
     pub fn len(&self) -> usize {
         self.names.len()
     }
 
+    /// Whether the frame has no fields.
     pub fn is_empty(&self) -> bool {
         self.names.is_empty()
     }
 
+    /// Index of a field by name.
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.names.iter().position(|n| n == name)
     }
@@ -81,35 +88,54 @@ impl FrameDef {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PInterval {
     /// `num` P frames every `denom` iterations (Betaflight: `1/denom`).
-    Fraction { num: u32, denom: u32 },
+    /// `num` P frames every `denom` iterations (Betaflight: `1/denom`).
+    Fraction {
+        /// Frames logged per `denom` iterations.
+        num: u32,
+        /// Iterations per `num` frames.
+        denom: u32,
+    },
     /// Only intra frames are logged.
     IntraOnly,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Why a header block could not be used.
 pub enum HeaderError {
     #[error("log has no header block")]
+    /// No `H ` lines at the start of the log.
     NoHeader,
     #[error("no field definitions for main frames")]
+    /// No `Field I` definitions.
     MissingMainDef,
     #[error("main frames lack the `{0}` field")]
+    /// The main frame definition lacks a required field.
     MissingMainField(&'static str),
     #[error("field definition for frame '{0}' is inconsistent: {1}")]
+    /// A frame definition is internally inconsistent (frame letter, reason).
     Inconsistent(char, String),
 }
 
 /// Parsed header block of one log.
 #[derive(Debug, Clone)]
 pub struct Headers {
+    /// Every header as logged, in order.
     pub raw: RawHeaders,
     /// Frame definitions keyed by frame letter (`I`, `P`, `S`, `G`, `H`).
     pub defs: BTreeMap<u8, FrameDef>,
+    /// `Data version` header (2 for every modern firmware).
     pub data_version: u32,
+    /// Loop iterations between intra frames.
     pub i_interval: u32,
+    /// Inter-frame sub-sampling.
     pub p_interval: PInterval,
+    /// `minthrottle` header (default 1150).
     pub minthrottle: i64,
+    /// Lowest motor output (`motorOutput` header, else `minthrottle`).
     pub motor_output_low: i64,
+    /// `vbatref` header (default 4095).
     pub vbatref: i64,
+    /// Firmware identity from the `Firmware revision` header.
     pub firmware: FirmwareInfo,
     /// Byte offset where frame data begins.
     pub data_start: usize,
@@ -229,10 +255,15 @@ impl Headers {
         })
     }
 
+    /// Definition of the intra (`I`) frames.
+    ///
+    /// # Panics
+    /// Never: [`Headers::parse`] rejects logs without an `I` definition.
     pub fn main_def(&self) -> &FrameDef {
         &self.defs[&b'I']
     }
 
+    /// Definition of the frame kind with the given letter.
     pub fn def(&self, frame_type: u8) -> Option<&FrameDef> {
         self.defs.get(&frame_type)
     }

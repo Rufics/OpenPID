@@ -4,6 +4,7 @@
 use crate::channel::ChannelId;
 use crate::session::{FirmwareInfo, FlightSession};
 use crate::settings::Settings;
+use crate::sliders::SliderModel;
 use crate::units::Unit;
 use std::fmt;
 
@@ -12,6 +13,7 @@ use std::fmt;
 pub struct RawHeaders(pub Vec<(String, String)>);
 
 impl RawHeaders {
+    /// Value of the first header named `name`.
     pub fn get(&self, name: &str) -> Option<&str> {
         self.0
             .iter()
@@ -24,10 +26,12 @@ impl RawHeaders {
         names.iter().find_map(|n| self.get(n))
     }
 
+    /// Header parsed as a number.
     pub fn get_f64(&self, name: &str) -> Option<f64> {
         self.get(name)?.trim().parse().ok()
     }
 
+    /// Header parsed as an integer.
     pub fn get_i64(&self, name: &str) -> Option<i64> {
         self.get(name)?.trim().parse().ok()
     }
@@ -44,13 +48,18 @@ impl RawHeaders {
 /// How one logged field maps onto a channel: `value = (raw + offset) * scale`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldMapping {
+    /// Channel the field becomes.
     pub id: ChannelId,
+    /// Unit of the scaled values.
     pub unit: Unit,
+    /// Multiplier applied after `offset`.
     pub scale: f64,
+    /// Added to the raw value before scaling.
     pub offset: f64,
 }
 
 impl FieldMapping {
+    /// Identity mapping (scale 1, offset 0).
     pub fn new(id: ChannelId, unit: Unit) -> Self {
         FieldMapping {
             id,
@@ -60,6 +69,7 @@ impl FieldMapping {
         }
     }
 
+    /// Mapping that multiplies by `scale`.
     pub fn scaled(id: ChannelId, unit: Unit, scale: f64) -> Self {
         FieldMapping {
             id,
@@ -69,6 +79,7 @@ impl FieldMapping {
         }
     }
 
+    /// Scaled value of a raw logged integer.
     pub fn apply(&self, raw: i64) -> f64 {
         (raw as f64 + self.offset) * self.scale
     }
@@ -97,6 +108,15 @@ pub trait FirmwareProfile: Send + Sync {
     /// Add derived channels (throttle percent, PID error, ...). Called after
     /// all logged channels are in place.
     fn derive(&self, _session: &mut FlightSession) {}
+
+    /// Slider ("simplified tuning") model for this log, when the firmware has one.
+    fn slider_model(
+        &self,
+        _firmware: &FirmwareInfo,
+        _headers: &RawHeaders,
+    ) -> Option<Box<dyn SliderModel>> {
+        None
+    }
 }
 
 impl fmt::Debug for dyn FirmwareProfile {
@@ -106,24 +126,29 @@ impl fmt::Debug for dyn FirmwareProfile {
 }
 
 #[derive(Debug, Default)]
+/// Registry of firmware profiles with best-match selection.
 pub struct ProfileRegistry {
     profiles: Vec<Box<dyn FirmwareProfile>>,
 }
 
 impl ProfileRegistry {
+    /// Empty registry.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Add a profile.
     pub fn register(&mut self, profile: Box<dyn FirmwareProfile>) -> &mut Self {
         self.profiles.push(profile);
         self
     }
 
+    /// All registered profiles.
     pub fn iter(&self) -> impl Iterator<Item = &dyn FirmwareProfile> {
         self.profiles.iter().map(AsRef::as_ref)
     }
 
+    /// Profile by its [`FirmwareProfile::id`].
     pub fn get(&self, id: &str) -> Option<&dyn FirmwareProfile> {
         self.iter().find(|p| p.id() == id)
     }

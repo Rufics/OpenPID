@@ -7,6 +7,7 @@ use openpid_core::{
 };
 
 #[derive(Debug, Default, Clone, Copy)]
+/// Fallback for unknown Cleanflight-family firmwares.
 pub struct Generic;
 
 impl FirmwareProfile for Generic {

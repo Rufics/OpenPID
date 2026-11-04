@@ -16,6 +16,7 @@ USAGE:
     openpid decode <file> [--session N] [--out <path>] [--scaled]
     openpid run <analysis> <file> [--session N] [--epoch A..B] [--axis roll|pitch|yaw]
                 [--channel KEY] [--out <path>]
+    openpid sliders <file> [--session N] [--set KEY=VALUE,...] [--json]
     openpid --help | --version
 
 COMMANDS:
@@ -32,8 +33,13 @@ COMMANDS:
              Channel keys look like gyro.filtered.roll, gyro.raw.pitch, pid.d.roll,
              motor.0, debug.2 (see `openpid info`). Default: gyro.filtered.<axis>.
 
+    sliders  Betaflight PID sliders (simplified tuning): show the slider values the
+             log flew with and the gains they produce; --set moves sliders and prints
+             the resulting gains plus the CLI commands to apply them.
+
 OPTIONS:
     --session N   Restrict to session index N (0-based)
+    --set K=V,…   Slider values, e.g. --set simplified_master_multiplier=110,simplified_d_gain=90
     --epoch A..B  Analyse only seconds A to B of the session
     --axis AXIS   roll, pitch or yaw
     --json        Machine-readable output
@@ -47,6 +53,7 @@ struct Args {
     analysis: Option<String>,
     file: Option<PathBuf>,
     epoch: Option<(f64, f64)>,
+    set: Vec<(String, f64)>,
     axis: Option<String>,
     channel: Option<String>,
     session: Option<usize>,
@@ -87,6 +94,19 @@ fn parse_args() -> Result<Args, String> {
                 args.epoch = Some((a, b));
             }
             "--axis" => args.axis = Some(it.next().ok_or("--axis needs a value")?),
+            "--set" => {
+                let v = it.next().ok_or("--set needs KEY=VALUE[,KEY=VALUE]")?;
+                for pair in v.split(',').filter(|p| !p.trim().is_empty()) {
+                    let (k, val) = pair
+                        .split_once('=')
+                        .ok_or_else(|| format!("bad --set entry: {pair}"))?;
+                    let val: f64 = val
+                        .trim()
+                        .parse()
+                        .map_err(|_| format!("bad slider value: {val}"))?;
+                    args.set.push((k.trim().to_string(), val));
+                }
+            }
             "--channel" => args.channel = Some(it.next().ok_or("--channel needs a key")?),
             s if s.starts_with("--") => return Err(format!("unknown option {s}\n\n{USAGE}")),
             _ => {
@@ -404,6 +424,100 @@ fn cmd_run(args: &Args) -> Result<(), String> {
     }
 }
 
+fn cmd_sliders(args: &Args) -> Result<(), String> {
+    let path = args.file.as_ref().ok_or("sliders needs a file")?;
+    let session = args.session.unwrap_or(0);
+    let (_, log) = open(
+        path,
+        &OpenOptions {
+            sessions: Some(vec![session]),
+            raw: false,
+        },
+    )?;
+    let s = log
+        .sessions
+        .iter()
+        .find(|s| s.index == session)
+        .ok_or_else(|| format!("no session {session}"))?;
+    let model = openpid_fmt_blackbox::slider_model_for(s).ok_or_else(|| {
+        format!(
+            "{} has no slider model (firmware {} without simplified tuning headers)",
+            path.display(),
+            s.firmware.revision
+        )
+    })?;
+    let mut values = openpid_core::SliderValues::new();
+    let known: Vec<String> = model.sliders().iter().map(|d| d.key.clone()).collect();
+    for (k, v) in &args.set {
+        if !known.contains(k) {
+            return Err(format!("unknown slider {k}; known: {}", known.join(", ")));
+        }
+        values.insert(k.clone(), *v);
+    }
+    let result = model.compute(&values);
+    if args.json {
+        let out = serde_json::json!({ "model": model.id(), "sliders": model.sliders(), "set": values, "result": result });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&out).map_err(|e| e.to_string())?
+        );
+        return Ok(());
+    }
+    println!("{} ({})", model.id(), s.firmware.revision);
+    for d in model.sliders() {
+        let now = values.get(&d.key).copied().unwrap_or(d.value);
+        let mark = if (now - d.value).abs() > f64::EPSILON {
+            " *"
+        } else {
+            ""
+        };
+        println!(
+            "  {:<36} {:>6} (log {}, default {}){mark}",
+            d.key, now, d.value, d.default
+        );
+    }
+    let fmt = |g: &openpid_core::settings::PidGains| {
+        format!(
+            "P {:>3} I {:>3} D {:>3} F {:>4}{}",
+            g.p,
+            g.i,
+            g.d,
+            g.f.map_or("-".into(), |v| v.to_string()),
+            g.d_min
+                .map(|v| format!(" Dmin {v}"))
+                .or_else(|| g.d_max.map(|v| format!(" Dmax {v}")))
+                .unwrap_or_default()
+        )
+    };
+    println!("computed gains:");
+    println!("  roll   {}", fmt(&result.pid.roll));
+    println!("  pitch  {}", fmt(&result.pid.pitch));
+    println!("  yaw    {}", fmt(&result.pid.yaw));
+    if let Some(l) = model.logged() {
+        println!("logged gains:");
+        println!("  roll   {}", fmt(&l.roll));
+        println!("  pitch  {}", fmt(&l.pitch));
+        println!("  yaw    {}", fmt(&l.yaw));
+    }
+    if let Some((lo, hi)) = result.gyro_lpf1_hz {
+        println!("gyro lpf1  {lo}..{hi} Hz");
+    }
+    if let Some(v) = result.gyro_lpf2_hz {
+        println!("gyro lpf2  {v} Hz");
+    }
+    if let Some((lo, hi)) = result.dterm_lpf1_hz {
+        println!("dterm lpf1 {lo}..{hi} Hz");
+    }
+    if let Some(v) = result.dterm_lpf2_hz {
+        println!("dterm lpf2 {v} Hz");
+    }
+    println!("CLI:");
+    for c in &result.cli {
+        println!("  {c}");
+    }
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let args = match parse_args() {
         Ok(a) => a,
@@ -416,6 +530,7 @@ fn main() -> ExitCode {
         "info" => cmd_info(&args),
         "decode" => cmd_decode(&args),
         "run" => cmd_run(&args),
+        "sliders" => cmd_sliders(&args),
         "--help" | "-h" | "help" => {
             print!("{USAGE}");
             Ok(())

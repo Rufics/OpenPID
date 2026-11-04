@@ -1,39 +1,62 @@
 //! Field predictors: the value a field is expected to have, which the
 //! firmware subtracts before encoding.
 
+/// No prediction.
 pub const ZERO: u8 = 0;
+/// Previous value of the field.
 pub const PREVIOUS: u8 = 1;
+/// Linear extrapolation from the two previous values.
 pub const STRAIGHT_LINE: u8 = 2;
+/// Mean of the two previous values (truncating).
 pub const AVERAGE_2: u8 = 3;
+/// `minthrottle` header.
 pub const MINTHROTTLE: u8 = 4;
+/// `motor[0]` of the current frame.
 pub const MOTOR_0: u8 = 5;
+/// Previous value plus one per loop iteration.
 pub const INC: u8 = 6;
+/// GPS home coordinate from the last `H` frame.
 pub const HOME_COORD: u8 = 7;
+/// Constant 1500 (servo centre).
 pub const P1500: u8 = 8;
+/// `vbatref` header.
 pub const VBATREF: u8 = 9;
+/// Time of the last main frame.
 pub const LAST_MAIN_FRAME_TIME: u8 = 10;
+/// Lowest motor output.
 pub const MINMOTOR: u8 = 11;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+/// Why a predictor could not be applied.
 pub enum PredictError {
     #[error("unsupported predictor {0}")]
+    /// The predictor id is not implemented.
     Unsupported(u8),
     #[error("predictor {0} needs a field that the log does not define")]
+    /// The predictor refers to a field the log does not define.
     MissingReference(u8),
 }
 
 /// Everything a predictor may reference besides the frame being decoded.
 #[derive(Debug, Clone, Copy)]
 pub struct Context<'a> {
+    /// `minthrottle` header.
     pub minthrottle: i64,
+    /// Lowest motor output.
     pub motor_output_low: i64,
+    /// `vbatref` header.
     pub vbatref: i64,
+    /// Previous main frame, when the stream is synchronised.
     pub previous: Option<&'a [i64]>,
+    /// Main frame before the previous one.
     pub previous2: Option<&'a [i64]>,
+    /// Index of `motor[0]` in the main frame.
     pub motor0_index: Option<usize>,
     /// Last published GPS home frame and the indices of its lat/lon fields.
     pub gps_home: Option<&'a [i64]>,
+    /// Indices of latitude and longitude in the home frame.
     pub gps_home_indices: [Option<usize>; 2],
+    /// Timestamp of the last main frame.
     pub last_main_time: Option<i64>,
 }
 

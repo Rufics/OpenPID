@@ -7,19 +7,25 @@ use openpid_dsp::resample::{Uniform, to_uniform};
 /// A channel resampled onto the session's nominal uniform grid inside the epoch.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Prepared {
+    /// Channel identity.
     pub id: ChannelId,
+    /// Unit of `data`.
     pub unit: Unit,
+    /// Sample rate of the uniform grid in Hz.
     pub fs: f64,
+    /// Resampled values with validity flags.
     pub data: Uniform,
     /// Seconds from the start of the session to the first prepared sample.
     pub t0_s: f64,
 }
 
 impl Prepared {
+    /// Number of grid samples.
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
+    /// Whether the epoch produced no samples.
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }

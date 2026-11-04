@@ -1,0 +1,24 @@
+[files]
+extend-exclude = ["tests/logs/**", "tests/reference/**", "tests/golden/**", "docs/screenshots/**", "Cargo.lock"]
+
+[default]
+# git hashes inside firmware revision strings, e.g. (948ba6339)
+extend-ignore-re = ["\\b[0-9a-f]{9}\\b"]
+
+[default.extend-identifiers]
+# loop variables and abbreviations used throughout the maths code
+iy = "iy"
+ix = "ix"
+nperseg = "nperseg"
+noverlap = "noverlap"
+xin = "xin"
+yout = "yout"
+
+[default.extend-words]
+# domain vocabulary that is not a typo
+thr = "thr"
+SITL = "SITL"
+sitl = "sitl"
+inav = "inav"
+emu = "emu"
+ser = "ser"

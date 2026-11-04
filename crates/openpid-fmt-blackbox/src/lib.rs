@@ -78,14 +78,17 @@ impl Default for BlackboxFormat {
 }
 
 impl BlackboxFormat {
+    /// Format with the built-in firmware profiles.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Format with a custom profile registry.
     pub fn with_profiles(profiles: ProfileRegistry) -> Self {
         BlackboxFormat { profiles }
     }
 
+    /// The profile registry in use.
     pub fn profiles(&self) -> &ProfileRegistry {
         &self.profiles
     }
@@ -170,6 +173,15 @@ impl LogFormat for BlackboxFormat {
             sessions,
         })
     }
+}
+
+/// Slider ("simplified tuning") model for a decoded session, if its firmware
+/// profile provides one.
+pub fn slider_model_for(session: &FlightSession) -> Option<Box<dyn openpid_core::SliderModel>> {
+    let profiles = profiles::builtin();
+    let profile = profiles.get(&session.profile_id)?;
+    let headers = openpid_core::RawHeaders(session.raw_headers.clone());
+    profile.slider_model(&session.firmware, &headers)
 }
 
 #[cfg(test)]

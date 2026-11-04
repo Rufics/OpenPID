@@ -3,6 +3,7 @@
 //! `tests/logs/external/` (fetched by `tools/fetch-community-logs.sh`); a
 //! release whose log is absent is reported, not failed, except for the
 //! committed 4.2 fixture.
+#![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 mod common;
 

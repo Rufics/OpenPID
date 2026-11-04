@@ -1,5 +1,6 @@
 //! Decode every sample log: sanity checks, golden summaries and robustness
 //! against corrupted input.
+#![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 mod common;
 

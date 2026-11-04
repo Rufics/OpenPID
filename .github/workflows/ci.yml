@@ -4,23 +4,80 @@ on:
   push:
     branches: [master]
   pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch/PR cancels the run in progress.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: 1.97.0
+  # Line coverage (library + CLI crates) below this fails the run.
+  COVERAGE_MIN: 85
+
+permissions:
+  contents: read
 
 jobs:
+  # ---------------------------------------------------------------- style
   check:
-    name: fmt + clippy
+    name: fmt + clippy + docs + typos
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.97.0
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: check
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: rustdoc (broken links and missing docs fail)
+        run: cargo doc --workspace --no-deps --document-private-items
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: Spelling
+        uses: crate-ci/typos@v1
 
+  # ---------------------------------------------------------------- commit messages (PRs only)
+  commits:
+    name: conventional commits
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Every commit on the PR follows Conventional Commits
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: .commitlintrc.json
+      - name: PR title follows Conventional Commits (used for squash merges)
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            test
+            build
+            ci
+            chore
+            revert
+          requireScope: false
+
+  # ---------------------------------------------------------------- tests
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -32,46 +89,143 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.97.0
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
       - run: cargo test --workspace --all-targets
       - run: cargo test --workspace --doc
 
+  # ---------------------------------------------------------------- coverage gate
+  coverage:
+    name: coverage (>= ${{ env.COVERAGE_MIN }}% lines)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: coverage
+      - name: Measure (GUI crate excluded, it has no headless tests)
+        run: |
+          cargo llvm-cov --workspace --exclude openpid-app --lcov --output-path lcov.info
+          cargo llvm-cov report --summary-only | tee coverage.txt
+          {
+            echo '## Coverage'
+            echo '```'
+            tail -n 3 coverage.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Gate
+        run: cargo llvm-cov report --fail-under-lines ${{ env.COVERAGE_MIN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: |
+            lcov.info
+            coverage.txt
+          retention-days: 14
+
+  # ---------------------------------------------------------------- dependencies
   deny:
-    name: cargo deny
+    name: cargo deny (licences, advisories, bans)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          rust-version: ${{ env.RUST_TOOLCHAIN }}
 
+  # ---------------------------------------------------------------- binaries for review
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: openpid-linux-x86_64
+          - os: macos-latest
+            artifact: openpid-macos-arm64
+          - os: windows-latest
+            artifact: openpid-windows-x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build-${{ matrix.os }}
+      - run: cargo build --release --workspace --bins
+      - name: Collect binaries
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/release/openpid${{ runner.os == 'Windows' && '.exe' || '' }} dist/
+          cp target/release/openpid-gui${{ runner.os == 'Windows' && '.exe' || '' }} dist/
+          cp LICENSE README.md dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/
+          retention-days: 14
+
+  # ---------------------------------------------------------------- SonarCloud
   sonar:
     name: SonarCloud
     runs-on: ubuntu-latest
-    needs: [check, test]
+    needs: [check, coverage]
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # full history for accurate blame / new-code detection
+          fetch-depth: 0
       - name: Skip when SONAR_TOKEN is not configured
         if: env.SONAR_TOKEN == ''
-        run: echo "SONAR_TOKEN secret is not set; skipping SonarCloud analysis."
+        run: |
+          echo "::notice title=SonarCloud skipped::Add the SONAR_TOKEN repository secret to enable the analysis."
+          echo '## SonarCloud: skipped (no SONAR_TOKEN secret)' >> "$GITHUB_STEP_SUMMARY"
       - uses: dtolnay/rust-toolchain@master
         if: env.SONAR_TOKEN != ''
         with:
-          toolchain: 1.97.0
-          components: clippy, llvm-tools-preview
-      - uses: taiki-e/install-action@cargo-llvm-cov
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
         if: env.SONAR_TOKEN != ''
+        with:
+          shared-key: check
       - name: Clippy report for Sonar
         if: env.SONAR_TOKEN != ''
         run: cargo clippy --workspace --all-targets --message-format=json > clippy-report.json
-      - name: Coverage report for Sonar
+      - name: Coverage report from the coverage job
         if: env.SONAR_TOKEN != ''
-        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-lcov
       - name: SonarCloud scan
         if: env.SONAR_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # ---------------------------------------------------------------- single required check for the ruleset
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [check, commits, test, coverage, deny, build, sonar]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required jobs succeeded (skipped jobs are fine)
+        run: |
+          echo '${{ toJSON(needs) }}' | tee needs.json
+          if grep -Eq '"result": "(failure|cancelled)"' needs.json; then
+            echo 'A required job failed.' && exit 1
+          fi

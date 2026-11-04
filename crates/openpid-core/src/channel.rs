@@ -10,6 +10,7 @@ use std::fmt;
 /// Rotation axis of the craft.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(missing_docs, reason = "variant names are self-explanatory")]
 pub enum Axis {
     Roll,
     Pitch,
@@ -17,6 +18,7 @@ pub enum Axis {
 }
 
 impl Axis {
+    /// All axes in firmware order.
     pub const ALL: [Axis; 3] = [Axis::Roll, Axis::Pitch, Axis::Yaw];
 
     /// Index used by firmwares for array fields (`[0]`, `[1]`, `[2]`).
@@ -28,6 +30,7 @@ impl Axis {
         }
     }
 
+    /// Inverse of [`Axis::index`].
     pub fn from_index(i: usize) -> Option<Axis> {
         match i {
             0 => Some(Axis::Roll),
@@ -37,6 +40,7 @@ impl Axis {
         }
     }
 
+    /// Lower-case name used in channel keys and the UI.
     pub fn name(self) -> &'static str {
         match self {
             Axis::Roll => "roll",
@@ -66,6 +70,7 @@ pub enum GyroStage {
 }
 
 impl GyroStage {
+    /// Lower-case name used in channel keys.
     pub fn name(self) -> &'static str {
         match self {
             GyroStage::Raw => "raw",
@@ -77,6 +82,7 @@ impl GyroStage {
 /// Term of the PID controller output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(missing_docs, reason = "variant names are self-explanatory")]
 pub enum PidTerm {
     P,
     I,
@@ -90,6 +96,7 @@ pub enum PidTerm {
 }
 
 impl PidTerm {
+    /// Lower-case name used in channel keys.
     pub fn name(self) -> &'static str {
         match self {
             PidTerm::P => "p",
@@ -104,13 +111,18 @@ impl PidTerm {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Battery quantity.
 pub enum BatteryField {
+    /// Pack voltage.
     Voltage,
+    /// Pack current.
     Current,
+    /// Consumed charge.
     Consumed,
 }
 
 impl BatteryField {
+    /// Lower-case name used in channel keys.
     pub fn name(self) -> &'static str {
         match self {
             BatteryField::Voltage => "voltage",
@@ -128,45 +140,65 @@ pub enum ChannelId {
     Time,
     /// Flight-controller loop counter.
     LoopIteration,
+    /// Angular rate from the gyroscope at the given filter stage.
     Gyro {
+        /// Rotation axis.
         axis: Axis,
+        /// Point in the filter chain.
         stage: GyroStage,
     },
+    /// Rate the controller is asked to track.
     Setpoint {
+        /// Rotation axis.
         axis: Axis,
     },
+    /// One term of the PID controller output.
     PidTerm {
+        /// Rotation axis.
         axis: Axis,
+        /// Controller term.
         term: PidTerm,
     },
     /// Setpoint minus filtered gyro.
     PidError {
+        /// Rotation axis.
         axis: Axis,
     },
     /// Raw RC command for channel `ch` (0..3 = roll, pitch, yaw, throttle).
     RcCommand {
+        /// Channel index: 0 roll, 1 pitch, 2 yaw, 3 throttle, 4+ aux.
         ch: u8,
     },
     /// Throttle in percent (0..100), derived from the best available source.
     Throttle,
+    /// Commanded motor output.
     Motor {
+        /// Motor index in firmware order.
         idx: u8,
     },
     /// Electrical RPM as reported by ESC telemetry (raw firmware units).
     Erpm {
+        /// Motor index in firmware order.
         idx: u8,
     },
     /// Mechanical motor RPM derived from `Erpm` and the motor pole count.
     MotorRpm {
+        /// Motor index in firmware order.
         idx: u8,
     },
+    /// Firmware debug slot (meaning depends on `debug_mode`).
     Debug {
+        /// Debug slot index.
         idx: u8,
     },
+    /// Accelerometer reading.
     Acc {
+        /// Body axis.
         axis: Axis,
     },
+    /// Battery measurement.
     Battery(BatteryField),
+    /// Receiver signal strength (raw firmware units).
     Rssi,
     /// A field the firmware profile could not classify; kept under its logged name.
     Custom(String),

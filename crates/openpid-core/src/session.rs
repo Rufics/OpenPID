@@ -11,7 +11,9 @@ use std::path::PathBuf;
 /// Where a [`LogFile`] came from.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SourceInfo {
+    /// Path the file was read from, if any.
     pub path: Option<PathBuf>,
+    /// File size.
     pub size_bytes: u64,
     /// Identifier of the [`crate::LogFormat`] that produced the file.
     pub format_id: String,
@@ -20,24 +22,36 @@ pub struct SourceInfo {
 /// One file on disk, which may contain several flights.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LogFile {
+    /// Where the data came from.
     pub source: SourceInfo,
+    /// Flights found in the file, in file order.
     pub sessions: Vec<FlightSession>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Firmware family that wrote the log.
 pub enum FirmwareVendor {
+    /// Betaflight.
     Betaflight,
+    /// `EmuFlight`.
     Emuflight,
+    /// Rotorflight.
     Rotorflight,
+    /// `INAV`.
     Inav,
+    /// Cleanflight.
     Cleanflight,
+    /// Baseflight.
     Baseflight,
+    /// `ArduPilot`.
     Ardupilot,
+    /// Anything else; the string is the name as logged.
     Unknown(String),
 }
 
 impl FirmwareVendor {
+    /// Display name.
     pub fn name(&self) -> &str {
         match self {
             FirmwareVendor::Betaflight => "Betaflight",
@@ -53,13 +67,18 @@ impl FirmwareVendor {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+/// Semantic version of the firmware (`2025.12.0` for date-based Betaflight releases).
 pub struct FirmwareVersion {
+    /// Major component (year for date-based versions).
     pub major: u32,
+    /// Minor component.
     pub minor: u32,
+    /// Patch component.
     pub patch: u32,
 }
 
 impl FirmwareVersion {
+    /// Build a version from its components.
     pub const fn new(major: u32, minor: u32, patch: u32) -> Self {
         FirmwareVersion {
             major,
@@ -97,16 +116,22 @@ impl std::fmt::Display for FirmwareVersion {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Identity of the firmware that wrote a log.
 pub struct FirmwareInfo {
+    /// Firmware family.
     pub vendor: FirmwareVendor,
+    /// Parsed version, if the revision string had one.
     pub version: Option<FirmwareVersion>,
     /// Full revision string as logged (e.g. `Betaflight 4.2.11 (948ba6339) STM32F7X2`).
     pub revision: String,
+    /// Build target / board, if present in the revision string.
     pub target: Option<String>,
+    /// `Firmware date` header, verbatim.
     pub build_date: Option<String>,
 }
 
 impl FirmwareInfo {
+    /// Placeholder when no firmware information is available.
     pub fn unknown() -> Self {
         FirmwareInfo {
             vendor: FirmwareVendor::Unknown(String::new()),
@@ -147,6 +172,7 @@ impl FirmwareInfo {
         }
     }
 
+    /// Whether the version is known and at least `major.minor`.
     pub fn is_at_least(&self, major: u32, minor: u32) -> bool {
         self.version
             .is_some_and(|v| v >= FirmwareVersion::new(major, minor, 0))
@@ -208,10 +234,12 @@ impl Timebase {
         }
     }
 
+    /// Number of samples.
     pub fn len(&self) -> usize {
         self.time_us.len()
     }
 
+    /// Whether there are no samples.
     pub fn is_empty(&self) -> bool {
         self.time_us.is_empty()
     }
@@ -225,6 +253,7 @@ impl Timebase {
         }
     }
 
+    /// Span between the first and last sample in seconds.
     pub fn duration_s(&self) -> f64 {
         match (self.time_us.first(), self.time_us.last()) {
             (Some(a), Some(b)) => (b - a) as f64 / 1.0e6,
@@ -232,6 +261,7 @@ impl Timebase {
         }
     }
 
+    /// Timestamp of the first sample.
     pub fn start_us(&self) -> Option<i64> {
         self.time_us.first().copied()
     }
@@ -242,18 +272,33 @@ impl Timebase {
 #[serde(rename_all = "snake_case")]
 pub enum Origin {
     /// Decoded straight from the log; `field` is the logged field name.
-    Logged { field: String },
+    /// Decoded straight from the log; `field` is the logged field name.
+    Logged {
+        /// Logged field name.
+        field: String,
+    },
     /// Computed from other channels by the named step.
-    Derived { from: Vec<ChannelId>, by: String },
+    /// Computed from other channels by the named step.
+    Derived {
+        /// Inputs of the derivation.
+        from: Vec<ChannelId>,
+        /// Name of the derivation step.
+        by: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// One data series with its identity and unit.
 pub struct Channel {
+    /// Semantic identity.
     pub id: ChannelId,
     /// Human-readable name (logged field name for logged channels).
     pub name: String,
+    /// Unit of `data`.
     pub unit: Unit,
+    /// The samples.
     pub data: Series,
+    /// Provenance.
     pub origin: Origin,
 }
 
@@ -266,6 +311,7 @@ pub struct ChannelSet {
 }
 
 impl ChannelSet {
+    /// Empty set.
     pub fn new() -> Self {
         Self::default()
     }
@@ -280,22 +326,27 @@ impl ChannelSet {
         }
     }
 
+    /// Channel by identity.
     pub fn get(&self, id: &ChannelId) -> Option<&Channel> {
         self.index.get(id).map(|&i| &self.channels[i])
     }
 
+    /// Whether a channel with this identity exists.
     pub fn contains(&self, id: &ChannelId) -> bool {
         self.index.contains_key(id)
     }
 
+    /// All channels in insertion order.
     pub fn iter(&self) -> impl Iterator<Item = &Channel> {
         self.channels.iter()
     }
 
+    /// Number of channels.
     pub fn len(&self) -> usize {
         self.channels.len()
     }
 
+    /// Whether the set is empty.
     pub fn is_empty(&self) -> bool {
         self.channels.is_empty()
     }
@@ -315,47 +366,69 @@ impl ChannelSet {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AdjustmentValue {
+    /// Integer-valued adjustment.
     Int(i32),
+    /// Float-valued adjustment.
     Float(f32),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Something that happened at a point in time rather than a continuous state.
 pub enum EventKind {
     /// Arming beep; `time_us` is the firmware timestamp of the beep.
     SyncBeep {
+        /// Firmware timestamp of the beep, microseconds.
         time_us: i64,
     },
+    /// The pilot changed a setting in flight.
     InflightAdjustment {
+        /// Firmware adjustment function id.
         function: u8,
+        /// New value.
         value: AdjustmentValue,
     },
+    /// Logging resumed after a pause; counters jump.
     LoggingResume {
+        /// Loop iteration at resume.
         iteration: u32,
+        /// Timestamp at resume, microseconds.
         time_us: i64,
     },
+    /// The craft disarmed.
     Disarm {
+        /// Firmware disarm reason code.
         reason: u32,
     },
+    /// Flight-mode flags changed.
     FlightMode {
+        /// New flags.
         flags: u32,
+        /// Previous flags.
         last_flags: u32,
     },
+    /// End-of-log marker.
     LogEnd,
     /// Format-specific event the decoder knows but core does not model.
     Other {
+        /// Decoder-defined event name.
         name: String,
+        /// Event payload fields.
         data: BTreeMap<String, i64>,
     },
+    /// An event code the decoder does not know.
     Unknown {
+        /// Raw event code.
         code: u8,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// An event anchored to the main-frame timeline.
 pub struct Event {
     /// Index into the main-frame timeline at which the event was seen.
     pub sample_index: usize,
+    /// What happened.
     pub kind: EventKind,
 }
 
@@ -364,6 +437,7 @@ pub struct Event {
 pub struct AuxRow {
     /// Index into the main-frame timeline at which the row was logged.
     pub sample_index: usize,
+    /// One value per column.
     pub values: Vec<i64>,
 }
 
@@ -372,15 +446,22 @@ pub struct AuxRow {
 pub struct AuxTable {
     /// Decoder-defined kind, e.g. `slow`, `gps`, `gps_home`.
     pub kind: String,
+    /// Column names as logged.
     pub columns: Vec<String>,
+    /// Rows in log order.
     pub rows: Vec<AuxRow>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Counts for one frame kind.
 pub struct FrameStats {
+    /// Frames decoded and accepted.
     pub valid: u64,
+    /// Frames that failed to decode.
     pub corrupt: u64,
+    /// Frames decoded but rejected by validation.
     pub desync: u64,
+    /// Bytes of accepted frames.
     pub bytes: u64,
 }
 
@@ -389,13 +470,17 @@ pub struct FrameStats {
 pub struct Diagnostics {
     /// Per frame kind (decoder-defined names such as `I`, `P`, `S`).
     pub frames: BTreeMap<String, FrameStats>,
+    /// Total corrupt frames across kinds.
     pub corrupt_frames: u64,
+    /// Total desynchronised frames across kinds.
     pub desync_frames: u64,
     /// Bytes skipped because they were not recognised as a frame.
     pub skipped_bytes: u64,
+    /// Bytes of frame data in the session.
     pub total_bytes: u64,
     /// Logged fields the firmware profile could not classify.
     pub unmapped_fields: Vec<String>,
+    /// Free-form remarks from the decoder or profile.
     pub notes: Vec<String>,
 }
 
@@ -406,16 +491,23 @@ pub struct FlightSession {
     pub index: usize,
     /// Byte offset of the session within the file.
     pub offset_bytes: u64,
+    /// Firmware that wrote the session.
     pub firmware: FirmwareInfo,
     /// Identifier of the firmware profile used to interpret the log.
     pub profile_id: String,
+    /// Typed settings extracted from the headers.
     pub settings: Settings,
     /// Every header as logged, in order.
     pub raw_headers: Vec<(String, String)>,
+    /// Timestamps and timing statistics of the main frames.
     pub timebase: Timebase,
+    /// All channels.
     pub channels: ChannelSet,
+    /// Events in time order.
     pub events: Vec<Event>,
+    /// Low-rate tables (slow state, GPS, ...).
     pub aux: Vec<AuxTable>,
+    /// Decoder observations.
     pub diagnostics: Diagnostics,
 }
 
@@ -428,6 +520,7 @@ impl FlightSession {
             .map(|(_, v)| v.as_str())
     }
 
+    /// Channel by identity.
     pub fn channel(&self, id: &ChannelId) -> Option<&Channel> {
         self.channels.get(id)
     }
@@ -437,6 +530,7 @@ impl FlightSession {
         self.timebase.len()
     }
 
+    /// Whether the session has no main-frame samples.
     pub fn is_empty(&self) -> bool {
         self.timebase.is_empty()
     }

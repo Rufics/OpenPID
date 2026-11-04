@@ -26,13 +26,19 @@ pub fn split_indexed(field: &str) -> (&str, Option<usize>) {
 pub struct Scales {
     /// Degrees per second per raw gyro unit.
     pub gyro: f64,
+    /// Degrees per second per raw setpoint unit.
     pub setpoint: f64,
+    /// Multiplier for `rcCommand` values.
     pub rc: f64,
     /// G per raw accelerometer unit, `None` when `acc_1G` is unknown.
     pub acc: Option<f64>,
+    /// Volts per raw battery unit.
     pub vbat: f64,
+    /// Amperes per raw current unit.
     pub amperage: f64,
+    /// Motor output that means 0 %.
     pub motor_low: f64,
+    /// Motor output that means 100 %.
     pub motor_high: f64,
 }
 
@@ -437,6 +443,11 @@ fn derived(
 
 /// Derived channels every Cleanflight-family log can have: throttle percent,
 /// PID error, PID sum and mechanical motor RPM.
+/// Derived channels every Cleanflight-family log can have: throttle percent,
+/// PID error, PID sum and mechanical motor RPM.
+///
+/// # Panics
+/// Never: every channel it reads was checked to exist just before.
 pub fn derive(s: &mut FlightSession) {
     let sp3 = ChannelId::Custom("setpoint[3]".into());
     if let Some(c) = s.channels.get(&sp3) {

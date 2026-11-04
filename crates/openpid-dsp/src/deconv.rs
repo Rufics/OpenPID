@@ -8,6 +8,7 @@ use crate::{DspError, next_smooth};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// Parameters of [`impulse_response`].
 pub struct DeconvParams {
     /// Frequencies above this are treated as noise and suppressed.
     pub cutoff_hz: f64,

@@ -30,6 +30,7 @@ impl Default for Fft {
 }
 
 impl Fft {
+    /// Engine with an empty plan cache.
     pub fn new() -> Self {
         Fft {
             planner: RefCell::new(FftPlanner::new()),
@@ -87,6 +88,10 @@ impl Fft {
     }
 
     /// Inverse of [`Fft::rfft`] for an output length `n` (like `numpy.fft.irfft`).
+    /// Inverse of [`Fft::rfft`] for an output length `n` (like `numpy.fft.irfft`).
+    ///
+    /// # Panics
+    /// Panics if `spec` holds fewer than `n / 2 + 1` bins.
     pub fn irfft(&self, spec: &[Complex<f64>], n: usize) -> Vec<f64> {
         assert!(spec.len() > n / 2, "spectrum too short for n = {n}");
         let mut buf = vec![Complex::new(0.0, 0.0); n];

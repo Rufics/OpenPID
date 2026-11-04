@@ -3,24 +3,30 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Samples on a uniform grid with validity flags.
 pub struct Uniform {
     /// Time of the first grid sample, microseconds.
     pub start_us: i64,
+    /// Grid step in microseconds.
     pub dt_us: f64,
+    /// Interpolated values (0.0 where invalid).
     pub values: Vec<f64>,
     /// `false` where the grid point falls inside a gap or next to an invalid sample.
     pub valid: Vec<bool>,
 }
 
 impl Uniform {
+    /// Number of grid samples.
     pub fn len(&self) -> usize {
         self.values.len()
     }
 
+    /// Whether the grid is empty.
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
 
+    /// Grid sample rate in Hz.
     pub fn sample_rate_hz(&self) -> f64 {
         1.0e6 / self.dt_us
     }
@@ -30,6 +36,13 @@ impl Uniform {
 /// starting at `time_us[0]`. Grid points bracketed by two source samples that
 /// are more than `max_gap_us` apart, or by an invalid source sample, are
 /// marked invalid (their value is 0.0).
+/// Linear interpolation of `(time_us[i], x[i])` onto a grid with step `dt_us`
+/// starting at `time_us[0]`. Grid points bracketed by two source samples that
+/// are more than `max_gap_us` apart, or by an invalid source sample, are
+/// marked invalid (their value is 0.0).
+///
+/// # Panics
+/// Panics if `time_us` and `x` differ in length.
 pub fn to_uniform(
     time_us: &[i64],
     x: &[f64],

@@ -8,12 +8,15 @@ use openpid_dsp::{Fft, Window};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Parameters of [`PsdAnalysis`].
 pub struct PsdParams {
+    /// Channel to analyse.
     pub channel: ChannelId,
     /// Segment length in seconds (rounded to a 5-smooth sample count).
     pub segment_s: f64,
     /// Overlap as a fraction of the segment (0..1).
     pub overlap: f64,
+    /// Window applied to every segment.
     pub window: Window,
     /// Upper frequency bound of the output (Hz); `None` keeps everything up to Nyquist.
     pub max_hz: Option<f64>,
@@ -45,12 +48,19 @@ impl std::hash::Hash for PsdParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Result of [`PsdAnalysis`].
 pub struct PsdOutput {
+    /// Analysed channel.
     pub channel: ChannelId,
+    /// Unit symbol of the channel.
     pub unit: String,
+    /// Sample rate used.
     pub fs: f64,
+    /// Segment length in samples.
     pub nperseg: usize,
+    /// Number of averaged segments.
     pub segments: usize,
+    /// Frequency axis in Hz.
     pub freq: Vec<f64>,
     /// `unit² / Hz`
     pub power: Vec<f64>,
@@ -59,6 +69,7 @@ pub struct PsdOutput {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
+/// Welch power spectral density of one channel.
 pub struct PsdAnalysis;
 
 impl Analysis for PsdAnalysis {

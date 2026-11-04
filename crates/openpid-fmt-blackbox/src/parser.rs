@@ -24,59 +24,91 @@ const EVENT_FLIGHT_MODE: u8 = 30;
 const EVENT_LOG_END: u8 = 255;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which kind of main frame was decoded.
 pub enum MainKind {
+    /// Intra frame: decodable on its own.
     Intra,
+    /// Inter frame: predicted from previous frames.
     Inter,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// Decoded payload of an `E` frame.
 pub enum EventData {
+    /// Arming beep.
     SyncBeep {
+        /// Firmware timestamp of the beep, microseconds.
         time_us: i64,
     },
+    /// In-flight adjustment.
     InflightAdjustment {
+        /// Firmware adjustment function id.
         function: u8,
+        /// New value.
         value: AdjustmentValue,
     },
+    /// Logging resumed after a pause.
     LoggingResume {
+        /// Loop iteration at resume.
         iteration: u32,
+        /// Timestamp at resume, microseconds.
         time_us: i64,
     },
+    /// Disarm.
     Disarm {
+        /// Firmware disarm reason code.
         reason: u32,
     },
+    /// Flight-mode flags changed.
     FlightMode {
+        /// New flags.
         flags: u32,
+        /// Previous flags.
         last_flags: u32,
     },
+    /// End-of-log marker.
     LogEnd,
 }
 
 /// One accepted frame.
 #[derive(Debug, PartialEq)]
 pub enum Frame<'p> {
+    /// An `I` or `P` frame.
     Main {
+        /// Intra or inter.
         kind: MainKind,
+        /// Loop iteration.
         iteration: u32,
+        /// Timestamp in microseconds (32-bit rollover already unwrapped).
         time_us: i64,
+        /// Decoded field values in definition order.
         values: &'p [i64],
     },
+    /// Slow (`S`) frame values.
     Slow(&'p [i64]),
+    /// GPS (`G`) frame values.
     Gps {
+        /// Decoded field values.
         values: &'p [i64],
+        /// Whether a home frame was seen before this fix.
         home_valid: bool,
     },
+    /// GPS home (`H`) frame values.
     GpsHome(&'p [i64]),
+    /// Event (`E`) frame.
     Event(EventData),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Counters gathered while parsing.
 pub struct ParseStats {
+    /// Per frame letter.
     pub frames: BTreeMap<u8, FrameStats>,
     /// Bytes that were not the start of any known frame.
     pub skipped_bytes: u64,
     /// Loop iterations not logged because of the configured sub-sampling.
     pub intentionally_absent_iterations: u64,
+    /// Bytes of frame data in the log.
     pub total_bytes: u64,
 }
 
@@ -85,10 +117,12 @@ impl ParseStats {
         self.frames.entry(letter).or_default()
     }
 
+    /// Corrupt frames across all kinds.
     pub fn corrupt_total(&self) -> u64 {
         self.frames.values().map(|f| f.corrupt).sum()
     }
 
+    /// Desynchronised frames across all kinds.
     pub fn desync_total(&self) -> u64 {
         self.frames.values().map(|f| f.desync).sum()
     }
@@ -150,6 +184,7 @@ pub struct Parser<'a> {
     home_published: Vec<i64>,
     home_valid: bool,
 
+    /// Counters so far.
     pub stats: ParseStats,
     done: bool,
 }
@@ -222,6 +257,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Headers the parser was created with.
     pub fn headers(&self) -> &'a Headers {
         self.headers
     }

@@ -1,0 +1,5 @@
+# Lint configuration shared by every crate (see docs/STYLE.md).
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-dbg-in-tests = true
+allow-print-in-tests = true

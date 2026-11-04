@@ -16,17 +16,22 @@ use openpid_dsp::{Fft, Window};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Parameters of [`ThrottleHeatmap`].
 pub struct ThrottleHeatmapParams {
+    /// Channel to analyse.
     pub channel: ChannelId,
     /// Segment length in seconds (PTB: 0.2 s).
     pub segment_s: f64,
     /// Throttle half-window in percent for averaging (PTB: 6).
     pub half_window: f64,
+    /// Window applied to every segment.
     pub window: Window,
+    /// Upper frequency bound of the output (Hz).
     pub max_hz: f64,
     /// Box smoothing widths: along throttle (bins) and along frequency (as a
     /// fraction of the segment length in samples, PTB: 1/100).
     pub smooth_throttle: usize,
+    /// Box smoothing width along frequency, as a fraction of the segment length.
     pub smooth_freq_frac: f64,
 }
 
@@ -60,11 +65,17 @@ impl std::hash::Hash for ThrottleHeatmapParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Result of [`ThrottleHeatmap`].
 pub struct ThrottleHeatmapOutput {
+    /// Analysed channel.
     pub channel: ChannelId,
+    /// Unit symbol of the channel.
     pub unit: String,
+    /// Sample rate used.
     pub fs: f64,
+    /// Segment length in samples.
     pub nperseg: usize,
+    /// Number of segments with a complete spectrum.
     pub segments: usize,
     /// x = throttle (%), y = frequency (Hz), z = mean amplitude.
     pub grid: Grid2D,
@@ -73,6 +84,7 @@ pub struct ThrottleHeatmapOutput {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
+/// Frequency × throttle amplitude heatmap of one channel.
 pub struct ThrottleHeatmap;
 
 impl Analysis for ThrottleHeatmap {

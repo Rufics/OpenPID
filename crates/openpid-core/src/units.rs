@@ -14,17 +14,29 @@ pub enum Unit {
     Raw,
     /// Dimensionless number (ratios, counters).
     Unitless,
+    /// Time in microseconds.
     Microseconds,
+    /// Time in seconds.
     Seconds,
+    /// Angular rate.
     DegreesPerSecond,
+    /// Angle.
     Degrees,
+    /// Fraction 0..100.
     Percent,
+    /// Revolutions per minute.
     Rpm,
+    /// Electric potential.
     Volts,
+    /// Electric current.
     Amperes,
+    /// Charge.
     MilliampHours,
+    /// Length in metres.
     Meters,
+    /// Length in centimetres.
     Centimeters,
+    /// Speed.
     MetersPerSecond,
     /// Acceleration in multiples of standard gravity.
     Gs,

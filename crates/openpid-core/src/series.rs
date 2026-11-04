@@ -37,10 +37,12 @@ impl Series {
         s
     }
 
+    /// Number of samples, valid or not.
     pub fn len(&self) -> usize {
         self.values.len()
     }
 
+    /// Whether there are no samples at all.
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
@@ -50,6 +52,7 @@ impl Series {
         &self.values
     }
 
+    /// Whether sample `i` exists and is valid.
     pub fn is_valid(&self, i: usize) -> bool {
         if i >= self.values.len() {
             return false;
@@ -60,6 +63,7 @@ impl Series {
         }
     }
 
+    /// Sample `i`, or `None` when invalid or out of range.
     pub fn get(&self, i: usize) -> Option<f64> {
         if self.is_valid(i) {
             Some(self.values[i])
@@ -68,6 +72,10 @@ impl Series {
         }
     }
 
+    /// Mark sample `i` invalid (its stored value becomes 0.0).
+    ///
+    /// # Panics
+    /// Panics if `i` is out of range.
     pub fn set_invalid(&mut self, i: usize) {
         assert!(i < self.values.len(), "index out of range");
         if self.invalid.is_empty() {
@@ -82,14 +90,17 @@ impl Series {
         }
     }
 
+    /// Number of invalid samples.
     pub fn invalid_count(&self) -> usize {
         self.invalid_count
     }
 
+    /// Number of valid samples.
     pub fn valid_count(&self) -> usize {
         self.values.len() - self.invalid_count
     }
 
+    /// Whether every sample is valid.
     pub fn all_valid(&self) -> bool {
         self.invalid_count == 0
     }
@@ -112,6 +123,11 @@ impl Series {
 
     /// Element-wise combination of two equally long series; a sample is valid
     /// only when both inputs are valid.
+    /// Element-wise combination of two equally long series; a sample is valid
+    /// only when both inputs are valid.
+    ///
+    /// # Panics
+    /// Panics if the lengths differ.
     pub fn zip_with(&self, other: &Series, mut f: impl FnMut(f64, f64) -> f64) -> Series {
         assert_eq!(self.len(), other.len(), "series length mismatch");
         Series::from_options((0..self.len()).map(|i| match (self.get(i), other.get(i)) {

@@ -3,7 +3,7 @@
 //!
 //! This crate deliberately has no knowledge of any concrete log format or
 //! flight-controller firmware. Those live in `openpid-fmt-*` crates and plug in
-//! through the traits defined in [`format`] and [`profile`].
+//! through the traits defined in [`format`](mod@format) and [`profile`](mod@profile).
 
 pub mod analysis;
 pub mod channel;
@@ -12,6 +12,7 @@ pub mod profile;
 pub mod series;
 pub mod session;
 pub mod settings;
+pub mod sliders;
 pub mod summary;
 pub mod units;
 
@@ -25,4 +26,5 @@ pub use session::{
     Timebase,
 };
 pub use settings::Settings;
+pub use sliders::{SliderDef, SliderModel, SliderResult, SliderValues};
 pub use units::Unit;

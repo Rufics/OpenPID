@@ -16,10 +16,18 @@ pub use fft::{Complex, Fft};
 pub use window::Window;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Why a primitive could not run.
 pub enum DspError {
     #[error("input too short: need at least {need} samples, got {got}")]
-    TooShort { need: usize, got: usize },
+    /// Fewer samples than the operation needs.
+    TooShort {
+        /// Minimum number of samples required.
+        need: usize,
+        /// Number of samples given.
+        got: usize,
+    },
     #[error("invalid parameter: {0}")]
+    /// A parameter is out of range or inconsistent.
     InvalidParam(String),
 }
 

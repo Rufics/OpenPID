@@ -5,12 +5,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
+/// Window function family.
 pub enum Window {
+    /// No taper (boxcar).
     Rectangular,
     /// Periodic Hann (`scipy.signal.get_window("hann", n)`), the default everywhere.
     #[default]
     Hann,
+    /// Hamming.
     Hamming,
+    /// Four-term Blackman-Harris (lowest side lobes).
     BlackmanHarris,
     /// Tukey with taper fraction `alpha` in `0..=1`.
     Tukey(f64),

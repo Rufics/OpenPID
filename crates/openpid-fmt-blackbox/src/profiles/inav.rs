@@ -9,6 +9,7 @@ use openpid_core::{
 };
 
 #[derive(Debug, Default, Clone, Copy)]
+/// INAV (basic support until the INAV phase).
 pub struct Inav;
 
 impl FirmwareProfile for Inav {

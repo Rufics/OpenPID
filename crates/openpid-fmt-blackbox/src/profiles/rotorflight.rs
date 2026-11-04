@@ -8,6 +8,7 @@ use openpid_core::{
 };
 
 #[derive(Debug, Default, Clone, Copy)]
+/// Rotorflight.
 pub struct Rotorflight;
 
 impl FirmwareProfile for Rotorflight {

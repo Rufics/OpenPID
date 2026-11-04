@@ -1,0 +1,19 @@
+# release-plz: one version for the whole workspace, one tag per release.
+[workspace]
+changelog_update = true
+git_release_enable = false
+git_tag_enable = false
+publish = false           # crates are not published to crates.io
+semver_check = false
+dependencies_update = false
+pr_labels = ["release"]
+pr_name = "chore: release v{{ version }}"
+
+# The CLI package carries the repository-wide tag and GitHub release.
+[[package]]
+name = "openpid-cli"
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+git_release_enable = true
+git_release_name = "OpenPID v{{ version }}"
+changelog_path = "./CHANGELOG.md"

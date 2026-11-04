@@ -8,9 +8,13 @@ use std::fmt;
 pub struct Confidence(pub u8);
 
 impl Confidence {
+    /// The format cannot read this file.
     pub const NONE: Confidence = Confidence(0);
+    /// Weak hint only (e.g. file extension).
     pub const LOW: Confidence = Confidence(30);
+    /// Header structure recognised.
     pub const MEDIUM: Confidence = Confidence(60);
+    /// Signature found; this is the format.
     pub const HIGH: Confidence = Confidence(100);
 }
 
@@ -25,14 +29,24 @@ pub struct OpenOptions {
 }
 
 #[derive(Debug, thiserror::Error)]
+/// Why a file could not be opened as a log.
 pub enum FormatError {
     #[error("file is not in a recognised log format")]
+    /// No registered format recognises the data.
     Unrecognized,
     #[error("malformed log at byte {offset}: {message}")]
-    Malformed { offset: usize, message: String },
+    /// The data is recognised but corrupt at `offset`.
+    Malformed {
+        /// Byte offset of the problem.
+        offset: usize,
+        /// What was wrong.
+        message: String,
+    },
     #[error("unsupported: {0}")]
+    /// A feature of the file the format does not implement yet.
     Unsupported(String),
     #[error("I/O error: {0}")]
+    /// Reading the file failed.
     Io(#[from] std::io::Error),
 }
 
@@ -67,19 +81,23 @@ pub struct FormatRegistry {
 }
 
 impl FormatRegistry {
+    /// Empty registry.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Add a format; later registrations win ties in [`FormatRegistry::detect`].
     pub fn register(&mut self, format: Box<dyn LogFormat>) -> &mut Self {
         self.formats.push(format);
         self
     }
 
+    /// All registered formats in registration order.
     pub fn iter(&self) -> impl Iterator<Item = &dyn LogFormat> {
         self.formats.iter().map(AsRef::as_ref)
     }
 
+    /// Format by its [`LogFormat::id`].
     pub fn get(&self, id: &str) -> Option<&dyn LogFormat> {
         self.iter().find(|f| f.id() == id)
     }

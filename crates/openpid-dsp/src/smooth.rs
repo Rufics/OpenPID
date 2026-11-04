@@ -19,6 +19,11 @@ pub fn moving_average(x: &[f64], w: usize) -> Vec<f64> {
 
 /// 2-D box filter of size `wy × wx` (odd sizes) with zero padding, row-major
 /// `z[iy * nx + ix]`; equivalent to MATLAB `filter2(fspecial("average", [wy wx]), z)`.
+/// 2-D box filter of size `wy × wx` (odd sizes) with zero padding, row-major
+/// `z[iy * nx + ix]`; equivalent to MATLAB `filter2(fspecial("average", [wy wx]), z)`.
+///
+/// # Panics
+/// Panics if `z.len() != nx * ny`.
 pub fn box_filter_2d(z: &[f64], nx: usize, ny: usize, wx: usize, wy: usize) -> Vec<f64> {
     assert_eq!(z.len(), nx * ny);
     let (wx, wy) = (wx.max(1) | 1, wy.max(1) | 1);

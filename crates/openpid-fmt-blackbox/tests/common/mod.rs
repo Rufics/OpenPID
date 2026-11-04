@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, clippy::unwrap_used, reason = "test helpers")]
 
 use std::path::{Path, PathBuf};
 

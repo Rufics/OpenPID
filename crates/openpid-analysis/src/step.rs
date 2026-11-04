@@ -15,7 +15,9 @@ use openpid_dsp::{Fft, Window};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Parameters of [`StepAnalysis`].
 pub struct StepParams {
+    /// Axis to analyse.
     pub axis: Axis,
     /// Window length in seconds (PTB: 2 s).
     pub window_s: f64,
@@ -33,6 +35,7 @@ pub struct StepParams {
     pub smooth_ms: f64,
     /// Vertical range and bin count of the response histogram.
     pub hist_range: (f64, f64),
+    /// Number of amplitude bins in the histogram.
     pub hist_bins: usize,
 }
 
@@ -74,6 +77,7 @@ impl std::hash::Hash for StepParams {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// Scalar characteristics of a normalised step response.
 pub struct StepMetrics {
     /// Time to go from 10 % to 90 % of the final value, ms.
     pub rise_time_ms: Option<f64>,
@@ -88,8 +92,11 @@ pub struct StepMetrics {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Result of [`StepAnalysis`].
 pub struct StepOutput {
+    /// Analysed axis.
     pub axis: Axis,
+    /// Sample rate used.
     pub fs: f64,
     /// Response time axis in milliseconds.
     pub time_ms: Vec<f64>,
@@ -99,14 +106,18 @@ pub struct StepOutput {
     pub low: Option<Vec<f64>>,
     /// Mean over windows with peak input at or above `high_input` (if any).
     pub high: Option<Vec<f64>>,
+    /// Metrics of `mean`.
     pub metrics: StepMetrics,
+    /// Windows examined.
     pub windows_total: usize,
+    /// Windows with enough stick input to be used.
     pub windows_used: usize,
     /// 2-D histogram of the individual responses: x = time (ms), y = amplitude, z = weight.
     pub histogram: Grid2D,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
+/// Step response by deconvolution of setpoint → gyro.
 pub struct StepAnalysis;
 
 fn weighted_mean(rows: &[(f64, Vec<f64>)], len: usize) -> Option<Vec<f64>> {

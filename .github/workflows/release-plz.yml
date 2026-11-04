@@ -1,0 +1,39 @@
+# Release automation (Conventional Commits -> version bump, CHANGELOG, tag, GitHub release).
+#
+# release-plz opens/updates a "chore: release" PR after every push to master;
+# merging that PR creates the git tag v<version> and the GitHub release, which
+# in turn triggers release.yml to attach the binaries.
+#
+# Requires the RELEASE_PLZ_TOKEN secret: a fine-grained PAT with
+# "Contents: write" and "Pull requests: write" on this repository, so that the
+# release PR triggers CI (the default GITHUB_TOKEN cannot).
+name: release-plz
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-plz
+  cancel-in-progress: false
+
+jobs:
+  release-plz:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'Rufics'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.0
+      - name: Release PR and git release
+        uses: release-plz/action@v0.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}

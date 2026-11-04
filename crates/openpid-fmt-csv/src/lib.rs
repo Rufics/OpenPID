@@ -13,25 +13,32 @@ use openpid_core::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// One CSV column.
 pub struct CsvColumn {
+    /// Field name without the unit suffix.
     pub name: String,
+    /// Unit from the `(…)` suffix, if any.
     pub unit: Option<String>,
 }
 
 /// Parsed table; `None` cells were not numeric (e.g. flag names).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CsvTable {
+    /// Columns in file order.
     pub columns: Vec<CsvColumn>,
+    /// Rows in file order.
     pub rows: Vec<Vec<Option<f64>>>,
     /// Rows skipped because their field count did not match the header.
     pub bad_rows: usize,
 }
 
 impl CsvTable {
+    /// Index of a column by name.
     pub fn column_index(&self, name: &str) -> Option<usize> {
         self.columns.iter().position(|c| c.name == name)
     }
 
+    /// All values of a column.
     pub fn column(&self, name: &str) -> Option<Vec<Option<f64>>> {
         let i = self.column_index(name)?;
         Some(self.rows.iter().map(|r| r[i]).collect())
@@ -99,6 +106,7 @@ impl Default for CsvFormat {
 }
 
 impl CsvFormat {
+    /// Format with the built-in firmware profiles.
     pub fn new() -> Self {
         Self::default()
     }

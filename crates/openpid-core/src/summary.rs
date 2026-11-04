@@ -6,39 +6,70 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Statistics of one channel.
 pub struct ChannelSummary {
+    /// Channel key (see [`crate::ChannelId::key`]).
     pub key: String,
+    /// Logged or derived name.
     pub name: String,
+    /// Unit symbol.
     pub unit: String,
+    /// Number of valid samples.
     pub valid: usize,
+    /// Minimum over valid samples.
     pub min: f64,
+    /// Maximum over valid samples.
     pub max: f64,
+    /// Mean over valid samples.
     pub mean: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Compact description of a session (what `openpid info --json` prints).
 pub struct SessionSummary {
+    /// Session index within the file.
     pub index: usize,
+    /// Byte offset of the session.
     pub offset_bytes: u64,
+    /// Firmware family name.
     pub firmware_vendor: String,
+    /// Firmware version, if parsed.
     pub firmware_version: Option<String>,
+    /// Full revision string.
     pub firmware_revision: String,
+    /// Firmware profile used.
     pub profile_id: String,
+    /// Main-frame sample count.
     pub samples: usize,
+    /// Duration in seconds.
     pub duration_s: f64,
+    /// Effective sample rate.
     pub sample_rate_hz: f64,
+    /// Median sample step in microseconds.
     pub median_dt_us: f64,
+    /// Configured sample step, if known.
     pub nominal_dt_us: Option<f64>,
+    /// Number of timing gaps.
     pub gaps: usize,
+    /// First timestamp.
     pub first_time_us: Option<i64>,
+    /// Last timestamp.
     pub last_time_us: Option<i64>,
+    /// Frame counts per kind.
     pub frames: BTreeMap<String, FrameStats>,
+    /// Corrupt frames.
     pub corrupt_frames: u64,
+    /// Desynchronised frames.
     pub desync_frames: u64,
+    /// Bytes not recognised as frames.
     pub skipped_bytes: u64,
+    /// Number of events.
     pub events: usize,
+    /// Row counts of auxiliary tables.
     pub aux_rows: BTreeMap<String, usize>,
+    /// Fields the profile could not classify.
     pub unmapped_fields: Vec<String>,
+    /// Per-channel statistics.
     pub channels: Vec<ChannelSummary>,
 }
 
@@ -47,6 +78,7 @@ fn round6(x: f64) -> f64 {
 }
 
 impl SessionSummary {
+    /// Summarise a session.
     pub fn of(s: &FlightSession) -> SessionSummary {
         let mut channels: Vec<ChannelSummary> = s
             .channels

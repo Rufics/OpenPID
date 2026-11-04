@@ -883,3 +883,158 @@ mod tests {
         assert_eq!(small.len(), 9);
     }
 }
+
+/// Slider state for the PID sliders tab.
+#[derive(Debug, Default)]
+pub struct SliderState {
+    /// Slot the sliders were loaded from, with its session index.
+    pub loaded_for: Option<(Slot, usize)>,
+    /// Current slider positions keyed by firmware parameter name.
+    pub values: openpid_core::SliderValues,
+}
+
+pub fn sliders(app: &mut App, ui: &mut Ui) {
+    for slot in [Slot::A, Slot::B] {
+        slot_header(app, ui, slot);
+    }
+    ui.separator();
+    let Some(session) = app
+        .loaded(Slot::A)
+        .and_then(|l| l.current().cloned().map(|s| (l.session, s)))
+    else {
+        ui.label(
+            RichText::new("Load a Betaflight 4.3+ log into slot A to use the PID sliders.")
+                .color(MUTED),
+        );
+        return;
+    };
+    let (session_idx, session) = session;
+    let Some(model) = openpid_fmt_blackbox::slider_model_for(&session) else {
+        ui.label(
+            RichText::new(format!(
+                "{}: no simplified-tuning headers in this log.",
+                session.firmware.revision
+            ))
+            .color(MUTED),
+        );
+        return;
+    };
+    let defs = model.sliders();
+    if app.slider_state.loaded_for != Some((Slot::A, session_idx)) {
+        app.slider_state.loaded_for = Some((Slot::A, session_idx));
+        app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.value)).collect();
+    }
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(model.id()).strong());
+        ui.label(&session.firmware.revision);
+        if ui.button("Reset to log").clicked() {
+            app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.value)).collect();
+        }
+        if ui.button("Firmware defaults").clicked() {
+            app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.default)).collect();
+        }
+    });
+    let touch = app.touch_mode;
+    egui::Grid::new("sliders")
+        .num_columns(3)
+        .spacing([16.0, if touch { 14.0 } else { 6.0 }])
+        .show(ui, |ui| {
+            for d in &defs {
+                let v = app
+                    .slider_state
+                    .values
+                    .entry(d.key.clone())
+                    .or_insert(d.value);
+                ui.label(&d.label);
+                let step = if d.max - d.min <= 2.0 { 1.0 } else { 5.0 };
+                let mut slider = egui::Slider::new(v, d.min..=d.max)
+                    .step_by(step)
+                    .fixed_decimals(0);
+                if touch {
+                    slider = slider.trailing_fill(true);
+                }
+                ui.add_sized([360.0, if touch { 36.0 } else { 20.0 }], slider);
+                let changed = (*v - d.value).abs() > f64::EPSILON;
+                ui.label(
+                    RichText::new(format!(
+                        "log {}{}",
+                        d.value,
+                        if changed { "  ⟵ changed" } else { "" }
+                    ))
+                    .color(if changed { ACCENT } else { MUTED }),
+                );
+                ui.end_row();
+            }
+        });
+    let result = model.compute(&app.slider_state.values);
+    let logged = model.logged();
+    ui.separator();
+    let gain = |g: &openpid_core::settings::PidGains| {
+        format!(
+            "P {:>3}  I {:>3}  D {:>3}  F {:>4}{}",
+            g.p,
+            g.i,
+            g.d,
+            g.f.map_or("-".into(), |v| v.to_string()),
+            g.d_min
+                .map(|v| format!("  Dmin {v}"))
+                .or_else(|| g.d_max.map(|v| format!("  Dmax {v}")))
+                .unwrap_or_default()
+        )
+    };
+    egui::Grid::new("slider_gains")
+        .num_columns(3)
+        .striped(true)
+        .spacing([24.0, 4.0])
+        .show(ui, |ui| {
+            ui.label(RichText::new("axis").strong());
+            ui.label(RichText::new("from sliders").strong());
+            ui.label(RichText::new("logged").strong());
+            ui.end_row();
+            for (name, now, was) in [
+                ("roll", result.pid.roll, logged.map(|l| l.roll)),
+                ("pitch", result.pid.pitch, logged.map(|l| l.pitch)),
+                ("yaw", result.pid.yaw, logged.map(|l| l.yaw)),
+            ] {
+                ui.label(name);
+                let differs = was.is_some_and(|w| (w.p, w.i, w.d) != (now.p, now.i, now.d));
+                ui.label(RichText::new(gain(&now)).monospace().color(if differs {
+                    ACCENT
+                } else {
+                    SLOT_A
+                }));
+                ui.label(
+                    RichText::new(was.map_or("-".into(), |w| gain(&w)))
+                        .monospace()
+                        .color(MUTED),
+                );
+                ui.end_row();
+            }
+        });
+    let mut filters = Vec::new();
+    if let Some((lo, hi)) = result.gyro_lpf1_hz {
+        filters.push(format!("gyro lpf1 {lo}–{hi} Hz"));
+    }
+    if let Some(v) = result.gyro_lpf2_hz {
+        filters.push(format!("gyro lpf2 {v} Hz"));
+    }
+    if let Some((lo, hi)) = result.dterm_lpf1_hz {
+        filters.push(format!("dterm lpf1 {lo}–{hi} Hz"));
+    }
+    if let Some(v) = result.dterm_lpf2_hz {
+        filters.push(format!("dterm lpf2 {v} Hz"));
+    }
+    if !filters.is_empty() {
+        ui.label(filters.join("   ·   "));
+    }
+    ui.separator();
+    ui.label("Betaflight CLI to apply (select all, copy):");
+    let mut cli = result.cli.join("\n");
+    ui.add(
+        egui::TextEdit::multiline(&mut cli)
+            .code_editor()
+            .desired_rows(6)
+            .desired_width(f32::INFINITY)
+            .interactive(true),
+    );
+}

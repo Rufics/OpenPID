@@ -16,16 +16,18 @@ pub enum Tab {
     Spectrum,
     ThrottleHeatmap,
     TimeHeatmap,
+    Sliders,
     Diagnostics,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 6] = [
+    pub const ALL: [Tab; 7] = [
         Tab::LogViewer,
         Tab::Step,
         Tab::Spectrum,
         Tab::ThrottleHeatmap,
         Tab::TimeHeatmap,
+        Tab::Sliders,
         Tab::Diagnostics,
     ];
 
@@ -36,6 +38,7 @@ impl Tab {
             "spectrum" => Tab::Spectrum,
             "throttle" => Tab::ThrottleHeatmap,
             "time" => Tab::TimeHeatmap,
+            "sliders" => Tab::Sliders,
             "diagnostics" => Tab::Diagnostics,
             _ => return None,
         })
@@ -48,6 +51,7 @@ impl Tab {
             Tab::Spectrum => "Spectrum",
             Tab::ThrottleHeatmap => "Freq × throttle",
             Tab::TimeHeatmap => "Freq × time",
+            Tab::Sliders => "PID sliders",
             Tab::Diagnostics => "Diagnostics",
         }
     }
@@ -133,6 +137,7 @@ pub struct App {
     pub touch_applied: bool,
     pub status: String,
     pub viewer: views::ViewerState,
+    pub slider_state: views::SliderState,
 }
 
 impl std::fmt::Debug for App {
@@ -162,6 +167,7 @@ impl App {
             touch_applied: false,
             status: "Open a blackbox log (File → Open, or drop it here)".into(),
             viewer: views::ViewerState::default(),
+            slider_state: views::SliderState::default(),
         };
         for (i, p) in open_on_start.into_iter().take(2).enumerate() {
             app.open(if i == 0 { Slot::A } else { Slot::B }, p);
@@ -365,6 +371,7 @@ impl eframe::App for App {
             Tab::Spectrum => views::spectrum(self, ui),
             Tab::ThrottleHeatmap => views::throttle_heatmap(self, ui),
             Tab::TimeHeatmap => views::time_heatmap(self, ui),
+            Tab::Sliders => views::sliders(self, ui),
             Tab::Diagnostics => views::diagnostics(self, ui),
         });
     }

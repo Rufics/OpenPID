@@ -3,10 +3,11 @@
 use super::common::{self, Scales};
 use openpid_core::{
     FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor, FlightSession, RawHeaders,
-    Settings,
+    Settings, SliderModel,
 };
 
 #[derive(Debug, Default, Clone, Copy)]
+/// Betaflight 4.x and 2025.12+ (also used for Cleanflight).
 pub struct Betaflight;
 
 impl FirmwareProfile for Betaflight {
@@ -32,5 +33,10 @@ impl FirmwareProfile for Betaflight {
 
     fn derive(&self, session: &mut FlightSession) {
         common::derive(session);
+    }
+
+    fn slider_model(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Option<Box<dyn SliderModel>> {
+        super::sliders::BetaflightSliders::from_headers(fw, h)
+            .map(|m| Box::new(m) as Box<dyn SliderModel>)
     }
 }

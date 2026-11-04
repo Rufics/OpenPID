@@ -8,6 +8,7 @@ use openpid_core::{
 };
 
 #[derive(Debug, Default, Clone, Copy)]
+/// `EmuFlight`.
 pub struct Emuflight;
 
 fn scales(fw: &FirmwareInfo, h: &RawHeaders) -> Scales {

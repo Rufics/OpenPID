@@ -3,17 +3,28 @@
 
 use crate::reader::Reader;
 
+/// `ZigZag` signed variable-byte.
 pub const SIGNED_VB: u8 = 0;
+/// Unsigned variable-byte (7 bits per byte).
 pub const UNSIGNED_VB: u8 = 1;
+/// Negated 14-bit value as unsigned variable-byte (battery voltage).
 pub const NEG_14BIT: u8 = 3;
+/// Elias-delta unsigned 32-bit (bit stream).
 pub const ELIAS_DELTA_U32: u8 = 4;
+/// Elias-delta `ZigZag` signed 32-bit (bit stream).
 pub const ELIAS_DELTA_S32: u8 = 5;
+/// Up to 8 signed variable-byte fields behind a presence-bit header.
 pub const TAG8_8SVB: u8 = 6;
+/// Three signed fields with a 2-bit width selector.
 pub const TAG2_3S32: u8 = 7;
+/// Four signed fields of 0/4/8/16 bits with a byte selector.
 pub const TAG8_4S16: u8 = 8;
+/// Nothing is written; the value is zero.
 pub const NULL: u8 = 9;
+/// Three signed fields packed as 2/2/2, 5/5/4, 8/7/7 bits or bytes.
 pub const TAG2_3SVARIABLE: u8 = 10;
 
+/// Whether this crate can decode the encoding id.
 pub fn is_known(encoding: u8) -> bool {
     matches!(
         encoding,
@@ -40,25 +51,33 @@ pub fn group_size(encoding: u8) -> usize {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+/// Why a field could not be decoded.
 pub enum DecodeError {
     #[error("unexpected end of data")]
+    /// The data ended inside a value.
     Eof,
     #[error("variable-byte value longer than 5 bytes")]
+    /// A variable-byte value ran past 32 bits.
     Overflow,
     #[error("corrupt group header")]
+    /// A group header had impossible bits set.
     BadGroup,
     #[error("unsupported encoding {0}")]
+    /// The encoding id is not implemented.
     Unsupported(u8),
 }
 
+/// Result of a decoding step.
 pub type Result<T> = core::result::Result<T, DecodeError>;
 
 #[inline]
+/// `ZigZag` fold: `0, 1, 2, 3 → 0, -1, 1, -2`.
 pub fn zigzag_decode(v: u32) -> i32 {
     ((v >> 1) as i32) ^ -((v & 1) as i32)
 }
 
 #[inline]
+/// Inverse of [`zigzag_decode`].
 pub fn zigzag_encode(v: i32) -> u32 {
     ((v << 1) ^ (v >> 31)) as u32
 }
@@ -313,6 +332,7 @@ pub fn read_elias_delta_u32(r: &mut Reader<'_>) -> Result<u32> {
     }
 }
 
+/// Elias-delta coded `ZigZag` signed 32-bit value.
 pub fn read_elias_delta_s32(r: &mut Reader<'_>) -> Result<i32> {
     read_elias_delta_u32(r).map(zigzag_decode)
 }
@@ -322,6 +342,7 @@ pub fn read_elias_delta_s32(r: &mut Reader<'_>) -> Result<i32> {
 pub mod encode {
     use super::zigzag_encode;
 
+    /// Unsigned variable-byte.
     pub fn write_uvb(buf: &mut Vec<u8>, mut v: u32) {
         while v > 127 {
             buf.push((v as u8) | 0x80);
@@ -330,6 +351,7 @@ pub mod encode {
         buf.push(v as u8);
     }
 
+    /// `ZigZag` signed variable-byte.
     pub fn write_svb(buf: &mut Vec<u8>, v: i32) {
         write_uvb(buf, zigzag_encode(v));
     }
@@ -339,6 +361,10 @@ pub mod encode {
         write_uvb(buf, ((-v) as u32) & 0x3FFF);
     }
 
+    /// Presence-bit header followed by the non-zero fields as signed variable-byte.
+    ///
+    /// # Panics
+    /// Panics unless `1 <= values.len() <= 8`.
     pub fn write_tag8_8svb(buf: &mut Vec<u8>, values: &[i32]) {
         assert!((1..=8).contains(&values.len()));
         if values.len() == 1 {
@@ -380,6 +406,7 @@ pub mod encode {
         }
     }
 
+    /// Three signed values with a 2-bit width selector (firmware `blackboxWriteTag2_3S32`).
     pub fn write_tag2_3s32(buf: &mut Vec<u8>, v: [i32; 3]) {
         if v.iter().all(|x| fits(*x, 2)) {
             buf.push(((v[0] as u8 & 3) << 4) | ((v[1] as u8 & 3) << 2) | (v[2] as u8 & 3));
@@ -455,6 +482,7 @@ pub mod encode {
         }
     }
 
+    /// Three signed values packed as the firmware's `blackboxWriteTag2_3SVariable`.
     pub fn write_tag2_3svariable(buf: &mut Vec<u8>, v: [i32; 3]) {
         if v.iter().all(|x| fits(*x, 2)) {
             buf.push(((v[0] as u8 & 3) << 4) | ((v[1] as u8 & 3) << 2) | (v[2] as u8 & 3));
@@ -477,11 +505,13 @@ pub mod encode {
     /// MSB-first bit writer for Elias-delta fields.
     #[derive(Debug, Default)]
     pub struct BitWriter {
+        /// Bytes written so far; the last byte may be partially filled.
         pub bytes: Vec<u8>,
         nbits: u32,
     }
 
     impl BitWriter {
+        /// Append the low `count` bits of `bits`, most significant first.
         pub fn write_bits(&mut self, bits: u32, count: u32) {
             for i in (0..count).rev() {
                 let bit = (bits >> i) & 1;
@@ -502,6 +532,7 @@ pub mod encode {
             self.write_bits(value, value_len - 1);
         }
 
+        /// Elias-delta unsigned 32-bit, with the firmware's escape for `u32::MAX - 1` and `u32::MAX`.
         pub fn write_elias_delta_u32(&mut self, value: u32) {
             if value >= 0xFFFF_FFFE {
                 self.write_elias_delta_internal(0xFFFF_FFFF);
@@ -511,6 +542,7 @@ pub mod encode {
             }
         }
 
+        /// Elias-delta `ZigZag` signed 32-bit.
         pub fn write_elias_delta_s32(&mut self, value: i32) {
             self.write_elias_delta_u32(zigzag_encode(value));
         }

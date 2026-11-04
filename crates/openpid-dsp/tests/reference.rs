@@ -1,5 +1,6 @@
 //! Compare every dsp primitive with NumPy/SciPy fixtures produced by
 //! `tools/reference/make_fixtures.py`.
+#![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 use openpid_dsp::deconv::{DeconvParams, impulse_response, step_from_impulse};
 use openpid_dsp::resample::to_uniform;

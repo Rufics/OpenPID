@@ -9,6 +9,7 @@
 //! point changes every `AVERAGE_2`/`STRAIGHT_LINE` predicted field for the
 //! rest of the I-frame interval, so those fields are compared on intra frames
 //! only. Everything else must match bit for bit.
+#![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 mod common;
 

@@ -11,6 +11,7 @@ pub struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
+    /// Cursor at the start of `data`.
     pub fn new(data: &'a [u8]) -> Self {
         Reader {
             data,
@@ -19,6 +20,7 @@ impl<'a> Reader<'a> {
         }
     }
 
+    /// The underlying bytes.
     pub fn data(&self) -> &'a [u8] {
         self.data
     }
@@ -28,23 +30,28 @@ impl<'a> Reader<'a> {
         self.pos
     }
 
+    /// Move to a byte position (clamped to the end).
     pub fn set_pos(&mut self, pos: usize) {
         self.pos = pos.min(self.data.len());
         self.bit = 0;
     }
 
+    /// Total length in bytes.
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
+    /// Whether the data is empty.
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
 
+    /// Bytes left after the cursor.
     pub fn remaining(&self) -> usize {
         self.data.len() - self.pos
     }
 
+    /// Whether the cursor is at the end.
     pub fn is_eof(&self) -> bool {
         self.pos >= self.data.len()
     }
@@ -57,10 +64,12 @@ impl<'a> Reader<'a> {
         }
     }
 
+    /// Next byte without consuming it.
     pub fn peek_u8(&self) -> Option<u8> {
         self.data.get(self.pos).copied()
     }
 
+    /// Consume one byte.
     pub fn read_u8(&mut self) -> Option<u8> {
         self.align();
         let b = *self.data.get(self.pos)?;
@@ -68,6 +77,7 @@ impl<'a> Reader<'a> {
         Some(b)
     }
 
+    /// Consume `n` bytes.
     pub fn read_bytes(&mut self, n: usize) -> Option<&'a [u8]> {
         self.align();
         let end = self.pos.checked_add(n)?;

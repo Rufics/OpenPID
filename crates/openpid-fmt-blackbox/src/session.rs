@@ -10,31 +10,41 @@ use openpid_core::{
 /// Raw decode result of one log: integer columns exactly as logged.
 #[derive(Debug, Clone)]
 pub struct DecodedLog {
+    /// Parsed header block.
     pub headers: Headers,
     /// One column per main-frame field, only frames that passed validation.
     pub columns: Vec<Vec<i64>>,
     /// `true` where the sample came from an intra (`I`) frame.
     pub intra: Vec<bool>,
+    /// Slow (`S`) frames.
     pub slow: AuxTable,
+    /// GPS (`G`) frames, if defined.
     pub gps: Option<AuxTable>,
+    /// GPS home (`H`) frames, if defined.
     pub gps_home: Option<AuxTable>,
+    /// Events in log order.
     pub events: Vec<Event>,
+    /// Parser counters.
     pub stats: ParseStats,
 }
 
 impl DecodedLog {
+    /// Main-frame field names in column order.
     pub fn field_names(&self) -> &[String] {
         &self.headers.main_def().names
     }
 
+    /// Number of accepted main frames.
     pub fn len(&self) -> usize {
         self.columns.first().map_or(0, Vec::len)
     }
 
+    /// Whether no main frame was accepted.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Column of a main-frame field by name.
     pub fn column(&self, name: &str) -> Option<&[i64]> {
         let i = self.headers.main_def().index_of(name)?;
         Some(&self.columns[i])

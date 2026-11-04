@@ -3,6 +3,7 @@
 //! (`tests/logs/<name>.<session>.csv`, generated with
 //! `blackbox_decode --index <session> <log>`). Integer-valued columns must
 //! match exactly; unit-converted columns are skipped.
+#![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 use openpid_fmt_csv::read_table;
 use std::path::{Path, PathBuf};

@@ -1,4 +1,5 @@
 //! Run every analysis on the committed real logs and check physical plausibility.
+#![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 use openpid_analysis::{
     Analysis, AnalysisCtx, AnalysisError, Epoch, PsdAnalysis, PsdParams, StepAnalysis, StepParams,

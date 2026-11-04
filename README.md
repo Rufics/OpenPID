@@ -4,15 +4,17 @@
 
 ## Стан
 
-Фаза 0 (фундамент) і фаза 1 (математика, аналізи, GUI) реалізовані:
+[![CI](https://github.com/Rufics/OpenPID/actions/workflows/ci.yml/badge.svg)](https://github.com/Rufics/OpenPID/actions/workflows/ci.yml)
+
+Фаза 0 (фундамент) і фаза 1 (математика, аналізи, GUI, PID‑слайдери) реалізовані:
 
 - `openpid-core` — доменна модель (`FlightSession`, `Channel`, `ChannelId`, `Series`, `Timebase`, `Settings`) і trait‑и розширення (`LogFormat`, `FirmwareProfile`, `Analysis`).
 - `openpid-fmt-blackbox` — власний декодер бінарного Blackbox (усі кодування та предиктори, I/P/S/G/H/E‑кадри, валідація, ресинхронізація, rollover часу, події) та профілі прошивок Betaflight, EmuFlight, Rotorflight, INAV (базовий) і generic.
 - `openpid-fmt-csv` — читання CSV‑експорту `blackbox_decode`.
 - `openpid-dsp` — FFT‑обгортка, вікна, Welch PSD, STFT, деконволюція Вінера, ресемплінг; кожна функція звірена з фікстурами NumPy/SciPy (`tests/reference`, генератор `tools/reference/make_fixtures.py`).
 - `openpid-analysis` — step response (деконволюція setpoint → gyro), PSD, heatmap freq×throttle та freq×time.
-- `openpid-cli` — `openpid info`, `openpid decode`, `openpid run`.
-- `openpid-app` — десктопний GUI (`openpid-gui`, egui/eframe): log viewer з вибором епохи, step response, спектр, heatmap‑и freq×throttle і freq×time, діагностика; два слоти A/B для порівняння; аналізи у фоновому потоці з кешем; touch‑режим (вмикається автоматично при першому дотику).
+- `openpid-cli` — `openpid info`, `openpid decode`, `openpid run`, `openpid sliders`.
+- `openpid-app` — десктопний GUI (`openpid-gui`, egui/eframe): log viewer з вибором епохи, step response, спектр, heatmap‑и freq×throttle і freq×time, PID‑слайдери Betaflight (simplified tuning: позиції з логу → гейни, порівняння з фактичними, готові CLI‑команди), діагностика; два слоти A/B для порівняння; аналізи у фоновому потоці з кешем; touch‑режим (вмикається автоматично при першому дотику).
 
 Подальший план — у [`docs/DESIGN.md`](docs/DESIGN.md) (§12).
 
@@ -28,6 +30,7 @@ cargo build --release
 ./target/release/openpid run psd  path/to/LOG.BBL --channel gyro.raw.roll      # Welch PSD
 ./target/release/openpid run thr-heatmap path/to/LOG.BBL                       # freq × throttle
 ./target/release/openpid run stft path/to/LOG.BBL --channel pid.d.roll         # freq × time
+./target/release/openpid sliders path/to/LOG.BBL --set simplified_d_gain=90     # PID-слайдери Betaflight
 ```
 
 ### GUI
@@ -39,6 +42,7 @@ cargo run --release -p openpid-app                # або ./target/release/open
 ![Log viewer](docs/screenshots/log.png)
 ![Step response](docs/screenshots/step.png)
 ![Freq × throttle](docs/screenshots/throttle.png)
+![PID sliders](docs/screenshots/sliders.png)
 
 Файли відкриваються кнопками «Open A…/Open B…» або перетягуванням у вікно. У Log viewer клік/тап по графіку ставить курсор, кнопки «start = cursor»/«end = cursor» задають епоху аналізу; масштабування — колесо/pinch, панорамування — перетягування. Усі обчислення виконуються у фоновому потоці, результати кешуються за параметрами.
 
@@ -55,10 +59,12 @@ python3 -I tools/reference/make_fixtures.py   # перегенерувати ф�
 
 Якщо поруч із логом у `tests/logs/` покласти `<лог>.<сесія>.csv`, згенерований офіційним `blackbox_decode --index <сесія>`, тест `csv_conformance` порівняє наш сирий декод із ним поле в поле.
 
-## Якість
+## Якість і процес
 
-- CI (GitHub Actions): `fmt`, `clippy -D warnings`, тести на Linux/macOS/Windows, `cargo deny`. Toolchain закріплено у `rust-toolchain.toml`. Правило проєкту: CI ніколи не лишається червоним (див. `CLAUDE.md`).
-- SonarCloud: job `sonar` у CI збирає звіт clippy і покриття (`cargo llvm-cov`) і запускає сканер. Він вмикається, щойно у репозиторії з'являється секрет `SONAR_TOKEN` (проєкт імпортується на sonarcloud.io; ключі у `sonar-project.properties`).
+- Стиль коду — адаптований Google Rust Style Guide: [`docs/STYLE.md`](docs/STYLE.md); більшість правил перевіряє clippy (`missing_docs`, `unwrap_used`, `wildcard_imports`, `pedantic`, …) з `-D warnings`.
+- Робочий процес, Conventional Commits, релізи: [`CONTRIBUTING.md`](CONTRIBUTING.md) і [`docs/RELEASING.md`](docs/RELEASING.md). `master` захищена ruleset‑ом (`.github/rulesets/master.json`): лише PR зі squash, зелені перевірки, схвалення code owner.
+- CI (`.github/workflows/ci.yml`): fmt, clippy, rustdoc, typos, тести на Linux/macOS/Windows, покриття ≥ 85 % рядків (job `coverage`, GUI‑crate виключено), cargo‑deny, артефакти бінарників для трьох ОС, SonarCloud (коли є `SONAR_TOKEN`), перевірка повідомлень комітів і заголовка PR; кеш `Swatinem/rust-cache`. Правило проєкту: CI ніколи не лишається червоним (`CLAUDE.md`).
+- Релізи: release‑plz будує CHANGELOG і версії з Conventional Commits, тег `vX.Y.Z` запускає збірку бінарників у GitHub Release.
 
 ## Документи
 
