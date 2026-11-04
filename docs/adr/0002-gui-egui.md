@@ -24,3 +24,9 @@
 - GUI‑шар не містить математики: тільки відображення `Series`/`Grid2D` з `openpid-analysis`.
 - Для lines > ~50k точок застосовуємо децимацію min/max на піксель у `openpid-app` (не в dsp).
 - Якщо прототип покаже обмеження (наприклад, 3D‑поверхня для notch overlay 3D), 3D малюємо власним wgpu‑пасом усередині egui‑віджета — без зміни фреймворку.
+
+## Доповнення (після реалізації, 2026-11-04)
+- Бекенд рендерингу — `glow` (OpenGL), а не `wgpu`: менший граф залежностей і час збірки; `wgpu` лишається опцією через feature `eframe/wgpu`, якщо знадобиться власний 3D‑пас (notch overlay 3D у фазі 2).
+- Feature `system_fonts` вимкнено: вона тягне `yeslogic-fontconfig-sys` (нативна libfontconfig на Linux під час збірки), що суперечить ADR‑0001; вбудованих шрифтів egui достатньо.
+- Heatmap‑и малюються вбудованим `egui_plot::Heatmap` (з'явився у 0.38), тож текстури не потрібні.
+- egui 0.37 змінив API: `App::ui(&mut Ui)` замість `update(&Context)`, `Panel::top/bottom` замість `TopBottomPanel`.

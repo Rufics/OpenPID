@@ -1,0 +1,24 @@
+[package]
+name = "openpid-app"
+description = "OpenPID desktop GUI (egui)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "openpid-gui"
+path = "src/main.rs"
+
+[dependencies]
+openpid-core = { workspace = true }
+openpid-fmt-blackbox = { workspace = true }
+openpid-fmt-csv = { workspace = true }
+openpid-analysis = { workspace = true }
+eframe = { workspace = true }
+egui_plot = { workspace = true }
+rfd = { workspace = true }
+
+[lints]
+workspace = true
