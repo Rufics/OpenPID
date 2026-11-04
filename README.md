@@ -21,6 +21,7 @@
 ## Збірка та використання
 
 ```sh
+git lfs install && git lfs pull        # тестові логи (tests/logs) зберігаються в Git LFS
 cargo build --release
 ./target/release/openpid info  path/to/LOG.BFL            # огляд сесій, прошивки, частот, каналів
 ./target/release/openpid info  path/to/LOG.BFL --json     # те саме у JSON
@@ -50,12 +51,10 @@ cargo run --release -p openpid-app                # або ./target/release/open
 
 ```sh
 cargo test --workspace            # unit, golden, конформанс, стійкість до пошкоджень
-tools/fetch-community-logs.sh     # додаткові логи спільноти (Rotorflight, EmuFlight 0.4, BF 4.3) у tests/logs/external
 OPENPID_UPDATE_GOLDEN=1 cargo test -p openpid-fmt-blackbox --test fixtures   # оновити golden‑файли після свідомої зміни
 python3 -I tools/reference/make_fixtures.py   # перегенерувати фікстури NumPy/SciPy (потрібні numpy, scipy)
 ```
 
-`tools/fetch-community-logs.sh` завантажує по одному логу на кожну лінію релізів Betaflight (4.3, 4.4, 4.5, 2025.12) та інші прошивки; тест `versions.rs` перевіряє кожну наявну версію. Матриця відмінностей формату між версіями — у [`docs/BLACKBOX-VERSIONS.md`](docs/BLACKBOX-VERSIONS.md).
 
 Якщо поруч із логом у `tests/logs/` покласти `<лог>.<сесія>.csv`, згенерований офіційним `blackbox_decode --index <сесія>`, тест `csv_conformance` порівняє наш сирий декод із ним поле в поле.
 

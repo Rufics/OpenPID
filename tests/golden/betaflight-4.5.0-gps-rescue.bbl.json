@@ -1,0 +1,648 @@
+[
+  {
+    "aux_rows": {
+      "gps": 7,
+      "gps_home": 1,
+      "slow": 2
+    },
+    "channels": [
+      {
+        "key": "acc.pitch",
+        "max": 0.051758,
+        "mean": 0.015269,
+        "min": -0.020508,
+        "name": "accSmooth[1]",
+        "unit": "g",
+        "valid": 1607
+      },
+      {
+        "key": "acc.roll",
+        "max": 0.003418,
+        "mean": -0.024731,
+        "min": -0.048828,
+        "name": "accSmooth[0]",
+        "unit": "g",
+        "valid": 1607
+      },
+      {
+        "key": "acc.yaw",
+        "max": 1.011719,
+        "mean": 0.993055,
+        "min": 0.973145,
+        "name": "accSmooth[2]",
+        "unit": "g",
+        "valid": 1607
+      },
+      {
+        "key": "battery.current",
+        "max": 1.27,
+        "mean": 0.997312,
+        "min": 0.75,
+        "name": "amperageLatest",
+        "unit": "A",
+        "valid": 1607
+      },
+      {
+        "key": "battery.voltage",
+        "max": 24.68,
+        "mean": 24.578395,
+        "min": 24.46,
+        "name": "vbatLatest",
+        "unit": "V",
+        "valid": 1607
+      },
+      {
+        "key": "custom:baroAlt",
+        "max": -53.0,
+        "mean": -67.235843,
+        "min": -79.0,
+        "name": "baroAlt",
+        "unit": "cm",
+        "valid": 1607
+      },
+      {
+        "key": "custom:magADC[0]",
+        "max": 1370.0,
+        "mean": 1240.906658,
+        "min": 1151.0,
+        "name": "magADC[0]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "custom:magADC[1]",
+        "max": 186.0,
+        "mean": -16.714375,
+        "min": -265.0,
+        "name": "magADC[1]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "custom:magADC[2]",
+        "max": 1733.0,
+        "mean": 1650.744244,
+        "min": 1547.0,
+        "name": "magADC[2]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "custom:setpoint[3]",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "setpoint[3]",
+        "unit": "%",
+        "valid": 1607
+      },
+      {
+        "key": "debug.0",
+        "max": 7.0,
+        "mean": -0.015557,
+        "min": -8.0,
+        "name": "debug[0]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "debug.1",
+        "max": 8.0,
+        "mean": 0.049782,
+        "min": -10.0,
+        "name": "debug[1]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "debug.2",
+        "max": 6.0,
+        "mean": 0.047915,
+        "min": -6.0,
+        "name": "debug[2]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "debug.3",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "debug[3]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "debug.4",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "debug[4]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "debug.5",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "debug[5]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "debug.6",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "debug[6]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "debug.7",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "debug[7]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "erpm.0",
+        "max": 316.0,
+        "mean": 305.318606,
+        "min": 292.0,
+        "name": "eRPM[0]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "erpm.1",
+        "max": 363.0,
+        "mean": 348.05725,
+        "min": 330.0,
+        "name": "eRPM[1]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "erpm.2",
+        "max": 288.0,
+        "mean": 281.062228,
+        "min": 273.0,
+        "name": "eRPM[2]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "erpm.3",
+        "max": 337.0,
+        "mean": 322.414437,
+        "min": 310.0,
+        "name": "eRPM[3]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "gyro.filtered.pitch",
+        "max": 1.0,
+        "mean": 0.065339,
+        "min": -1.0,
+        "name": "gyroADC[1]",
+        "unit": "deg/s",
+        "valid": 1607
+      },
+      {
+        "key": "gyro.filtered.roll",
+        "max": 2.0,
+        "mean": -0.01369,
+        "min": -2.0,
+        "name": "gyroADC[0]",
+        "unit": "deg/s",
+        "valid": 1607
+      },
+      {
+        "key": "gyro.filtered.yaw",
+        "max": 2.0,
+        "mean": 0.056627,
+        "min": -2.0,
+        "name": "gyroADC[2]",
+        "unit": "deg/s",
+        "valid": 1607
+      },
+      {
+        "key": "gyro.raw.pitch",
+        "max": 8.0,
+        "mean": 0.049782,
+        "min": -10.0,
+        "name": "gyroUnfilt[1]",
+        "unit": "deg/s",
+        "valid": 1607
+      },
+      {
+        "key": "gyro.raw.roll",
+        "max": 7.0,
+        "mean": -0.015557,
+        "min": -8.0,
+        "name": "gyroUnfilt[0]",
+        "unit": "deg/s",
+        "valid": 1607
+      },
+      {
+        "key": "gyro.raw.yaw",
+        "max": 6.0,
+        "mean": 0.047915,
+        "min": -6.0,
+        "name": "gyroUnfilt[2]",
+        "unit": "deg/s",
+        "valid": 1607
+      },
+      {
+        "key": "loop_iteration",
+        "max": 3212.0,
+        "mean": 1606.0,
+        "min": 0.0,
+        "name": "loopIteration",
+        "unit": "",
+        "valid": 1607
+      },
+      {
+        "key": "motor.0",
+        "max": 2.117522,
+        "mean": 0.824081,
+        "min": 0.0,
+        "name": "motor[0]",
+        "unit": "%",
+        "valid": 1607
+      },
+      {
+        "key": "motor.1",
+        "max": 3.864479,
+        "mean": 2.209332,
+        "min": 0.741133,
+        "name": "motor[1]",
+        "unit": "%",
+        "valid": 1607
+      },
+      {
+        "key": "motor.2",
+        "max": 0.582319,
+        "mean": 0.023751,
+        "min": 0.0,
+        "name": "motor[2]",
+        "unit": "%",
+        "valid": 1607
+      },
+      {
+        "key": "motor.3",
+        "max": 2.488089,
+        "mean": 1.344633,
+        "min": 0.317628,
+        "name": "motor[3]",
+        "unit": "%",
+        "valid": 1607
+      },
+      {
+        "key": "motor_rpm.0",
+        "max": 4514.285714,
+        "mean": 4361.694373,
+        "min": 4171.428571,
+        "name": "motorRPM[0]",
+        "unit": "rpm",
+        "valid": 1607
+      },
+      {
+        "key": "motor_rpm.1",
+        "max": 5185.714286,
+        "mean": 4972.246422,
+        "min": 4714.285714,
+        "name": "motorRPM[1]",
+        "unit": "rpm",
+        "valid": 1607
+      },
+      {
+        "key": "motor_rpm.2",
+        "max": 4114.285714,
+        "mean": 4015.174682,
+        "min": 3900.0,
+        "name": "motorRPM[2]",
+        "unit": "rpm",
+        "valid": 1607
+      },
+      {
+        "key": "motor_rpm.3",
+        "max": 4814.285714,
+        "mean": 4605.920526,
+        "min": 4428.571429,
+        "name": "motorRPM[3]",
+        "unit": "rpm",
+        "valid": 1607
+      },
+      {
+        "key": "pid.d.pitch",
+        "max": 4.0,
+        "mean": 0.020535,
+        "min": -4.0,
+        "name": "axisD[1]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid.d.roll",
+        "max": 5.0,
+        "mean": 0.013068,
+        "min": -5.0,
+        "name": "axisD[0]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid.f.pitch",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisF[1]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid.f.roll",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisF[0]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid.f.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisF[2]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid.i.pitch",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisI[1]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid.i.roll",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisI[0]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid.i.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisI[2]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid.p.pitch",
+        "max": -5.0,
+        "mean": -6.752956,
+        "min": -8.0,
+        "name": "axisP[1]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid.p.roll",
+        "max": -2.0,
+        "mean": -4.148102,
+        "min": -6.0,
+        "name": "axisP[0]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid.p.yaw",
+        "max": 1.0,
+        "mean": -0.154947,
+        "min": -2.0,
+        "name": "axisP[2]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid.sum.pitch",
+        "max": -2.0,
+        "mean": -6.732421,
+        "min": -12.0,
+        "name": "pidSum[1]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid.sum.roll",
+        "max": 3.0,
+        "mean": -4.135034,
+        "min": -11.0,
+        "name": "pidSum[0]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid.sum.yaw",
+        "max": 1.0,
+        "mean": -0.154947,
+        "min": -2.0,
+        "name": "pidSum[2]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "pid_error.pitch",
+        "max": -4.0,
+        "mean": -5.436217,
+        "min": -7.0,
+        "name": "pidError[1]",
+        "unit": "deg/s",
+        "valid": 1607
+      },
+      {
+        "key": "pid_error.roll",
+        "max": -2.0,
+        "mean": -3.973864,
+        "min": -6.0,
+        "name": "pidError[0]",
+        "unit": "deg/s",
+        "valid": 1607
+      },
+      {
+        "key": "pid_error.yaw",
+        "max": 2.0,
+        "mean": -0.056627,
+        "min": -2.0,
+        "name": "pidError[2]",
+        "unit": "deg/s",
+        "valid": 1607
+      },
+      {
+        "key": "rc.0",
+        "max": 1.0,
+        "mean": 0.980087,
+        "min": 0.0,
+        "name": "rcCommand[0]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "rc.1",
+        "max": 1.0,
+        "mean": 0.732421,
+        "min": 0.0,
+        "name": "rcCommand[1]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "rc.2",
+        "max": 0.0,
+        "mean": -0.88239,
+        "min": -1.0,
+        "name": "rcCommand[2]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "rc.3",
+        "max": 1000.0,
+        "mean": 1000.0,
+        "min": 1000.0,
+        "name": "rcCommand[3]",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "rssi",
+        "max": 583.0,
+        "mean": 580.779714,
+        "min": 579.0,
+        "name": "rssi",
+        "unit": "raw",
+        "valid": 1607
+      },
+      {
+        "key": "setpoint.pitch",
+        "max": -5.0,
+        "mean": -5.370877,
+        "min": -6.0,
+        "name": "setpoint[1]",
+        "unit": "deg/s",
+        "valid": 1607
+      },
+      {
+        "key": "setpoint.roll",
+        "max": -3.0,
+        "mean": -3.987554,
+        "min": -4.0,
+        "name": "setpoint[0]",
+        "unit": "deg/s",
+        "valid": 1607
+      },
+      {
+        "key": "setpoint.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "setpoint[2]",
+        "unit": "deg/s",
+        "valid": 1607
+      },
+      {
+        "key": "throttle",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "throttle",
+        "unit": "%",
+        "valid": 1607
+      },
+      {
+        "key": "time",
+        "max": 74093563.0,
+        "mean": 73582857.528314,
+        "min": 73072152.0,
+        "name": "time",
+        "unit": "us",
+        "valid": 1607
+      }
+    ],
+    "corrupt_frames": 0,
+    "desync_frames": 0,
+    "duration_s": 1.021411,
+    "events": 4,
+    "firmware_revision": "Betaflight 4.5.0 (3aabaf365) STM32F7X2",
+    "firmware_vendor": "Betaflight",
+    "firmware_version": "4.5.0",
+    "first_time_us": 73072152,
+    "frames": {
+      "E": {
+        "bytes": 26,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 4
+      },
+      "G": {
+        "bytes": 76,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 7
+      },
+      "H": {
+        "bytes": 11,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 1
+      },
+      "I": {
+        "bytes": 2233,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 32
+      },
+      "P": {
+        "bytes": 62419,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 1575
+      },
+      "S": {
+        "bytes": 8,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 2
+      }
+    },
+    "gaps": 0,
+    "index": 0,
+    "last_time_us": 74093563,
+    "median_dt_us": 636.0,
+    "nominal_dt_us": 624.0,
+    "offset_bytes": 0,
+    "profile_id": "betaflight",
+    "sample_rate_hz": 1572.327044,
+    "samples": 1607,
+    "skipped_bytes": 0,
+    "unmapped_fields": [
+      "magADC[0]",
+      "magADC[1]",
+      "magADC[2]"
+    ]
+  }
+]

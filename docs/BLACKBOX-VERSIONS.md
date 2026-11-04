@@ -25,20 +25,21 @@
 
 ## Покриття тестовими логами
 
-| Версія | Файл | Джерело | Ліцензія джерела | Де лежить |
-|--------|------|---------|------------------|-----------|
-| 4.2.0 / 4.2.8 / 4.2.11 | `betaflight-4.2.*` | fc-blackbox, blackbox-log | MIT/Apache‑2.0 | `tests/logs/` (закомічено) |
-| 4.3.0 | `betaflight-4.3.0-LOG00001.BFL` | gimbal-ghost | GPL‑3.0 | `tests/logs/external/` |
-| 4.4.3 | `betaflight-4.4.3-btfl_001.bbl` | vlad-avr/BBLHelper | немає | external |
-| 4.4.2 (SITL‑симуляція) | `betaflight-4.4.2-simulation-demo.bbl` | k-vanier/iz_pid | немає | external |
-| 4.5.1 | `betaflight-4.5.1-LOG00001.BFL`, `…LOG00022.BFL` | aprskalo1/betaflight-blackbox-analyzer | немає | external |
-| 4.5.2 | `betaflight-4.5.2-Run2.bbl` | jrwrodgers/bbl_decoder | немає | external |
-| 2025.12.0‑RC4 | `betaflight-2025.12.0-RC4-short.bbl` | mdimitri/bbx-analyzer | non‑commercial | external |
-| 2026.6.x | **немає** | публічного логу не знайдено (пошук GitHub 2026‑11‑04) | — | — |
+Усі логи лежать у `tests/logs/` (Git LFS, ADR-0009) і мають MIT‑сумісну ліцензію;
+джерела та примітки — у `tests/logs/README.md`.
 
-Логи без MIT‑сумісної ліцензії не комітяться; `tools/fetch-community-logs.sh`
-завантажує їх у git‑ігнорований каталог, а тест `versions.rs` перевіряє
-кожну наявну версію і повідомляє, яких бракує.
+| Версія | Файл | Джерело | Ліцензія |
+|--------|------|---------|----------|
+| 4.2.0 / 4.2.8 / 4.2.11 | `betaflight-4.2.*` | fc-blackbox, blackbox-log | MIT / Apache‑2.0 |
+| 4.3.x | **немає** | публічного логу з MIT‑сумісною ліцензією не знайдено (пошук GitHub 2026‑11‑04: лише GPL‑3.0 або без ліцензії) | — |
+| 4.4.x | **немає** | те саме | — |
+| 4.5.0 | `betaflight-4.5.0-gps-rescue.bbl` | Iteratrix/propwash | MIT |
+| 4.5.1 | `betaflight-4.5.1-two-sessions.bbl` | PedroS235/blackbird | MIT |
+| 2025.12.2 | `betaflight-2025.12.2-btfl_027.bbl` | Iteratrix/propwash | MIT |
+| 2026.6.x | **немає** | публічного логу не знайдено | — |
+
+Тест `versions.rs` вимагає наявності 4.2, 4.5 і 2025.12 і повідомляє про решту.
+Логи без MIT‑сумісної ліцензії (GPL, non‑commercial, без ліцензії) не додаються.
 
 Для 2026.6 план: зібрати Betaflight SITL з тегу `2026.6.x`
 (`make TARGET=SITL`, ціль має `USE_BLACKBOX_VIRTUAL`, `blackbox_device = VIRTUAL`,

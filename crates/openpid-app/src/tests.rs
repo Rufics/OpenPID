@@ -8,13 +8,12 @@
     reason = "test code: a failed lookup is the failure"
 )]
 
-use crate::app::{App, Cached, Loaded, SlotState, Tab};
+use crate::app::{App, Cached, SlotState, Tab};
 use crate::worker::{Done, Job, JobKey, Kind, Slot, Worker};
 use eframe::egui::{self, accesskit::Role};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use openpid_analysis::{Epoch, StepParams};
-use openpid_core::FirmwareVersion;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -26,6 +25,10 @@ const LOG_4_2: &str = concat!(
 const LOG_TWO: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../tests/logs/betaflight-4.2.11-two-logs.bbl"
+);
+const LOG_4_5: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/logs/betaflight-4.5.0-gps-rescue.bbl"
 );
 
 /// The app is built lazily inside the ui closure so its worker wakes the
@@ -449,35 +452,6 @@ fn session_picker_switches_session_and_clears_epoch() {
 
 // ------------------------------------------------------------------ sliders
 
-/// The repo has no 4.3+ log (licences); fake one from the 4.2 session.
-fn fake_4_5_session(l: &Loaded) -> Arc<openpid_core::FlightSession> {
-    let mut s = (**l.current().unwrap()).clone();
-    s.firmware.version = Some(FirmwareVersion::new(4, 5, 2));
-    s.firmware.revision = "Betaflight 4.5.2 (test) STM32F7X2".into();
-    for (k, v) in [
-        ("simplified_pids_mode", "2"),
-        ("simplified_master_multiplier", "100"),
-        ("simplified_i_gain", "100"),
-        ("simplified_d_gain", "110"),
-        ("simplified_pi_gain", "100"),
-        ("simplified_dmax_gain", "100"),
-        ("simplified_feedforward_gain", "100"),
-        ("simplified_pitch_d_gain", "100"),
-        ("simplified_pitch_pi_gain", "100"),
-        ("simplified_dterm_filter", "1"),
-        ("simplified_dterm_filter_multiplier", "100"),
-        ("simplified_gyro_filter", "1"),
-        ("simplified_gyro_filter_multiplier", "100"),
-        ("gyro_lpf1_dyn_hz", "250,500"),
-        ("dterm_lpf1_dyn_hz", "75,150"),
-        ("dterm_lpf2_static_hz", "150"),
-        ("gyro_lpf2_static_hz", "500"),
-    ] {
-        s.raw_headers.push((k.into(), v.into()));
-    }
-    Arc::new(s)
-}
-
 #[test]
 fn sliders_tab_edits_resets_and_prints_cli() {
     let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Sliders));
@@ -486,19 +460,27 @@ fn sliders_tab_edits_resets_and_prints_cli() {
         has_label_containing(&h, "no simplified-tuning headers"),
         "4.2 has no sliders"
     );
-    let fake = fake_4_5_session(app(&h).loaded(Slot::A).unwrap());
-    app_mut(&mut h).loaded_mut(Slot::A).unwrap().sessions[0] = fake;
-    h.step();
-    h.step();
+    // a 4.5.0 log: master 75, D 105, pitch 105/105, D-term filter slider 125, gyro slider off
+    app_mut(&mut h).open(Slot::A, LOG_4_5.into());
+    run_until(&mut h, no_slot_loading);
     assert!(has_label_containing(&h, "betaflight-simplified-tuning"));
     assert!(has_label_containing(&h, "Master multiplier"));
     assert!(has_label_containing(&h, "from sliders"));
-    assert!(has_label_containing(&h, "gyro lpf1 250–500 Hz"));
+    assert!(has_label_containing(&h, "dterm lpf1 93–187 Hz"));
+    assert!(
+        !has_label_containing(&h, "gyro lpf1"),
+        "gyro filter sliders are off in this log"
+    );
     assert_eq!(
         app(&h).slider_state.values["simplified_d_gain"],
-        110.0,
+        105.0,
         "sliders start at the logged positions"
     );
+    assert_eq!(
+        app(&h).slider_state.values["simplified_master_multiplier"],
+        75.0
+    );
+    assert!(!has_label_containing(&h, "⟵ changed"));
     let sliders: Vec<_> = h.get_all_by_role(Role::Slider).collect();
     assert_eq!(sliders.len(), 12);
     // the first slider is the mode (0..=2), the second the master multiplier
@@ -514,12 +496,16 @@ fn sliders_tab_edits_resets_and_prints_cli() {
     h.step();
     assert_eq!(
         app(&h).slider_state.values["simplified_master_multiplier"],
-        100.0
+        75.0
     );
-    assert_eq!(app(&h).slider_state.values["simplified_d_gain"], 110.0);
+    assert_eq!(app(&h).slider_state.values["simplified_d_gain"], 105.0);
     h.get_by_label("Firmware defaults").click();
     h.step();
     assert_eq!(app(&h).slider_state.values["simplified_d_gain"], 100.0);
+    assert_eq!(
+        app(&h).slider_state.values["simplified_master_multiplier"],
+        100.0
+    );
     let cli = h.get_by_role(Role::MultilineTextInput).value().unwrap();
     assert!(cli.contains("set simplified_pids_mode = 2"));
     assert!(cli.contains("simplified_tuning apply"));

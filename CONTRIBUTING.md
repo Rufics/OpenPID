@@ -23,6 +23,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo deny check                 # cargo install cargo-deny --locked
+git lfs pull                                   # тестові логи (tests/logs) у Git LFS
 cargo llvm-cov --workspace --fail-under-lines 90   # cargo install cargo-llvm-cov --locked
 ```
 

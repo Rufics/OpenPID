@@ -15,18 +15,11 @@ fn logs_dir() -> PathBuf {
 #[test]
 fn raw_decode_matches_blackbox_decode_csv() {
     let mut compared = 0usize;
-    let mut entries: Vec<PathBuf> = std::fs::read_dir(logs_dir())
+    let entries: Vec<PathBuf> = std::fs::read_dir(logs_dir())
         .unwrap()
         .flatten()
         .map(|e| e.path())
         .collect();
-    entries.extend(
-        std::fs::read_dir(logs_dir().join("external"))
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path()),
-    );
     for csv_path in entries
         .iter()
         .filter(|p| p.extension().is_some_and(|e| e == "csv"))
