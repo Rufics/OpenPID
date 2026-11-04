@@ -485,7 +485,7 @@ pub mod encode {
         pub fn write_bits(&mut self, bits: u32, count: u32) {
             for i in (0..count).rev() {
                 let bit = (bits >> i) & 1;
-                if self.nbits % 8 == 0 {
+                if self.nbits.is_multiple_of(8) {
                     self.bytes.push(0);
                 }
                 let last = self.bytes.len() - 1;
@@ -609,7 +609,13 @@ mod tests {
         for _ in 0..5_000 {
             let count = (rng.next() % 8 + 1) as usize;
             let values: Vec<i32> = (0..count)
-                .map(|_| if rng.next() % 3 == 0 { 0 } else { rng.i32() })
+                .map(|_| {
+                    if rng.next().is_multiple_of(3) {
+                        0
+                    } else {
+                        rng.i32()
+                    }
+                })
                 .collect();
             let mut buf = Vec::new();
             write_tag8_8svb(&mut buf, &values);

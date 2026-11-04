@@ -196,7 +196,7 @@ fn raw_mode_keeps_logged_names() {
             },
         )
         .unwrap();
-    assert!(log.sessions.is_empty());
+    assert_eq!(log.sessions.len(), 0);
 }
 
 /// A wrong history rotation after intra frames would show up as a jump in

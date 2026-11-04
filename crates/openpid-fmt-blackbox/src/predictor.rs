@@ -60,7 +60,8 @@ pub fn apply(
             _ => value,
         },
         AVERAGE_2 => match (ctx.previous, ctx.previous2) {
-            (Some(p), Some(p2)) => value + (p[field] + p2[field]) / 2,
+            // `midpoint` rounds toward zero, exactly like the firmware's `(a + b) / 2`.
+            (Some(p), Some(p2)) => value + p[field].midpoint(p2[field]),
             _ => value,
         },
         MINTHROTTLE => value + ctx.minthrottle,

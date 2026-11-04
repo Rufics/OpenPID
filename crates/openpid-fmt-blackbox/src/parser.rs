@@ -760,13 +760,13 @@ H motorOutput:158,2047\n";
         buf.push(b'P');
         encode::write_svb(buf, (t - (2 * p[1] - p2[1])) as i32);
         let d = [
-            (g[0] - (p[2] + p2[2]) / 2) as i32,
-            (g[1] - (p[3] + p2[3]) / 2) as i32,
-            (g[2] - (p[4] + p2[4]) / 2) as i32,
+            (g[0] - p[2].midpoint(p2[2])) as i32,
+            (g[1] - p[3].midpoint(p2[3])) as i32,
+            (g[2] - p[4].midpoint(p2[4])) as i32,
         ];
         encode::write_tag2_3s32(buf, d);
-        encode::write_svb(buf, (m[0] - (p[5] + p2[5]) / 2) as i32);
-        encode::write_svb(buf, (m[1] - (p[6] + p2[6]) / 2) as i32);
+        encode::write_svb(buf, (m[0] - p[5].midpoint(p2[5])) as i32);
+        encode::write_svb(buf, (m[1] - p[6].midpoint(p2[6])) as i32);
     }
 
     fn collect(data: &[u8]) -> (Vec<Vec<i64>>, Vec<EventData>, ParseStats) {

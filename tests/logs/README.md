@@ -12,9 +12,11 @@ tests. All files here are redistributable under MIT/Apache-2.0.
 | `emuflight-3.7.0-truncated.BFL` | EmuFlight 3.7.0 | fc-blackbox `crashing-LOG00002.BFL`, first 1 MiB | Truncated mid-frame on purpose |
 | `inav-3.0.1-truncated.TXT` | INAV 3.0.1 | fc-blackbox `LOG00004.TXT`, first 1 MiB | `P interval:1/2`, GPS and slow frames; INAV is a phase-2 target |
 
-Additional community logs (Rotorflight, EmuFlight 0.4, Betaflight 4.3 with
-eRPM) are fetched on demand into `tests/logs/external/` (git-ignored) by
-`tools/fetch-community-logs.sh`; the tests use them when present.
+Additional community logs (one per Betaflight release line 4.3, 4.4, 4.5,
+2025.12, plus Rotorflight and EmuFlight 0.4) are fetched on demand into
+`tests/logs/external/` (git-ignored) by `tools/fetch-community-logs.sh`; the
+tests use them when present. Their source repositories carry no MIT-compatible
+licence, which is why they are not committed. See `docs/BLACKBOX-VERSIONS.md`.
 
 The project owner's own logs are reserved for final verification and are not
 part of this directory.

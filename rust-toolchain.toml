@@ -1,3 +1,5 @@
 [toolchain]
-channel = "stable"
+# Pinned so that CI and every developer run the same compiler, clippy and rustfmt.
+# Bump deliberately (and fix new lints) rather than letting CI drift to a new stable.
+channel = "1.97.0"
 components = ["rustfmt", "clippy"]

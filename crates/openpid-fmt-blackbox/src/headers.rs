@@ -240,7 +240,7 @@ impl Headers {
     /// Whether the firmware logs a main frame for loop iteration `iteration`.
     pub fn should_have_frame(&self, iteration: u32) -> bool {
         match self.p_interval {
-            PInterval::IntraOnly => iteration % self.i_interval == 0,
+            PInterval::IntraOnly => iteration.is_multiple_of(self.i_interval),
             PInterval::Fraction { num, denom } => {
                 (iteration % self.i_interval + num - 1) % denom < num
             }

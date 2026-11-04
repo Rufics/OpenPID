@@ -173,6 +173,12 @@ pub fn map_field(field: &str, s: &Scales) -> Option<FieldMapping> {
             s.amperage,
         ),
         "rssi" => FieldMapping::new(ChannelId::Rssi, Unit::Raw),
+        // Betaflight 2025.12+: attitude quaternion x/y/z scaled to int16 (w is implied positive).
+        "imuQuaternion" => FieldMapping::scaled(
+            ChannelId::Custom(field.to_string()),
+            Unit::Unitless,
+            1.0 / 32767.0,
+        ),
         "BaroAlt" | "baroAlt" => {
             FieldMapping::new(ChannelId::Custom(field.to_string()), Unit::Centimeters)
         }

@@ -31,11 +31,19 @@ tools/fetch-community-logs.sh     # додаткові логи спільнот
 OPENPID_UPDATE_GOLDEN=1 cargo test -p openpid-fmt-blackbox --test fixtures   # оновити golden‑файли після свідомої зміни
 ```
 
+`tools/fetch-community-logs.sh` завантажує по одному логу на кожну лінію релізів Betaflight (4.3, 4.4, 4.5, 2025.12) та інші прошивки; тест `versions.rs` перевіряє кожну наявну версію. Матриця відмінностей формату між версіями — у [`docs/BLACKBOX-VERSIONS.md`](docs/BLACKBOX-VERSIONS.md).
+
 Якщо поруч із логом у `tests/logs/` покласти `<лог>.<сесія>.csv`, згенерований офіційним `blackbox_decode --index <сесія>`, тест `csv_conformance` порівняє наш сирий декод із ним поле в поле.
+
+## Якість
+
+- CI (GitHub Actions): `fmt`, `clippy -D warnings`, тести на Linux/macOS/Windows, `cargo deny`. Toolchain закріплено у `rust-toolchain.toml`. Правило проєкту: CI ніколи не лишається червоним (див. `CLAUDE.md`).
+- SonarCloud: job `sonar` у CI збирає звіт clippy і покриття (`cargo llvm-cov`) і запускає сканер. Він вмикається, щойно у репозиторії з'являється секрет `SONAR_TOKEN` (проєкт імпортується на sonarcloud.io; ключі у `sonar-project.properties`).
 
 ## Документи
 
 - [`docs/DESIGN.md`](docs/DESIGN.md) — дизайн‑проєкт
 - [`docs/adr/`](docs/adr/) — архітектурні рішення
 - [`docs/OPEN-QUESTIONS.md`](docs/OPEN-QUESTIONS.md) — питання та ухвалені рішення
+- [`docs/BLACKBOX-VERSIONS.md`](docs/BLACKBOX-VERSIONS.md) — відмінності формату між версіями Betaflight і покриття логами
 - [`tests/logs/README.md`](tests/logs/README.md) — походження тестових логів

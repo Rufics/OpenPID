@@ -189,7 +189,7 @@ mod tests {
         assert_eq!(segs[0].0, 4);
         assert!(segs[0].1.starts_with(LOG_START_MARKER));
         assert_eq!(segs[1].0 + segs[1].1.len(), data.len());
-        assert!(split_logs(b"nothing here").is_empty());
+        assert_eq!(split_logs(b"nothing here").len(), 0);
         assert_eq!(split_logs(b"H Data version:2\n").len(), 1);
     }
 }
