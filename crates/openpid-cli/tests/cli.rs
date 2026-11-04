@@ -118,9 +118,15 @@ fn decode_csv_input() {
     let (ok, out, err) = run(&["info", tmp.to_str().unwrap()]);
     assert!(ok, "{err}");
     assert!(out.contains("format blackbox-csv"));
-    let (ok, out, _) = run(&["decode", tmp.to_str().unwrap()]);
+    let (ok, out, err) = run(&["decode", tmp.to_str().unwrap()]);
     std::fs::remove_file(&tmp).ok();
-    assert!(ok && out.lines().next().unwrap().contains("gyro.filtered.roll"));
+    let header = out.lines().next().unwrap_or("").to_string();
+    assert!(ok, "decode of our own CSV failed: {err}");
+    assert!(
+        header.contains("gyro.filtered.roll"),
+        "unexpected header: {}",
+        &header[..header.len().min(300)]
+    );
 }
 
 #[test]
