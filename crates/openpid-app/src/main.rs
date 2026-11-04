@@ -5,6 +5,8 @@
 
 mod app;
 mod colormap;
+#[cfg(test)]
+mod tests;
 mod views;
 mod worker;
 
@@ -16,9 +18,26 @@ fn main() -> eframe::Result {
             .with_drag_and_drop(true),
         ..Default::default()
     };
-    let mut files: Vec<std::path::PathBuf> = Vec::new();
-    let mut tab: Option<app::Tab> = None;
-    let mut it = std::env::args().skip(1);
+    let (files, tab) = parse_args(std::env::args().skip(1));
+    eframe::run_native(
+        "OpenPID",
+        options,
+        Box::new(move |cc| Ok(Box::new(app::App::with_context(&cc.egui_ctx, files, tab)))),
+    )
+}
+
+// The only eframe-specific glue; everything else runs headless (ADR-0008).
+impl eframe::App for app::App {
+    fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
+        self.frame(ui);
+    }
+}
+
+/// Splits the command line into log files to open and the tab to start on.
+fn parse_args(args: impl Iterator<Item = String>) -> (Vec<std::path::PathBuf>, Option<app::Tab>) {
+    let mut files = Vec::new();
+    let mut tab = None;
+    let mut it = args;
     while let Some(a) = it.next() {
         if a == "--tab" {
             tab = it.next().as_deref().and_then(app::Tab::from_name);
@@ -26,9 +45,5 @@ fn main() -> eframe::Result {
             files.push(a.into());
         }
     }
-    eframe::run_native(
-        "OpenPID",
-        options,
-        Box::new(move |cc| Ok(Box::new(app::App::new(cc, files, tab)))),
-    )
+    (files, tab)
 }

@@ -23,6 +23,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 memmap2 = "0.9"
+# Headless GUI tests (ADR-0008); no snapshot/wgpu features so no GPU stack is pulled in.
+egui_kittest = { version = "0.37", default-features = false }
 
 # Style rules (docs/STYLE.md) that tooling can enforce. CI runs clippy with -D warnings.
 [workspace.lints.rust]

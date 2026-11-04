@@ -149,13 +149,15 @@ impl std::fmt::Debug for App {
 }
 
 impl App {
-    pub fn new(
-        cc: &eframe::CreationContext<'_>,
+    /// Builds the app on an egui context: the eframe window's in `main`, the
+    /// test harness's in the headless tests (ADR-0008).
+    pub fn with_context(
+        ctx: &egui::Context,
         open_on_start: Vec<PathBuf>,
         tab: Option<Tab>,
     ) -> Self {
-        cc.egui_ctx.set_visuals(egui::Visuals::dark());
-        let ctx = cc.egui_ctx.clone();
+        ctx.set_visuals(egui::Visuals::dark());
+        let ctx = ctx.clone();
         let worker = Worker::spawn(move || ctx.request_repaint());
         let mut app = App {
             worker,
@@ -354,8 +356,9 @@ impl App {
     }
 }
 
-impl eframe::App for App {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+impl App {
+    /// One frame of the whole UI: input handling, worker results, panels and the active tab.
+    pub fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         if !self.touch_mode && ctx.input(egui::InputState::any_touches) {
             self.touch_mode = true;

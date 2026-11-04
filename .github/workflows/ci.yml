@@ -17,7 +17,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_TOOLCHAIN: 1.97.0
-  # Line coverage (library + CLI crates) below this fails the run.
+  # Line coverage of the whole workspace below this fails the run.
   COVERAGE_MIN: 90
 
 permissions:
@@ -120,9 +120,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: coverage
-      - name: Measure (GUI crate excluded, it has no headless tests)
+      - name: Measure (every crate; the GUI is tested headless, ADR-0008)
         run: |
-          cargo llvm-cov --workspace --exclude openpid-app --lcov --output-path lcov.info
+          cargo llvm-cov --workspace --lcov --output-path lcov.info
           cargo llvm-cov report --summary-only | tee coverage.txt
           {
             echo '## Coverage'

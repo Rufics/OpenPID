@@ -1,0 +1,681 @@
+//! Headless UI tests (ADR-0008). `egui_kittest` runs `App::frame` without a
+//! window and finds widgets through the AccessKit tree; the worker thread is
+//! real, so these cover file → worker → cache → tab end to end.
+
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test code: a failed lookup is the failure"
+)]
+
+use crate::app::{App, Cached, Loaded, SlotState, Tab};
+use crate::worker::{Done, Job, JobKey, Kind, Slot, Worker};
+use eframe::egui::{self, accesskit::Role};
+use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
+use openpid_analysis::{Epoch, StepParams};
+use openpid_core::FirmwareVersion;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+const LOG_4_2: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/logs/betaflight-4.2.0.BFL"
+);
+const LOG_TWO: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/logs/betaflight-4.2.11-two-logs.bbl"
+);
+
+/// The app is built lazily inside the ui closure so its worker wakes the
+/// harness's own context.
+type H = Harness<'static, Option<App>>;
+
+fn harness(files: Vec<PathBuf>, tab: Option<Tab>) -> H {
+    let mut init = Some((files, tab));
+    Harness::builder()
+        .with_size(egui::Vec2::new(1280.0, 800.0))
+        .with_accessibility_check(false)
+        .allow_missing_glyphs()
+        .with_max_steps(500)
+        .build_ui_state(
+            move |ui, state: &mut Option<App>| {
+                let app = state.get_or_insert_with(|| {
+                    let (files, tab) = init.take().expect("built once");
+                    App::with_context(ui.ctx(), files, tab)
+                });
+                app.frame(ui);
+            },
+            None,
+        )
+}
+
+fn app(h: &H) -> &App {
+    h.state().as_ref().expect("app built on first frame")
+}
+
+fn app_mut(h: &mut H) -> &mut App {
+    h.state_mut().as_mut().expect("app built on first frame")
+}
+
+/// Steps frames until `cond` holds (the worker is asynchronous), then one more
+/// so the widgets reflect the new state.
+fn run_until(h: &mut H, mut cond: impl FnMut(&App) -> bool) {
+    let t0 = Instant::now();
+    while !cond(app(h)) {
+        assert!(
+            t0.elapsed() < Duration::from_secs(120),
+            "timed out waiting for the worker"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+        h.step();
+    }
+    h.step();
+}
+
+fn no_slot_loading(a: &App) -> bool {
+    !a.slots.values().any(|s| matches!(s, SlotState::Loading(_)))
+}
+
+fn idle(a: &App) -> bool {
+    no_slot_loading(a) && !a.cache.values().any(|c| matches!(c, Cached::Pending))
+}
+
+fn select_tab(h: &mut H, tab: Tab) {
+    h.get_by_label(tab.title()).click();
+    h.step();
+    assert_eq!(app(h).tab, tab);
+}
+
+fn has_label_containing(h: &H, text: &str) -> bool {
+    h.query_all_by_label_contains(text).next().is_some()
+}
+
+#[derive(Debug)]
+struct Dropped(PathBuf);
+
+impl egui::DroppedFile for Dropped {
+    fn path(&self) -> &Path {
+        &self.0
+    }
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|e| e.to_string())
+    }
+}
+
+fn drop_files(h: &mut H, paths: &[&str]) {
+    for p in paths {
+        h.input_mut()
+            .dropped_files
+            .push(Arc::new(Dropped(PathBuf::from(p))));
+    }
+    h.step();
+}
+
+// ------------------------------------------------------------------ tabs
+
+#[test]
+fn tab_names_and_titles() {
+    for (name, tab) in [
+        ("log", Tab::LogViewer),
+        ("step", Tab::Step),
+        ("spectrum", Tab::Spectrum),
+        ("throttle", Tab::ThrottleHeatmap),
+        ("time", Tab::TimeHeatmap),
+        ("sliders", Tab::Sliders),
+        ("diagnostics", Tab::Diagnostics),
+    ] {
+        assert_eq!(Tab::from_name(name), Some(tab));
+    }
+    assert_eq!(Tab::from_name("nope"), None);
+    let titles: std::collections::BTreeSet<&str> = Tab::ALL.iter().map(|t| t.title()).collect();
+    assert_eq!(titles.len(), Tab::ALL.len(), "titles are unique");
+}
+
+#[test]
+fn empty_slots_show_hints_on_every_tab() {
+    let mut h = harness(Vec::new(), None);
+    assert!(has_label_containing(&h, "Open a blackbox log"));
+    for tab in Tab::ALL {
+        select_tab(&mut h, tab);
+        assert!(h.query_by_label("Slot A: empty").is_some(), "{tab:?}");
+        assert!(h.query_by_label("Slot B: empty").is_some(), "{tab:?}");
+        assert!(app(&h).cache.is_empty(), "nothing to analyse without a log");
+        if tab == Tab::Sliders {
+            assert!(has_label_containing(&h, "Load a Betaflight 4.3+ log"));
+        }
+    }
+}
+
+#[test]
+fn command_line_gives_files_and_tab() {
+    let args = |v: &[&str]| {
+        v.iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .into_iter()
+    };
+    let (files, tab) = crate::parse_args(args(&["a.bbl", "--tab", "step", "b.bbl"]));
+    assert_eq!(files, vec![PathBuf::from("a.bbl"), PathBuf::from("b.bbl")]);
+    assert_eq!(tab, Some(Tab::Step));
+    let (files, tab) = crate::parse_args(args(&["--tab", "bogus"]));
+    assert!(files.is_empty());
+    assert_eq!(tab, None);
+    let (files, tab) = crate::parse_args(args(&["--tab"]));
+    assert!(files.is_empty() && tab.is_none());
+}
+
+#[test]
+fn starts_on_the_requested_tab() {
+    let h = harness(Vec::new(), Some(Tab::Diagnostics));
+    assert_eq!(app(&h).tab, Tab::Diagnostics);
+}
+
+// ------------------------------------------------------------------ loading
+
+#[test]
+fn loads_logs_into_both_slots() {
+    let mut h = harness(vec![LOG_4_2.into(), LOG_TWO.into()], None);
+    run_until(&mut h, no_slot_loading);
+    let a = app(&h).loaded(Slot::A).expect("A ready");
+    assert_eq!(a.sessions.len(), 1);
+    let b = app(&h).loaded(Slot::B).expect("B ready");
+    assert_eq!(b.sessions.len(), 2);
+    let longest = (0..2)
+        .max_by_key(|i| b.sessions[*i].len())
+        .expect("two sessions");
+    assert_eq!(b.session, longest, "the longest session is selected");
+    assert!(app(&h).status.contains("session(s)"));
+    assert!(has_label_containing(&h, "betaflight-4.2.0.BFL"));
+    assert!(has_label_containing(&h, "Betaflight 4.2.0"));
+    assert!(has_label_containing(&h, "Hz"));
+    assert!(
+        has_label_containing(&h, "session "),
+        "slot B offers a session picker"
+    );
+}
+
+#[test]
+fn missing_and_garbage_files_fail_visibly() {
+    let garbage =
+        std::env::temp_dir().join(format!("openpid-gui-garbage-{}.bbl", std::process::id()));
+    std::fs::write(&garbage, b"this is not a blackbox log at all").unwrap();
+    let mut h = harness(
+        vec![PathBuf::from("/definitely/not/here.bbl"), garbage.clone()],
+        None,
+    );
+    run_until(&mut h, no_slot_loading);
+    let a = &app(&h).slots[&Slot::A];
+    assert!(
+        matches!(a, SlotState::Failed(_, e) if e.contains("cannot read")),
+        "{a:?}"
+    );
+    assert!(matches!(app(&h).slots[&Slot::B], SlotState::Failed(..)));
+    assert!(has_label_containing(&h, "Slot A: /definitely/not/here.bbl"));
+    assert!(has_label_containing(&h, "Slot B:"));
+    let _ = std::fs::remove_file(garbage);
+}
+
+#[test]
+fn dropped_files_fill_free_slots_then_replace() {
+    let mut h = harness(Vec::new(), None);
+    drop_files(&mut h, &[LOG_4_2]);
+    run_until(&mut h, no_slot_loading);
+    assert!(app(&h).loaded(Slot::A).is_some());
+    assert!(app(&h).loaded(Slot::B).is_none());
+    drop_files(&mut h, &[LOG_TWO]);
+    run_until(&mut h, no_slot_loading);
+    assert!(
+        app(&h)
+            .loaded(Slot::B)
+            .unwrap()
+            .path
+            .ends_with("betaflight-4.2.11-two-logs.bbl"),
+        "second drop goes to the free slot B"
+    );
+    drop_files(&mut h, &[LOG_TWO, LOG_4_2]);
+    run_until(&mut h, no_slot_loading);
+    assert!(
+        app(&h)
+            .loaded(Slot::A)
+            .unwrap()
+            .path
+            .ends_with("betaflight-4.2.11-two-logs.bbl")
+    );
+    assert!(
+        app(&h)
+            .loaded(Slot::B)
+            .unwrap()
+            .path
+            .ends_with("betaflight-4.2.0.BFL")
+    );
+}
+
+// ------------------------------------------------------------------ analyses
+
+#[test]
+fn every_tab_runs_its_analysis_on_a_real_log() {
+    let mut h = harness(vec![LOG_4_2.into()], None);
+    run_until(&mut h, no_slot_loading);
+    for tab in Tab::ALL {
+        select_tab(&mut h, tab);
+        run_until(&mut h, idle);
+        let failed: Vec<&str> = app(&h)
+            .cache
+            .values()
+            .filter_map(|c| match c {
+                Cached::Failed(e) => Some(e.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(failed.is_empty(), "{tab:?}: {failed:?}");
+        assert!(!has_label_containing(&h, "A: error"), "{tab:?}");
+    }
+    assert!(has_label_containing(&h, "windows ·") || app(&h).cache.len() >= 4);
+    let kinds: std::collections::BTreeSet<&str> = app(&h).cache.keys().map(|k| k.kind).collect();
+    assert_eq!(
+        kinds.into_iter().collect::<Vec<_>>(),
+        ["psd", "step", "stft", "thr"]
+    );
+    select_tab(&mut h, Tab::Diagnostics);
+    assert!(has_label_containing(&h, "profile"));
+    assert!(has_label_containing(&h, "samples"));
+    assert!(has_label_containing(&h, "frames"));
+}
+
+#[test]
+fn step_results_are_cached_per_parameters_and_epoch() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Step));
+    run_until(&mut h, idle);
+    assert_eq!(app(&h).cache.len(), 1);
+    assert!(has_label_containing(&h, "windows ·"));
+    // the same parameters hit the cache: no new job
+    h.run_steps(3);
+    assert_eq!(app(&h).cache.len(), 1);
+    // a different cutoff is a different job
+    app_mut(&mut h).tools.step.cutoff_hz += 5.0;
+    h.step();
+    run_until(&mut h, idle);
+    assert_eq!(app(&h).cache.len(), 2);
+    // an epoch is part of the key
+    app_mut(&mut h).loaded_mut(Slot::A).unwrap().epoch = Some(Epoch {
+        start_s: 0.0,
+        end_s: 1.0,
+    });
+    h.step();
+    run_until(&mut h, idle);
+    assert_eq!(app(&h).cache.len(), 3);
+    // reloading a slot drops its cache
+    app_mut(&mut h).open(Slot::A, LOG_4_2.into());
+    assert!(app(&h).cache.is_empty());
+    run_until(&mut h, idle);
+}
+
+#[test]
+fn analysis_errors_are_shown_not_swallowed() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Step));
+    run_until(&mut h, no_slot_loading);
+    app_mut(&mut h).tools.step.window_s = 0.0; // invalid
+    h.step();
+    run_until(&mut h, idle);
+    assert!(
+        app(&h)
+            .cache
+            .values()
+            .any(|c| matches!(c, Cached::Failed(_))),
+        "invalid parameters fail the job"
+    );
+    assert!(
+        has_label_containing(&h, "A: "),
+        "the error is drawn in the tab"
+    );
+}
+
+#[test]
+fn spectrum_and_heatmap_controls_change_parameters() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Spectrum));
+    run_until(&mut h, idle);
+    assert!(app(&h).tools.psd_db);
+    h.get_by_label("dB").click();
+    h.step();
+    assert!(!app(&h).tools.psd_db);
+    h.get_by_label("pitch").click();
+    h.step();
+    assert_eq!(app(&h).tools.axis, openpid_core::Axis::Pitch);
+    select_tab(&mut h, Tab::ThrottleHeatmap);
+    run_until(&mut h, idle);
+    assert!(has_label_containing(&h, "throttle window"));
+    select_tab(&mut h, Tab::TimeHeatmap);
+    run_until(&mut h, idle);
+    assert!(has_label_containing(&h, "segment"));
+}
+
+// ------------------------------------------------------------------ log viewer
+
+#[test]
+fn cursor_buttons_set_the_epoch() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::LogViewer));
+    run_until(&mut h, no_slot_loading);
+    assert!(has_label_containing(&h, "Click or tap the plot"));
+    assert!(h.query_by_label("A start = cursor").is_none());
+    let duration = app(&h)
+        .loaded(Slot::A)
+        .unwrap()
+        .current()
+        .unwrap()
+        .timebase
+        .duration_s();
+    app_mut(&mut h).viewer.cursor_s = Some(1.0);
+    h.step();
+    assert!(has_label_containing(&h, "cursor: 1.000 s"));
+    h.get_by_label("A start = cursor").click();
+    h.step();
+    let e = app(&h).loaded(Slot::A).unwrap().epoch.unwrap();
+    assert_eq!(e.start_s, 1.0);
+    assert!((e.end_s - duration).abs() < 1e-9);
+    app_mut(&mut h).viewer.cursor_s = Some(2.0);
+    h.step();
+    h.get_by_label("A end = cursor").click();
+    h.step();
+    let e = app(&h).loaded(Slot::A).unwrap().epoch.unwrap();
+    assert_eq!((e.start_s, e.end_s), (1.0, 2.0));
+    // end before start swaps the bounds rather than producing an empty epoch
+    app_mut(&mut h).viewer.cursor_s = Some(0.5);
+    h.step();
+    h.get_by_label("A end = cursor").click();
+    h.step();
+    let e = app(&h).loaded(Slot::A).unwrap().epoch.unwrap();
+    assert_eq!((e.start_s, e.end_s), (0.5, 1.0));
+    h.get_by_label("whole log").click();
+    h.step();
+    assert!(app(&h).loaded(Slot::A).unwrap().epoch.is_none());
+}
+
+#[test]
+fn channel_filter_and_toggles_edit_the_channel_list() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::LogViewer));
+    run_until(&mut h, no_slot_loading);
+    let first = app(&h).tools.viewer_channels[0].key();
+    assert!(h.query_by_label(&first).is_some(), "toggle for {first}");
+    h.get_by_label(&first).click();
+    h.step();
+    assert!(
+        !app(&h)
+            .tools
+            .viewer_channels
+            .iter()
+            .any(|c| c.key() == first)
+    );
+    h.get_by_label(&first).click();
+    h.step();
+    assert!(
+        app(&h)
+            .tools
+            .viewer_channels
+            .iter()
+            .any(|c| c.key() == first)
+    );
+    let filter = h.get_by_role(Role::TextInput);
+    filter.focus();
+    filter.type_text("thr");
+    h.step();
+    assert_eq!(app(&h).viewer.channel_filter, "thr");
+    assert!(h.query_by_label(&first).is_none(), "filtered out: {first}");
+    assert!(h.query_by_label("throttle").is_some());
+}
+
+#[test]
+fn session_picker_switches_session_and_clears_epoch() {
+    let mut h = harness(vec![LOG_TWO.into()], Some(Tab::Diagnostics));
+    run_until(&mut h, no_slot_loading);
+    let current = app(&h).loaded(Slot::A).unwrap().session;
+    let other = 1 - current;
+    app_mut(&mut h).loaded_mut(Slot::A).unwrap().epoch = Some(Epoch {
+        start_s: 0.0,
+        end_s: 0.5,
+    });
+    h.step();
+    // the combo's selected text is not its accessible name; the status bar also says "session N"
+    h.get_by_role(Role::ComboBox).click();
+    h.run_steps(2);
+    h.get_by_label_contains(&format!("session {other} ("))
+        .click();
+    h.run_steps(2);
+    let l = app(&h).loaded(Slot::A).unwrap();
+    assert_eq!(l.session, other);
+    assert!(l.epoch.is_none(), "switching session resets the epoch");
+}
+
+// ------------------------------------------------------------------ sliders
+
+/// The repo has no 4.3+ log (licences); fake one from the 4.2 session.
+fn fake_4_5_session(l: &Loaded) -> Arc<openpid_core::FlightSession> {
+    let mut s = (**l.current().unwrap()).clone();
+    s.firmware.version = Some(FirmwareVersion::new(4, 5, 2));
+    s.firmware.revision = "Betaflight 4.5.2 (test) STM32F7X2".into();
+    for (k, v) in [
+        ("simplified_pids_mode", "2"),
+        ("simplified_master_multiplier", "100"),
+        ("simplified_i_gain", "100"),
+        ("simplified_d_gain", "110"),
+        ("simplified_pi_gain", "100"),
+        ("simplified_dmax_gain", "100"),
+        ("simplified_feedforward_gain", "100"),
+        ("simplified_pitch_d_gain", "100"),
+        ("simplified_pitch_pi_gain", "100"),
+        ("simplified_dterm_filter", "1"),
+        ("simplified_dterm_filter_multiplier", "100"),
+        ("simplified_gyro_filter", "1"),
+        ("simplified_gyro_filter_multiplier", "100"),
+        ("gyro_lpf1_dyn_hz", "250,500"),
+        ("dterm_lpf1_dyn_hz", "75,150"),
+        ("dterm_lpf2_static_hz", "150"),
+        ("gyro_lpf2_static_hz", "500"),
+    ] {
+        s.raw_headers.push((k.into(), v.into()));
+    }
+    Arc::new(s)
+}
+
+#[test]
+fn sliders_tab_edits_resets_and_prints_cli() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Sliders));
+    run_until(&mut h, no_slot_loading);
+    assert!(
+        has_label_containing(&h, "no simplified-tuning headers"),
+        "4.2 has no sliders"
+    );
+    let fake = fake_4_5_session(app(&h).loaded(Slot::A).unwrap());
+    app_mut(&mut h).loaded_mut(Slot::A).unwrap().sessions[0] = fake;
+    h.step();
+    h.step();
+    assert!(has_label_containing(&h, "betaflight-simplified-tuning"));
+    assert!(has_label_containing(&h, "Master multiplier"));
+    assert!(has_label_containing(&h, "from sliders"));
+    assert!(has_label_containing(&h, "gyro lpf1 250–500 Hz"));
+    assert_eq!(
+        app(&h).slider_state.values["simplified_d_gain"],
+        110.0,
+        "sliders start at the logged positions"
+    );
+    let sliders: Vec<_> = h.get_all_by_role(Role::Slider).collect();
+    assert_eq!(sliders.len(), 12);
+    // the first slider is the mode (0..=2), the second the master multiplier
+    sliders[1].set_value_accesskit(150.0);
+    drop(sliders);
+    h.step();
+    assert_eq!(
+        app(&h).slider_state.values["simplified_master_multiplier"],
+        150.0
+    );
+    assert!(has_label_containing(&h, "⟵ changed"));
+    h.get_by_label("Reset to log").click();
+    h.step();
+    assert_eq!(
+        app(&h).slider_state.values["simplified_master_multiplier"],
+        100.0
+    );
+    assert_eq!(app(&h).slider_state.values["simplified_d_gain"], 110.0);
+    h.get_by_label("Firmware defaults").click();
+    h.step();
+    assert_eq!(app(&h).slider_state.values["simplified_d_gain"], 100.0);
+    let cli = h.get_by_role(Role::MultilineTextInput).value().unwrap();
+    assert!(cli.contains("set simplified_pids_mode = 2"));
+    assert!(cli.contains("simplified_tuning apply"));
+    assert!(cli.ends_with("save"));
+    // switching slot A to another file re-seeds the slider state
+    app_mut(&mut h).open(Slot::A, LOG_TWO.into());
+    run_until(&mut h, no_slot_loading);
+    assert!(has_label_containing(&h, "no simplified-tuning headers"));
+}
+
+// ------------------------------------------------------------------ touch mode
+
+#[test]
+fn touch_mode_checkbox_and_touch_events_scale_the_ui() {
+    let mut h = harness(Vec::new(), None);
+    assert_eq!(h.ctx.zoom_factor(), 1.0);
+    h.get_by_label("Touch mode").click();
+    h.step();
+    assert!(app(&h).touch_mode);
+    h.run_steps(2); // applied at the start of the next frame, zoom one frame later
+    assert_eq!(h.ctx.zoom_factor(), 1.25);
+    h.get_by_label("Touch mode").click();
+    h.run_steps(3);
+    assert!(!app(&h).touch_mode);
+    assert_eq!(h.ctx.zoom_factor(), 1.0);
+    h.input_mut().events.push(egui::Event::Touch {
+        device_id: egui::TouchDeviceId(0),
+        id: egui::TouchId(0),
+        phase: egui::TouchPhase::Start,
+        pos: egui::pos2(10.0, 10.0),
+        force: None,
+    });
+    h.step();
+    assert!(app(&h).touch_mode, "a touch switches touch mode on");
+    h.run_steps(2);
+    assert_eq!(h.ctx.zoom_factor(), 1.25);
+}
+
+// ------------------------------------------------------------------ worker
+
+fn wait_for(w: &Worker) -> Done {
+    let t0 = Instant::now();
+    loop {
+        if let Some(d) = w.poll().pop() {
+            return d;
+        }
+        assert!(t0.elapsed() < Duration::from_secs(120), "worker timed out");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn worker_loads_and_analyses_off_thread() {
+    let woken = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let w = {
+        let woken = woken.clone();
+        Worker::spawn(move || {
+            woken.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        })
+    };
+    w.submit(Job::Load {
+        slot: Slot::A,
+        path: LOG_4_2.into(),
+    });
+    let Done::Loaded { slot, path, result } = wait_for(&w) else {
+        panic!("expected a load result");
+    };
+    assert_eq!(slot, Slot::A);
+    assert!(path.ends_with("betaflight-4.2.0.BFL"));
+    let file = result.expect("decodes");
+    assert_eq!(file.source.path.as_deref(), Some(Path::new(LOG_4_2)));
+    let session = Arc::new(file.sessions[0].clone());
+    let kind = Kind::Step(StepParams::default());
+    let key = JobKey::new(Slot::A, 0, &kind, None);
+    w.submit(Job::Analyze {
+        key: key.clone(),
+        session: session.clone(),
+        kind: kind.clone(),
+        epoch: None,
+    });
+    let Done::Analyzed { key: k, result } = wait_for(&w) else {
+        panic!("expected an analysis result");
+    };
+    assert_eq!(k, key);
+    assert!(matches!(
+        *result.expect("step runs"),
+        crate::worker::Output::Step(_)
+    ));
+    w.submit(Job::Analyze {
+        key: key.clone(),
+        session,
+        kind: Kind::Step(StepParams {
+            window_s: 0.0,
+            ..StepParams::default()
+        }),
+        epoch: None,
+    });
+    let Done::Analyzed { result, .. } = wait_for(&w) else {
+        panic!("expected an analysis result");
+    };
+    assert!(
+        result.is_err(),
+        "invalid params come back as an error string"
+    );
+    w.submit(Job::Load {
+        slot: Slot::B,
+        path: "/nowhere/missing.bbl".into(),
+    });
+    let Done::Loaded { result, .. } = wait_for(&w) else {
+        panic!("expected a load result");
+    };
+    assert!(result.unwrap_err().contains("cannot read"));
+    assert_eq!(woken.load(std::sync::atomic::Ordering::SeqCst), 4);
+}
+
+#[test]
+fn job_keys_identify_params_and_epoch() {
+    let a = JobKey::new(Slot::A, 0, &Kind::Step(StepParams::default()), None);
+    let b = JobKey::new(Slot::A, 0, &Kind::Step(StepParams::default()), None);
+    assert_eq!(a, b);
+    assert_eq!(a.kind, "step");
+    let epoch = Some(Epoch {
+        start_s: 0.0,
+        end_s: 1.0,
+    });
+    assert_ne!(
+        a,
+        JobKey::new(Slot::A, 0, &Kind::Step(StepParams::default()), epoch)
+    );
+    assert_ne!(
+        a,
+        JobKey::new(Slot::B, 0, &Kind::Step(StepParams::default()), None)
+    );
+    assert_ne!(
+        a,
+        JobKey::new(Slot::A, 1, &Kind::Step(StepParams::default()), None)
+    );
+    assert_ne!(
+        a,
+        JobKey::new(
+            Slot::A,
+            0,
+            &Kind::Psd(openpid_analysis::PsdParams::default()),
+            None
+        )
+    );
+    for (kind, id) in [
+        (Kind::Psd(openpid_analysis::PsdParams::default()), "psd"),
+        (
+            Kind::Throttle(openpid_analysis::ThrottleHeatmapParams::default()),
+            "thr",
+        ),
+        (Kind::Stft(openpid_analysis::StftParams::default()), "stft"),
+    ] {
+        assert_eq!(kind.id(), id);
+    }
+    assert_eq!(Slot::A.name(), "A");
+    assert_eq!(Slot::B.name(), "B");
+}

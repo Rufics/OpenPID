@@ -20,5 +20,8 @@ eframe = { workspace = true }
 egui_plot = { workspace = true }
 rfd = { workspace = true }
 
+[dev-dependencies]
+egui_kittest = { workspace = true }
+
 [lints]
 workspace = true
