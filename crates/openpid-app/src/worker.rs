@@ -127,7 +127,7 @@ fn registry() -> FormatRegistry {
 
 fn load(path: &PathBuf) -> Result<LogFile, String> {
     let data = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    let name = path.file_name().and_then(|n| n.to_str());
+    let name = path.file_name().and_then(std::ffi::OsStr::to_str);
     let mut log = registry()
         .open(&data, name, &OpenOptions::default())
         .map_err(|e| e.to_string())?;

@@ -8,6 +8,7 @@ use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{Heatmap, Legend, Line, Plot, PlotPoint, PlotPoints, VLine};
 use openpid_analysis::Epoch;
 use openpid_core::analysis::Grid2D;
+use openpid_core::settings::{PerAxis, PidGains};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use std::sync::Arc;
 
@@ -261,13 +262,8 @@ fn grid_heatmap(name: &str, g: &Grid2D, max: f64, min_y_for_scale: f64) -> Optio
 
 // ---------------------------------------------------------------------------
 
-pub fn log_viewer(app: &mut App, ui: &mut Ui) {
-    for slot in [Slot::A, Slot::B] {
-        slot_header(app, ui, slot);
-    }
-    ui.separator();
-    let session_a: Option<Arc<FlightSession>> =
-        app.loaded(Slot::A).and_then(|l| l.current().cloned());
+/// Channel toggles for the log viewer (slot A's channel list, filtered).
+fn viewer_channel_picker(app: &mut App, ui: &mut Ui, session: Option<&FlightSession>) {
     ui.horizontal_wrapped(|ui| {
         ui.label("Channels:");
         let filter = &mut app.viewer.channel_filter;
@@ -276,65 +272,134 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
                 .hint_text("filter…")
                 .desired_width(120.0),
         );
-        if let Some(s) = &session_a {
-            let mut keys: Vec<ChannelId> = s.channels.iter().map(|c| c.id.clone()).collect();
-            keys.sort_by_key(ChannelId::key);
-            for id in keys {
-                let k = id.key();
-                if !filter.is_empty() && !k.contains(filter.as_str()) {
-                    continue;
-                }
-                let mut on = app.tools.viewer_channels.contains(&id);
-                if ui.toggle_value(&mut on, k).changed() {
-                    if on {
-                        app.tools.viewer_channels.push(id);
-                    } else {
-                        app.tools.viewer_channels.retain(|c| *c != id);
-                    }
+        let Some(s) = session else { return };
+        let mut keys: Vec<ChannelId> = s.channels.iter().map(|c| c.id.clone()).collect();
+        keys.sort_by_key(ChannelId::key);
+        for id in keys {
+            let k = id.key();
+            if !filter.is_empty() && !k.contains(filter.as_str()) {
+                continue;
+            }
+            let mut on = app.tools.viewer_channels.contains(&id);
+            if ui.toggle_value(&mut on, k).changed() {
+                if on {
+                    app.tools.viewer_channels.push(id);
+                } else {
+                    app.tools.viewer_channels.retain(|c| *c != id);
                 }
             }
         }
     });
+}
+
+/// Moves one slot's epoch boundary to the cursor time `t`.
+fn set_epoch_from_cursor(app: &mut App, slot: Slot, t: f64, start: bool) {
+    let Some(l) = app.loaded_mut(slot) else {
+        return;
+    };
+    let current = l.epoch;
+    l.epoch = Some(if start {
+        let end = current.map_or(l.current().map_or(t, |s| s.timebase.duration_s()), |e| {
+            e.end_s
+        });
+        Epoch {
+            start_s: t.min(end),
+            end_s: end.max(t),
+        }
+    } else {
+        let start_s = current.map_or(0.0, |e| e.start_s);
+        Epoch {
+            start_s: start_s.min(t),
+            end_s: t.max(start_s),
+        }
+    });
+}
+
+/// Cursor read-out and the "epoch from cursor" buttons.
+fn viewer_cursor_controls(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
-        if let Some(t) = app.viewer.cursor_s {
-            ui.label(format!("cursor: {t:.3} s"));
-            for slot in [Slot::A, Slot::B] {
-                if app.loaded(slot).is_some() {
-                    if ui
-                        .button(format!("{} start = cursor", slot.name()))
-                        .clicked()
-                        && let Some(l) = app.loaded_mut(slot)
-                    {
-                        let end = l
-                            .epoch
-                            .map_or(l.current().map_or(t, |s| s.timebase.duration_s()), |e| {
-                                e.end_s
-                            });
-                        l.epoch = Some(Epoch {
-                            start_s: t.min(end),
-                            end_s: end.max(t),
-                        });
-                    }
-                    if ui.button(format!("{} end = cursor", slot.name())).clicked()
-                        && let Some(l) = app.loaded_mut(slot)
-                    {
-                        let start = l.epoch.map_or(0.0, |e| e.start_s);
-                        l.epoch = Some(Epoch {
-                            start_s: start.min(t),
-                            end_s: t.max(start),
-                        });
-                    }
-                }
-            }
-        } else {
+        let Some(t) = app.viewer.cursor_s else {
             ui.label(
                 RichText::new(
                     "Click or tap the plot to place the cursor, then set the epoch from it.",
                 )
                 .color(MUTED),
             );
+            return;
+        };
+        ui.label(format!("cursor: {t:.3} s"));
+        for slot in [Slot::A, Slot::B] {
+            if app.loaded(slot).is_none() {
+                continue;
+            }
+            if ui
+                .button(format!("{} start = cursor", slot.name()))
+                .clicked()
+            {
+                set_epoch_from_cursor(app, slot, t, true);
+            }
+            if ui.button(format!("{} end = cursor", slot.name())).clicked() {
+                set_epoch_from_cursor(app, slot, t, false);
+            }
         }
     });
+}
+
+/// Draws one slot's selected channels (decimated to the plot width) and its epoch lines.
+fn viewer_plot_slot(
+    pu: &mut egui_plot::PlotUi<'_>,
+    app: &App,
+    slot: Slot,
+    channels: &[ChannelId],
+    n_lines: f32,
+    px: usize,
+) {
+    let Some(l) = app.loaded(slot) else { return };
+    let Some(s) = l.current() else { return };
+    let t0 = s.timebase.time_us.first().copied().unwrap_or(0);
+    let xs: Vec<f64> = s
+        .timebase
+        .time_us
+        .iter()
+        .map(|t| (t - t0) as f64 / 1.0e6)
+        .collect();
+    for (ci, id) in channels.iter().enumerate() {
+        let Some(c) = s.channel(id) else { continue };
+        let pts = decimate(&xs, c.data.values(), |i| c.data.is_valid(i), px * 2);
+        let hue = (ci as f32 / n_lines + if slot == Slot::B { 0.5 } else { 0.0 }) % 1.0;
+        let color: Color32 = egui::ecolor::Hsva::new(hue, 0.7, 0.95, 1.0).into();
+        pu.line(
+            Line::new(
+                format!("{} {} ({})", slot.name(), id.key(), c.unit),
+                PlotPoints::from(pts),
+            )
+            .color(color)
+            .width(1.2),
+        );
+    }
+    if let Some(e) = l.epoch {
+        pu.vline(
+            VLine::new(format!("{} epoch start", slot.name()), e.start_s)
+                .color(slot_color(slot))
+                .width(2.0),
+        );
+        pu.vline(
+            VLine::new(format!("{} epoch end", slot.name()), e.end_s)
+                .color(slot_color(slot))
+                .width(2.0),
+        );
+    }
+}
+
+pub fn log_viewer(app: &mut App, ui: &mut Ui) {
+    for slot in [Slot::A, Slot::B] {
+        slot_header(app, ui, slot);
+    }
+    ui.separator();
+    let session_a: Option<Arc<FlightSession>> =
+        app.loaded(Slot::A).and_then(|l| l.current().cloned());
+    viewer_channel_picker(app, ui, session_a.as_deref());
+    viewer_cursor_controls(app, ui);
     let touch = app.touch_mode;
     let channels = app.tools.viewer_channels.clone();
     let mut cursor = app.viewer.cursor_s;
@@ -343,7 +408,7 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
     if app.loaded(Slot::B).is_some() {
         n_lines *= 2.0;
     }
-    let resp = Plot::new("log_viewer")
+    Plot::new("log_viewer")
         .legend(Legend::default())
         .x_axis_label("time (s)")
         .height(plot_h)
@@ -351,41 +416,7 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
         .show(ui, |pu| {
             let px = pu.response().rect.width().max(100.0) as usize;
             for slot in [Slot::A, Slot::B] {
-                let Some(l) = app.loaded(slot) else { continue };
-                let Some(s) = l.current() else { continue };
-                let t0 = s.timebase.time_us.first().copied().unwrap_or(0);
-                let xs: Vec<f64> = s
-                    .timebase
-                    .time_us
-                    .iter()
-                    .map(|t| (t - t0) as f64 / 1.0e6)
-                    .collect();
-                for (ci, id) in channels.iter().enumerate() {
-                    let Some(c) = s.channel(id) else { continue };
-                    let pts = decimate(&xs, c.data.values(), |i| c.data.is_valid(i), px * 2);
-                    let hue = (ci as f32 / n_lines + if slot == Slot::B { 0.5 } else { 0.0 }) % 1.0;
-                    let color: Color32 = egui::ecolor::Hsva::new(hue, 0.7, 0.95, 1.0).into();
-                    pu.line(
-                        Line::new(
-                            format!("{} {} ({})", slot.name(), id.key(), c.unit),
-                            PlotPoints::from(pts),
-                        )
-                        .color(color)
-                        .width(1.2),
-                    );
-                }
-                if let Some(e) = l.epoch {
-                    pu.vline(
-                        VLine::new(format!("{} epoch start", slot.name()), e.start_s)
-                            .color(slot_color(slot))
-                            .width(2.0),
-                    );
-                    pu.vline(
-                        VLine::new(format!("{} epoch end", slot.name()), e.end_s)
-                            .color(slot_color(slot))
-                            .width(2.0),
-                    );
-                }
+                viewer_plot_slot(pu, app, slot, &channels, n_lines, px);
             }
             if let Some(t) = cursor {
                 pu.vline(VLine::new("cursor", t).color(ACCENT).width(1.5));
@@ -396,7 +427,6 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
                 cursor = Some(p.x);
             }
         });
-    let _ = resp;
     app.viewer.cursor_s = cursor;
 }
 
@@ -864,26 +894,6 @@ pub fn diagnostics(app: &mut App, ui: &mut Ui) {
         }
     });
 }
-
-#[cfg(test)]
-mod tests {
-    use super::decimate;
-
-    #[test]
-    fn decimation_keeps_extremes() {
-        let xs: Vec<f64> = (0..1000).map(f64::from).collect();
-        let ys: Vec<f64> = xs.iter().map(|x| (x / 7.0).sin() * 10.0).collect();
-        let d = decimate(&xs, &ys, |_| true, 100);
-        assert!(d.len() <= 102 && d.len() >= 50);
-        let max = d.iter().map(|p| p[1]).fold(f64::MIN, f64::max);
-        let min = d.iter().map(|p| p[1]).fold(f64::MAX, f64::min);
-        assert!(max > 9.9 && min < -9.9);
-        assert!(d.windows(2).all(|w| w[1][0] >= w[0][0]), "x monotonic");
-        let small = decimate(&xs[..10], &ys[..10], |i| i != 3, 100);
-        assert_eq!(small.len(), 9);
-    }
-}
-
 /// Slider state for the PID sliders tab.
 #[derive(Debug, Default)]
 pub struct SliderState {
@@ -893,53 +903,14 @@ pub struct SliderState {
     pub values: openpid_core::SliderValues,
 }
 
-pub fn sliders(app: &mut App, ui: &mut Ui) {
-    for slot in [Slot::A, Slot::B] {
-        slot_header(app, ui, slot);
-    }
-    ui.separator();
-    let Some(session) = app
-        .loaded(Slot::A)
-        .and_then(|l| l.current().cloned().map(|s| (l.session, s)))
-    else {
-        ui.label(
-            RichText::new("Load a Betaflight 4.3+ log into slot A to use the PID sliders.")
-                .color(MUTED),
-        );
-        return;
-    };
-    let (session_idx, session) = session;
-    let Some(model) = openpid_fmt_blackbox::slider_model_for(&session) else {
-        ui.label(
-            RichText::new(format!(
-                "{}: no simplified-tuning headers in this log.",
-                session.firmware.revision
-            ))
-            .color(MUTED),
-        );
-        return;
-    };
-    let defs = model.sliders();
-    if app.slider_state.loaded_for != Some((Slot::A, session_idx)) {
-        app.slider_state.loaded_for = Some((Slot::A, session_idx));
-        app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.value)).collect();
-    }
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(model.id()).strong());
-        ui.label(&session.firmware.revision);
-        if ui.button("Reset to log").clicked() {
-            app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.value)).collect();
-        }
-        if ui.button("Firmware defaults").clicked() {
-            app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.default)).collect();
-        }
-    });
+/// One row per slider: label, slider widget and the logged value.
+fn slider_grid(app: &mut App, ui: &mut Ui, defs: &[openpid_core::SliderDef]) {
     let touch = app.touch_mode;
     egui::Grid::new("sliders")
         .num_columns(3)
         .spacing([16.0, if touch { 14.0 } else { 6.0 }])
         .show(ui, |ui| {
-            for d in &defs {
+            for d in defs {
                 let v = app
                     .slider_state
                     .values
@@ -966,22 +937,29 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
                 ui.end_row();
             }
         });
-    let result = model.compute(&app.slider_state.values);
-    let logged = model.logged();
-    ui.separator();
-    let gain = |g: &openpid_core::settings::PidGains| {
-        format!(
-            "P {:>3}  I {:>3}  D {:>3}  F {:>4}{}",
-            g.p,
-            g.i,
-            g.d,
-            g.f.map_or("-".into(), |v| v.to_string()),
-            g.d_min
-                .map(|v| format!("  Dmin {v}"))
-                .or_else(|| g.d_max.map(|v| format!("  Dmax {v}")))
-                .unwrap_or_default()
-        )
-    };
+}
+
+/// `P I D F` plus D-min/D-max as one monospace line.
+fn format_gains(g: &PidGains) -> String {
+    format!(
+        "P {:>3}  I {:>3}  D {:>3}  F {:>4}{}",
+        g.p,
+        g.i,
+        g.d,
+        g.f.map_or("-".into(), |v| v.to_string()),
+        g.d_min
+            .map(|v| format!("  Dmin {v}"))
+            .or_else(|| g.d_max.map(|v| format!("  Dmax {v}")))
+            .unwrap_or_default()
+    )
+}
+
+/// Computed vs. logged gains per axis.
+fn slider_gain_table(
+    ui: &mut Ui,
+    result: &openpid_core::SliderResult,
+    logged: Option<PerAxis<PidGains>>,
+) {
     egui::Grid::new("slider_gains")
         .num_columns(3)
         .striped(true)
@@ -998,19 +976,23 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
             ] {
                 ui.label(name);
                 let differs = was.is_some_and(|w| (w.p, w.i, w.d) != (now.p, now.i, now.d));
-                ui.label(RichText::new(gain(&now)).monospace().color(if differs {
-                    ACCENT
-                } else {
-                    SLOT_A
-                }));
                 ui.label(
-                    RichText::new(was.map_or("-".into(), |w| gain(&w)))
+                    RichText::new(format_gains(&now))
+                        .monospace()
+                        .color(if differs { ACCENT } else { SLOT_A }),
+                );
+                ui.label(
+                    RichText::new(was.map_or("-".into(), |w| format_gains(&w)))
                         .monospace()
                         .color(MUTED),
                 );
                 ui.end_row();
             }
         });
+}
+
+/// Filter cut-offs from the sliders as one summary line (empty when no filter slider applies).
+fn filter_summary(result: &openpid_core::SliderResult) -> String {
     let mut filters = Vec::new();
     if let Some((lo, hi)) = result.gyro_lpf1_hz {
         filters.push(format!("gyro lpf1 {lo}–{hi} Hz"));
@@ -1024,8 +1006,56 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
     if let Some(v) = result.dterm_lpf2_hz {
         filters.push(format!("dterm lpf2 {v} Hz"));
     }
+    filters.join("   ·   ")
+}
+
+pub fn sliders(app: &mut App, ui: &mut Ui) {
+    for slot in [Slot::A, Slot::B] {
+        slot_header(app, ui, slot);
+    }
+    ui.separator();
+    let Some((session_idx, session)) = app
+        .loaded(Slot::A)
+        .and_then(|l| l.current().cloned().map(|s| (l.session, s)))
+    else {
+        ui.label(
+            RichText::new("Load a Betaflight 4.3+ log into slot A to use the PID sliders.")
+                .color(MUTED),
+        );
+        return;
+    };
+    let Some(model) = openpid_fmt_blackbox::slider_model_for(&session) else {
+        ui.label(
+            RichText::new(format!(
+                "{}: no simplified-tuning headers in this log.",
+                session.firmware.revision
+            ))
+            .color(MUTED),
+        );
+        return;
+    };
+    let defs = model.sliders();
+    if app.slider_state.loaded_for != Some((Slot::A, session_idx)) {
+        app.slider_state.loaded_for = Some((Slot::A, session_idx));
+        app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.value)).collect();
+    }
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(model.id()).strong());
+        ui.label(&session.firmware.revision);
+        if ui.button("Reset to log").clicked() {
+            app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.value)).collect();
+        }
+        if ui.button("Firmware defaults").clicked() {
+            app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.default)).collect();
+        }
+    });
+    slider_grid(app, ui, &defs);
+    let result = model.compute(&app.slider_state.values);
+    ui.separator();
+    slider_gain_table(ui, &result, model.logged());
+    let filters = filter_summary(&result);
     if !filters.is_empty() {
-        ui.label(filters.join("   ·   "));
+        ui.label(filters);
     }
     ui.separator();
     ui.label("Betaflight CLI to apply (select all, copy):");
@@ -1037,4 +1067,63 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
             .desired_width(f32::INFINITY)
             .interactive(true),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decimate, filter_summary, format_gains};
+    use openpid_core::SliderResult;
+    use openpid_core::settings::{PerAxis, PidGains};
+
+    #[test]
+    fn decimation_keeps_extremes() {
+        let xs: Vec<f64> = (0..1000).map(f64::from).collect();
+        let ys: Vec<f64> = xs.iter().map(|x| (x / 7.0).sin() * 10.0).collect();
+        let d = decimate(&xs, &ys, |_| true, 100);
+        assert!(d.len() <= 102 && d.len() >= 50);
+        let max = d.iter().map(|p| p[1]).fold(f64::MIN, f64::max);
+        let min = d.iter().map(|p| p[1]).fold(f64::MAX, f64::min);
+        assert!(max > 9.9 && min < -9.9);
+        assert!(d.windows(2).all(|w| w[1][0] >= w[0][0]), "x monotonic");
+        let small = decimate(&xs[..10], &ys[..10], |i| i != 3, 100);
+        assert_eq!(small.len(), 9);
+    }
+
+    #[test]
+    fn gain_and_filter_formatting() {
+        let g = PidGains {
+            p: 45.0,
+            i: 80.0,
+            d: 40.0,
+            f: Some(120.0),
+            d_min: Some(30.0),
+            d_max: None,
+        };
+        assert_eq!(format_gains(&g), "P  45  I  80  D  40  F  120  Dmin 30");
+        let g2 = PidGains {
+            f: None,
+            d_min: None,
+            d_max: Some(46.0),
+            ..g
+        };
+        assert!(format_gains(&g2).ends_with("F    -  Dmax 46"));
+        let r = SliderResult {
+            pid: PerAxis::default(),
+            gyro_lpf1_hz: Some((250.0, 500.0)),
+            gyro_lpf2_hz: None,
+            dterm_lpf1_hz: None,
+            dterm_lpf2_hz: Some(150.0),
+            cli: Vec::new(),
+        };
+        assert_eq!(
+            filter_summary(&r),
+            "gyro lpf1 250–500 Hz   ·   dterm lpf2 150 Hz"
+        );
+        let none = SliderResult {
+            gyro_lpf1_hz: None,
+            dterm_lpf2_hz: None,
+            ..r
+        };
+        assert!(filter_summary(&none).is_empty());
+    }
 }
