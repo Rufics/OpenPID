@@ -43,7 +43,7 @@
           { "context": "test (ubuntu-latest)", "integration_id": 15368 },
           { "context": "test (macos-latest)", "integration_id": 15368 },
           { "context": "test (windows-latest)", "integration_id": 15368 },
-          { "context": "coverage (>= 85% lines)", "integration_id": 15368 },
+          { "context": "coverage (>= 90% lines)", "integration_id": 15368 },
           { "context": "cargo deny (licences, advisories, bans)", "integration_id": 15368 }
         ]
       }

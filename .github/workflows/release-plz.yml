@@ -4,13 +4,15 @@
 # merging that PR creates the git tag v<version> and the GitHub release, which
 # in turn triggers release.yml to attach the binaries.
 #
-# Enabled by the repository variable RELEASE_PLZ_ENABLED=true (Settings →
-# Secrets and variables → Actions → Variables) once the owner has:
-#   1. allowed GitHub Actions to create pull requests (Settings → Actions →
-#      General → "Allow GitHub Actions to create and approve pull requests");
-#   2. added the RELEASE_PLZ_TOKEN secret: a fine-grained PAT with
-#      "Contents: write" and "Pull requests: write" on this repository, so that
-#      the release PR triggers CI (the default GITHUB_TOKEN cannot).
+# It authenticates as a GitHub App (a bot), never as a person: the workflow
+# mints a one-hour installation token from the App's private key. Events
+# created with the default GITHUB_TOKEN do not start other workflows, so a
+# release PR made with it would never get CI checks and could not be merged
+# under the ruleset; an App token does not have that restriction.
+#
+# Enabled once the owner has created and installed the App (docs/RELEASING.md)
+# and stored its id in the repository variable RELEASE_APP_ID and its private
+# key in the secret RELEASE_APP_PRIVATE_KEY.
 name: release-plz
 
 on:
@@ -28,16 +30,22 @@ concurrency:
 jobs:
   release-plz:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'Rufics' && vars.RELEASE_PLZ_ENABLED == 'true'
+    if: github.repository_owner == 'Rufics' && vars.RELEASE_APP_ID != ''
     steps:
+      - name: Mint a short-lived token for the release bot
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.97.0
       - name: Release PR and git release
         uses: release-plz/action@v0.5
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
