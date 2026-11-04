@@ -4,9 +4,13 @@
 # merging that PR creates the git tag v<version> and the GitHub release, which
 # in turn triggers release.yml to attach the binaries.
 #
-# Requires the RELEASE_PLZ_TOKEN secret: a fine-grained PAT with
-# "Contents: write" and "Pull requests: write" on this repository, so that the
-# release PR triggers CI (the default GITHUB_TOKEN cannot).
+# Enabled by the repository variable RELEASE_PLZ_ENABLED=true (Settings →
+# Secrets and variables → Actions → Variables) once the owner has:
+#   1. allowed GitHub Actions to create pull requests (Settings → Actions →
+#      General → "Allow GitHub Actions to create and approve pull requests");
+#   2. added the RELEASE_PLZ_TOKEN secret: a fine-grained PAT with
+#      "Contents: write" and "Pull requests: write" on this repository, so that
+#      the release PR triggers CI (the default GITHUB_TOKEN cannot).
 name: release-plz
 
 on:
@@ -24,7 +28,7 @@ concurrency:
 jobs:
   release-plz:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'Rufics'
+    if: github.repository_owner == 'Rufics' && vars.RELEASE_PLZ_ENABLED == 'true'
     steps:
       - uses: actions/checkout@v4
         with:

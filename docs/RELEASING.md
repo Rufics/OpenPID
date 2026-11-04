@@ -7,7 +7,8 @@
    - Поле `integration_id: 15368` — GitHub Actions; при імпорті GitHub підставить правильне значення сам.
 2. **Секрети** (Settings → Secrets and variables → Actions):
    - `SONAR_TOKEN` — токен проєкту на sonarcloud.io (проєкт імпортується з GitHub; ключі у `sonar-project.properties`). Без нього job `SonarCloud` пропускається з повідомленням.
-   - `RELEASE_PLZ_TOKEN` — fine‑grained PAT з правами *Contents: write* і *Pull requests: write* на цей репозиторій, щоб release‑PR запускав CI. Без нього release‑plz працює через `GITHUB_TOKEN`, але PR не триґерить перевірки.
+   - `RELEASE_PLZ_TOKEN` — fine‑grained PAT з правами *Contents: write* і *Pull requests: write* на цей репозиторій, щоб release‑PR запускав CI (`GITHUB_TOKEN` цього не вміє).
+   - Після кроку 4 і додавання токена створити **змінну** (Variables, не Secrets) `RELEASE_PLZ_ENABLED` = `true` — лише тоді workflow `release-plz` запускається; без неї він пропускається і не червоніє.
 3. **Settings → General → Pull Requests**: лишити увімкненим тільки *Allow squash merging*, встановити *Default commit message: Pull request title and description*, увімкнути *Automatically delete head branches*.
 4. **Settings → Actions → General**: *Workflow permissions: Read repository contents*, увімкнути *Allow GitHub Actions to create and approve pull requests* (потрібно release‑plz).
 5. **Dependabot** уже налаштований (`.github/dependabot.yml`): щотижневі згруповані PR для cargo і GitHub Actions. Settings → Code security: увімкнути Dependabot alerts.

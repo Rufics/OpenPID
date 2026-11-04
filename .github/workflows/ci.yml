@@ -98,7 +98,7 @@ jobs:
 
   # ---------------------------------------------------------------- coverage gate
   coverage:
-    name: coverage (>= ${{ env.COVERAGE_MIN }}% lines)
+    name: coverage (>= 85% lines)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
