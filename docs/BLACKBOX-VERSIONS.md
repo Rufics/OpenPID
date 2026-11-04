@@ -53,3 +53,22 @@
 
 Розслідування #11 (2026‑11‑04): повний лог INAV 9.0.1 (7,8 МБ) показував 1590 «corrupt» кадрів і 211 КБ пропущених байтів. Карта втрат синхронізації (`cargo run -p openpid-fmt-blackbox --example frame_dump -- <log>`) показала: дві прогалини з нулями по ~0,5 КБ посередині (SD‑буфер) і **~150 КБ після фактичного кінця логу з байтами іншого файлу** (пари `A3 95` — це заголовки ArduPilot DataFlash, що лишилися на карті). Декодер читав правильно; «corrupt» рахувалися спроби декодувати сміття по одному байту. Тепер парсер зупиняється після 16 КіБ без жодного прийнятого кадру (`GIVE_UP_BYTES`), а хвіст записується в `diagnostics.notes` як `trailing bytes`. Обрізана фікстура цього хвоста не містить і декодується з 1 corrupt‑кадром.
 
+### Відображення полів INAV (профіль `inav`)
+
+| Поле | Канал | Одиниця |
+|------|-------|---------|
+| `axisRate[i]` | `setpoint.*` | deg/s (на 9.0.1 перевірено: `axisRate − gyroADC == pidError`) |
+| `gyroADC[i]`, `accSmooth[i]` | `gyro.filtered.*`, `acc.*` | deg/s, g (`acc_1G`) |
+| `axisP/I/D/F[i]`, `pidSum[i]`, `pidError[i]` | `pid.*`, `pid_error.*` | raw, deg/s |
+| `vbat`, `amperage` | `battery.voltage/current` | V, A (сантиодиниці ×0.01) |
+| `motor[i]` | `motor.i` | % за `motorOutput` |
+| `rcCommand[i]` | `rc.i` | raw (±500, газ 1000…2000) |
+| `attitude[i]` | `custom:attitude.roll/pitch/yaw` | deg (децидеградуси ×0.1) |
+| `servo[i]`, `rcData[i]` | `custom:servo.i`, `custom:rc_raw.i` | µs |
+| `BaroAlt`, `AirSpeed` | `custom:BaroAlt`, `custom:airspeed` | cm, cm/s |
+| `navPos/navVel/navAcc/navTgtPos/navTgtVel[i]`, `navEPH/EPV`, `navSurf` | `custom:nav.*` | cm, cm/s, cm/s² |
+| `navState`, `navFlags`, `navTgtHdg` | `custom:nav.state/flags/target_heading` | flags / raw |
+| `fwAlt*`, `fwPos*` | `custom:fw_alt.*`, `custom:fw_pos.*` | raw (fixed‑wing контролери) |
+
+Налаштування: `rollPID` = P,I,D[,FF]; `looptime` → gyro/pid Гц, `P interval` → частота логу; `gyro_lpf_hz`/`gyro_lpf_type`, `dterm_lpf_hz`/`dterm_lpf_type`, `dterm_lpf2_hz`, `gyro_notch_hz/cutoff`; `dynamicGyroNotchMinHz`/`dynamicGyroNotchQ` (Q ×0.01) → dyn notch; `rpm_gyro_*` → RPM notch; `motor_pwm_protocol` (ті самі коди, що в Betaflight), `motorOutput`.
+

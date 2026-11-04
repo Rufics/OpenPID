@@ -61,34 +61,34 @@
         "valid": 14366
       },
       {
-        "key": "custom:attitude[0]",
-        "max": 255.0,
-        "mean": -3.554921,
-        "min": -146.0,
-        "name": "attitude[0]",
-        "unit": "raw",
-        "valid": 14366
-      },
-      {
-        "key": "custom:attitude[1]",
-        "max": 211.0,
-        "mean": -260.668732,
-        "min": -758.0,
+        "key": "custom:attitude.pitch",
+        "max": 21.1,
+        "mean": -26.066873,
+        "min": -75.8,
         "name": "attitude[1]",
-        "unit": "raw",
+        "unit": "deg",
         "valid": 14366
       },
       {
-        "key": "custom:attitude[2]",
-        "max": 3367.0,
-        "mean": 2451.37185,
-        "min": 1105.0,
+        "key": "custom:attitude.roll",
+        "max": 25.5,
+        "mean": -0.355492,
+        "min": -14.6,
+        "name": "attitude[0]",
+        "unit": "deg",
+        "valid": 14366
+      },
+      {
+        "key": "custom:attitude.yaw",
+        "max": 336.7,
+        "mean": 245.137185,
+        "min": 110.5,
         "name": "attitude[2]",
-        "unit": "raw",
+        "unit": "deg",
         "valid": 14366
       },
       {
-        "key": "custom:fwAltD",
+        "key": "custom:fw_alt.d",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -97,7 +97,7 @@
         "valid": 14366
       },
       {
-        "key": "custom:fwAltI",
+        "key": "custom:fw_alt.i",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -106,7 +106,7 @@
         "valid": 14366
       },
       {
-        "key": "custom:fwAltOut",
+        "key": "custom:fw_alt.out",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -115,7 +115,7 @@
         "valid": 14366
       },
       {
-        "key": "custom:fwAltP",
+        "key": "custom:fw_alt.p",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -124,7 +124,7 @@
         "valid": 14366
       },
       {
-        "key": "custom:fwPosD",
+        "key": "custom:fw_pos.d",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -133,7 +133,7 @@
         "valid": 14366
       },
       {
-        "key": "custom:fwPosI",
+        "key": "custom:fw_pos.i",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -142,7 +142,7 @@
         "valid": 14366
       },
       {
-        "key": "custom:fwPosOut",
+        "key": "custom:fw_pos.out",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -151,7 +151,7 @@
         "valid": 14366
       },
       {
-        "key": "custom:fwPosP",
+        "key": "custom:fw_pos.p",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -160,363 +160,363 @@
         "valid": 14366
       },
       {
-        "key": "custom:navAcc[0]",
+        "key": "custom:nav.acc.x",
         "max": 1341.0,
         "mean": -38.890645,
         "min": -1543.0,
         "name": "navAcc[0]",
-        "unit": "raw",
+        "unit": "cm/s²",
         "valid": 14366
       },
       {
-        "key": "custom:navAcc[1]",
+        "key": "custom:nav.acc.y",
         "max": 1495.0,
         "mean": -30.93603,
         "min": -1295.0,
         "name": "navAcc[1]",
-        "unit": "raw",
+        "unit": "cm/s²",
         "valid": 14366
       },
       {
-        "key": "custom:navAcc[2]",
+        "key": "custom:nav.acc.z",
         "max": 3419.0,
         "mean": 32.937004,
         "min": -2592.0,
         "name": "navAcc[2]",
-        "unit": "raw",
+        "unit": "cm/s²",
         "valid": 14366
       },
       {
-        "key": "custom:navEPH",
+        "key": "custom:nav.eph",
         "max": 146.0,
         "mean": 136.914033,
         "min": 121.0,
         "name": "navEPH",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 14366
       },
       {
-        "key": "custom:navEPV",
+        "key": "custom:nav.epv",
         "max": 100.0,
         "mean": 100.0,
         "min": 100.0,
         "name": "navEPV",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 14366
       },
       {
-        "key": "custom:navFlags",
+        "key": "custom:nav.flags",
         "max": 53.0,
         "mean": 20.762773,
         "min": 5.0,
         "name": "navFlags",
-        "unit": "raw",
+        "unit": "flags",
         "valid": 14366
       },
       {
-        "key": "custom:navPos[0]",
+        "key": "custom:nav.pos.x",
         "max": -25.0,
         "mean": -1100.726437,
         "min": -7288.0,
         "name": "navPos[0]",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 14366
       },
       {
-        "key": "custom:navPos[1]",
+        "key": "custom:nav.pos.y",
         "max": -119.0,
         "mean": -4266.18509,
         "min": -23472.0,
         "name": "navPos[1]",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 14366
       },
       {
-        "key": "custom:navPos[2]",
+        "key": "custom:nav.pos.z",
         "max": 13500.0,
         "mean": 2540.485591,
         "min": -21.0,
         "name": "navPos[2]",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 14366
       },
       {
-        "key": "custom:navState",
+        "key": "custom:nav.state",
         "max": 28.0,
         "mean": 26.91814,
         "min": 26.0,
         "name": "navState",
-        "unit": "raw",
+        "unit": "flags",
         "valid": 14366
       },
       {
-        "key": "custom:navSurf[0]",
+        "key": "custom:nav.surface",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navSurf[0]",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 14366
       },
       {
-        "key": "custom:navTgtPos[0]",
+        "key": "custom:nav.target_pos.x",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navTgtPos[0]",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 14366
       },
       {
-        "key": "custom:navTgtPos[1]",
+        "key": "custom:nav.target_pos.y",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navTgtPos[1]",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 14366
       },
       {
-        "key": "custom:navTgtPos[2]",
+        "key": "custom:nav.target_pos.z",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navTgtPos[2]",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 14366
       },
       {
-        "key": "custom:navTgtVel[0]",
+        "key": "custom:nav.target_vel.x",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navTgtVel[0]",
-        "unit": "raw",
+        "unit": "cm/s",
         "valid": 14366
       },
       {
-        "key": "custom:navTgtVel[1]",
+        "key": "custom:nav.target_vel.y",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navTgtVel[1]",
-        "unit": "raw",
+        "unit": "cm/s",
         "valid": 14366
       },
       {
-        "key": "custom:navTgtVel[2]",
+        "key": "custom:nav.target_vel.z",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navTgtVel[2]",
-        "unit": "raw",
+        "unit": "cm/s",
         "valid": 14366
       },
       {
-        "key": "custom:navVel[0]",
+        "key": "custom:nav.vel.x",
         "max": 33.0,
         "mean": -240.766741,
         "min": -1300.0,
         "name": "navVel[0]",
-        "unit": "raw",
+        "unit": "cm/s",
         "valid": 14366
       },
       {
-        "key": "custom:navVel[1]",
+        "key": "custom:nav.vel.y",
         "max": 32.0,
         "mean": -795.118196,
         "min": -2456.0,
         "name": "navVel[1]",
-        "unit": "raw",
+        "unit": "cm/s",
         "valid": 14366
       },
       {
-        "key": "custom:navVel[2]",
+        "key": "custom:nav.vel.z",
         "max": 1361.0,
         "mean": 452.83621,
         "min": -233.0,
         "name": "navVel[2]",
-        "unit": "raw",
+        "unit": "cm/s",
         "valid": 14366
       },
       {
-        "key": "custom:rcData[0]",
+        "key": "custom:rc_raw.0",
         "max": 1500.0,
         "mean": 1499.142072,
         "min": 1497.0,
         "name": "rcData[0]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
-        "key": "custom:rcData[1]",
+        "key": "custom:rc_raw.1",
         "max": 1499.0,
         "mean": 1496.965474,
         "min": 1495.0,
         "name": "rcData[1]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
-        "key": "custom:rcData[2]",
+        "key": "custom:rc_raw.2",
         "max": 1501.0,
         "mean": 1500.176458,
         "min": 1477.0,
         "name": "rcData[2]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
-        "key": "custom:rcData[3]",
+        "key": "custom:rc_raw.3",
         "max": 1535.0,
         "mean": 1517.751705,
         "min": 995.0,
         "name": "rcData[3]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
-        "key": "custom:servo[0]",
+        "key": "custom:servo.0",
         "max": 1500.0,
         "mean": 1500.0,
         "min": 1500.0,
         "name": "servo[0]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
-        "key": "custom:servo[10]",
-        "max": 1500.0,
-        "mean": 1500.0,
-        "min": 1500.0,
-        "name": "servo[10]",
-        "unit": "raw",
-        "valid": 14366
-      },
-      {
-        "key": "custom:servo[11]",
-        "max": 1500.0,
-        "mean": 1500.0,
-        "min": 1500.0,
-        "name": "servo[11]",
-        "unit": "raw",
-        "valid": 14366
-      },
-      {
-        "key": "custom:servo[12]",
-        "max": 1500.0,
-        "mean": 1500.0,
-        "min": 1500.0,
-        "name": "servo[12]",
-        "unit": "raw",
-        "valid": 14366
-      },
-      {
-        "key": "custom:servo[13]",
-        "max": 1500.0,
-        "mean": 1500.0,
-        "min": 1500.0,
-        "name": "servo[13]",
-        "unit": "raw",
-        "valid": 14366
-      },
-      {
-        "key": "custom:servo[14]",
-        "max": 1500.0,
-        "mean": 1500.0,
-        "min": 1500.0,
-        "name": "servo[14]",
-        "unit": "raw",
-        "valid": 14366
-      },
-      {
-        "key": "custom:servo[15]",
-        "max": 1500.0,
-        "mean": 1500.0,
-        "min": 1500.0,
-        "name": "servo[15]",
-        "unit": "raw",
-        "valid": 14366
-      },
-      {
-        "key": "custom:servo[1]",
+        "key": "custom:servo.1",
         "max": 1500.0,
         "mean": 1500.0,
         "min": 1500.0,
         "name": "servo[1]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
-        "key": "custom:servo[2]",
+        "key": "custom:servo.10",
+        "max": 1500.0,
+        "mean": 1500.0,
+        "min": 1500.0,
+        "name": "servo[10]",
+        "unit": "us",
+        "valid": 14366
+      },
+      {
+        "key": "custom:servo.11",
+        "max": 1500.0,
+        "mean": 1500.0,
+        "min": 1500.0,
+        "name": "servo[11]",
+        "unit": "us",
+        "valid": 14366
+      },
+      {
+        "key": "custom:servo.12",
+        "max": 1500.0,
+        "mean": 1500.0,
+        "min": 1500.0,
+        "name": "servo[12]",
+        "unit": "us",
+        "valid": 14366
+      },
+      {
+        "key": "custom:servo.13",
+        "max": 1500.0,
+        "mean": 1500.0,
+        "min": 1500.0,
+        "name": "servo[13]",
+        "unit": "us",
+        "valid": 14366
+      },
+      {
+        "key": "custom:servo.14",
+        "max": 1500.0,
+        "mean": 1500.0,
+        "min": 1500.0,
+        "name": "servo[14]",
+        "unit": "us",
+        "valid": 14366
+      },
+      {
+        "key": "custom:servo.15",
+        "max": 1500.0,
+        "mean": 1500.0,
+        "min": 1500.0,
+        "name": "servo[15]",
+        "unit": "us",
+        "valid": 14366
+      },
+      {
+        "key": "custom:servo.2",
         "max": 1500.0,
         "mean": 1500.0,
         "min": 1500.0,
         "name": "servo[2]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
-        "key": "custom:servo[3]",
+        "key": "custom:servo.3",
         "max": 1654.0,
         "mean": 1469.64938,
         "min": 1179.0,
         "name": "servo[3]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
-        "key": "custom:servo[4]",
+        "key": "custom:servo.4",
         "max": 1765.0,
         "mean": 1523.094668,
         "min": 1333.0,
         "name": "servo[4]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
-        "key": "custom:servo[5]",
+        "key": "custom:servo.5",
         "max": 1500.0,
         "mean": 1500.0,
         "min": 1500.0,
         "name": "servo[5]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
-        "key": "custom:servo[6]",
+        "key": "custom:servo.6",
         "max": 1500.0,
         "mean": 1500.0,
         "min": 1500.0,
         "name": "servo[6]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
-        "key": "custom:servo[7]",
+        "key": "custom:servo.7",
         "max": 1500.0,
         "mean": 1500.0,
         "min": 1500.0,
         "name": "servo[7]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
-        "key": "custom:servo[8]",
+        "key": "custom:servo.8",
         "max": 1500.0,
         "mean": 1500.0,
         "min": 1500.0,
         "name": "servo[8]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
-        "key": "custom:servo[9]",
+        "key": "custom:servo.9",
         "max": 1500.0,
         "mean": 1500.0,
         "min": 1500.0,
         "name": "servo[9]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 14366
       },
       {
@@ -846,58 +846,6 @@
     "sample_rate_hz": 497.265042,
     "samples": 14366,
     "skipped_bytes": 11,
-    "unmapped_fields": [
-      "fwAltP",
-      "fwAltI",
-      "fwAltD",
-      "fwAltOut",
-      "fwPosP",
-      "fwPosI",
-      "fwPosD",
-      "fwPosOut",
-      "rcData[0]",
-      "rcData[1]",
-      "rcData[2]",
-      "rcData[3]",
-      "attitude[0]",
-      "attitude[1]",
-      "attitude[2]",
-      "servo[0]",
-      "servo[1]",
-      "servo[2]",
-      "servo[3]",
-      "servo[4]",
-      "servo[5]",
-      "servo[6]",
-      "servo[7]",
-      "servo[8]",
-      "servo[9]",
-      "servo[10]",
-      "servo[11]",
-      "servo[12]",
-      "servo[13]",
-      "servo[14]",
-      "servo[15]",
-      "navState",
-      "navFlags",
-      "navEPH",
-      "navEPV",
-      "navPos[0]",
-      "navPos[1]",
-      "navPos[2]",
-      "navVel[0]",
-      "navVel[1]",
-      "navVel[2]",
-      "navAcc[0]",
-      "navAcc[1]",
-      "navAcc[2]",
-      "navTgtVel[0]",
-      "navTgtVel[1]",
-      "navTgtVel[2]",
-      "navTgtPos[0]",
-      "navTgtPos[1]",
-      "navTgtPos[2]",
-      "navSurf[0]"
-    ]
+    "unmapped_fields": []
   }
 ]
