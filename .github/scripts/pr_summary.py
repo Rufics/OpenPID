@@ -96,7 +96,7 @@ def crate_of(path: str) -> str:
     return parts[0] if parts else path
 
 
-def coverage_section(lcov: str, gate: float, result: str, base_cov: str | None) -> str:
+def coverage_section(lcov: str, gate: float, result: str) -> str:
     files = parse_lcov(lcov)
     if not files:
         return f"### {icon(None)} Coverage\n\nNo lcov report found (coverage job: `{result}`).\n"
@@ -109,14 +109,7 @@ def coverage_section(lcov: str, gate: float, result: str, base_cov: str | None) 
         c = by_crate[crate_of(path)]
         c[0] += found
         c[1] += hit
-    out = [f"### {icon(ok)} Coverage: {total:.1f} % lines (gate ≥ {gate:.0f} %)"]
-    if base_cov:
-        try:
-            delta = total - float(base_cov)
-            out[0] += f" · base {float(base_cov):.1f} % ({delta:+.1f})"
-        except ValueError:
-            pass
-    out.append("")
+    out = [f"### {icon(ok)} Coverage: {total:.1f} % lines (gate ≥ {gate:.0f} %, cargo-llvm-cov)", ""]
     out.append("| Crate | Lines | Covered | % |")
     out.append("|---|---:|---:|---:|")
     for crate in sorted(by_crate):
@@ -222,12 +215,9 @@ def fmt_condition(c: dict) -> tuple[str, str, str]:
     return name, actual, want
 
 
-def sonar_section(
-    sonar: Sonar, pr: str, base: str, task_id: str, result: str
-) -> tuple[str, str | None]:
-    """Markdown and the base-branch coverage (for the delta)."""
+def sonar_section(sonar: Sonar, pr: str, base: str, task_id: str, result: str) -> str:
     if result == "skipped":
-        return "### ⚪ SonarCloud\n\nSkipped (no `SONAR_TOKEN`).\n", None
+        return "### ⚪ SonarCloud\n\nSkipped (no `SONAR_TOKEN`).\n"
     analysis_id = sonar.wait_for_task(task_id)
     if analysis_id:
         gate = sonar.get("qualitygates/project_status", analysisId=analysis_id)
@@ -241,8 +231,7 @@ def sonar_section(
     if status is None:
         return (
             f"### {icon(None)} SonarCloud\n\nAnalysis not available yet "
-            f"(sonar job: `{result}`). [Dashboard]({dash})\n",
-            base_m.get("coverage"),
+            f"(sonar job: `{result}`). [Dashboard]({dash})\n"
         )
     ok = status == "OK"
     out = [f"### {icon(ok)} SonarCloud quality gate: **{status}** · [dashboard]({dash})", ""]
@@ -252,16 +241,24 @@ def sonar_section(
         name, actual, want = fmt_condition(c)
         out.append(f"| {name} | {actual} | {want} | {icon(c.get('status') == 'OK')} |")
     out.append("")
-    out.append("| Bugs | Vulnerabilities | Code smells | Hotspots | Duplication | Coverage |")
+    cov = pr_m.get("coverage")
+    cov_txt = f"{cov} %" if cov else "–"
+    if cov and base_m.get("coverage"):
+        try:
+            delta = float(cov) - float(base_m["coverage"])
+            cov_txt += f" ({delta:+.1f} vs `{base}`)"
+        except ValueError:
+            pass
+    out.append("| Bugs | Vulnerabilities | Code smells | Hotspots | Duplication | Coverage (Sonar) |")
     out.append("|---:|---:|---:|---:|---:|---:|")
     out.append(
-        "| {} | {} | {} | {} | {} % | {} % |".format(
+        "| {} | {} | {} | {} | {} % | {} |".format(
             pr_m.get("bugs", "0"),
             pr_m.get("vulnerabilities", "0"),
             pr_m.get("code_smells", "0"),
             pr_m.get("security_hotspots", "0"),
             pr_m.get("duplicated_lines_density", "0"),
-            pr_m.get("coverage", "–"),
+            cov_txt,
         )
     )
     issues = sonar.get(
@@ -316,7 +313,7 @@ def sonar_section(
             )
         out.append("")
         out.append("</details>")
-    return "\n".join(out) + "\n", base_m.get("coverage")
+    return "\n".join(out) + "\n"
 
 
 # ----------------------------------------------------------------- main
@@ -325,14 +322,14 @@ def sonar_section(
 def main() -> None:
     gate = float(env("COVERAGE_MIN", "90") or 90)
     sonar = Sonar(env("SONAR_HOST", "https://sonarcloud.io"), env("SONAR_PROJECT"), env("SONAR_TOKEN"))
-    sonar_md, base_cov = sonar_section(
+    sonar_md = sonar_section(
         sonar,
         env("PR_NUMBER"),
         env("BASE_BRANCH", "master"),
         env("SONAR_CE_TASK_ID"),
         env("SONAR_RESULT", "unknown"),
     )
-    cov_md = coverage_section(env("LCOV", "lcov.info"), gate, env("COVERAGE_RESULT", "unknown"), base_cov)
+    cov_md = coverage_section(env("LCOV", "lcov.info"), gate, env("COVERAGE_RESULT", "unknown"))
     run = env("RUN_URL")
     footer = f"_Updated by CI{f' · [run]({run})' if run else ''}._"
     print("\n".join([MARKER, "## CI summary", "", cov_md, sonar_md, footer]))
