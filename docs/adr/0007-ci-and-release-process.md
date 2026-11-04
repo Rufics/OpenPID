@@ -27,3 +27,7 @@
 - Інструменти, які ставляться в CI, також із версією (`cargo-llvm-cov@0.9.1` через `taiki-e/install-action`; toolchain — `RUST_TOOLCHAIN`, той самий, що в `rust-toolchain.toml`).
 - Назви job‑ів у matrix не містять імені runner‑а (`test (linux)`, а не `test (ubuntu-24.04)`), щоб оновлення образу не ламало список обов'язкових перевірок у ruleset‑і.
 
+## Підсумковий коментар у PR (доповнення 2026‑11)
+
+Job `PR summary comment` (`.github/scripts/pr_summary.py`, лише стандартна бібліотека Python) після `coverage` і `sonar` публікує один коментар у PR і оновлює його на кожен push: покриття рядків по crate‑ах з дельтою до базової гілки та найменш покритими файлами, стан quality gate SonarCloud з усіма умовами, лічильники bugs/vulnerabilities/code smells/hotspots і таблицю відкритих зауважень із посиланнями. Коментар інформаційний: він не входить до `CI OK`, а публікується навіть коли gate покриття впав. Для PR із fork‑ів job пропускається (token лише на читання).
+

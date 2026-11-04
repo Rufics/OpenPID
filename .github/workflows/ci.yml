@@ -133,6 +133,7 @@ jobs:
       - name: Gate
         run: cargo llvm-cov report --fail-under-lines ${{ env.COVERAGE_MIN }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() # the PR summary wants the report even when the gate fails
         with:
           name: coverage-lcov
           path: |
@@ -190,6 +191,8 @@ jobs:
     needs: [check, coverage]
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    outputs:
+      ce_task_id: ${{ steps.task.outputs.id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -222,6 +225,60 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: Remember the analysis task (the PR summary waits for it)
+        id: task
+        if: env.SONAR_TOKEN != ''
+        run: |
+          id=$(sed -n 's/^ceTaskId=//p' .scannerwork/report-task.txt)
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------- one comment on the PR: coverage + Sonar
+  pr-summary:
+    name: PR summary comment
+    # informational only (not in CI OK); same-repo PRs, since forks get a read-only token
+    if: >-
+      always() && github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    needs: [coverage, sonar]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true # no report when the coverage job did not get that far
+        with:
+          name: coverage-lcov
+      - name: Build the summary
+        env:
+          LCOV: lcov.info
+          COVERAGE_MIN: ${{ env.COVERAGE_MIN }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+          SONAR_RESULT: ${{ needs.sonar.result }}
+          SONAR_PROJECT: Rufics_OpenPID
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_CE_TASK_ID: ${{ needs.sonar.outputs.ce_task_id }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 -I .github/scripts/pr_summary.py > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Create or update the comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments?per_page=100" \
+                --jq '[.[] | select(.body | startswith("<!-- openpid-ci-summary -->"))] | first | .id // empty')
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@summary.md > /dev/null
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@summary.md > /dev/null
+          fi
 
   # ---------------------------------------------------------------- single required check for the ruleset
   ci-ok:
