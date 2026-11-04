@@ -22,8 +22,15 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "OpenPID",
         options,
-        Box::new(move |cc| Ok(Box::new(app::App::new(cc, files, tab)))),
+        Box::new(move |cc| Ok(Box::new(app::App::with_context(&cc.egui_ctx, files, tab)))),
     )
+}
+
+// The only eframe-specific glue; everything else runs headless (ADR-0008).
+impl eframe::App for app::App {
+    fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
+        self.frame(ui);
+    }
 }
 
 /// Splits the command line into log files to open and the tab to start on.

@@ -149,16 +149,8 @@ impl std::fmt::Debug for App {
 }
 
 impl App {
-    pub fn new(
-        cc: &eframe::CreationContext<'_>,
-        open_on_start: Vec<PathBuf>,
-        tab: Option<Tab>,
-    ) -> Self {
-        Self::with_context(&cc.egui_ctx, open_on_start, tab)
-    }
-
-    /// Builds the app on an existing egui context: what `new` does without an
-    /// eframe window, so tests can drive the UI headless (ADR-0008).
+    /// Builds the app on an egui context: the eframe window's in `main`, the
+    /// test harness's in the headless tests (ADR-0008).
     pub fn with_context(
         ctx: &egui::Context,
         open_on_start: Vec<PathBuf>,
@@ -385,11 +377,5 @@ impl App {
             Tab::Sliders => views::sliders(self, ui),
             Tab::Diagnostics => views::diagnostics(self, ui),
         });
-    }
-}
-
-impl eframe::App for App {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.frame(ui);
     }
 }
