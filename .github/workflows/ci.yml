@@ -1,3 +1,6 @@
+# Every action is pinned to a full commit SHA (the tag is in the trailing
+# comment, Dependabot keeps both in sync) and every runner to a dated image:
+# nothing in this pipeline changes unless a commit here changes it.
 name: CI
 
 on:
@@ -15,7 +18,7 @@ env:
   CARGO_TERM_COLOR: always
   RUST_TOOLCHAIN: 1.97.0
   # Line coverage (library + CLI crates) below this fails the run.
-  COVERAGE_MIN: 85
+  COVERAGE_MIN: 90
 
 permissions:
   contents: read
@@ -24,14 +27,14 @@ jobs:
   # ---------------------------------------------------------------- style
   check:
     name: fmt + clippy + docs + typos
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-11
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: check
       - run: cargo fmt --all -- --check
@@ -41,26 +44,26 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
       - name: Spelling
-        uses: crate-ci/typos@v1
+        uses: crate-ci/typos@4c8b7f51ca60df14e3c5ca82770dfbbe6c3dae85 # v1.52.0
 
   # ---------------------------------------------------------------- commit messages (PRs only)
   commits:
     name: conventional commits
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Every commit on the PR follows Conventional Commits
-        uses: wagoid/commitlint-github-action@v6
+        uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6.2.1
         with:
           configFile: .commitlintrc.json
       - name: PR title follows Conventional Commits (used for squash merges)
-        uses: amannn/action-semantic-pull-request@v5
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -79,18 +82,23 @@ jobs:
 
   # ---------------------------------------------------------------- tests
   test:
-    name: test (${{ matrix.os }})
+    # Job names carry the platform, not the runner image, so a runner bump never
+    # touches the ruleset's required checks (.github/rulesets/master.json).
+    name: test (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - { os: ubuntu-24.04, name: linux }
+          - { os: macos-15,     name: macos }
+          - { os: windows-2025, name: windows }
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-11
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: test
       - run: cargo test --workspace --all-targets
@@ -98,16 +106,18 @@ jobs:
 
   # ---------------------------------------------------------------- coverage gate
   coverage:
-    name: coverage (>= 85% lines)
-    runs-on: ubuntu-latest
+    name: coverage (>= 90% lines)
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-11
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: llvm-tools-preview
-      - uses: taiki-e/install-action@cargo-llvm-cov
-      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        with:
+          tool: cargo-llvm-cov@0.9.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: coverage
       - name: Measure (GUI crate excluded, it has no headless tests)
@@ -122,7 +132,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Gate
         run: cargo llvm-cov report --fail-under-lines ${{ env.COVERAGE_MIN }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-lcov
           path: |
@@ -133,33 +143,30 @@ jobs:
   # ---------------------------------------------------------------- dependencies
   deny:
     name: cargo deny (licences, advisories, bans)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           rust-version: ${{ env.RUST_TOOLCHAIN }}
 
   # ---------------------------------------------------------------- binaries for review
   build:
-    name: build (${{ matrix.os }})
+    name: build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            artifact: openpid-linux-x86_64
-          - os: macos-latest
-            artifact: openpid-macos-arm64
-          - os: windows-latest
-            artifact: openpid-windows-x86_64
+          - { os: ubuntu-24.04, name: linux,   artifact: openpid-linux-x86_64 }
+          - { os: macos-15,     name: macos,   artifact: openpid-macos-arm64 }
+          - { os: windows-2025, name: windows, artifact: openpid-windows-x86_64 }
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-11
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: build-${{ matrix.os }}
       - run: cargo build --release --workspace --bins
@@ -170,7 +177,7 @@ jobs:
           cp target/release/openpid${{ runner.os == 'Windows' && '.exe' || '' }} dist/
           cp target/release/openpid-gui${{ runner.os == 'Windows' && '.exe' || '' }} dist/
           cp LICENSE README.md dist/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.artifact }}
           path: dist/
@@ -179,12 +186,12 @@ jobs:
   # ---------------------------------------------------------------- SonarCloud
   sonar:
     name: SonarCloud
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [check, coverage]
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Skip when SONAR_TOKEN is not configured
@@ -192,12 +199,12 @@ jobs:
         run: |
           echo "::notice title=SonarCloud skipped::Add the SONAR_TOKEN repository secret to enable the analysis."
           echo '## SonarCloud: skipped (no SONAR_TOKEN secret)' >> "$GITHUB_STEP_SUMMARY"
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-11
         if: env.SONAR_TOKEN != ''
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         if: env.SONAR_TOKEN != ''
         with:
           shared-key: check
@@ -206,12 +213,12 @@ jobs:
         run: cargo clippy --workspace --all-targets --message-format=json > clippy-report.json
       - name: Coverage report from the coverage job
         if: env.SONAR_TOKEN != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: coverage-lcov
       - name: SonarCloud scan
         if: env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -221,7 +228,7 @@ jobs:
     name: CI OK
     if: always()
     needs: [check, commits, test, coverage, deny, build, sonar]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: All required jobs succeeded (skipped jobs are fine)
         run: |

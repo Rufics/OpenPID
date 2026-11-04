@@ -211,6 +211,82 @@ impl BetaflightSliders {
     }
 }
 
+/// Slider percentages as `f32` factors (`slider / 100`), as the firmware uses them.
+#[derive(Debug, Clone, Copy)]
+struct GainFactors {
+    master: f32,
+    pi: f32,
+    d: f32,
+    ff: f32,
+    i: f32,
+    d_max: f32,
+    pitch_pi: f32,
+    pitch_d: f32,
+}
+
+/// Filter cut-off as the firmware computes it (`default * slider / 100`, truncated).
+fn lpf(base: f64, m: f32) -> f64 {
+    (base * f64::from(m)).clamp(0.0, LPF_MAX_HZ).trunc()
+}
+
+/// `(min, max)` cut-offs of a dynamic LPF1, or the static cut-off twice.
+fn lpf1_range(dynamic: bool, min_default: f64, max_default: f64, m: f32) -> (f64, f64) {
+    if dynamic {
+        (lpf(min_default, m), lpf(max_default, m))
+    } else {
+        (lpf(min_default, m), lpf(min_default, m))
+    }
+}
+
+impl BetaflightSliders {
+    fn logged_axis(&self, axis: usize) -> Option<PidGains> {
+        self.logged.as_ref().map(|p| match axis {
+            0 => p.roll,
+            1 => p.pitch,
+            _ => p.yaw,
+        })
+    }
+
+    /// Gains of one axis from the firmware defaults and the slider factors.
+    fn axis_gains(&self, axis: usize, f: &GainFactors) -> PidGains {
+        let def = self.defaults.pid[axis].map(|v| v as f32);
+        let partner = self.defaults.d_partner[axis] as f32;
+        let (pitch_pi, pitch_d) = if axis == 1 {
+            (f.pitch_pi, f.pitch_d)
+        } else {
+            (1.0, 1.0)
+        };
+        let mut gains = PidGains {
+            p: clamp_int(def[0] * f.master * f.pi * pitch_pi, PID_GAIN_MAX),
+            i: clamp_int(def[1] * f.master * f.pi * f.i * pitch_pi, PID_GAIN_MAX),
+            f: Some(clamp_int(def[3] * f.master * pitch_pi * f.ff, F_GAIN_MAX)),
+            ..PidGains::default()
+        };
+        // keep the firmware's left-to-right `f32` evaluation order: it decides the truncation
+        if self.defaults.d_max_scheme {
+            gains.d = clamp_int(def[2] * f.master * f.d * pitch_d, PID_GAIN_MAX);
+            let gain = if partner > 0.0 {
+                f.d_max + (1.0 - f.d_max) * def[2] / partner
+            } else {
+                1.0
+            };
+            gains.d_max = Some(clamp_int(
+                partner * f.master * f.d * pitch_d * gain,
+                PID_GAIN_MAX,
+            ));
+        } else {
+            let ratio = if partner > 0.0 {
+                1.0 + ((def[2] - partner) / partner) * f.d_max
+            } else {
+                1.0
+            };
+            gains.d = clamp_int(partner * f.master * f.d * pitch_d * ratio, PID_GAIN_MAX);
+            gains.d_min = Some(clamp_int(partner * f.master * f.d * pitch_d, PID_GAIN_MAX));
+        }
+        gains
+    }
+}
+
 impl SliderModel for BetaflightSliders {
     fn id(&self) -> &'static str {
         "betaflight-simplified-tuning"
@@ -234,95 +310,46 @@ impl SliderModel for BetaflightSliders {
     fn compute(&self, values: &SliderValues) -> SliderResult {
         let v = |k: &str| self.value(values, k);
         let mode = v("simplified_pids_mode") as i32;
-        let master = v("simplified_master_multiplier") / 100.0;
-        let pi = v("simplified_pi_gain") / 100.0;
-        let d = v("simplified_d_gain") / 100.0;
-        let ff = v("simplified_feedforward_gain") / 100.0;
-        let i_gain = v("simplified_i_gain") / 100.0;
-        let d_max_gain = v("simplified_d_max_gain") / 100.0;
+        let factors = GainFactors {
+            master: v("simplified_master_multiplier") / 100.0,
+            pi: v("simplified_pi_gain") / 100.0,
+            d: v("simplified_d_gain") / 100.0,
+            ff: v("simplified_feedforward_gain") / 100.0,
+            i: v("simplified_i_gain") / 100.0,
+            d_max: v("simplified_d_max_gain") / 100.0,
+            pitch_pi: v("simplified_pitch_pi_gain") / 100.0,
+            pitch_d: v("simplified_pitch_d_gain") / 100.0,
+        };
         let mut out: [PidGains; 3] = [PidGains::default(); 3];
         for (axis, gains) in out.iter_mut().enumerate() {
-            let logged = self.logged.as_ref().map(|p| match axis {
-                0 => p.roll,
-                1 => p.pitch,
-                _ => p.yaw,
-            });
             // axes beyond the mode keep the logged gains (the firmware leaves them alone)
             if axis as i32 > mode {
-                if let Some(l) = logged {
+                if let Some(l) = self.logged_axis(axis) {
                     *gains = l;
                 }
-                continue;
-            }
-            let def = self.defaults.pid[axis].map(|v| v as f32);
-            let partner = self.defaults.d_partner[axis] as f32;
-            let pitch_d = if axis == 1 {
-                v("simplified_pitch_d_gain") / 100.0
             } else {
-                1.0
-            };
-            let pitch_pi = if axis == 1 {
-                v("simplified_pitch_pi_gain") / 100.0
-            } else {
-                1.0
-            };
-            gains.p = clamp_int(def[0] * master * pi * pitch_pi, PID_GAIN_MAX);
-            gains.i = clamp_int(def[1] * master * pi * i_gain * pitch_pi, PID_GAIN_MAX);
-            gains.f = Some(clamp_int(def[3] * master * pitch_pi * ff, F_GAIN_MAX));
-            if self.defaults.d_max_scheme {
-                gains.d = clamp_int(def[2] * master * d * pitch_d, PID_GAIN_MAX);
-                let gain = if partner > 0.0 {
-                    d_max_gain + (1.0 - d_max_gain) * def[2] / partner
-                } else {
-                    1.0
-                };
-                gains.d_max = Some(clamp_int(
-                    partner * master * d * pitch_d * gain,
-                    PID_GAIN_MAX,
-                ));
-                gains.d_min = None;
-            } else {
-                let ratio = if partner > 0.0 {
-                    1.0 + ((def[2] - partner) / partner) * d_max_gain
-                } else {
-                    1.0
-                };
-                gains.d = clamp_int(partner * master * d * pitch_d * ratio, PID_GAIN_MAX);
-                gains.d_min = Some(clamp_int(partner * master * d * pitch_d, PID_GAIN_MAX));
-                gains.d_max = None;
+                *gains = self.axis_gains(axis, &factors);
             }
         }
         let dm = v("simplified_dterm_filter_multiplier") / 100.0;
         let gm = v("simplified_gyro_filter_multiplier") / 100.0;
-        // the firmware computes the filter cut-offs in integer arithmetic (`default * slider / 100`)
-        let lpf = |base: f64, m: f32| (base * f64::from(m)).clamp(0.0, LPF_MAX_HZ).trunc();
         let dterm_on = v("simplified_dterm_filter") >= 0.5;
         let gyro_on = v("simplified_gyro_filter") >= 0.5;
         let dterm_lpf1_hz = (dterm_on && (self.dterm_dyn || self.dterm_static)).then(|| {
-            if self.dterm_dyn {
-                (
-                    lpf(DTERM_LPF1_DYN_MIN_HZ_DEFAULT, dm),
-                    lpf(DTERM_LPF1_DYN_MAX_HZ_DEFAULT, dm),
-                )
-            } else {
-                (
-                    lpf(DTERM_LPF1_DYN_MIN_HZ_DEFAULT, dm),
-                    lpf(DTERM_LPF1_DYN_MIN_HZ_DEFAULT, dm),
-                )
-            }
+            lpf1_range(
+                self.dterm_dyn,
+                DTERM_LPF1_DYN_MIN_HZ_DEFAULT,
+                DTERM_LPF1_DYN_MAX_HZ_DEFAULT,
+                dm,
+            )
         });
         let gyro_lpf1_hz = (gyro_on && (self.gyro_dyn || self.gyro_static)).then(|| {
-            if self.gyro_dyn {
-                (
-                    lpf(GYRO_LPF1_DYN_MIN_HZ_DEFAULT, gm),
-                    lpf(GYRO_LPF1_DYN_MAX_HZ_DEFAULT, gm),
-                )
-            } else {
-                (
-                    lpf(GYRO_LPF1_DYN_MIN_HZ_DEFAULT, gm),
-                    lpf(GYRO_LPF1_DYN_MIN_HZ_DEFAULT, gm),
-                )
-            }
+            lpf1_range(
+                self.gyro_dyn,
+                GYRO_LPF1_DYN_MIN_HZ_DEFAULT,
+                GYRO_LPF1_DYN_MAX_HZ_DEFAULT,
+                gm,
+            )
         });
         let mut cli: Vec<String> = SLIDERS
             .iter()

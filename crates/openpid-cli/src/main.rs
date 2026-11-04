@@ -132,7 +132,7 @@ fn registry() -> FormatRegistry {
 
 fn open(path: &Path, options: &OpenOptions) -> Result<(Vec<u8>, LogFile), String> {
     let data = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    let name = path.file_name().and_then(|n| n.to_str());
+    let name = path.file_name().and_then(std::ffi::OsStr::to_str);
     let mut log = registry()
         .open(&data, name, options)
         .map_err(|e| format!("{}: {e}", path.display()))?;

@@ -8,7 +8,7 @@
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings`
 - [ ] `cargo test --workspace`
 - [ ] `cargo deny check`
-- [ ] Покриття не впало нижче 85 % (job `coverage`)
+- [ ] Покриття не впало нижче 90 % (job `coverage`)
 
 ## Документація
 
