@@ -1,15 +1,44 @@
 {
-  "extends": ["@commitlint/config-conventional"],
+  "extends": [
+    "@commitlint/config-conventional"
+  ],
   "rules": {
-    "type-enum": [2, "always", ["feat", "fix", "perf", "refactor", "docs", "test", "build", "ci", "chore", "revert"]],
-    "scope-case": [2, "always", "kebab-case"],
-    "subject-case": [0],
-    "header-max-length": [2, "always", 100],
-    "body-max-line-length": [1, "always", 120],
-    "footer-max-line-length": [0]
-  },
-  "ignores": [
-    "commit => commit.startsWith('Merge ')",
-    "commit => commit.startsWith('chore: release')"
-  ]
+    "type-enum": [
+      2,
+      "always",
+      [
+        "feat",
+        "fix",
+        "perf",
+        "refactor",
+        "docs",
+        "test",
+        "build",
+        "ci",
+        "chore",
+        "revert"
+      ]
+    ],
+    "scope-case": [
+      2,
+      "always",
+      "kebab-case"
+    ],
+    "subject-case": [
+      0
+    ],
+    "header-max-length": [
+      2,
+      "always",
+      100
+    ],
+    "body-max-line-length": [
+      1,
+      "always",
+      120
+    ],
+    "footer-max-line-length": [
+      0
+    ]
+  }
 }
