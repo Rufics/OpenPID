@@ -2,7 +2,7 @@
 //! with `egui_plot`; nothing here computes.
 
 use crate::app::{App, SlotState};
-use crate::colormap::{ACCENT, MUTED, SLOT_A, SLOT_B, VIRIDIS};
+use crate::colormap::{ACCENT, MUTED, SLOT_A, SLOT_B};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{Heatmap, Legend, Line, Plot, PlotPoint, PlotPoints, VLine};
@@ -224,7 +224,10 @@ fn show_error(ui: &mut Ui, slot: Slot, e: &str) {
     ui.colored_label(Color32::LIGHT_RED, format!("{}: {e}", slot.name()));
 }
 
-fn grid_heatmap(name: &str, g: &Grid2D, max: f64) -> Option<Heatmap> {
+/// Heatmap item for a grid; `max` = 0 picks a robust automatic colour maximum.
+/// Cells at or below zero are transparent. `min_y_for_scale` excludes the
+/// near-DC rows (stick motion) from the automatic scale so noise stays visible.
+fn grid_heatmap(name: &str, g: &Grid2D, max: f64, min_y_for_scale: f64) -> Option<Heatmap> {
     if g.x.len() < 2 || g.y.len() < 2 {
         return None;
     }
@@ -233,7 +236,14 @@ fn grid_heatmap(name: &str, g: &Grid2D, max: f64) -> Option<Heatmap> {
     let max = if max > 0.0 {
         max
     } else {
-        g.z.iter().copied().fold(0.0f64, f64::max).max(1e-12)
+        let nx = g.x.len();
+        let rows: Vec<f64> =
+            g.y.iter()
+                .enumerate()
+                .filter(|(_, y)| **y >= min_y_for_scale)
+                .flat_map(|(iy, _)| g.z[iy * nx..(iy + 1) * nx].iter().copied())
+                .collect();
+        crate::colormap::robust_max(if rows.is_empty() { &g.z } else { &rows })
     };
     Some(
         Heatmap::new(g.z.clone(), g.x.len())
@@ -243,7 +253,7 @@ fn grid_heatmap(name: &str, g: &Grid2D, max: f64) -> Option<Heatmap> {
                 (dy * g.y.len() as f64) as f32,
             )
             .range(0.0, max)
-            .palette(&VIRIDIS)
+            .custom_mapping(Box::new(move |v| crate::colormap::viridis(v / max)))
             .show_labels(false)
             .name(name),
     )
@@ -484,7 +494,7 @@ pub fn step(app: &mut App, ui: &mut Ui) {
                     continue;
                 };
                 if *slot == Slot::A
-                    && let Some(hm) = grid_heatmap("A responses", &s.histogram, 0.0)
+                    && let Some(hm) = grid_heatmap("A responses", &s.histogram, 0.0, f64::MIN)
                 {
                     pu.heatmap(hm);
                 }
@@ -689,7 +699,8 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
                                 .y_axis_label("frequency (Hz)")
                                 .height(h - 24.0)
                                 .show(ui, |pu| {
-                                    if let Some(hm) = grid_heatmap("amplitude", &t.grid, max) {
+                                    if let Some(hm) = grid_heatmap("amplitude", &t.grid, max, 20.0)
+                                    {
                                         pu.heatmap(hm);
                                     }
                                 });
@@ -754,7 +765,7 @@ pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
                         .y_axis_label("frequency (Hz)")
                         .height(h - 24.0)
                         .show(ui, |pu| {
-                            if let Some(hm) = grid_heatmap("amplitude", &t.grid, max) {
+                            if let Some(hm) = grid_heatmap("amplitude", &t.grid, max, 20.0) {
                                 pu.heatmap(hm);
                             }
                         });

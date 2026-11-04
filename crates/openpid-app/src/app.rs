@@ -29,6 +29,18 @@ impl Tab {
         Tab::Diagnostics,
     ];
 
+    pub fn from_name(name: &str) -> Option<Tab> {
+        Some(match name {
+            "log" => Tab::LogViewer,
+            "step" => Tab::Step,
+            "spectrum" => Tab::Spectrum,
+            "throttle" => Tab::ThrottleHeatmap,
+            "time" => Tab::TimeHeatmap,
+            "diagnostics" => Tab::Diagnostics,
+            _ => return None,
+        })
+    }
+
     pub fn title(self) -> &'static str {
         match self {
             Tab::LogViewer => "Log viewer",
@@ -100,7 +112,7 @@ impl Default for Tools {
             stft: StftParams::default(),
             spectrum_channel: gyro.clone(),
             heatmap_channel: gyro.clone(),
-            psd_db: false,
+            psd_db: true,
             heatmap_max: 0.0,
             viewer_channels: vec![
                 gyro,
@@ -132,7 +144,11 @@ impl std::fmt::Debug for App {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext<'_>, open_on_start: Vec<PathBuf>) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        open_on_start: Vec<PathBuf>,
+        tab: Option<Tab>,
+    ) -> Self {
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
         let ctx = cc.egui_ctx.clone();
         let worker = Worker::spawn(move || ctx.request_repaint());
@@ -140,7 +156,7 @@ impl App {
             worker,
             slots: HashMap::from([(Slot::A, SlotState::Empty), (Slot::B, SlotState::Empty)]),
             cache: HashMap::new(),
-            tab: Tab::LogViewer,
+            tab: tab.unwrap_or(Tab::LogViewer),
             tools: Tools::default(),
             touch_mode: false,
             touch_applied: false,

@@ -36,6 +36,10 @@ cargo build --release
 cargo run --release -p openpid-app                # або ./target/release/openpid-gui [logA] [logB]
 ```
 
+![Log viewer](docs/screenshots/log.png)
+![Step response](docs/screenshots/step.png)
+![Freq × throttle](docs/screenshots/throttle.png)
+
 Файли відкриваються кнопками «Open A…/Open B…» або перетягуванням у вікно. У Log viewer клік/тап по графіку ставить курсор, кнопки «start = cursor»/«end = cursor» задають епоху аналізу; масштабування — колесо/pinch, панорамування — перетягування. Усі обчислення виконуються у фоновому потоці, результати кешуються за параметрами.
 
 ## Тести
