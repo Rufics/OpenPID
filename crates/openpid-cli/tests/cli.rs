@@ -80,7 +80,7 @@ fn decode_raw_and_scaled() {
     let first = lines.next().unwrap();
     assert_eq!(first.split(',').count(), header.split(',').count());
     assert_eq!(out.lines().count(), 16775);
-    let tmp = std::env::temp_dir().join(format!("openpid-cli-test-{}.csv", std::process::id()));
+    let tmp = temp("scaled.csv");
     let (ok, _, _) = run(&[
         "decode",
         l.to_str().unwrap(),
@@ -106,7 +106,7 @@ fn decode_raw_and_scaled() {
 #[test]
 fn decode_csv_input() {
     let l = log("betaflight-4.2.0.BFL");
-    let tmp = std::env::temp_dir().join(format!("openpid-cli-test-{}.csv", std::process::id()));
+    let tmp = temp("roundtrip.csv");
     let (ok, _, _) = run(&[
         "decode",
         l.to_str().unwrap(),
