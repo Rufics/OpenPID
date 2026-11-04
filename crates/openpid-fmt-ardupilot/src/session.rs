@@ -243,17 +243,9 @@ fn exports(raw: &RawLog) -> Vec<Export<'static>> {
     out
 }
 
-/// Build the session; `data_len` is the file size for diagnostics.
-pub(crate) fn build(
-    raw: &RawLog,
-    data_len: u64,
-    options: &OpenOptions,
-    profile: ArdupilotProfile,
-) -> Result<FlightSession, FormatError> {
-    let (firmware, vehicle) = firmware_info(raw);
-    let h = headers(raw, &firmware, vehicle);
-
-    let primary = TIMEBASE_CANDIDATES
+/// The timebase message: its name, strictly increasing timestamps, rows dropped.
+fn primary_timebase(raw: &RawLog) -> Result<(&'static str, Vec<i64>, usize), FormatError> {
+    let (name, stream) = TIMEBASE_CANDIDATES
         .iter()
         .filter_map(|(name, inst)| stream(raw, name, *inst).map(|s| (*name, s)))
         .max_by_key(|(_, s)| s.rows.len())
@@ -261,10 +253,9 @@ pub(crate) fn build(
             offset: 0,
             message: "no IMU, RATE or PIDR messages: nothing to put on a timebase".into(),
         })?;
-    let (primary_name, primary_stream) = primary;
     let mut dropped = 0usize;
-    let mut times: Vec<i64> = Vec::with_capacity(primary_stream.rows.len());
-    for (t, _) in &primary_stream.rows {
+    let mut times: Vec<i64> = Vec::with_capacity(stream.rows.len());
+    for (t, _) in &stream.rows {
         if times.last().is_some_and(|last| t <= last) {
             dropped += 1;
         } else {
@@ -274,102 +265,142 @@ pub(crate) fn build(
     if times.len() < 2 {
         return Err(FormatError::Malformed {
             offset: 0,
-            message: format!("{primary_name}: fewer than two timestamped rows"),
+            message: format!("{name}: fewer than two timestamped rows"),
         });
     }
-    let timebase = Timebase::from_times(times.clone(), None);
+    Ok((name, times, dropped))
+}
 
-    let use_profile = !options.raw;
+/// Packet counts per message name.
+fn frame_stats(raw: &RawLog) -> BTreeMap<String, FrameStats> {
+    let mut frames: BTreeMap<String, FrameStats> = BTreeMap::new();
+    for m in &raw.messages {
+        let def = &raw.defs[m.def];
+        let e = frames.entry(def.name.clone()).or_default();
+        e.valid += 1;
+        e.bytes += def.length as u64;
+    }
+    frames
+}
+
+/// How one column of an exported message becomes a channel.
+struct ColumnTarget {
+    id: ChannelId,
+    unit: Unit,
+    scale: f64,
+    offset: f64,
+    /// `true` when no profile mapping existed (a generic `custom:` channel).
+    generic: bool,
+}
+
+fn column_target(
+    raw: &RawLog,
+    ex: &Export<'_>,
+    col: usize,
+    col_name: &str,
+    mapped: Option<openpid_core::FieldMapping>,
+    use_profile: bool,
+) -> ColumnTarget {
+    if let Some(m) = mapped {
+        let id = match (m.id, ex.instance) {
+            (ChannelId::Motor { .. } | ChannelId::MotorRpm { .. }, Some(i)) => {
+                ChannelId::MotorRpm { idx: i as u8 }
+            }
+            (id, _) => id,
+        };
+        return ColumnTarget {
+            id,
+            unit: m.unit,
+            scale: m.scale,
+            offset: m.offset,
+            generic: false,
+        };
+    }
+    let def = raw.def(ex.name).map(|(_, d)| d);
+    let (unit, scale) = match (use_profile, def) {
+        (true, Some(def)) => generic_unit_scale(raw, def, col),
+        _ => (Unit::Raw, 1.0),
+    };
+    let name = axis_channel_name(ex.name, col_name, ex.instance);
+    let (id, generic) = if ex.name == "ESC" && col_name == "RPM" && use_profile {
+        (
+            ChannelId::MotorRpm {
+                idx: ex.instance.unwrap_or(0) as u8,
+            },
+            false,
+        )
+    } else {
+        (ChannelId::Custom(name), use_profile)
+    };
+    ColumnTarget {
+        id,
+        unit,
+        scale,
+        offset: 0.0,
+        generic,
+    }
+}
+
+/// Columns that never become channels: timestamps, instance ids, text, arrays.
+fn skip_column(def: &FormatDef, col: usize) -> bool {
+    matches!(def.columns[col].as_str(), "TimeUS" | "TimeMS")
+        || Some(col) == instance_column(def)
+        || def
+            .format_char(col)
+            .is_some_and(|c| matches!(c, 'n' | 'N' | 'Z' | 'a'))
+}
+
+/// Every exported message, sample-and-held onto `times`.
+fn export_channels(
+    raw: &RawLog,
+    times: &[i64],
+    firmware: &FirmwareInfo,
+    h: &RawHeaders,
+    profile: ArdupilotProfile,
+    use_profile: bool,
+) -> (ChannelSet, Vec<String>) {
     let mut channels = ChannelSet::new();
     let mut unmapped = Vec::new();
-    let mut frames: BTreeMap<String, FrameStats> = BTreeMap::new();
-    for def in &raw.defs {
-        let n = raw
-            .messages
-            .iter()
-            .filter(|m| raw.defs[m.def].name == def.name)
-            .count() as u64;
-        if n > 0 {
-            frames.insert(
-                def.name.clone(),
-                FrameStats {
-                    valid: n,
-                    corrupt: 0,
-                    desync: 0,
-                    bytes: n * def.length as u64,
-                },
-            );
-        }
-    }
-
     for ex in exports(raw) {
         let Some(s) = stream(raw, ex.name, ex.instance) else {
             continue;
         };
-        let hold = hold_index(&times, &s);
+        let hold = hold_index(times, &s);
         let def = s.def;
         for (col, col_name) in def.columns.iter().enumerate() {
-            if matches!(col_name.as_str(), "TimeUS" | "TimeMS") || Some(col) == instance_column(def)
-            {
-                continue;
-            }
-            if def
-                .format_char(col)
-                .is_some_and(|c| matches!(c, 'n' | 'N' | 'Z' | 'a'))
-            {
+            if skip_column(def, col) {
                 continue;
             }
             let field = format!("{}.{}", ex.name, col_name);
-            let mapped = if use_profile {
-                profile.map_field(&field, &firmware, &h)
-            } else {
-                None
-            };
-            let (id, unit, scale, offset) = if let Some(m) = mapped {
-                let id = match (m.id, ex.instance) {
-                    (ChannelId::Motor { .. } | ChannelId::MotorRpm { .. }, Some(i)) => {
-                        ChannelId::MotorRpm { idx: i as u8 }
-                    }
-                    (id, _) => id,
-                };
-                (id, m.unit, m.scale, m.offset)
-            } else {
-                let (unit, scale) = if use_profile {
-                    generic_unit_scale(raw, def, col)
-                } else {
-                    (Unit::Raw, 1.0)
-                };
-                let name = axis_channel_name(ex.name, col_name, ex.instance);
-                let id = if ex.name == "ESC" && col_name == "RPM" && use_profile {
-                    ChannelId::MotorRpm {
-                        idx: ex.instance.unwrap_or(0) as u8,
-                    }
-                } else {
-                    if use_profile {
-                        unmapped.push(name.clone());
-                    }
-                    ChannelId::Custom(name)
-                };
-                (id, unit, scale, 0.0)
-            };
+            let mapped = use_profile
+                .then(|| profile.map_field(&field, firmware, h))
+                .flatten();
+            let target = column_target(raw, &ex, col, col_name, mapped, use_profile);
+            if channels.contains(&target.id) {
+                continue; // first mapping wins (e.g. RATE.RDes over PIDR.Tar)
+            }
+            if target.generic {
+                unmapped.push(axis_channel_name(ex.name, col_name, ex.instance));
+            }
             let data = Series::from_options(hold.iter().map(|hi| {
                 hi.and_then(|j| s.rows[j].1.values.get(col))
                     .and_then(Value::as_f64)
-                    .map(|v| (v + offset) * scale)
+                    .map(|v| (v + target.offset) * target.scale)
             }));
-            if channels.contains(&id) {
-                continue; // first mapping wins (e.g. RATE.RDes over PIDR.Tar)
-            }
             channels.insert(Channel {
-                id,
+                id: target.id,
                 name: axis_channel_name(ex.name, col_name, ex.instance),
-                unit,
+                unit: target.unit,
                 data,
                 origin: Origin::Logged { field },
             });
         }
     }
-    // the timebase itself
+    (channels, unmapped)
+}
+
+/// Time and sample-number channels of the timebase itself.
+fn timebase_channels(channels: &mut ChannelSet, primary_name: &str, times: &[i64]) {
     channels.insert(Channel {
         id: ChannelId::Time,
         name: format!("{primary_name}.time"),
@@ -389,34 +420,37 @@ pub(crate) fn build(
             by: "row number of the timebase message".into(),
         },
     });
-    // throttle from the RC input when the controller did not log one
-    if use_profile
-        && !channels.contains(&ChannelId::Throttle)
-        && let Some(rc) = channels.get(&ChannelId::RcCommand { ch: 2 })
-    {
-        let data = rc.data.map(|us| ((us - 1000.0) / 10.0).clamp(0.0, 100.0));
-        channels.insert(Channel {
-            id: ChannelId::Throttle,
-            name: "throttle (RCIN.C3)".into(),
-            unit: Unit::Percent,
-            data,
-            origin: Origin::Derived {
-                from: vec![ChannelId::RcCommand { ch: 2 }],
-                by: "(pwm - 1000) / 10".into(),
-            },
-        });
+}
+
+/// Throttle from the RC input when the controller did not log one.
+fn derive_throttle(channels: &mut ChannelSet) {
+    if channels.contains(&ChannelId::Throttle) {
+        return;
     }
-    channels.reindex();
-
-    let mut settings = if use_profile {
-        profile.settings(&firmware, &h)
-    } else {
-        openpid_core::Settings::default()
+    let Some(rc) = channels.get(&ChannelId::RcCommand { ch: 2 }) else {
+        return;
     };
-    settings.loop_rates.log_hz = Some(timebase.sample_rate_hz());
+    let data = rc.data.map(|us| ((us - 1000.0) / 10.0).clamp(0.0, 100.0));
+    channels.insert(Channel {
+        id: ChannelId::Throttle,
+        name: "throttle (RCIN.C3)".into(),
+        unit: Unit::Percent,
+        data,
+        origin: Origin::Derived {
+            from: vec![ChannelId::RcCommand { ch: 2 }],
+            by: "(pwm - 1000) / 10".into(),
+        },
+    });
+}
 
-    let events = events(raw, &times);
-
+/// Human-readable notes about what went onto the timebase and what did not.
+fn notes(
+    raw: &RawLog,
+    frames: &BTreeMap<String, FrameStats>,
+    primary_name: &str,
+    rate_hz: f64,
+    dropped: usize,
+) -> Vec<String> {
     let exported: Vec<&str> = EXPORTED
         .iter()
         .copied()
@@ -435,8 +469,7 @@ pub(crate) fn build(
         .map(|d| format!("{}:{}", d.name, frames[&d.name].valid))
         .collect();
     let mut notes = vec![format!(
-        "timebase: {primary_name} at {:.1} Hz; other messages ({}) are sample-and-held onto it",
-        timebase.sample_rate_hz(),
+        "timebase: {primary_name} at {rate_hz:.1} Hz; other messages ({}) are sample-and-held onto it",
         exported.join(", ")
     )];
     if dropped > 0 {
@@ -450,14 +483,52 @@ pub(crate) fn build(
             skipped.join(" ")
         ));
     }
+    notes
+}
+
+/// Build the session; `data_len` is the file size for diagnostics.
+pub(crate) fn build(
+    raw: &RawLog,
+    data_len: u64,
+    options: &OpenOptions,
+    profile: ArdupilotProfile,
+) -> Result<FlightSession, FormatError> {
+    let (firmware, vehicle) = firmware_info(raw);
+    let h = headers(raw, &firmware, vehicle);
+    let (primary_name, times, dropped) = primary_timebase(raw)?;
+    let timebase = Timebase::from_times(times.clone(), None);
+    let use_profile = !options.raw;
+
+    let (mut channels, unmapped) =
+        export_channels(raw, &times, &firmware, &h, profile, use_profile);
+    timebase_channels(&mut channels, primary_name, &times);
+    if use_profile {
+        derive_throttle(&mut channels);
+    }
+    channels.reindex();
+
+    let mut settings = if use_profile {
+        profile.settings(&firmware, &h)
+    } else {
+        openpid_core::Settings::default()
+    };
+    settings.loop_rates.log_hz = Some(timebase.sample_rate_hz());
+
+    let frames = frame_stats(raw);
     let diagnostics = Diagnostics {
+        notes: notes(
+            raw,
+            &frames,
+            primary_name,
+            timebase.sample_rate_hz(),
+            dropped,
+        ),
         frames,
         corrupt_frames: 0,
         desync_frames: 0,
         skipped_bytes: raw.skipped_bytes,
         total_bytes: data_len,
         unmapped_fields: unmapped,
-        notes,
     };
 
     let mut session = FlightSession {
@@ -469,7 +540,7 @@ pub(crate) fn build(
         raw_headers: h.0,
         timebase,
         channels,
-        events,
+        events: events(raw, &times),
         aux: Vec::new(),
         diagnostics,
     };
