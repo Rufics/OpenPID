@@ -1,0 +1,21 @@
+[package]
+name = "openpid-cli"
+description = "OpenPID command-line tool"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "openpid"
+path = "src/main.rs"
+
+[dependencies]
+openpid-core = { workspace = true }
+openpid-fmt-blackbox = { workspace = true }
+openpid-fmt-csv = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

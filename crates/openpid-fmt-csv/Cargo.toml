@@ -1,0 +1,15 @@
+[package]
+name = "openpid-fmt-csv"
+description = "Reader for CSV exports of blackbox logs (blackbox_decode compatible)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+openpid-core = { workspace = true }
+openpid-fmt-blackbox = { workspace = true }
+
+[lints]
+workspace = true

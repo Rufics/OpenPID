@@ -1,0 +1,4 @@
+/target
+/tests/logs/external/
+*.csv.tmp
+.DS_Store

@@ -1,0 +1,513 @@
+[
+  {
+    "aux_rows": {
+      "gps": 86,
+      "gps_home": 1,
+      "slow": 3
+    },
+    "channels": [
+      {
+        "key": "acc.pitch",
+        "max": 0.03418,
+        "mean": -0.077057,
+        "min": -0.421875,
+        "name": "accSmooth[1]",
+        "unit": "g",
+        "valid": 16774
+      },
+      {
+        "key": "acc.roll",
+        "max": 0.583008,
+        "mean": 0.008718,
+        "min": -0.730469,
+        "name": "accSmooth[0]",
+        "unit": "g",
+        "valid": 16774
+      },
+      {
+        "key": "acc.yaw",
+        "max": 3.69043,
+        "mean": 1.024328,
+        "min": 0.033691,
+        "name": "accSmooth[2]",
+        "unit": "g",
+        "valid": 16774
+      },
+      {
+        "key": "battery.current",
+        "max": 119.78,
+        "mean": 21.843406,
+        "min": 0.0,
+        "name": "amperageLatest",
+        "unit": "A",
+        "valid": 16774
+      },
+      {
+        "key": "battery.voltage",
+        "max": 22.81,
+        "mean": 21.865114,
+        "min": 17.59,
+        "name": "vbatLatest",
+        "unit": "V",
+        "valid": 16774
+      },
+      {
+        "key": "custom:BaroAlt",
+        "max": 289.0,
+        "mean": 33.553535,
+        "min": -656.0,
+        "name": "BaroAlt",
+        "unit": "cm",
+        "valid": 16774
+      },
+      {
+        "key": "custom:magADC[0]",
+        "max": 292.0,
+        "mean": -350.968165,
+        "min": -740.0,
+        "name": "magADC[0]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "custom:magADC[1]",
+        "max": 947.0,
+        "mean": 516.281686,
+        "min": -66.0,
+        "name": "magADC[1]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "custom:magADC[2]",
+        "max": 2576.0,
+        "mean": 2177.025039,
+        "min": 898.0,
+        "name": "magADC[2]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "custom:setpoint[3]",
+        "max": 96.5,
+        "mean": 31.617938,
+        "min": 0.0,
+        "name": "setpoint[3]",
+        "unit": "%",
+        "valid": 16774
+      },
+      {
+        "key": "debug.0",
+        "max": 44.0,
+        "mean": 0.150292,
+        "min": -33.0,
+        "name": "debug[0]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "debug.1",
+        "max": 215.0,
+        "mean": -0.351198,
+        "min": -124.0,
+        "name": "debug[1]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "debug.2",
+        "max": 32.0,
+        "mean": -2.830333,
+        "min": -53.0,
+        "name": "debug[2]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "debug.3",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "debug[3]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "gyro.filtered.pitch",
+        "max": 197.0,
+        "mean": -0.336533,
+        "min": -122.0,
+        "name": "gyroADC[1]",
+        "unit": "deg/s",
+        "valid": 16774
+      },
+      {
+        "key": "gyro.filtered.roll",
+        "max": 37.0,
+        "mean": 0.156015,
+        "min": -30.0,
+        "name": "gyroADC[0]",
+        "unit": "deg/s",
+        "valid": 16774
+      },
+      {
+        "key": "gyro.filtered.yaw",
+        "max": 29.0,
+        "mean": -2.832062,
+        "min": -43.0,
+        "name": "gyroADC[2]",
+        "unit": "deg/s",
+        "valid": 16774
+      },
+      {
+        "key": "loop_iteration",
+        "max": 134184.0,
+        "mean": 67092.0,
+        "min": 0.0,
+        "name": "loopIteration",
+        "unit": "",
+        "valid": 16774
+      },
+      {
+        "key": "motor.0",
+        "max": 100.0,
+        "mean": 33.227761,
+        "min": -0.052938,
+        "name": "motor[0]",
+        "unit": "%",
+        "valid": 16774
+      },
+      {
+        "key": "motor.1",
+        "max": 100.0,
+        "mean": 33.711728,
+        "min": -0.052938,
+        "name": "motor[1]",
+        "unit": "%",
+        "valid": 16774
+      },
+      {
+        "key": "motor.2",
+        "max": 92.165167,
+        "mean": 29.262232,
+        "min": -0.052938,
+        "name": "motor[2]",
+        "unit": "%",
+        "valid": 16774
+      },
+      {
+        "key": "motor.3",
+        "max": 100.0,
+        "mean": 30.89463,
+        "min": -0.052938,
+        "name": "motor[3]",
+        "unit": "%",
+        "valid": 16774
+      },
+      {
+        "key": "pid.d.pitch",
+        "max": 526.0,
+        "mean": 0.357756,
+        "min": -893.0,
+        "name": "axisD[1]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid.d.roll",
+        "max": 192.0,
+        "mean": -0.029748,
+        "min": -122.0,
+        "name": "axisD[0]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid.f.pitch",
+        "max": 2.0,
+        "mean": -0.001908,
+        "min": -2.0,
+        "name": "axisF[1]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid.f.roll",
+        "max": 3.0,
+        "mean": 0.0124,
+        "min": -1.0,
+        "name": "axisF[0]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid.f.yaw",
+        "max": 1.0,
+        "mean": -0.012281,
+        "min": -7.0,
+        "name": "axisF[2]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid.i.pitch",
+        "max": 92.0,
+        "mean": -5.336056,
+        "min": -251.0,
+        "name": "axisI[1]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid.i.roll",
+        "max": 11.0,
+        "mean": -16.332777,
+        "min": -50.0,
+        "name": "axisI[0]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid.i.yaw",
+        "max": 44.0,
+        "mean": -2.68475,
+        "min": -61.0,
+        "name": "axisI[2]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid.p.pitch",
+        "max": 284.0,
+        "mean": -0.423453,
+        "min": -583.0,
+        "name": "axisP[1]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid.p.roll",
+        "max": 80.0,
+        "mean": -0.140634,
+        "min": -49.0,
+        "name": "axisP[0]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid.p.yaw",
+        "max": 23.0,
+        "mean": -0.054072,
+        "min": -73.0,
+        "name": "axisP[2]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid.sum.pitch",
+        "max": 249.0,
+        "mean": -5.40366,
+        "min": -1431.0,
+        "name": "pidSum[1]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid.sum.roll",
+        "max": 243.0,
+        "mean": -16.49076,
+        "min": -138.0,
+        "name": "pidSum[0]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid.sum.yaw",
+        "max": 58.0,
+        "mean": -2.751103,
+        "min": -89.0,
+        "name": "pidSum[2]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "pid_error.pitch",
+        "max": 105.0,
+        "mean": -0.222606,
+        "min": -217.0,
+        "name": "pidError[1]",
+        "unit": "deg/s",
+        "valid": 16774
+      },
+      {
+        "key": "pid_error.roll",
+        "max": 33.0,
+        "mean": -0.078455,
+        "min": -20.0,
+        "name": "pidError[0]",
+        "unit": "deg/s",
+        "valid": 16774
+      },
+      {
+        "key": "pid_error.yaw",
+        "max": 10.0,
+        "mean": -0.072732,
+        "min": -29.0,
+        "name": "pidError[2]",
+        "unit": "deg/s",
+        "valid": 16774
+      },
+      {
+        "key": "rc.0",
+        "max": 98.0,
+        "mean": 0.326994,
+        "min": -85.0,
+        "name": "rcCommand[0]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "rc.1",
+        "max": 111.0,
+        "mean": -1.958984,
+        "min": -76.0,
+        "name": "rcCommand[1]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "rc.2",
+        "max": 78.0,
+        "mean": -8.068022,
+        "min": -96.0,
+        "name": "rcCommand[2]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "rc.3",
+        "max": 1948.0,
+        "mean": 1316.039049,
+        "min": 999.0,
+        "name": "rcCommand[3]",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "rssi",
+        "max": 1023.0,
+        "mean": 1023.0,
+        "min": 1023.0,
+        "name": "rssi",
+        "unit": "raw",
+        "valid": 16774
+      },
+      {
+        "key": "setpoint.pitch",
+        "max": 36.0,
+        "mean": -0.559139,
+        "min": -23.0,
+        "name": "setpoint[1]",
+        "unit": "deg/s",
+        "valid": 16774
+      },
+      {
+        "key": "setpoint.roll",
+        "max": 31.0,
+        "mean": 0.077561,
+        "min": -27.0,
+        "name": "setpoint[0]",
+        "unit": "deg/s",
+        "valid": 16774
+      },
+      {
+        "key": "setpoint.yaw",
+        "max": 28.0,
+        "mean": -2.904793,
+        "min": -35.0,
+        "name": "setpoint[2]",
+        "unit": "deg/s",
+        "valid": 16774
+      },
+      {
+        "key": "throttle",
+        "max": 96.5,
+        "mean": 31.617938,
+        "min": 0.0,
+        "name": "throttle",
+        "unit": "%",
+        "valid": 16774
+      },
+      {
+        "key": "time",
+        "max": 469230773.0,
+        "mean": 460719802.270597,
+        "min": 452208896.0,
+        "name": "time",
+        "unit": "us",
+        "valid": 16774
+      }
+    ],
+    "corrupt_frames": 0,
+    "desync_frames": 0,
+    "duration_s": 17.021877,
+    "events": 3,
+    "firmware_revision": "Betaflight 4.2.0 (8f2d21460) STM32F745",
+    "firmware_vendor": "Betaflight",
+    "firmware_version": "4.2.0",
+    "first_time_us": 452208896,
+    "frames": {
+      "E": {
+        "bytes": 23,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 3
+      },
+      "G": {
+        "bytes": 1149,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 86
+      },
+      "H": {
+        "bytes": 10,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 1
+      },
+      "I": {
+        "bytes": 31902,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 525
+      },
+      "P": {
+        "bytes": 477246,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 16249
+      },
+      "S": {
+        "bytes": 18,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 3
+      }
+    },
+    "gaps": 0,
+    "index": 0,
+    "last_time_us": 469230773,
+    "median_dt_us": 1000.0,
+    "nominal_dt_us": 1000.0,
+    "offset_bytes": 0,
+    "profile_id": "betaflight",
+    "sample_rate_hz": 1000.0,
+    "samples": 16774,
+    "skipped_bytes": 0,
+    "unmapped_fields": [
+      "magADC[0]",
+      "magADC[1]",
+      "magADC[2]"
+    ]
+  }
+]

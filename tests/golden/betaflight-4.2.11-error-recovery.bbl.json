@@ -1,0 +1,432 @@
+[
+  {
+    "aux_rows": {
+      "slow": 1
+    },
+    "channels": [
+      {
+        "key": "acc.pitch",
+        "max": -0.008789,
+        "mean": -0.01416,
+        "min": -0.019531,
+        "name": "accSmooth[1]",
+        "unit": "g",
+        "valid": 2
+      },
+      {
+        "key": "acc.roll",
+        "max": -0.019043,
+        "mean": -0.020264,
+        "min": -0.021484,
+        "name": "accSmooth[0]",
+        "unit": "g",
+        "valid": 2
+      },
+      {
+        "key": "acc.yaw",
+        "max": 1.003906,
+        "mean": 1.002686,
+        "min": 1.001465,
+        "name": "accSmooth[2]",
+        "unit": "g",
+        "valid": 2
+      },
+      {
+        "key": "battery.current",
+        "max": 0.76,
+        "mean": 0.38,
+        "min": 0.0,
+        "name": "amperageLatest",
+        "unit": "A",
+        "valid": 2
+      },
+      {
+        "key": "battery.voltage",
+        "max": 24.63,
+        "mean": 24.61,
+        "min": 24.59,
+        "name": "vbatLatest",
+        "unit": "V",
+        "valid": 2
+      },
+      {
+        "key": "custom:BaroAlt",
+        "max": 279.0,
+        "mean": 276.0,
+        "min": 273.0,
+        "name": "BaroAlt",
+        "unit": "cm",
+        "valid": 2
+      },
+      {
+        "key": "custom:setpoint[3]",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "setpoint[3]",
+        "unit": "%",
+        "valid": 2
+      },
+      {
+        "key": "gyro.filtered.pitch",
+        "max": 1.0,
+        "mean": 0.5,
+        "min": 0.0,
+        "name": "gyroADC[1]",
+        "unit": "deg/s",
+        "valid": 2
+      },
+      {
+        "key": "gyro.filtered.roll",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "gyroADC[0]",
+        "unit": "deg/s",
+        "valid": 2
+      },
+      {
+        "key": "gyro.filtered.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "gyroADC[2]",
+        "unit": "deg/s",
+        "valid": 2
+      },
+      {
+        "key": "loop_iteration",
+        "max": 256.0,
+        "mean": 128.0,
+        "min": 0.0,
+        "name": "loopIteration",
+        "unit": "",
+        "valid": 2
+      },
+      {
+        "key": "motor.0",
+        "max": 0.582319,
+        "mean": 0.291159,
+        "min": 0.0,
+        "name": "motor[0]",
+        "unit": "%",
+        "valid": 2
+      },
+      {
+        "key": "motor.1",
+        "max": 1.323452,
+        "mean": 0.847009,
+        "min": 0.370566,
+        "name": "motor[1]",
+        "unit": "%",
+        "valid": 2
+      },
+      {
+        "key": "motor.2",
+        "max": 0.158814,
+        "mean": 0.105876,
+        "min": 0.052938,
+        "name": "motor[2]",
+        "unit": "%",
+        "valid": 2
+      },
+      {
+        "key": "motor.3",
+        "max": 1.323452,
+        "mean": 0.635257,
+        "min": -0.052938,
+        "name": "motor[3]",
+        "unit": "%",
+        "valid": 2
+      },
+      {
+        "key": "pid.d.pitch",
+        "max": 0.0,
+        "mean": -1.5,
+        "min": -3.0,
+        "name": "axisD[1]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid.d.roll",
+        "max": 0.0,
+        "mean": -0.5,
+        "min": -1.0,
+        "name": "axisD[0]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid.f.pitch",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisF[1]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid.f.roll",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisF[0]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid.f.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisF[2]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid.i.pitch",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisI[1]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid.i.roll",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisI[0]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid.i.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisI[2]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid.p.pitch",
+        "max": 0.0,
+        "mean": -1.0,
+        "min": -2.0,
+        "name": "axisP[1]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid.p.roll",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisP[0]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid.p.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "axisP[2]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid.sum.pitch",
+        "max": 0.0,
+        "mean": -2.5,
+        "min": -5.0,
+        "name": "pidSum[1]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid.sum.roll",
+        "max": 0.0,
+        "mean": -0.5,
+        "min": -1.0,
+        "name": "pidSum[0]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid.sum.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "pidSum[2]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "pid_error.pitch",
+        "max": 0.0,
+        "mean": -0.5,
+        "min": -1.0,
+        "name": "pidError[1]",
+        "unit": "deg/s",
+        "valid": 2
+      },
+      {
+        "key": "pid_error.roll",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "pidError[0]",
+        "unit": "deg/s",
+        "valid": 2
+      },
+      {
+        "key": "pid_error.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "pidError[2]",
+        "unit": "deg/s",
+        "valid": 2
+      },
+      {
+        "key": "rc.0",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rcCommand[0]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "rc.1",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rcCommand[1]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "rc.2",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rcCommand[2]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "rc.3",
+        "max": 1000.0,
+        "mean": 1000.0,
+        "min": 1000.0,
+        "name": "rcCommand[3]",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "rssi",
+        "max": 774.0,
+        "mean": 774.0,
+        "min": 774.0,
+        "name": "rssi",
+        "unit": "raw",
+        "valid": 2
+      },
+      {
+        "key": "setpoint.pitch",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "setpoint[1]",
+        "unit": "deg/s",
+        "valid": 2
+      },
+      {
+        "key": "setpoint.roll",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "setpoint[0]",
+        "unit": "deg/s",
+        "valid": 2
+      },
+      {
+        "key": "setpoint.yaw",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "setpoint[2]",
+        "unit": "deg/s",
+        "valid": 2
+      },
+      {
+        "key": "throttle",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "throttle",
+        "unit": "%",
+        "valid": 2
+      },
+      {
+        "key": "time",
+        "max": 33043646.0,
+        "mean": 33027606.5,
+        "min": 33011567.0,
+        "name": "time",
+        "unit": "us",
+        "valid": 2
+      }
+    ],
+    "corrupt_frames": 2,
+    "desync_frames": 5,
+    "duration_s": 0.032079,
+    "events": 3,
+    "firmware_revision": "Betaflight 4.2.11 (948ba6339) STM32F7X2",
+    "firmware_vendor": "Betaflight",
+    "firmware_version": "4.2.11",
+    "first_time_us": 33011567,
+    "frames": {
+      "E": {
+        "bytes": 22,
+        "corrupt": 1,
+        "desync": 0,
+        "valid": 3
+      },
+      "I": {
+        "bytes": 88,
+        "corrupt": 0,
+        "desync": 0,
+        "valid": 2
+      },
+      "P": {
+        "bytes": 0,
+        "corrupt": 0,
+        "desync": 5,
+        "valid": 0
+      },
+      "S": {
+        "bytes": 4,
+        "corrupt": 1,
+        "desync": 0,
+        "valid": 1
+      }
+    },
+    "gaps": 0,
+    "index": 0,
+    "last_time_us": 33043646,
+    "median_dt_us": 32079.0,
+    "nominal_dt_us": 2000.0,
+    "offset_bytes": 0,
+    "profile_id": "betaflight",
+    "sample_rate_hz": 31.173042,
+    "samples": 2,
+    "skipped_bytes": 2,
+    "unmapped_fields": []
+  }
+]

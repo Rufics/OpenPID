@@ -1,0 +1,20 @@
+[package]
+name = "openpid-fmt-blackbox"
+description = "Decoder for Cleanflight-family (Betaflight, EmuFlight, Rotorflight, INAV) binary Blackbox logs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+openpid-core = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+# Independent reference decoder, used only as a test oracle (see ADR-0004).
+blackbox-log = "0.4.3"
+
+[lints]
+workspace = true

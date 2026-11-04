@@ -1,6 +1,6 @@
 # OpenPID — дизайн-проєкт
 
-Статус: чернетка v0.1 (2026-11-04). Мова документа — українська, технічні терміни та ідентифікатори коду — англійською.
+Статус: v0.2 (2026-11-04) — рішення Q1–Q5 ухвалені, фаза 0 реалізована. Мова документа — українська, технічні терміни та ідентифікатори коду — англійською.
 
 OpenPID — кросплатформенний (macOS / Windows / Linux) інструмент на Rust для розбору blackbox-логів політних контролерів, навігації по них та допомоги у налаштуванні PID і фільтрів. Функціональний орієнтир — PIDtoolbox / PIDtoolbox Pro, але весь код (декодер, математика, GUI) пишеться власний.
 
@@ -33,7 +33,7 @@ OpenPID — кросплатформенний (macOS / Windows / Linux) інс�
 | Freq × throttle heatmap | ✓ | ✓ | 1 | §6.4 |
 | Freq × time heatmap (STFT) | ✓ | ✓ | 1 | §6.5 |
 | PID slider tool | ✓ | ✓ | 1 | Betaflight‑специфіка, реалізація через `FirmwareProfile` |
-| Multi‑firmware support | ✓ | ✓ | 0→2 | Betaflight/Emuflight/Rotorflight — фаза 0; INAV — 1; Ardupilot/KISS/Fettec/QuickSilver — 2 (див. питання Q2) |
+| Multi‑firmware support | ✓ | ✓ | 0→2 | Betaflight/Emuflight/Rotorflight — фаза 0; ArduPilot, потім INAV — фаза 2; KISS/Fettec/QuickSilver — за наявності зразків (рішення Q2) |
 | RPM / dyn‑notch overlay 2D | — | ✓ | 2 | Потрібен eRPM (DShot telemetry) + pole count |
 | RPM / dyn‑notch overlay 3D | — | ✓ | 2 | 3D‑поверхня freq×throttle×amp |
 | RPM estimator | — | ✓ | 2 | Оцінка обертів з піків шуму, коли телеметрії немає |
@@ -425,9 +425,9 @@ Dev‑only: `proptest`, `criterion`, `cargo-fuzz`, `insta` (snapshot). Усе і
 
 | Фаза | Зміст | Критерій готовності |
 |------|-------|---------------------|
-| 0 — Фундамент | workspace, `core` модель і trait‑и, `fmt-blackbox` (BF/Emu/RF), `fmt-csv`, `cli info/decode`, конформанс‑ і fuzz‑тести, CI | `openpid decode` байт‑у‑байт збігається з `blackbox_decode` на всіх тестових логах |
+| 0 — Фундамент ✅ | workspace, `core` модель і trait‑и, `fmt-blackbox` (BF/Emu/RF), `fmt-csv`, `cli info/decode`, конформанс‑ і robustness‑тести, CI | Конформанс з незалежним декодером `blackbox-log` на всіх тестових логах; CSV‑конформанс з `blackbox_decode` вмикається, щойно з'являться CSV‑фікстури |
 | 1 — Паритет з PTB (free) | `dsp` базис, step, PSD, heatmaps, GUI з 5 вкладками, A/B, touch, проєкти, експорт | Користувач відтворює свій звичний PTB‑воркфлоу повністю в OpenPID |
-| 2 — Паритет з Pro | фільтри/sim, notch/RPM overlay 2D/3D, RPM estimator, генератор, motor‑noise, spectrum player, INAV/Ardupilot/KISS… | Усі рядки таблиці §2 = «так» |
+| 2 — Паритет з Pro | фільтри/sim, notch/RPM overlay 2D/3D, RPM estimator, генератор, motor‑noise, spectrum player; формати ArduPilot → INAV → KISS… | Усі рядки таблиці §2 = «так» |
 | 3 — Розширення | `Recommender`, CLI diff, (опц.) MSP | Перша рекомендація, яку користувач реально застосовує |
 
 ---
