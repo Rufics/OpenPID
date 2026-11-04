@@ -26,7 +26,7 @@ jobs:
     name: fmt + clippy + docs + typos
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
@@ -52,7 +52,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Every commit on the PR follows Conventional Commits
@@ -60,7 +60,7 @@ jobs:
         with:
           configFile: .commitlintrc.json
       - name: PR title follows Conventional Commits (used for squash merges)
-        uses: amannn/action-semantic-pull-request@v5
+        uses: amannn/action-semantic-pull-request@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -86,7 +86,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
@@ -101,7 +101,7 @@ jobs:
     name: coverage (>= 85% lines)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
@@ -122,7 +122,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Gate
         run: cargo llvm-cov report --fail-under-lines ${{ env.COVERAGE_MIN }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: coverage-lcov
           path: |
@@ -135,7 +135,7 @@ jobs:
     name: cargo deny (licences, advisories, bans)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           rust-version: ${{ env.RUST_TOOLCHAIN }}
@@ -155,7 +155,7 @@ jobs:
           - os: windows-latest
             artifact: openpid-windows-x86_64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
@@ -170,7 +170,7 @@ jobs:
           cp target/release/openpid${{ runner.os == 'Windows' && '.exe' || '' }} dist/
           cp target/release/openpid-gui${{ runner.os == 'Windows' && '.exe' || '' }} dist/
           cp LICENSE README.md dist/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: dist/
@@ -184,7 +184,7 @@ jobs:
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Skip when SONAR_TOKEN is not configured
@@ -206,12 +206,12 @@ jobs:
         run: cargo clippy --workspace --all-targets --message-format=json > clippy-report.json
       - name: Coverage report from the coverage job
         if: env.SONAR_TOKEN != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: coverage-lcov
       - name: SonarCloud scan
         if: env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@v7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

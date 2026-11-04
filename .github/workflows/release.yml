@@ -21,7 +21,7 @@ jobs:
           - { os: macos-13,       target: x86_64-apple-darwin,      archive: tar.gz }
           - { os: windows-latest, target: x86_64-pc-windows-msvc,   archive: zip }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.97.0
@@ -45,6 +45,6 @@ jobs:
             tar czf "$name.tar.gz" "$name"
             echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
           fi
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.ASSET }}
