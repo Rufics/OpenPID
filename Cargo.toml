@@ -10,9 +10,9 @@ repository = "https://github.com/Rufics/OpenPID"
 rust-version = "1.88"
 
 [workspace.dependencies]
-openpid-core = { path = "crates/openpid-core" }
-openpid-fmt-blackbox = { path = "crates/openpid-fmt-blackbox" }
-openpid-fmt-csv = { path = "crates/openpid-fmt-csv" }
+openpid-core = { path = "crates/openpid-core", version = "0.1.0" }
+openpid-fmt-blackbox = { path = "crates/openpid-fmt-blackbox", version = "0.1.0" }
+openpid-fmt-csv = { path = "crates/openpid-fmt-csv", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
