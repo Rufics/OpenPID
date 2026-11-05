@@ -15,6 +15,11 @@
      4. Install App → встановити на свій акаунт, обравши **тільки репозиторій OpenPID**.
      5. У репозиторії: Settings → Secrets and variables → Actions: змінна `RELEASE_APP_ID` = App ID; секрет `RELEASE_APP_PRIVATE_KEY` = вміст `.pem` цілком. Після цього workflow `release-plz` вмикається сам (без змінної він пропускається і не червоніє).
      Відкликати доступ можна будь‑коли: видалити інсталяцію App або згенерувати новий ключ.
+     Перевірка після налаштування: наступний push у `master` (будь‑який merge) має дати запуск `release-plz`
+     зі статусом *success* (не *skipped*) і PR `chore: release vX.Y.Z` від `<назва App>[bot]`, на якому
+     запускаються звичайні перевірки CI. Типові збої: запуск *skipped* — змінна `RELEASE_APP_ID` не створена
+     (або створена як секрет); червоний крок «Mint a short-lived token» — обрізаний `.pem` або App не
+     встановлений на репозиторій; відмова у push — бракує *Contents: Read and write*.
    - Альтернатива «заборонити»: не створювати App — тоді релізи робляться вручну (`git tag vX.Y.Z && git push --tags` з робочої машини запускає `release.yml`), а CHANGELOG ведеться руками. Автоматика вимкнена, але нічого не ламається.
 3. **Settings → General → Pull Requests**: лишити увімкненим тільки *Allow squash merging*, встановити *Default commit message: Pull request title and description*, увімкнути *Automatically delete head branches*.
 4. **Settings → Actions → General**: *Workflow permissions: Read repository contents*. Опцію *Allow GitHub Actions to create and approve pull requests* вмикати **не потрібно**: App‑токен не підпадає під це обмеження.
