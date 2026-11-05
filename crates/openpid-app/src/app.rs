@@ -194,6 +194,8 @@ pub struct App {
     pub overlay: views::OverlayState,
     /// Camera and hover state of the 3D surface tab.
     pub surface: surface::SurfaceState,
+    /// Playback state of the freq × time tab.
+    pub player: views::PlayerState,
     /// Persisted preferences (Settings tab).
     pub prefs: Prefs,
     /// Where `prefs` are saved; `None` = no config directory, keep them for the session.
@@ -253,6 +255,7 @@ impl App {
             slider_state: views::SliderState::default(),
             overlay: views::OverlayState::default(),
             surface: surface::SurfaceState::default(),
+            player: views::PlayerState::default(),
             prefs,
             prefs_path,
             theme_applied: None,
