@@ -170,6 +170,8 @@ pub struct Tools {
     pub heatmap_channel: ChannelId,
     pub psd_db: bool,
     pub heatmap_max: f64,
+    /// Heatmap panels share one colour scale (docs/design/colour-scale, R5).
+    pub heatmap_link: bool,
     /// Throttle bins with fewer segments than this are greyed out on the freq × throttle heatmap.
     pub min_segments: usize,
     pub viewer_channels: Vec<ChannelId>,
@@ -194,6 +196,7 @@ impl Default for Tools {
             heatmap_channel: gyro.clone(),
             psd_db: true,
             heatmap_max: 0.0,
+            heatmap_link: true,
             min_segments: 3,
             viewer_channels: vec![
                 gyro,
@@ -212,6 +215,12 @@ pub struct App {
     /// Heatmap grids rasterised once per result and colour scale (DESIGN §7.2),
     /// keyed by the result's address and the scale.
     pub heatmap_textures: HashMap<u64, egui::TextureHandle>,
+    /// Colour-scale maximum drawn for every heatmap panel last frame.
+    pub colour_scales: Vec<(Slot, f64)>,
+    /// Heatmap cell under the pointer last frame: slot, x, y, value.
+    pub heatmap_hover: Option<(Slot, f64, f64, f64)>,
+    /// Screen rectangle of every heatmap plot last frame.
+    pub heatmap_frames: HashMap<Slot, egui::Rect>,
     pub tab: Tab,
     pub tools: Tools,
     pub touch_mode: bool,
@@ -275,6 +284,9 @@ impl App {
             slots: vec![SlotEntry::empty(Slot::A), SlotEntry::empty(Slot::B)],
             cache: HashMap::new(),
             heatmap_textures: HashMap::new(),
+            colour_scales: Vec::new(),
+            heatmap_hover: None,
+            heatmap_frames: HashMap::new(),
             tab: tab.unwrap_or(Tab::LogViewer),
             tools: Tools::default(),
             touch_mode: prefs.touch_mode,
@@ -478,6 +490,7 @@ impl App {
             heatmap_channel: t.heatmap_channel.clone(),
             psd_db: t.psd_db,
             heatmap_max: t.heatmap_max,
+            heatmap_link: t.heatmap_link,
             min_segments: t.min_segments,
             viewer_channels: t.viewer_channels.clone(),
             ..Project::default()
@@ -508,6 +521,7 @@ impl App {
             heatmap_channel: p.heatmap_channel.clone(),
             psd_db: p.psd_db,
             heatmap_max: p.heatmap_max,
+            heatmap_link: p.heatmap_link,
             min_segments: p.min_segments,
             viewer_channels: p.viewer_channels.clone(),
         };

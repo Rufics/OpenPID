@@ -1168,7 +1168,148 @@ pub(crate) fn heatmap_controls(app: &mut App, ui: &mut Ui) {
                 .range(0.0..=10000.0),
         )
         .labelled_by(l.id);
+        let several = app.visible_slots().len() > 1;
+        ui.add_enabled(
+            several,
+            egui::Checkbox::new(&mut app.tools.heatmap_link, tr("link scales")),
+        )
+        .on_hover_text(tr(
+            "one colour scale for every log (the largest automatic maximum), so the same colour means the same value",
+        ));
     });
+}
+
+/// Width taken by the colour scale beside a heatmap.
+pub(crate) const BAR_W: f32 = 56.0;
+
+/// The colour maximum a grid is drawn with: `max` when set, else the robust
+/// automatic maximum over the rows at or above `min_y`.
+pub(crate) fn effective_max(g: &Grid2D, max: f64, min_y: f64) -> f64 {
+    openpid_analysis::surface::colour_max(
+        g,
+        &openpid_analysis::surface::SurfaceOptions {
+            max,
+            min_y_for_scale: min_y,
+            ..openpid_analysis::surface::SurfaceOptions::default()
+        },
+    )
+}
+
+/// Colour maximum per slot for one tab: each grid's own, or, with "link
+/// scales", the largest of them for all; recorded in `app.colour_scales`.
+pub(crate) fn linked_scales(
+    app: &mut App,
+    grids: &[(Slot, &Grid2D)],
+    min_y: f64,
+) -> std::collections::HashMap<Slot, f64> {
+    let max = app.tools.heatmap_max;
+    let mut per: Vec<(Slot, f64)> = grids
+        .iter()
+        .map(|(slot, g)| (*slot, effective_max(g, max, min_y)))
+        .collect();
+    if app.tools.heatmap_link && per.len() > 1 {
+        let shared = per.iter().map(|(_, m)| *m).fold(0.0_f64, f64::max);
+        for (_, m) in &mut per {
+            *m = shared;
+        }
+    }
+    app.colour_scales.clone_from(&per);
+    per.into_iter().collect()
+}
+
+/// A vertical colour scale: the viridis gradient from 0 (bottom) to `max`
+/// (top) with five ticks and the unit (docs/design/colour-scale, R1).
+pub(crate) fn colour_bar(ui: &mut Ui, max: f64, unit: &str, height: f32) -> egui::Response {
+    use openpid_analysis::render::VIRIDIS;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(BAR_W, height), egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    let bar = egui::Rect::from_min_size(
+        rect.min + egui::vec2(2.0, 8.0),
+        egui::vec2(14.0, (height - 28.0).max(10.0)),
+    );
+    let mut mesh = egui::Mesh::default();
+    let n = VIRIDIS.len();
+    for (i, c) in VIRIDIS.iter().enumerate() {
+        let t = i as f32 / (n - 1) as f32;
+        let y = bar.max.y - t * bar.height();
+        let colour = Color32::from_rgb(c[0], c[1], c[2]);
+        mesh.colored_vertex(egui::pos2(bar.min.x, y), colour);
+        mesh.colored_vertex(egui::pos2(bar.max.x, y), colour);
+        if i > 0 {
+            let b = (2 * i) as u32;
+            mesh.add_triangle(b - 2, b - 1, b);
+            mesh.add_triangle(b - 1, b + 1, b);
+        }
+    }
+    painter.add(egui::Shape::mesh(mesh));
+    painter.rect_stroke(
+        bar,
+        0.0,
+        egui::Stroke::new(1.0, MUTED),
+        egui::StrokeKind::Outside,
+    );
+    let font = egui::FontId::proportional(10.0);
+    let colour = ui.visuals().text_color();
+    let fmt = |v: f64| {
+        if v >= 100.0 {
+            format!("{v:.0}")
+        } else if v >= 10.0 {
+            format!("{v:.1}")
+        } else {
+            format!("{v:.2}")
+        }
+    };
+    for k in 0..=4 {
+        let f = k as f32 / 4.0;
+        let y = bar.max.y - f * bar.height();
+        painter.line_segment(
+            [egui::pos2(bar.max.x, y), egui::pos2(bar.max.x + 3.0, y)],
+            egui::Stroke::new(1.0, colour),
+        );
+        painter.text(
+            egui::pos2(bar.max.x + 5.0, y),
+            egui::Align2::LEFT_CENTER,
+            fmt(max * f64::from(f)),
+            font.clone(),
+            colour,
+        );
+    }
+    painter.text(
+        egui::pos2(bar.min.x, bar.max.y + 4.0),
+        egui::Align2::LEFT_TOP,
+        unit,
+        font,
+        colour,
+    );
+    resp.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::Role::Label,
+            true,
+            format!("colour scale 0 to {} {unit}", fmt(max)),
+        )
+    });
+    resp
+}
+
+/// The grid cell under the plot pointer: `(slot, x, y, value)`.
+fn heatmap_hover(
+    pu: &egui_plot::PlotUi<'_>,
+    slot: Slot,
+    g: &Grid2D,
+) -> Option<(Slot, f64, f64, f64)> {
+    let c = pu.pointer_coordinate()?;
+    let z = openpid_analysis::surface::value_at(g, c.x, c.y)?;
+    Some((slot, c.x, c.y, z))
+}
+
+/// Read-out of the hovered cell under a heatmap (`x` in percent or seconds).
+fn hover_label(ui: &mut Ui, hover: Option<(Slot, f64, f64, f64)>, unit: &str, x_is_time: bool) {
+    let text = match hover {
+        Some((_, x, y, z)) if x_is_time => format!("{x:.2} s, {y:.0} Hz: {z:.3} {unit}"),
+        Some((_, x, y, z)) => format!("{x:.0} %, {y:.0} Hz: {z:.3} {unit}"),
+        None => tr("hover the map for a value").to_string(),
+    };
+    ui.label(RichText::new(text).color(MUTED));
 }
 
 /// Height of the segments-per-bin bar under the freq × throttle heatmap.
@@ -1474,6 +1615,7 @@ fn segment_count_bar(
     g: &Grid2D,
     counts: &[usize],
     min_segments: usize,
+    width: f32,
 ) {
     let dx = if g.x.len() >= 2 { g.x[1] - g.x[0] } else { 1.0 };
     let bars: Vec<Bar> =
@@ -1491,6 +1633,7 @@ fn segment_count_bar(
         .x_axis_label("throttle (%)")
         .y_axis_label("segments")
         .link_axis(link, [true, false])
+        .width(width)
         .height(COUNT_BAR_HEIGHT)
         .include_y(0.0)
         .allow_zoom([true, false])
@@ -1556,6 +1699,18 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
         .collect();
     overlay_controls(app, ui, &results);
     let overlay = app.overlay.clone();
+    let grids: Vec<(Slot, &Grid2D)> = results
+        .iter()
+        .filter_map(|(s, r)| match r {
+            Some(Ok(o)) => match o.as_ref() {
+                Output::Throttle(t) => Some((*s, &t.grid)),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    let scales = linked_scales(app, &grids, 20.0);
+    app.heatmap_hover = None;
     let w = panel_width(ui, slots.len());
     let h = ui.available_height();
     egui::ScrollArea::horizontal()
@@ -1580,39 +1735,60 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
                             );
                             let link = ui.scope_id().with(("thr-link", slot.name()));
                             let y_max = t.grid.y.last().copied().unwrap_or(0.0);
-                            let image = grid_image(app, ui.ctx(), &o, &t.grid, max, 20.0);
-                            Plot::new(("thr", slot.name()))
-                                .legend(Legend::default())
-                                .y_axis_label("frequency (Hz)")
-                                .link_axis(link, [true, false])
-                                .height(h - 24.0 - COUNT_BAR_HEIGHT - 24.0)
-                                .show(ui, |pu| {
-                                    if let Some(img) = image {
-                                        pu.image(img);
-                                    }
-                                    for poly in sparse_bins(&t.grid, &t.counts, min_segments) {
-                                        pu.polygon(poly);
-                                    }
-                                    if let Some(o) = &t.overlay {
-                                        draw_rpm_overlay(pu, o, &t.grid.x, y_max, &overlay);
-                                    }
-                                    marker_hlines(pu, &markers);
-                                });
-                            segment_count_bar(ui, slot, link, &t.grid, &t.counts, min_segments);
+                            let scale = scales.get(&slot).copied().unwrap_or(max);
+                            let image = grid_image(app, ui.ctx(), &o, &t.grid, scale, 20.0);
+                            let plot_h = h - 24.0 - COUNT_BAR_HEIGHT - 48.0;
+                            let plot_w = ui.available_width() - BAR_W;
+                            let mut hover = None;
+                            let mut frame = None;
+                            ui.horizontal(|ui| {
+                                Plot::new(("thr", slot.name()))
+                                    .legend(Legend::default())
+                                    .y_axis_label("frequency (Hz)")
+                                    .link_axis(link, [true, false])
+                                    .width(plot_w)
+                                    .height(plot_h)
+                                    .show(ui, |pu| {
+                                        if let Some(img) = image {
+                                            pu.image(img);
+                                        }
+                                        for poly in sparse_bins(&t.grid, &t.counts, min_segments) {
+                                            pu.polygon(poly);
+                                        }
+                                        if let Some(o) = &t.overlay {
+                                            draw_rpm_overlay(pu, o, &t.grid.x, y_max, &overlay);
+                                        }
+                                        marker_hlines(pu, &markers);
+                                        hover = heatmap_hover(pu, slot, &t.grid);
+                                        frame = Some(*pu.transform().frame());
+                                    });
+                                colour_bar(ui, scale, &t.unit, plot_h);
+                            });
+                            if hover.is_some() {
+                                app.heatmap_hover = hover;
+                            }
+                            if let Some(f) = frame {
+                                app.heatmap_frames.insert(slot, f);
+                            }
+                            segment_count_bar(ui, slot, link, &t.grid, &t.counts, min_segments, plot_w);
                             let below = t.counts.iter().filter(|&&c| c < min_segments).count();
-                            ui.label(
-                                RichText::new(if below > 0 {
-                                    format!(
-                                        "{below} of {} throttle bins have fewer than {min_segments} segments (greyed)",
-                                        t.counts.len()
-                                    )
-                                } else {
-                                    format!(
-                                        "every throttle bin has at least {min_segments} segments"
-                                    )
-                                })
-                                .color(MUTED),
-                            );
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(
+                                    RichText::new(if below > 0 {
+                                        format!(
+                                            "{below} of {} throttle bins have fewer than {min_segments} segments (greyed)",
+                                            t.counts.len()
+                                        )
+                                    } else {
+                                        format!(
+                                            "every throttle bin has at least {min_segments} segments"
+                                        )
+                                    })
+                                    .color(MUTED),
+                                );
+                                ui.separator();
+                                hover_label(ui, hover, &t.unit, false);
+                            });
                         }
                     }
                     Some(Err(e)) => show_error(ui, slot, &e),
@@ -1684,6 +1860,18 @@ pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
         })
         .unwrap_or_default();
     let mut pos = player_controls(app, ui, range, &columns);
+    let grids: Vec<(Slot, &Grid2D)> = results
+        .iter()
+        .filter_map(|(s, r)| match r {
+            Some(Ok(o)) => match o.as_ref() {
+                Output::Stft(t) => Some((*s, &t.grid)),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    let scales = linked_scales(app, &grids, 20.0);
+    app.heatmap_hover = None;
     // two panels share the height; more scroll at a readable minimum
     let h = (ui.available_height() / slots.len().max(1) as f32).max(260.0);
     let mut clicked_at: Option<f64> = None;
@@ -1703,38 +1891,55 @@ pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
                                 ))
                                 .color(slot_color(slot)),
                             );
-                            let image = grid_image(app, ui.ctx(), &o, &t.grid, max, 20.0);
+                            let scale = scales.get(&slot).copied().unwrap_or(max);
+                            let image = grid_image(app, ui.ctx(), &o, &t.grid, scale, 20.0);
                             let column = pos.and_then(|p| nearest_column(&t.grid.x, p));
                             let spectrum_h = ((h - 24.0) * 0.3).max(60.0);
+                            let plot_h = h - 24.0 - spectrum_h - 20.0;
+                            let plot_w = ui.available_width() - BAR_W;
                             let mut frame = None;
                             let mut x_bounds = None;
-                            Plot::new(("stft", slot.name()))
-                                .x_axis_label("time (s)")
-                                .y_axis_label("frequency (Hz)")
-                                .height(h - 24.0 - spectrum_h)
-                                .allow_drag(!touch)
-                                .show(ui, |pu| {
-                                    if let Some(img) = image {
-                                        pu.image(img);
-                                    }
-                                    marker_hlines(pu, &markers);
-                                    if let Some(p) = pos {
-                                        pu.vline(
-                                            VLine::new("position", p).color(ACCENT).width(1.5),
-                                        );
-                                    }
-                                    // click (or, on touch, drag) scrubs
-                                    // (`interact_pointer_pos`: the hover position is gone during a drag)
-                                    let r = pu.response();
-                                    if (r.clicked() || (touch && r.dragged()))
-                                        && let Some(p) = r.interact_pointer_pos()
-                                    {
-                                        clicked_at = Some(pu.transform().value_from_position(p).x);
-                                    }
-                                    let b = pu.plot_bounds();
-                                    x_bounds = Some((b.min()[0], b.max()[0]));
-                                    frame = Some(*pu.transform().frame());
-                                });
+                            let mut hover = None;
+                            ui.horizontal(|ui| {
+                                Plot::new(("stft", slot.name()))
+                                    .x_axis_label("time (s)")
+                                    .y_axis_label("frequency (Hz)")
+                                    .width(plot_w)
+                                    .height(plot_h)
+                                    .allow_drag(!touch)
+                                    .show(ui, |pu| {
+                                        if let Some(img) = image {
+                                            pu.image(img);
+                                        }
+                                        marker_hlines(pu, &markers);
+                                        if let Some(p) = pos {
+                                            pu.vline(
+                                                VLine::new("position", p).color(ACCENT).width(1.5),
+                                            );
+                                        }
+                                        // click (or, on touch, drag) scrubs
+                                        // (`interact_pointer_pos`: the hover position is gone during a drag)
+                                        let r = pu.response();
+                                        if (r.clicked() || (touch && r.dragged()))
+                                            && let Some(p) = r.interact_pointer_pos()
+                                        {
+                                            clicked_at =
+                                                Some(pu.transform().value_from_position(p).x);
+                                        }
+                                        let b = pu.plot_bounds();
+                                        x_bounds = Some((b.min()[0], b.max()[0]));
+                                        frame = Some(*pu.transform().frame());
+                                        hover = heatmap_hover(pu, slot, &t.grid);
+                                    });
+                                colour_bar(ui, scale, &t.unit, plot_h);
+                            });
+                            if hover.is_some() {
+                                app.heatmap_hover = hover;
+                            }
+                            if let Some(f) = frame {
+                                app.heatmap_frames.insert(slot, f);
+                            }
+                            hover_label(ui, hover, &t.unit, true);
                             if i == 0 {
                                 app.player.plot_frame = frame;
                                 app.player.x_bounds = x_bounds;

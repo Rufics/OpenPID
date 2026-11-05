@@ -169,9 +169,14 @@ static UA: &[(&str, &str)] = &[
     ("height of the colour maximum", "висота стелі кольору"),
     ("high input", "верхній вхід"),
     (
+        "hover the map for a value",
+        "наведіть на карту, щоб побачити значення",
+    ),
+    (
         "into the first empty slot, or a new one",
         "у перший порожній слот або в новий",
     ),
+    ("link scales", "спільна шкала"),
     ("loading", "завантаження"),
     ("logged", "у лозі"),
     ("max", "макс"),
@@ -187,6 +192,10 @@ static UA: &[(&str, &str)] = &[
     (
         "nothing to change: every rule is satisfied",
         "нічого міняти: усі правила виконані",
+    ),
+    (
+        "one colour scale for every log (the largest automatic maximum), so the same colour means the same value",
+        "одна шкала кольору для всіх логів (найбільша з автоматичних стель): однаковий колір означає однакове значення",
     ),
     (
         "open another log to compare (up to 8)",

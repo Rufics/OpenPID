@@ -55,3 +55,27 @@ R1 з hover-значенням і спільною шкалою.
 ## Розмір
 
 S (≈ 1 день).
+
+## Реалізація (05.11.2026)
+
+- **`views.rs`:** `colour_bar(ui, max, unit, height)` — смуга 14 px (mesh з 8
+  вершин `render::VIRIDIS`), 5 поділок, одиниця, accessible name «colour scale 0 to
+  … unit»; `effective_max` (явна стеля або робастний максимум над 20 Гц) і
+  `linked_scales` (спільна стеля = найбільша з автоматичних, коли увімкнено
+  `Tools.heatmap_link`); `heatmap_hover` / `hover_label` — клітинка під курсором
+  (`surface::value_at`) під картою; `app.colour_scales`, `app.heatmap_hover`,
+  `app.heatmap_frames` для тестів.
+- **Розміщення:** Freq × throttle і Freq × time — `[plot][bar]` в `ui.horizontal`,
+  plot на `BAR_W = 56 px` вужчий, смуга сегментів тієї ж ширини; Surface 3D — смуга
+  праворуч від рельєфу, стеля передається в `draw_surface`.
+- **Відхилення:** поле «colour max» лишилось у рядку параметрів (одне на вкладку), а
+  не над кожною смугою: з кількома логами воно дублювалось би.
+- **Проєкт:** `heatmap_link` у `Tools` і `Project` (default `true`).
+- **Тест:** `heatmaps_show_a_colour_scale_with_linked_maxima_and_a_hover_value`
+  (два логи: спільна стеля, власні стелі, явна стеля, hover збігається з сіткою,
+  те саме на Freq × time і Surface 3D, проєкт зберігає link).
+
+**Перевірено.** Знімки `throttle.png`, `time.png`, `surface.png` перезняті з лог
+2025.12.
+
+![Freq × throttle зі шкалою](../../screenshots/throttle.png)
