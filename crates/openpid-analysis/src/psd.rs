@@ -68,6 +68,22 @@ pub struct PsdOutput {
     pub power_db: Vec<f64>,
 }
 
+impl PsdOutput {
+    /// The `max_peaks` most prominent spectral peaks (prominence measured in dB,
+    /// at least `min_prominence_db`), highest prominence first.
+    pub fn peaks(&self, max_peaks: usize, min_prominence_db: f64) -> Vec<openpid_dsp::Peak> {
+        let df =
+            self.freq.get(1).copied().unwrap_or(1.0) - self.freq.first().copied().unwrap_or(0.0);
+        openpid_dsp::find_peaks(
+            &self.freq,
+            &self.power_db,
+            max_peaks,
+            min_prominence_db,
+            2.0 * df,
+        )
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 /// Welch power spectral density of one channel.
 pub struct PsdAnalysis;
