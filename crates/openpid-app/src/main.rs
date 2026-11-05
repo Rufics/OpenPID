@@ -8,6 +8,7 @@ mod colormap;
 mod export;
 mod i18n;
 mod prefs;
+mod shortcuts;
 mod surface;
 #[cfg(test)]
 mod tests;

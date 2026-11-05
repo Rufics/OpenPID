@@ -8,9 +8,9 @@
     reason = "test code: a failed lookup is the failure"
 )]
 
-use crate::app::{App, Cached, SlotState, Tab};
+use crate::app::{App, Cached, Dialog, SlotState, Tab};
 use crate::worker::{Done, Job, JobKey, Kind, Slot, Worker};
-use eframe::egui::{self, accesskit::Role};
+use eframe::egui::{self, Key, Modifiers, accesskit::Role};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use openpid_analysis::{Epoch, FitnessLevel, StepParams};
@@ -643,7 +643,7 @@ fn pointer_button(h: &mut H, pos: egui::Pos2, pressed: bool) {
         pos,
         button: egui::PointerButton::Primary,
         pressed,
-        modifiers: egui::Modifiers::NONE,
+        modifiers: Modifiers::NONE,
     });
     h.step();
 }
@@ -1282,6 +1282,212 @@ fn filter_sim_tab_validates_the_model_and_applies_what_if_changes() {
     assert!(app(&h2).cache.is_empty());
 }
 
+// ------------------------------------------------------------------ keyboard shortcuts
+
+#[test]
+fn number_keys_ctrl_tab_and_the_help_window() {
+    let mut h = harness(Vec::new(), None);
+    h.key_press(Key::Num2);
+    h.step();
+    assert_eq!(app(&h).tab, Tab::Step);
+    h.key_press(Key::Equals);
+    h.step();
+    assert_eq!(app(&h).tab, Tab::Settings, "= is the 12th tab");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Tab);
+    h.step();
+    assert_eq!(
+        app(&h).tab,
+        Tab::LogViewer,
+        "wraps from the last tab to the first"
+    );
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Tab);
+    h.step();
+    assert_eq!(app(&h).tab, Tab::Settings);
+    h.key_press(Key::Num0);
+    h.step();
+    assert_eq!(app(&h).tab, Tab::Sliders, "0 is the 10th tab");
+    // the help window: ?, Esc, F1, the Help menu
+    assert!(!has_label_containing(&h, "Keyboard shortcuts"));
+    h.key_press(Key::Questionmark);
+    h.step();
+    assert!(app(&h).show_help);
+    assert!(
+        has_label_containing(&h, "Ctrl+Shift+Tab"),
+        "generated from the table"
+    );
+    assert!(has_label_containing(&h, "Tab 2: Step response"));
+    h.key_press(Key::Escape);
+    h.step();
+    assert!(!app(&h).show_help);
+    h.key_press(Key::F1);
+    h.step();
+    assert!(app(&h).show_help);
+    h.key_press(Key::Questionmark);
+    h.step();
+    assert!(!app(&h).show_help, "? toggles");
+    h.get_by_label("Help").click();
+    h.run_steps(2);
+    h.get_by_label_contains("Keyboard shortcuts").click();
+    h.run_steps(2);
+    assert!(app(&h).show_help);
+    // Ctrl+T toggles touch mode
+    assert!(!app(&h).touch_mode);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::T);
+    h.step();
+    assert!(app(&h).touch_mode);
+}
+
+#[test]
+fn file_shortcuts_ask_for_dialogs_and_close_the_last_slot() {
+    let mut h = harness(vec![LOG_4_2.into(), LOG_4_5.into()], None);
+    app_mut(&mut h).dialogs = false;
+    run_until(&mut h, no_slot_loading);
+    assert_eq!(app(&h).loaded_slots(), vec![Slot::A, Slot::B]);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::O);
+    h.step();
+    assert_eq!(
+        app(&h).dialog,
+        Some(Dialog::OpenLog(Slot(2))),
+        "first empty slot, here a new one"
+    );
+    app_mut(&mut h).dialog = None;
+    h.key_press_modifiers(Modifiers::COMMAND, Key::S);
+    h.step();
+    assert_eq!(app(&h).dialog, Some(Dialog::SaveProject));
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::S);
+    h.step();
+    assert_eq!(app(&h).dialog, Some(Dialog::OpenProject));
+    h.key_press_modifiers(Modifiers::COMMAND, Key::E);
+    h.step();
+    assert_eq!(app(&h).dialog, Some(Dialog::ExportPng));
+    app_mut(&mut h).dialog = None;
+    // the buttons go through the same dialog queue
+    h.get_by_label_contains("Open log").click();
+    h.step();
+    assert_eq!(app(&h).dialog, Some(Dialog::OpenLog(Slot(2))));
+    app_mut(&mut h).dialog = None;
+    // Ctrl+W closes the last opened slot; Ctrl+Shift+O opens after the last loaded one
+    h.key_press_modifiers(Modifiers::COMMAND, Key::W);
+    h.step();
+    assert_eq!(app(&h).loaded_slots(), vec![Slot::A]);
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::O);
+    h.step();
+    assert_eq!(
+        app(&h).dialog,
+        Some(Dialog::OpenLog(Slot(2))),
+        "the empty slot after A"
+    );
+    app_mut(&mut h).dialog = None;
+    app_mut(&mut h).close_slot(Slot::A);
+    h.step();
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::O);
+    h.step();
+    assert_eq!(
+        app(&h).dialog,
+        Some(Dialog::OpenLog(Slot(2))),
+        "nothing loaded: the first empty slot"
+    );
+    // Shift+A: every slot back to the whole log
+    app_mut(&mut h).dialog = None;
+    app_mut(&mut h).open(Slot(2), LOG_4_2.into());
+    run_until(&mut h, no_slot_loading);
+    app_mut(&mut h).loaded_mut(Slot(2)).unwrap().epoch = Some(Epoch {
+        start_s: 1.0,
+        end_s: 2.0,
+    });
+    h.step();
+    h.key_press_modifiers(Modifiers::SHIFT, Key::A);
+    h.step();
+    assert!(app(&h).loaded(Slot(2)).unwrap().epoch.is_none());
+}
+
+#[test]
+fn single_keys_type_into_a_focused_field_instead_of_switching_tabs() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::TimeHeatmap));
+    run_until(&mut h, idle);
+    h.get_by_role_and_label(Role::SpinButton, "speed").click();
+    h.run_steps(2);
+    assert!(
+        crate::shortcuts::text_input_focused(&h.ctx),
+        "a clicked DragValue is a text field"
+    );
+    h.key_press(Key::Num2);
+    h.event(egui::Event::Text("2".into()));
+    h.step();
+    assert_eq!(app(&h).tab, Tab::TimeHeatmap, "2 went into the field");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    assert!(
+        !crate::shortcuts::text_input_focused(&h.ctx),
+        "Esc leaves the field"
+    );
+    h.key_press(Key::Num2);
+    h.step();
+    assert_eq!(app(&h).tab, Tab::Step);
+}
+
+#[test]
+fn player_keys_work_on_the_time_tab_only() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Spectrum));
+    run_until(&mut h, idle);
+    h.key_press(Key::Space);
+    h.step();
+    assert!(!app(&h).player.playing, "no player on Spectrum");
+    select_tab(&mut h, Tab::TimeHeatmap);
+    run_until(&mut h, idle);
+    h.key_press(Key::Space);
+    h.step();
+    assert!(app(&h).player.playing);
+    h.key_press(Key::Space);
+    h.step();
+    assert!(!app(&h).player.playing);
+    let start = app(&h).player.pos_s.expect("position");
+    h.key_press(Key::Period);
+    h.run_steps(2);
+    let after_step = app(&h).player.pos_s.expect("position");
+    assert!(after_step > start, "one column forward");
+    h.key_press(Key::Comma);
+    h.run_steps(2);
+    assert!(app(&h).player.pos_s.unwrap() < after_step);
+    h.key_press(Key::Period);
+    h.key_press(Key::Period);
+    h.run_steps(2);
+    h.key_press(Key::Home);
+    h.run_steps(2);
+    let home = app(&h).player.pos_s.unwrap();
+    assert!(
+        home < start,
+        "Home rewinds to the start of the data, before the first column {start}, got {home}"
+    );
+}
+
+#[test]
+fn every_button_with_a_shortcut_shows_it_in_the_tooltip() {
+    use crate::shortcuts::{Action, keys_of};
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::TimeHeatmap));
+    run_until(&mut h, idle);
+    h.ctx.all_styles_mut(|s| s.interaction.tooltip_delay = 0.0);
+    let checks: Vec<(&str, Action)> = vec![
+        ("Open log", Action::OpenLog),
+        ("Touch mode", Action::TouchMode),
+        ("Add log", Action::OpenLogNext),
+        ("Play", Action::PlayPause),
+        ("To start", Action::ToStart),
+        ("< step", Action::StepBack),
+        ("step >", Action::StepForward),
+        ("Step response", Action::Tab(1)),
+    ];
+    for (label, action) in checks {
+        h.get_by_label_contains(label).hover();
+        h.run_steps(3);
+        let keys = keys_of(&h.ctx, action);
+        assert!(
+            has_label_containing(&h, &keys),
+            "{label}: tooltip should show {keys}"
+        );
+    }
+}
+
 // ------------------------------------------------------------------ log fitness
 
 #[test]
@@ -1423,7 +1629,7 @@ fn surface_tab_orbits_zooms_pans_and_reads_out() {
         delta: egui::vec2(0.0, 50.0),
         phase: egui::TouchPhase::Move,
         source: egui::MouseWheelSource::Wheel,
-        modifiers: egui::Modifiers::NONE,
+        modifiers: Modifiers::NONE,
     });
     h.run_steps(2);
     assert!(app(&h).surface.camera.zoom > zoomed, "wheel zooms in");
@@ -1435,7 +1641,7 @@ fn surface_tab_orbits_zooms_pans_and_reads_out() {
                 pos: p,
                 button: egui::PointerButton::Secondary,
                 pressed: true,
-                modifiers: egui::Modifiers::NONE,
+                modifiers: Modifiers::NONE,
             });
             h.step();
             pointer_move(&mut h, p + egui::vec2(-30.0, 25.0));
@@ -1445,7 +1651,7 @@ fn surface_tab_orbits_zooms_pans_and_reads_out() {
                 pos: p + egui::vec2(-60.0, 50.0),
                 button: egui::PointerButton::Secondary,
                 pressed: false,
-                modifiers: egui::Modifiers::NONE,
+                modifiers: Modifiers::NONE,
             });
             h.step();
         }
