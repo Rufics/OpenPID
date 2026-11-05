@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/Rufics/OpenPID/compare/v0.1.0...v0.1.1) - 2026-11-05
+
+### Added
+
+- *(analysis)* log fitness check with badges, Diagnostics card and CLI block ([#112](https://github.com/Rufics/OpenPID/pull/112))
+- *(gui)* colour scale beside every heatmap, linked scales across logs, value under the pointer ([#108](https://github.com/Rufics/OpenPID/pull/108))
+- *(gui)* up to eight logs at once — slot list with colours, visibility, solo and stable letters ([#106](https://github.com/Rufics/OpenPID/pull/106))
+
 ## [0.1.0](https://github.com/Rufics/OpenPID/releases/tag/v0.1.0) - 2026-11-05
 
 First release: phases 0–3 of `docs/DESIGN.md` — the foundation, parity with
