@@ -303,9 +303,11 @@ jobs:
     needs: [check, commits, test, coverage, deny, build, sonar]
     runs-on: ubuntu-24.04
     steps:
-      - name: All required jobs succeeded (skipped jobs are fine)
+      # Allow-list, not deny-list: a job that never got a runner reports
+      # "abandoned", which is neither "failure" nor "cancelled".
+      - name: Every required job succeeded (skipped jobs are fine)
         run: |
           echo '${{ toJSON(needs) }}' | tee needs.json
-          if grep -Eq '"result": "(failure|cancelled)"' needs.json; then
-            echo 'A required job failed.' && exit 1
+          if grep -E '"result":' needs.json | grep -Evq '"(success|skipped)"'; then
+            echo 'A required job did not succeed.' && exit 1
           fi
