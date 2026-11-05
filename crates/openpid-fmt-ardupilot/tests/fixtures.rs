@@ -8,7 +8,7 @@ use openpid_core::{
     Axis, BatteryField, ChannelId, FirmwareVendor, FirmwareVersion, GyroStage, LogFormat,
     OpenOptions, PidTerm,
 };
-use openpid_fmt_ardupilot::{ArdupilotFormat, Value, Vehicle, read};
+use openpid_fmt_ardupilot::{ArdupilotFormat, Value, Vehicle, log_starts, read};
 use std::path::{Path, PathBuf};
 
 fn logs_dir() -> PathBuf {
@@ -441,4 +441,48 @@ fn quadplane_batch_sampler_gives_raw_gyro() {
         !s.diagnostics.notes.iter().any(|n| n.contains("ISBH:")),
         "ISBH/ISBD are consumed, not listed as skipped"
     );
+}
+
+#[test]
+fn concatenated_logs_open_as_separate_sessions() {
+    let (a, b) = (data(PLANE), data(QUADPLANE));
+    assert_eq!(log_starts(&a), vec![0]);
+    let mut joined = a.clone();
+    joined.extend_from_slice(&b);
+    assert_eq!(log_starts(&joined), vec![0, a.len()]);
+    let log = ArdupilotFormat::new()
+        .open(&joined, &OpenOptions::default())
+        .unwrap();
+    assert_eq!(log.sessions.len(), 2);
+    let (s0, s1) = (&log.sessions[0], &log.sessions[1]);
+    assert_eq!((s0.index, s0.offset_bytes), (0, 0));
+    assert_eq!((s1.index, s1.offset_bytes), (1, a.len() as u64));
+    assert_eq!(s0.firmware.version, Some(FirmwareVersion::new(4, 3, 5)));
+    assert_eq!(s1.firmware.version, Some(FirmwareVersion::new(4, 4, 4)));
+    assert_eq!(s0.len(), open(PLANE).len(), "the first log is untouched");
+    assert_eq!(
+        s1.len(),
+        open(QUADPLANE).len(),
+        "the second decodes on its own"
+    );
+    assert_eq!(s0.diagnostics.total_bytes, a.len() as u64);
+    // the session filter picks by index
+    let second = ArdupilotFormat::new()
+        .open(
+            &joined,
+            &OpenOptions {
+                sessions: Some(vec![1]),
+                raw: false,
+            },
+        )
+        .unwrap();
+    assert_eq!(second.sessions.len(), 1);
+    assert_eq!(second.sessions[0].index, 1);
+    // a restart that only wrote its header is skipped, not fatal
+    let mut header_only = a.clone();
+    header_only.extend_from_slice(&b[..89 * 40]);
+    let log = ArdupilotFormat::new()
+        .open(&header_only, &OpenOptions::default())
+        .unwrap();
+    assert_eq!(log.sessions.len(), 1);
 }
