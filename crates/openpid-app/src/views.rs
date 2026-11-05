@@ -5,6 +5,7 @@ use crate::app::{App, Loaded, SlotState};
 use crate::colormap::{ACCENT, MUTED, SLOT_PALETTE};
 use crate::i18n::{Lang, tr};
 use crate::prefs::{AccUnit, Prefs, RateUnit, Theme};
+use crate::shortcuts::{self, Action};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{
@@ -149,12 +150,22 @@ impl Default for SpectrumState {
     }
 }
 
+/// A player move asked by a keyboard shortcut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayerRequest {
+    ToStart,
+    StepBack,
+    StepForward,
+}
+
 /// Playback over the STFT columns of the freq × time heatmap (#30): the
 /// position is the log-viewer cursor, so the two tabs stay in step.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlayerState {
     /// Advancing every frame.
     pub playing: bool,
+    /// A move asked by a shortcut, applied by the controls next frame.
+    pub request: Option<PlayerRequest>,
     /// Playback speed relative to real time.
     pub speed: f64,
     /// Current position, session seconds (`None` until a log is shown).
@@ -176,6 +187,7 @@ impl Default for PlayerState {
     fn default() -> Self {
         PlayerState {
             playing: false,
+            request: None,
             speed: 1.0,
             pos_s: None,
             last_frame_time: None,
@@ -244,19 +256,15 @@ pub(crate) fn slot_headers(app: &mut App, ui: &mut Ui) {
         let full = app.slots.len() >= Slot::MAX;
         let button = ui.add_enabled(!full, egui::Button::new(format!("+ {}", tr("Add log"))));
         if button
-            .on_hover_text(tr("open another log to compare (up to 8)"))
+            .on_hover_text(shortcuts::hint(
+                ui.ctx(),
+                tr("open another log to compare (up to 8)"),
+                Action::OpenLogNext,
+            ))
             .clicked()
-            && let Some(p) = rfd::FileDialog::new()
-                .add_filter(
-                    "Flight logs",
-                    &[
-                        "bbl", "bfl", "txt", "csv", "bin", "BBL", "BFL", "TXT", "CSV", "BIN",
-                    ],
-                )
-                .pick_file()
             && let Some(slot) = app.free_slot()
         {
-            app.open(slot, p);
+            app.dialog = Some(crate::app::Dialog::OpenLog(slot));
         }
     });
 }
@@ -522,7 +530,12 @@ pub(crate) fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
                     });
                     changed = true;
                 }
-                if loaded.epoch.is_some() && ui.small_button("whole log").clicked() {
+                if loaded.epoch.is_some()
+                    && ui
+                        .small_button(tr("whole log"))
+                        .on_hover_text(shortcuts::keys_of(ui.ctx(), Action::EpochWhole))
+                        .clicked()
+                {
                     loaded.epoch = None;
                     changed = true;
                 }
@@ -2070,22 +2083,42 @@ fn player_controls(
             .copied()
             .unwrap_or(pos)
     };
+    let ctx = ui.ctx().clone();
+    match app.player.request.take() {
+        Some(PlayerRequest::ToStart) => pos = x0,
+        Some(PlayerRequest::StepBack) => pos = step(pos, -1),
+        Some(PlayerRequest::StepForward) => pos = step(pos, 1),
+        None => {}
+    }
     ui.horizontal_wrapped(|ui| {
         let p = &mut app.player;
         if ui
             .button(if p.playing { tr("Pause") } else { tr("Play") })
+            .on_hover_text(shortcuts::keys_of(&ctx, Action::PlayPause))
             .clicked()
         {
             p.playing = !p.playing;
             p.last_frame_time = None;
         }
-        if ui.button(tr("To start")).clicked() {
+        if ui
+            .button(tr("To start"))
+            .on_hover_text(shortcuts::keys_of(&ctx, Action::ToStart))
+            .clicked()
+        {
             pos = x0;
         }
-        if ui.button(tr("< step")).clicked() {
+        if ui
+            .button(tr("< step"))
+            .on_hover_text(shortcuts::keys_of(&ctx, Action::StepBack))
+            .clicked()
+        {
             pos = step(pos, -1);
         }
-        if ui.button(tr("step >")).clicked() {
+        if ui
+            .button(tr("step >"))
+            .on_hover_text(shortcuts::keys_of(&ctx, Action::StepForward))
+            .clicked()
+        {
             pos = step(pos, 1);
         }
         let l = ui.label(tr("speed"));

@@ -2,6 +2,7 @@
 
 use crate::i18n::tr;
 use crate::prefs::{Prefs, Theme};
+use crate::shortcuts::{self, Action};
 use crate::surface;
 use crate::views;
 use crate::worker::{Done, Job, JobKey, Kind, Output, Slot, Worker};
@@ -254,7 +255,32 @@ pub struct App {
     pub central_rect: egui::Rect,
     /// Outcome of the last PNG export, filled by the screenshot callback.
     pub export_message: Arc<std::sync::Mutex<Option<String>>>,
+    /// The "Keyboard shortcuts" window is open.
+    pub show_help: bool,
+    /// Native file dialogs run; `false` in headless tests, where `dialog` is
+    /// left in place for inspection.
+    pub dialogs: bool,
+    /// A file dialog asked for this frame by a button or a shortcut.
+    pub dialog: Option<Dialog>,
+    /// The last shortcut action performed (tests).
+    pub last_action: Option<Action>,
 }
+
+/// A native file dialog, run once at the end of the frame (`App::run_dialog`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dialog {
+    /// Pick a log for the slot.
+    OpenLog(Slot),
+    OpenProject,
+    SaveProject,
+    ExportPng,
+    /// Save the slot's current result as JSON.
+    ExportJson(Slot),
+}
+
+const LOG_EXTENSIONS: &[&str] = &[
+    "bbl", "bfl", "txt", "csv", "bin", "BBL", "BFL", "TXT", "CSV", "BIN",
+];
 
 impl std::fmt::Debug for App {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -311,6 +337,10 @@ impl App {
             pending: HashMap::new(),
             central_rect: egui::Rect::NOTHING,
             export_message: Arc::new(std::sync::Mutex::new(None)),
+            show_help: false,
+            dialogs: true,
+            dialog: None,
+            last_action: None,
         };
         // a project file on the command line replaces the log list
         if let Some(project) = open_on_start.iter().find(|p| Project::is_project_path(p)) {
@@ -418,6 +448,28 @@ impl App {
             .map(|e| e.id);
         if let Some(s) = empty {
             return Some(s);
+        }
+        let added = self.add_slot();
+        if added.is_none() {
+            self.status = format!("at most {} logs can be open at once", Slot::MAX);
+        }
+        added
+    }
+
+    /// Where a log to compare goes: the first empty slot after the last
+    /// loaded one, else a new slot (`free_slot` when nothing is loaded).
+    pub fn next_slot(&mut self) -> Option<Slot> {
+        let Some(last) = self.loaded_slots().last().copied() else {
+            return self.free_slot();
+        };
+        let after = self
+            .slots
+            .iter()
+            .skip_while(|e| e.id != last)
+            .find(|e| matches!(e.state, SlotState::Empty))
+            .map(|e| e.id);
+        if after.is_some() {
+            return after;
         }
         let added = self.add_slot();
         if added.is_none() {
@@ -702,45 +754,75 @@ impl App {
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
         egui::Panel::top("top").show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.heading("OpenPID");
                 ui.separator();
                 if ui
                     .button(format!("{}…", tr("Open log")))
-                    .on_hover_text(tr("into the first empty slot, or a new one"))
+                    .on_hover_text(shortcuts::hint(
+                        &ctx,
+                        tr("into the first empty slot, or a new one"),
+                        Action::OpenLog,
+                    ))
                     .clicked()
-                    && let Some(p) = rfd::FileDialog::new()
-                        .add_filter(
-                            "Flight logs",
-                            &[
-                                "bbl", "bfl", "txt", "csv", "bin", "BBL", "BFL", "TXT", "CSV",
-                                "BIN",
-                            ],
-                        )
-                        .pick_file()
                     && let Some(slot) = self.free_slot()
                 {
-                    self.open(slot, p);
+                    self.dialog = Some(Dialog::OpenLog(slot));
                 }
                 ui.separator();
-                for tab in Tab::ALL {
-                    ui.selectable_value(&mut self.tab, tab, tab.title());
+                for (i, tab) in Tab::ALL.into_iter().enumerate() {
+                    ui.selectable_value(&mut self.tab, tab, tab.title())
+                        .on_hover_text(shortcuts::keys_of(&ctx, Action::Tab(i)));
                 }
                 ui.separator();
-                ui.checkbox(&mut self.touch_mode, tr("Touch mode"));
+                ui.checkbox(&mut self.touch_mode, tr("Touch mode"))
+                    .on_hover_text(shortcuts::keys_of(&ctx, Action::TouchMode));
                 ui.separator();
                 self.project_menu(ui);
                 self.export_menu(ui);
+                self.help_menu(ui);
             });
         });
     }
 
-    /// "Project" menu: open or save a `.openpid.json`.
-    fn project_menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button(tr("Project"), |ui| {
-            if ui.button(tr("Open…")).clicked() {
+    /// "Help" menu: the shortcuts window.
+    fn help_menu(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        ui.menu_button(tr("Help"), |ui| {
+            if ui
+                .button(shortcuts::hint(
+                    &ctx,
+                    tr("Keyboard shortcuts"),
+                    Action::Help,
+                ))
+                .clicked()
+            {
                 ui.close();
+                self.show_help = true;
+            }
+        });
+    }
+
+    /// Run the file dialog asked for this frame, if any (`dialogs` is off in tests).
+    fn run_dialog(&mut self, ctx: &egui::Context) {
+        if !self.dialogs {
+            return;
+        }
+        let Some(dialog) = self.dialog.take() else {
+            return;
+        };
+        match dialog {
+            Dialog::OpenLog(slot) => {
+                if let Some(p) = rfd::FileDialog::new()
+                    .add_filter("Flight logs", LOG_EXTENSIONS)
+                    .pick_file()
+                {
+                    self.open(slot, p);
+                }
+            }
+            Dialog::OpenProject => {
                 if let Some(p) = rfd::FileDialog::new()
                     .add_filter("OpenPID project", &["json"])
                     .pick_file()
@@ -748,8 +830,7 @@ impl App {
                     self.open_project(p);
                 }
             }
-            if ui.button(tr("Save as…")).clicked() {
-                ui.close();
+            Dialog::SaveProject => {
                 if let Some(p) = rfd::FileDialog::new()
                     .add_filter("OpenPID project", &["json"])
                     .set_file_name(format!(
@@ -762,15 +843,7 @@ impl App {
                     self.save_project(&p);
                 }
             }
-        });
-    }
-
-    /// "Export" menu: the tab area as PNG, a slot's result as JSON.
-    fn export_menu(&mut self, ui: &mut egui::Ui) {
-        let ctx = ui.ctx().clone();
-        ui.menu_button(tr("Export"), |ui| {
-            if ui.button(tr("Plot as PNG…")).clicked() {
-                ui.close();
+            Dialog::ExportPng => {
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("PNG image", &["png"])
                     .set_file_name(
@@ -778,8 +851,58 @@ impl App {
                     )
                     .save_file()
                 {
-                    self.export_png(&ctx, path);
+                    self.export_png(ctx, path);
                 }
+            }
+            Dialog::ExportJson(slot) => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_file_name(self.export_file_name(slot, "json"))
+                    .save_file()
+                {
+                    self.status = match self.export_json(slot, &path) {
+                        Ok(()) => format!("wrote {}", path.display()),
+                        Err(e) => format!("export failed: {e}"),
+                    };
+                }
+            }
+        }
+    }
+
+    /// "Project" menu: open or save a `.openpid.json`.
+    fn project_menu(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        ui.menu_button(tr("Project"), |ui| {
+            if ui
+                .button(tr("Open…"))
+                .on_hover_text(shortcuts::keys_of(&ctx, Action::OpenProject))
+                .clicked()
+            {
+                ui.close();
+                self.dialog = Some(Dialog::OpenProject);
+            }
+            if ui
+                .button(tr("Save as…"))
+                .on_hover_text(shortcuts::keys_of(&ctx, Action::SaveProject))
+                .clicked()
+            {
+                ui.close();
+                self.dialog = Some(Dialog::SaveProject);
+            }
+        });
+    }
+
+    /// "Export" menu: the tab area as PNG, a slot's result as JSON.
+    fn export_menu(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        ui.menu_button(tr("Export"), |ui| {
+            if ui
+                .button(tr("Plot as PNG…"))
+                .on_hover_text(shortcuts::keys_of(&ctx, Action::ExportPng))
+                .clicked()
+            {
+                ui.close();
+                self.dialog = Some(Dialog::ExportPng);
             }
             for slot in self.loaded_slots() {
                 let ready = self.current_result(slot).is_some();
@@ -791,16 +914,7 @@ impl App {
                     .clicked()
                 {
                     ui.close();
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("JSON", &["json"])
-                        .set_file_name(self.export_file_name(slot, "json"))
-                        .save_file()
-                    {
-                        self.status = match self.export_json(slot, &path) {
-                            Ok(()) => format!("wrote {}", path.display()),
-                            Err(e) => format!("export failed: {e}"),
-                        };
-                    }
+                    self.dialog = Some(Dialog::ExportJson(slot));
                 }
             }
         });
@@ -836,6 +950,7 @@ impl App {
         self.apply_touch_mode(&ctx);
         self.drain_worker();
         self.handle_drops(&ctx);
+        self.handle_shortcuts(&ctx);
         self.top_bar(ui);
         self.status_bar(ui);
         if let Some(msg) = self.export_message.lock().ok().and_then(|mut m| m.take()) {
@@ -856,5 +971,7 @@ impl App {
             Tab::Settings => views::settings(self, ui),
         });
         self.central_rect = central.response.rect;
+        self.help_window(&ctx);
+        self.run_dialog(&ctx);
     }
 }
