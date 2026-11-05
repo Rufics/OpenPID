@@ -5,6 +5,7 @@
 
 pub mod filter_sim;
 pub mod prepare;
+pub mod project;
 pub mod psd;
 pub mod render;
 pub mod step;
@@ -18,6 +19,7 @@ pub use openpid_core::analysis::{
     Analysis, AnalysisCtx, AnalysisError, Epoch, Grid2D, Requirement,
 };
 pub use prepare::{Prepared, prepare};
+pub use project::{Project, ProjectSlot};
 pub use psd::{PsdAnalysis, PsdOutput, PsdParams};
 pub use step::{StepAnalysis, StepMetrics, StepOutput, StepParams};
 pub use stft::{StftAnalysis, StftOutput, StftParams};
