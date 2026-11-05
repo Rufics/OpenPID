@@ -2,9 +2,19 @@
 
 use eframe::egui::Color32;
 
-/// Series colours for slot A / slot B and secondary lines.
-pub const SLOT_A: Color32 = Color32::from_rgb(86, 180, 233);
-pub const SLOT_B: Color32 = Color32::from_rgb(230, 159, 0);
+/// Slot colours: the Okabe–Ito palette (distinguishable with every common
+/// colour-vision deficiency), slot A sky blue, slot B orange, then green,
+/// purple, yellow, blue, vermilion, grey.
+pub const SLOT_PALETTE: [Color32; 8] = [
+    Color32::from_rgb(86, 180, 233),
+    Color32::from_rgb(230, 159, 0),
+    Color32::from_rgb(0, 158, 115),
+    Color32::from_rgb(204, 121, 167),
+    Color32::from_rgb(240, 228, 66),
+    Color32::from_rgb(0, 114, 178),
+    Color32::from_rgb(213, 94, 0),
+    Color32::from_rgb(153, 153, 153),
+];
 pub const ACCENT: Color32 = Color32::from_rgb(204, 121, 167);
 pub const MUTED: Color32 = Color32::from_rgb(140, 140, 140);
 

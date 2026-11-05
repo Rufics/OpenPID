@@ -75,3 +75,31 @@ solo (показати лише цей), × — закрити. Перетягу
 
 L (≈ 5 днів): модель і міграція 28 місць — 2, slot bar і розкладка — 2, тести й
 документація — 1.
+
+## Реалізація (05.11.2026)
+
+- **`worker.rs`:** `Slot(u8)` newtype з константами `A`, `B`, `MAX = 8` і буквами A…H.
+- **`colormap.rs`:** `SLOT_PALETTE` — 8 кольорів Okabe–Ito.
+- **`app.rs`:** `slots: Vec<SlotEntry { id, state, visible }>` у порядку додавання;
+  `slot_ids / loaded_slots / visible_slots / first_loaded`, `free_slot` (перший
+  порожній, інакше нова найменша вільна буква), `add_slot`, `close_slot` (букви
+  інших не рухаються; порожній список лишає порожній A), `set_visible`, `solo`;
+  скидання файлів і аргументи командного рядка відкривають кожен лог у свій слот;
+  один «Open log…» замість «Open A/B».
+- **`views.rs`:** `slot_headers` (рядок на слот + «+ Add log»), у рядку слота
+  прапорець «показувати», **S**, **x**; аналізи ітерують `visible_slots()`;
+  еталон для списку каналів, слайдерів і експорту — `first_loaded()`;
+  `panel_width`: 2 панелі ділять ширину, більше — ≥ 480 px у ряд (Freq × time —
+  вертикальна прокрутка панелей ≥ 260 px). Правило «2×2 для 3–4» замінено
+  горизонтальним рядом: панелі зберігають повну висоту графіка.
+- **`project.rs`:** схема v2 — `ProjectSlot { id, visible }`; v1 читається (слоти
+  за позицією).
+- **Тести:** `dropped_files_fill_free_slots_then_add_new_ones`,
+  `many_slots_have_colours_visibility_solo_and_stable_letters`,
+  `projects_keep_every_slot_and_read_version_1_files`; старі тести з A/B без змін
+  у буквах і кольорах.
+
+**Перевірено.** Три фікстури (4.2.0, 2025.12, 4.5.1) на Step response і
+Freq × throttle, 1280×800.
+
+![Три слоти на Step response](../../screenshots/slots-step.png)

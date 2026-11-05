@@ -103,7 +103,7 @@ impl Tab {
     }
 }
 
-/// A loaded file in slot A or B.
+/// A loaded file in a slot.
 #[derive(Debug)]
 pub struct Loaded {
     pub path: PathBuf,
@@ -124,6 +124,25 @@ pub enum SlotState {
     Loading(PathBuf),
     Failed(PathBuf, String),
     Ready(Loaded),
+}
+
+/// One entry of the slot bar: a slot, what it holds and whether it is drawn.
+#[derive(Debug)]
+pub struct SlotEntry {
+    pub id: Slot,
+    pub state: SlotState,
+    /// Drawn on the plots; a hidden slot keeps its log and results.
+    pub visible: bool,
+}
+
+impl SlotEntry {
+    pub fn empty(id: Slot) -> Self {
+        SlotEntry {
+            id,
+            state: SlotState::Empty,
+            visible: true,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -187,7 +206,8 @@ impl Default for Tools {
 
 pub struct App {
     pub worker: Worker,
-    pub slots: HashMap<Slot, SlotState>,
+    /// Open logs in slot-bar order (docs/design/multi-slot, R2).
+    pub slots: Vec<SlotEntry>,
     pub cache: HashMap<JobKey, Cached>,
     /// Heatmap grids rasterised once per result and colour scale (DESIGN §7.2),
     /// keyed by the result's address and the scale.
@@ -252,7 +272,7 @@ impl App {
         let worker = Worker::spawn(move || ctx.request_repaint());
         let mut app = App {
             worker,
-            slots: HashMap::from([(Slot::A, SlotState::Empty), (Slot::B, SlotState::Empty)]),
+            slots: vec![SlotEntry::empty(Slot::A), SlotEntry::empty(Slot::B)],
             cache: HashMap::new(),
             heatmap_textures: HashMap::new(),
             tab: tab.unwrap_or(Tab::LogViewer),
@@ -277,8 +297,10 @@ impl App {
         if let Some(project) = open_on_start.iter().find(|p| Project::is_project_path(p)) {
             app.open_project(project.clone());
         } else {
-            for (i, p) in open_on_start.into_iter().take(2).enumerate() {
-                app.open(if i == 0 { Slot::A } else { Slot::B }, p);
+            for p in open_on_start.into_iter().take(Slot::MAX) {
+                if let Some(slot) = app.free_slot() {
+                    app.open(slot, p);
+                }
             }
         }
         app
@@ -302,9 +324,114 @@ impl App {
     pub fn open(&mut self, slot: Slot, path: PathBuf) {
         self.pending.remove(&slot);
         self.status = format!("Loading {} into slot {}…", path.display(), slot.name());
-        self.slots.insert(slot, SlotState::Loading(path.clone()));
+        self.set_state(slot, SlotState::Loading(path.clone()));
         self.cache.retain(|k, _| k.slot != slot);
         self.worker.submit(Job::Load { slot, path });
+    }
+
+    // ---------------------------------------------------------------- slot bar
+
+    /// Every slot in bar order, loaded or not.
+    pub fn slot_ids(&self) -> Vec<Slot> {
+        self.slots.iter().map(|e| e.id).collect()
+    }
+
+    /// Slots with a log in them, in bar order.
+    pub fn loaded_slots(&self) -> Vec<Slot> {
+        self.slots
+            .iter()
+            .filter(|e| matches!(e.state, SlotState::Ready(_)))
+            .map(|e| e.id)
+            .collect()
+    }
+
+    /// Loaded slots that are drawn (not hidden), in bar order: what the
+    /// analysis tabs iterate.
+    pub fn visible_slots(&self) -> Vec<Slot> {
+        self.slots
+            .iter()
+            .filter(|e| e.visible && matches!(e.state, SlotState::Ready(_)))
+            .map(|e| e.id)
+            .collect()
+    }
+
+    /// The first loaded slot: the reference for channel pickers, the slider
+    /// tool and export names.
+    pub fn first_loaded(&self) -> Option<Slot> {
+        self.loaded_slots().first().copied()
+    }
+
+    pub fn slot_entry(&self, slot: Slot) -> Option<&SlotEntry> {
+        self.slots.iter().find(|e| e.id == slot)
+    }
+
+    pub fn slot_state(&self, slot: Slot) -> Option<&SlotState> {
+        self.slot_entry(slot).map(|e| &e.state)
+    }
+
+    /// Replace a slot's state, creating the entry when the slot is new.
+    pub fn set_state(&mut self, slot: Slot, state: SlotState) {
+        match self.slots.iter_mut().find(|e| e.id == slot) {
+            Some(e) => e.state = state,
+            None => self.slots.push(SlotEntry {
+                id: slot,
+                state,
+                visible: true,
+            }),
+        }
+    }
+
+    /// Add an empty slot with the lowest free letter; `None` at the limit.
+    pub fn add_slot(&mut self) -> Option<Slot> {
+        let id = (0..Slot::MAX as u8)
+            .map(Slot)
+            .find(|s| self.slot_entry(*s).is_none())?;
+        self.slots.push(SlotEntry::empty(id));
+        Some(id)
+    }
+
+    /// Where the next opened log goes: the first empty slot, else a new one.
+    pub fn free_slot(&mut self) -> Option<Slot> {
+        let empty = self
+            .slots
+            .iter()
+            .find(|e| matches!(e.state, SlotState::Empty))
+            .map(|e| e.id);
+        if let Some(s) = empty {
+            return Some(s);
+        }
+        let added = self.add_slot();
+        if added.is_none() {
+            self.status = format!("at most {} logs can be open at once", Slot::MAX);
+        }
+        added
+    }
+
+    /// Close a slot: its log, results and bar entry go; other letters stay.
+    pub fn close_slot(&mut self, slot: Slot) {
+        self.slots.retain(|e| e.id != slot);
+        self.cache.retain(|k, _| k.slot != slot);
+        self.pending.remove(&slot);
+        if self.slots.is_empty() {
+            self.slots.push(SlotEntry::empty(Slot::A));
+        }
+    }
+
+    pub fn set_visible(&mut self, slot: Slot, visible: bool) {
+        if let Some(e) = self.slots.iter_mut().find(|e| e.id == slot) {
+            e.visible = visible;
+        }
+    }
+
+    /// Show only `slot`; a second solo on the same slot shows every slot again.
+    pub fn solo(&mut self, slot: Slot) {
+        let already = self
+            .slots
+            .iter()
+            .all(|e| e.visible == (e.id == slot) || !matches!(e.state, SlotState::Ready(_)));
+        for e in &mut self.slots {
+            e.visible = already || e.id == slot;
+        }
     }
 
     /// Load a log and, once it is in, select `session` and `epoch`.
@@ -323,12 +450,16 @@ impl App {
     pub fn project(&self, project_path: &std::path::Path) -> Project {
         let t = &self.tools;
         let mut slots = Vec::new();
-        for slot in [Slot::A, Slot::B] {
-            let Some(l) = self.loaded(slot) else { break };
+        for e in &self.slots {
+            let SlotState::Ready(l) = &e.state else {
+                continue;
+            };
             slots.push(ProjectSlot {
                 path: Project::relativise(project_path, &l.path),
                 session: l.session,
                 epoch: l.epoch,
+                id: Some(e.id.0),
+                visible: e.visible,
             });
         }
         Project {
@@ -383,16 +514,23 @@ impl App {
         self.tab = Tab::from_name(&p.tab).unwrap_or(Tab::LogViewer);
         self.touch_mode = p.touch_mode;
         self.cache.clear();
-        for slot in [Slot::A, Slot::B] {
-            self.slots.insert(slot, SlotState::Empty);
-        }
-        for (slot, s) in [Slot::A, Slot::B].into_iter().zip(&p.slots) {
+        self.slots.clear();
+        // version 1 files have no letters: by position
+        for (i, s) in p.slots.iter().take(Slot::MAX).enumerate() {
+            let slot = Slot(s.id.unwrap_or(i as u8) % Slot::MAX as u8);
+            self.set_state(slot, SlotState::Empty);
+            self.set_visible(slot, s.visible);
             self.open_with(
                 slot,
                 Project::resolve(project_path, &s.path),
                 Some(s.session),
                 s.epoch,
             );
+        }
+        while self.slots.len() < 2 {
+            if self.add_slot().is_none() {
+                break;
+            }
         }
         self.status = format!("opened project {}", project_path.display());
     }
@@ -406,15 +544,18 @@ impl App {
     }
 
     pub fn loaded(&self, slot: Slot) -> Option<&Loaded> {
-        match self.slots.get(&slot) {
+        match self.slot_state(slot) {
             Some(SlotState::Ready(l)) => Some(l),
             _ => None,
         }
     }
 
     pub fn loaded_mut(&mut self, slot: Slot) -> Option<&mut Loaded> {
-        match self.slots.get_mut(&slot) {
-            Some(SlotState::Ready(l)) => Some(l),
+        match self.slots.iter_mut().find(|e| e.id == slot) {
+            Some(SlotEntry {
+                state: SlotState::Ready(l),
+                ..
+            }) => Some(l),
             _ => None,
         }
     }
@@ -465,7 +606,7 @@ impl App {
                             sessions.get(session).map_or(0, |s| s.len()),
                             session
                         );
-                        self.slots.insert(
+                        self.set_state(
                             slot,
                             SlotState::Ready(Loaded {
                                 path,
@@ -477,7 +618,7 @@ impl App {
                     }
                     Err(e) => {
                         self.status = format!("{}: {e}", path.display());
-                        self.slots.insert(slot, SlotState::Failed(path, e));
+                        self.set_state(slot, SlotState::Failed(path, e));
                     }
                 },
                 Done::Analyzed { key, result } => {
@@ -526,16 +667,9 @@ impl App {
             self.open_project(p.clone());
             return;
         }
-        let n = dropped.len().min(2);
-        for (i, p) in dropped.into_iter().take(2).enumerate() {
-            let a_free = self.loaded(Slot::A).is_none();
-            let b_free = self.loaded(Slot::B).is_none();
-            // one file: fill the free slot (A first); two files: A then B
-            let slot = if i == 0 && (a_free || !b_free || n == 2) {
-                Slot::A
-            } else {
-                Slot::B
-            };
+        // every dropped file gets a slot: the first empty one, else a new letter
+        for p in dropped {
+            let Some(slot) = self.free_slot() else { break };
             self.open(slot, p);
         }
     }
@@ -545,22 +679,22 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 ui.heading("OpenPID");
                 ui.separator();
-                for slot in [Slot::A, Slot::B] {
-                    if ui
-                        .button(format!("{} {}…", tr("Open"), slot.name()))
-                        .clicked()
-                        && let Some(p) = rfd::FileDialog::new()
-                            .add_filter(
-                                "Flight logs",
-                                &[
-                                    "bbl", "bfl", "txt", "csv", "bin", "BBL", "BFL", "TXT", "CSV",
-                                    "BIN",
-                                ],
-                            )
-                            .pick_file()
-                    {
-                        self.open(slot, p);
-                    }
+                if ui
+                    .button(format!("{}…", tr("Open log")))
+                    .on_hover_text(tr("into the first empty slot, or a new one"))
+                    .clicked()
+                    && let Some(p) = rfd::FileDialog::new()
+                        .add_filter(
+                            "Flight logs",
+                            &[
+                                "bbl", "bfl", "txt", "csv", "bin", "BBL", "BFL", "TXT", "CSV",
+                                "BIN",
+                            ],
+                        )
+                        .pick_file()
+                    && let Some(slot) = self.free_slot()
+                {
+                    self.open(slot, p);
                 }
                 ui.separator();
                 for tab in Tab::ALL {
@@ -593,7 +727,8 @@ impl App {
                     .add_filter("OpenPID project", &["json"])
                     .set_file_name(format!(
                         "{}.openpid.json",
-                        self.export_file_name(Slot::A, "").trim_end_matches('.')
+                        self.export_file_name(self.first_loaded().unwrap_or(Slot::A), "")
+                            .trim_end_matches('.')
                     ))
                     .save_file()
                 {
@@ -611,13 +746,15 @@ impl App {
                 ui.close();
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("PNG image", &["png"])
-                    .set_file_name(self.export_file_name(Slot::A, "png"))
+                    .set_file_name(
+                        self.export_file_name(self.first_loaded().unwrap_or(Slot::A), "png"),
+                    )
                     .save_file()
                 {
                     self.export_png(&ctx, path);
                 }
             }
-            for slot in [Slot::A, Slot::B] {
+            for slot in self.loaded_slots() {
                 let ready = self.current_result(slot).is_some();
                 if ui
                     .add_enabled(
