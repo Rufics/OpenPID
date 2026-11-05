@@ -5,7 +5,9 @@
 //! The schema is versioned and every field has a default, so an older or
 //! newer `OpenPID` reads what it understands and ignores the rest.
 
-use crate::{FilterSimParams, PsdParams, StepParams, StftParams, ThrottleHeatmapParams};
+use crate::{
+    FilterSimParams, MotorNoiseParams, PsdParams, StepParams, StftParams, ThrottleHeatmapParams,
+};
 use openpid_core::analysis::Epoch;
 use openpid_core::{Axis, ChannelId, GyroStage};
 use serde::{Deserialize, Serialize};
@@ -63,6 +65,8 @@ pub struct Project {
     pub stft: StftParams,
     /// Filter Sim parameters and what-if overrides.
     pub filter_sim: FilterSimParams,
+    /// Motor noise parameters.
+    pub motor_noise: MotorNoiseParams,
     /// Channel shown on the spectrum tab.
     pub spectrum_channel: ChannelId,
     /// Channel shown on the heatmap tabs.
@@ -94,6 +98,7 @@ impl Default for Project {
             throttle: ThrottleHeatmapParams::default(),
             stft: StftParams::default(),
             filter_sim: FilterSimParams::default(),
+            motor_noise: MotorNoiseParams::default(),
             spectrum_channel: gyro.clone(),
             heatmap_channel: gyro.clone(),
             psd_db: true,

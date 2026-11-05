@@ -31,6 +31,8 @@ COMMANDS:
              psd             Welch power spectral density of --channel
              thr-heatmap     frequency x throttle heatmap of --channel
              stft            frequency x time heatmap of --channel
+             motor-noise     per-motor harmonic amplitudes on the gyro (needs gyro.raw.<axis>;
+                             motor speeds from eRPM or the rpm estimate)
              rpm             motor speed estimated from the gyro's noise peaks (needs
                              gyro.raw.<axis>; validated against motor_rpm when logged)
              filter-sim      unfiltered gyro through the modelled filter chain (needs
@@ -511,6 +513,23 @@ fn cmd_run(args: &Args) -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
             grid = Some(out.grid.clone());
             serde_json::to_string_pretty(&out)
+        }
+        "motor-noise" => {
+            let p = openpid_analysis::MotorNoiseParams {
+                channel: match &args.channel {
+                    Some(_) => channel,
+                    None => ChannelId::Gyro {
+                        axis,
+                        stage: openpid_core::GyroStage::Raw,
+                    },
+                },
+                ..Default::default()
+            };
+            serde_json::to_string_pretty(
+                &openpid_analysis::MotorNoiseAnalysis
+                    .run(&ctx, &p)
+                    .map_err(|e| e.to_string())?,
+            )
         }
         "rpm" => {
             let p = openpid_analysis::RpmEstimateParams {

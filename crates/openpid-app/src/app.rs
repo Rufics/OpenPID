@@ -5,8 +5,8 @@ use crate::views;
 use crate::worker::{Done, Job, JobKey, Kind, Output, Slot, Worker};
 use eframe::egui;
 use openpid_analysis::{
-    Epoch, FilterSimParams, Project, ProjectSlot, PsdParams, StepParams, StftParams,
-    ThrottleHeatmapParams,
+    Epoch, FilterSimParams, MotorNoiseParams, Project, ProjectSlot, PsdParams, StepParams,
+    StftParams, ThrottleHeatmapParams,
 };
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use std::collections::HashMap;
@@ -21,19 +21,21 @@ pub enum Tab {
     ThrottleHeatmap,
     TimeHeatmap,
     FilterSim,
+    MotorNoise,
     Sliders,
     Diagnostics,
     Settings,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 9] = [
+    pub const ALL: [Tab; 10] = [
         Tab::LogViewer,
         Tab::Step,
         Tab::Spectrum,
         Tab::ThrottleHeatmap,
         Tab::TimeHeatmap,
         Tab::FilterSim,
+        Tab::MotorNoise,
         Tab::Sliders,
         Tab::Diagnostics,
         Tab::Settings,
@@ -47,6 +49,7 @@ impl Tab {
             "throttle" => Tab::ThrottleHeatmap,
             "time" => Tab::TimeHeatmap,
             "filter" => Tab::FilterSim,
+            "motors" => Tab::MotorNoise,
             "sliders" => Tab::Sliders,
             "diagnostics" => Tab::Diagnostics,
             "settings" => Tab::Settings,
@@ -63,6 +66,7 @@ impl Tab {
             Tab::ThrottleHeatmap => "throttle",
             Tab::TimeHeatmap => "time",
             Tab::FilterSim => "filter",
+            Tab::MotorNoise => "motors",
             Tab::Sliders => "sliders",
             Tab::Diagnostics => "diagnostics",
             Tab::Settings => "settings",
@@ -77,6 +81,7 @@ impl Tab {
             Tab::ThrottleHeatmap => "Freq × throttle",
             Tab::TimeHeatmap => "Freq × time",
             Tab::FilterSim => "Filter Sim",
+            Tab::MotorNoise => "Motor noise",
             Tab::Sliders => "PID sliders",
             Tab::Diagnostics => "Diagnostics",
             Tab::Settings => "Settings",
@@ -124,6 +129,8 @@ pub struct Tools {
     pub stft: StftParams,
     /// Filter Sim axis, spectra and what-if overrides.
     pub filter_sim: FilterSimParams,
+    /// Motor noise table parameters.
+    pub motor_noise: MotorNoiseParams,
     pub spectrum_channel: ChannelId,
     pub heatmap_channel: ChannelId,
     pub psd_db: bool,
@@ -146,6 +153,7 @@ impl Default for Tools {
             throttle: ThrottleHeatmapParams::default(),
             stft: StftParams::default(),
             filter_sim: FilterSimParams::default(),
+            motor_noise: MotorNoiseParams::default(),
             spectrum_channel: gyro.clone(),
             heatmap_channel: gyro.clone(),
             psd_db: true,
@@ -306,6 +314,7 @@ impl App {
             throttle: t.throttle.clone(),
             stft: t.stft.clone(),
             filter_sim: t.filter_sim.clone(),
+            motor_noise: t.motor_noise.clone(),
             spectrum_channel: t.spectrum_channel.clone(),
             heatmap_channel: t.heatmap_channel.clone(),
             psd_db: t.psd_db,
@@ -334,6 +343,7 @@ impl App {
             throttle: p.throttle.clone(),
             stft: p.stft.clone(),
             filter_sim: p.filter_sim.clone(),
+            motor_noise: p.motor_noise.clone(),
             spectrum_channel: p.spectrum_channel.clone(),
             heatmap_channel: p.heatmap_channel.clone(),
             psd_db: p.psd_db,
@@ -641,6 +651,7 @@ impl App {
             Tab::ThrottleHeatmap => views::throttle_heatmap(self, ui),
             Tab::TimeHeatmap => views::time_heatmap(self, ui),
             Tab::FilterSim => views::filter_sim(self, ui),
+            Tab::MotorNoise => views::motor_noise(self, ui),
             Tab::Sliders => views::sliders(self, ui),
             Tab::Diagnostics => views::diagnostics(self, ui),
             Tab::Settings => views::settings(self, ui),

@@ -3,9 +3,9 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 use openpid_analysis::{
-    Analysis, AnalysisCtx, FilterSimAnalysis, FilterSimParams, PsdAnalysis, PsdParams,
-    RpmEstimateParams, RpmEstimator, StepAnalysis, StepParams, ThrottleHeatmap,
-    ThrottleHeatmapParams,
+    Analysis, AnalysisCtx, FilterSimAnalysis, FilterSimParams, MotorNoiseAnalysis,
+    MotorNoiseParams, PsdAnalysis, PsdParams, RpmEstimateParams, RpmEstimator, StepAnalysis,
+    StepParams, ThrottleHeatmap, ThrottleHeatmapParams,
 };
 use openpid_core::{Axis, ChannelId, GyroStage};
 use openpid_sim::{MotorNoise, Noise, Plant, SetpointProfile, SignalSpec, ThrottleProfile, Tone};
@@ -219,4 +219,67 @@ fn rpm_estimate_follows_the_synthetic_motors() {
         .iter()
         .fold((f64::MAX, f64::MIN), |(lo, hi), r| (lo.min(*r), hi.max(*r)));
     assert!(hi > lo * 1.5, "range {lo}..{hi}");
+}
+
+#[test]
+fn motor_noise_table_shows_the_bent_prop() {
+    let spec = SignalSpec {
+        duration_s: 12.0,
+        throttle: ThrottleProfile::Ramp {
+            from: 30.0,
+            to: 60.0,
+        },
+        setpoint: SetpointProfile::Silence,
+        noise: Noise {
+            white: 0.5,
+            motor: Some(MotorNoise {
+                harmonics: vec![3.0, 1.0, 0.4],
+                spread: 0.12,
+                gains: vec![1.0, 1.0, 2.5, 1.0],
+                ..MotorNoise::default()
+            }),
+            ..Noise::default()
+        },
+        filter_hz: 0.0,
+        ..SignalSpec::default()
+    };
+    let s = spec.build();
+    let ctx = AnalysisCtx {
+        session: &s,
+        epoch: None,
+    };
+    let out = MotorNoiseAnalysis
+        .run(&ctx, &MotorNoiseParams::default())
+        .unwrap();
+    assert_eq!(out.rpm_source, "logged");
+    assert_eq!(out.motors.len(), 4);
+    assert_eq!(out.loudest, Some(2), "motor 3 carries the bent prop");
+    let fundamental = |m: usize| out.motors[m].harmonics[0];
+    // neighbouring motors leak into each other at this spread, so the
+    // 2.5 × gain shows as a clearly higher ratio rather than exactly 1.8
+    assert!(fundamental(2).ratio > 1.4, "{:?}", fundamental(2));
+    for m in [0, 1, 3] {
+        assert!(fundamental(m).ratio < 1.0, "{:?}", fundamental(m));
+        assert!(
+            (fundamental(m).mean_hz - out.motors[m].mean_rpm / 60.0).abs() < 2.0,
+            "harmonic placed at the motor's speed"
+        );
+    }
+    assert!(out.motors[2].total > 2.0 * out.motors[0].total);
+    assert!(!out.freq.is_empty() && out.freq.len() == out.psd_db.len());
+    // without eRPM the estimate stands in, one speed for all motors
+    let mut quiet = s.clone();
+    for idx in 0..4u8 {
+        quiet.channels.remove(&ChannelId::MotorRpm { idx });
+    }
+    let ctx2 = AnalysisCtx {
+        session: &quiet,
+        epoch: None,
+    };
+    let est = MotorNoiseAnalysis
+        .run(&ctx2, &MotorNoiseParams::default())
+        .unwrap();
+    assert_eq!(est.rpm_source, "estimated");
+    assert_eq!(est.motors.len(), 1);
+    assert!(est.motors[0].harmonics[0].amplitude > 0.0);
 }

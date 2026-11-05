@@ -17,6 +17,7 @@ pub fn output_json(o: &Output) -> Result<String, String> {
         Output::Throttle(t) => serde_json::to_string_pretty(t),
         Output::Stft(s) => serde_json::to_string_pretty(s),
         Output::FilterSim(f) => serde_json::to_string_pretty(f.as_ref()),
+        Output::MotorNoise(m) => serde_json::to_string_pretty(m),
     }
     .map_err(|e| e.to_string())
 }
@@ -62,6 +63,7 @@ impl App {
             Tab::ThrottleHeatmap => Kind::Throttle(self.tools.throttle.clone()),
             Tab::TimeHeatmap => Kind::Stft(self.tools.stft.clone()),
             Tab::FilterSim => Kind::FilterSim(self.tools.filter_sim.clone()),
+            Tab::MotorNoise => Kind::MotorNoise(self.tools.motor_noise.clone()),
             Tab::LogViewer | Tab::Sliders | Tab::Diagnostics | Tab::Settings => return None,
         })
     }

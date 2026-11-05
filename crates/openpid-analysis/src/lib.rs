@@ -4,6 +4,7 @@
 //! that any front-end can render.
 
 pub mod filter_sim;
+pub mod motor_noise;
 pub mod prepare;
 pub mod project;
 pub mod psd;
@@ -15,6 +16,9 @@ pub mod throttle;
 
 pub use filter_sim::{
     FilterFit, FilterOverrides, FilterSimAnalysis, FilterSimOutput, FilterSimParams,
+};
+pub use motor_noise::{
+    HarmonicNoise, MotorNoise, MotorNoiseAnalysis, MotorNoiseOutput, MotorNoiseParams,
 };
 pub use openpid_core::analysis::{
     Analysis, AnalysisCtx, AnalysisError, Epoch, Grid2D, Requirement,
