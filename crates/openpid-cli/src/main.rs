@@ -17,6 +17,7 @@ USAGE:
     openpid run <analysis> [<file>] [--project <p.openpid.json>] [--session N] [--epoch A..B]
                 [--axis roll|pitch|yaw] [--channel KEY] [--out <path>] [--png <path>]
     openpid sliders <file> [--session N] [--set KEY=VALUE,...] [--json]
+    openpid diff <fileA> <fileB> [--session N] [--session-b M] [--json] [--cli]
     openpid gen [<spec.json>] [--out synthetic.csv] | gen --example
     openpid --help | --version
 
@@ -44,6 +45,10 @@ COMMANDS:
              log flew with and the gains they produce; --set moves sliders and prints
              the resulting gains plus the CLI commands to apply them.
 
+    diff     Headers (settings) that differ between two logs, A → B. --cli prints the
+             Betaflight CLI `set …` commands that turn A's settings into B's (per-axis
+             and min/max headers expanded, structural headers as comments), then `save`.
+
     gen      Write a synthetic session with known ground truth (stick steps or a
              chirp, a first-order plant with delay, motor harmonics tied to the
              throttle, white/pink noise, a PT1 'firmware' filter, jitter, dropouts)
@@ -60,6 +65,8 @@ OPTIONS:
     --epoch A..B  Analyse only seconds A to B of the session
     --axis AXIS   roll, pitch or yaw
     --json        Machine-readable output
+    --session-b M diff: session index in the second file (default: --session)
+    --cli         diff: Betaflight CLI commands instead of the table
     --example     gen: print the default spec instead of generating
     --raw         Skip firmware-profile scaling and derived channels
     --out <path>  Write to a file instead of stdout
@@ -85,6 +92,9 @@ struct Args {
     out: Option<PathBuf>,
     png: Option<PathBuf>,
     project: Option<PathBuf>,
+    file_b: Option<PathBuf>,
+    session_b: Option<usize>,
+    cli: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -100,6 +110,11 @@ fn parse_args() -> Result<Args, String> {
             "--example" => args.example = true,
             "--raw" => args.raw = true,
             "--scaled" => args.scaled = true,
+            "--cli" => args.cli = true,
+            "--session-b" => {
+                let v = it.next().ok_or("--session-b needs a value")?;
+                args.session_b = Some(v.parse().map_err(|_| format!("bad session index: {v}"))?);
+            }
             "--session" => {
                 let v = it.next().ok_or("--session needs a value")?;
                 args.session = Some(v.parse().map_err(|_| format!("bad session index: {v}"))?);
@@ -141,6 +156,8 @@ fn parse_args() -> Result<Args, String> {
             _ => {
                 if args.command == "run" && args.analysis.is_none() {
                     args.analysis = Some(a);
+                } else if args.file.is_some() && args.command == "diff" && args.file_b.is_none() {
+                    args.file_b = Some(PathBuf::from(a));
                 } else if args.file.is_some() {
                     return Err(format!("unexpected argument {a}"));
                 } else {
@@ -581,6 +598,77 @@ fn cmd_run(args: &Args) -> Result<(), String> {
     }
 }
 
+/// One session of a file, decoded without raw mode.
+fn session_of(path: &Path, index: usize) -> Result<openpid_core::FlightSession, String> {
+    let (_, log) = open(
+        path,
+        &OpenOptions {
+            sessions: Some(vec![index]),
+            raw: false,
+        },
+    )?;
+    log.sessions
+        .into_iter()
+        .find(|s| s.index == index)
+        .ok_or_else(|| format!("{}: no session {index}", path.display()))
+}
+
+fn cmd_diff(args: &Args) -> Result<(), String> {
+    let a = args.file.as_ref().ok_or("diff needs two files")?;
+    let b = args.file_b.as_ref().ok_or("diff needs two files")?;
+    let sa = args.session.unwrap_or(0);
+    let sb = args.session_b.or(args.session).unwrap_or(0);
+    let (sess_a, sess_b) = (session_of(a, sa)?, session_of(b, sb)?);
+    let diff = openpid_core::diff_headers(&sess_a, &sess_b);
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&diff).map_err(|e| e.to_string())?
+        );
+        return Ok(());
+    }
+    if args.cli {
+        print!(
+            "{}",
+            openpid_fmt_blackbox::BetaflightCli::diff_commands(&diff)
+        );
+        return Ok(());
+    }
+    println!(
+        "A: {} session {sa} ({})",
+        a.display(),
+        sess_a.firmware.revision
+    );
+    println!(
+        "B: {} session {sb} ({})",
+        b.display(),
+        sess_b.firmware.revision
+    );
+    if diff.is_empty() {
+        println!("no header differs");
+        return Ok(());
+    }
+    let settings = diff
+        .iter()
+        .filter(|d| openpid_core::is_setting_header(&d.key))
+        .count();
+    println!(
+        "{} headers differ ({settings} settings, {} other)",
+        diff.len(),
+        diff.len() - settings
+    );
+    let width = diff.iter().map(|d| d.key.len()).max().unwrap_or(0);
+    for d in &diff {
+        println!(
+            "  {:width$}  {}  →  {}",
+            d.key,
+            d.a.as_deref().unwrap_or("(absent)"),
+            d.b.as_deref().unwrap_or("(absent)")
+        );
+    }
+    Ok(())
+}
+
 fn cmd_sliders(args: &Args) -> Result<(), String> {
     let path = args.file.as_ref().ok_or("sliders needs a file")?;
     let session = args.session.unwrap_or(0);
@@ -688,6 +776,7 @@ fn main() -> ExitCode {
         "decode" => cmd_decode(&args),
         "run" => cmd_run(&args),
         "sliders" => cmd_sliders(&args),
+        "diff" => cmd_diff(&args),
         "gen" => cmd_gen(&args),
         "--help" | "-h" | "help" => {
             print!("{USAGE}");

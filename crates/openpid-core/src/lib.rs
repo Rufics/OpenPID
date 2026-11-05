@@ -9,6 +9,7 @@ pub mod analysis;
 pub mod channel;
 pub mod format;
 pub mod profile;
+pub mod recommend;
 pub mod series;
 pub mod session;
 pub mod settings;
@@ -19,6 +20,7 @@ pub mod units;
 pub use channel::{Axis, BatteryField, ChannelId, GyroStage, PidTerm};
 pub use format::{Confidence, FormatError, FormatRegistry, LogFormat, OpenOptions};
 pub use profile::{FieldMapping, FirmwareProfile, ProfileRegistry, RawHeaders};
+pub use recommend::{ExportError, Exporter, HeaderDiff, Proposal, diff_headers, is_setting_header};
 pub use series::Series;
 pub use session::{
     AuxRow, AuxTable, Channel, ChannelSet, Diagnostics, Event, EventKind, FirmwareInfo,

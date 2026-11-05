@@ -391,3 +391,59 @@ fn motor_noise_command() {
     assert!(v["loudest"].is_number());
     assert_eq!(v["channel"]["gyro"]["axis"], "pitch");
 }
+
+#[test]
+fn diff_command_lists_changed_headers_and_cli_commands() {
+    let a = log("betaflight-4.5.1-two-sessions.bbl");
+    let b = log("betaflight-2025.12.2-btfl_027.bbl");
+    let (ok, out, err) = run(&["diff", a.to_str().unwrap(), b.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    assert!(out.contains("A: ") && out.contains("Betaflight 4.5.1"));
+    assert!(out.contains("B: ") && out.contains("Betaflight 2025.12.2"));
+    assert!(out.contains("headers differ"));
+    assert!(out.contains("d_min") && out.contains("d_max"), "{out}");
+    assert!(!out.contains("Log start datetime"));
+    // the same file against itself: nothing
+    let (ok, out, _) = run(&["diff", a.to_str().unwrap(), a.to_str().unwrap()]);
+    assert!(ok && out.contains("no header differs"), "{out}");
+    // two sessions of one file
+    let (ok, out, _) = run(&[
+        "diff",
+        a.to_str().unwrap(),
+        a.to_str().unwrap(),
+        "--session",
+        "0",
+        "--session-b",
+        "1",
+    ]);
+    assert!(
+        ok && out.contains("session 0") && out.contains("session 1"),
+        "{out}"
+    );
+    // CLI commands turn A into B
+    let (ok, out, _) = run(&["diff", a.to_str().unwrap(), b.to_str().unwrap(), "--cli"]);
+    assert!(ok);
+    assert!(out.contains("set d_max_roll = 40\n"), "{out}");
+    assert!(
+        out.contains("set p_roll = 45\n") || !out.contains("rollPID"),
+        "{out}"
+    );
+    assert!(out.contains("# Firmware revision:") && out.contains("(not a CLI setting)"));
+    assert!(out.trim_end().ends_with("save"), "{out}");
+    // JSON
+    let (ok, out, _) = run(&["diff", a.to_str().unwrap(), b.to_str().unwrap(), "--json"]);
+    assert!(ok);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert!(v.as_array().unwrap().iter().any(|d| d["key"] == "d_max"));
+    // errors
+    let (ok, _, err) = run(&["diff", a.to_str().unwrap()]);
+    assert!(!ok && err.contains("two files"));
+    let (ok, _, err) = run(&[
+        "diff",
+        a.to_str().unwrap(),
+        b.to_str().unwrap(),
+        "--session",
+        "9",
+    ]);
+    assert!(!ok && err.contains("no session 9"));
+}

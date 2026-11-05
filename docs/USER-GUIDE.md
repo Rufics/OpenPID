@@ -237,6 +237,7 @@ PSD Велча обраного каналу (DESIGN §6.3). **Channel** — б�
 | Motor noise | `openpid run motor-noise <log>` |
 | Оберти без eRPM | `openpid run rpm <log>` |
 | PID sliders | `openpid sliders <log> --set …` |
+| Порівняння налаштувань двох логів | `openpid diff <logA> <logB> [--session N --session-b M] [--cli \| --json]` |
 | Синтетичний лог | `openpid gen --example > spec.json; openpid gen spec.json --out synthetic.csv` |
 
 `--session N` обирає сесію, `--epoch A..B` — секунди, `--out` пише у файл.

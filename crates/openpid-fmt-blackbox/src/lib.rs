@@ -12,6 +12,7 @@
 //!   firmware [`profiles`] profile;
 //! - [`BlackboxFormat`]: the [`openpid_core::LogFormat`] entry point.
 
+pub mod cli;
 pub mod encoding;
 pub mod headers;
 pub mod parser;
@@ -20,6 +21,7 @@ pub mod profiles;
 pub mod reader;
 pub mod session;
 
+pub use cli::BetaflightCli;
 pub use headers::{Headers, LOG_START_MARKER};
 pub use session::{DecodedLog, build_session, decode};
 
