@@ -62,6 +62,7 @@ static UA: &[(&str, &str)] = &[
         "0 = as many as the RPM filter removes",
         "0 = стільки, скільки знімає RPM-фільтр",
     ),
+    ("< step", "< крок"),
     (
         "A log without eRPM: estimate motor speed from the gyro",
         "Лог без eRPM: оцінити оберти моторів з гіроскопа",
@@ -105,6 +106,8 @@ static UA: &[(&str, &str)] = &[
     ("Open…", "Відкрити…"),
     ("PID roll / pitch / yaw", "PID roll / pitch / yaw"),
     ("PID sliders", "PID-слайдери"),
+    ("Pause", "Пауза"),
+    ("Play", "Відтворити"),
     ("Plot as PNG…", "Графік як PNG…"),
     ("Project", "Проєкт"),
     ("RPM notch", "RPM notch"),
@@ -119,6 +122,7 @@ static UA: &[(&str, &str)] = &[
     ("Step response", "Перехідна характеристика"),
     ("Surface 3D", "Поверхня 3D"),
     ("Theme", "Тема"),
+    ("To start", "На початок"),
     ("Touch mode", "Сенсорний режим"),
     (
         "Touch mode (larger controls, touch gestures)",
@@ -175,7 +179,7 @@ static UA: &[(&str, &str)] = &[
     ("shading", "затінення"),
     ("smooth", "згладжування"),
     ("speed", "швидкість"),
-    ("step ▶", "крок ▶"),
+    ("step >", "крок >"),
     (
         "throttle bins with fewer segments are greyed out: they are unsampled, not quiet",
         "біни газу з меншою кількістю сегментів затемнені: там немає даних, а не тиша",
@@ -185,10 +189,6 @@ static UA: &[(&str, &str)] = &[
     ("type", "тип"),
     ("unmapped fields", "незіставлені поля"),
     ("window", "вікно"),
-    ("⏮ To start", "⏮ На початок"),
-    ("⏸ Pause", "⏸ Пауза"),
-    ("▶ Play", "▶ Відтворити"),
-    ("◀ step", "◀ крок"),
 ];
 
 #[cfg(test)]

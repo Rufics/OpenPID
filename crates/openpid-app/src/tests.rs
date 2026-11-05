@@ -1355,7 +1355,7 @@ fn time_heatmap_player_plays_scrubs_and_syncs_the_cursor() {
     assert!(has_label_containing(&h, "column 1 of"));
     assert!(has_label_containing(&h, "A spectrum at"));
     // play: 4 steps of 0.25 s advance one second at 1×
-    h.get_by_label("▶ Play").click();
+    h.get_by_label("Play").click();
     h.step();
     assert!(app(&h).player.playing);
     h.run_steps(5);
@@ -1372,7 +1372,7 @@ fn time_heatmap_player_plays_scrubs_and_syncs_the_cursor() {
     let fast = app(&h).player.pos_s.unwrap();
     assert!(fast - pos > 3.0, "{pos} → {fast} at 4×");
     // pause holds the position
-    h.get_by_label("⏸ Pause").click();
+    h.get_by_label("Pause").click();
     h.step();
     assert!(!app(&h).player.playing);
     let held = app(&h).player.pos_s;
@@ -1381,10 +1381,10 @@ fn time_heatmap_player_plays_scrubs_and_syncs_the_cursor() {
     assert_eq!(app(&h).player.pos_s, held);
     // one column either way
     let col = app(&h).player.column.unwrap();
-    h.get_by_label("step ▶").click();
+    h.get_by_label("step >").click();
     h.run_steps(2);
     assert_eq!(app(&h).player.column, Some(col + 1));
-    h.get_by_label("◀ step").click();
+    h.get_by_label("< step").click();
     h.run_steps(2);
     assert_eq!(app(&h).player.column, Some(col));
     // the log-viewer cursor moved: the player follows it
@@ -1407,16 +1407,16 @@ fn time_heatmap_player_plays_scrubs_and_syncs_the_cursor() {
     assert!((p - want).abs() < (b1 - b0) * 0.02, "{p} vs {want}");
     assert_eq!(app(&h).viewer.cursor_s, Some(p));
     // to start, then play past the end loops
-    h.get_by_label("⏮ To start").click();
+    h.get_by_label("To start").click();
     h.run_steps(2);
     assert_eq!(app(&h).player.pos_s, Some(x0));
     app_mut(&mut h).player.pos_s = Some(x1 - 0.1);
     app_mut(&mut h).player.speed = 1.0;
-    h.get_by_label("▶ Play").click();
+    h.get_by_label("Play").click();
     h.run_steps(3);
     assert!(app(&h).player.pos_s.unwrap() < x0 + 1.0, "looped");
     // touch: a drag over the heatmap scrubs instead of panning
-    h.get_by_label("⏸ Pause").click();
+    h.get_by_label("Pause").click();
     h.step();
     app_mut(&mut h).touch_mode = true;
     h.run_steps(4); // the touch zoom factor applies a frame later; the layout settles after
@@ -1437,7 +1437,7 @@ fn time_heatmap_player_plays_scrubs_and_syncs_the_cursor() {
     // without a log there is no player
     let mut h2 = harness(Vec::new(), Some(Tab::TimeHeatmap));
     h2.step();
-    assert!(h2.query_by_label("▶ Play").is_none());
+    assert!(h2.query_by_label("Play").is_none());
 }
 
 // ------------------------------------------------------------------ export

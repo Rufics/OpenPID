@@ -1711,23 +1711,19 @@ fn player_controls(
     ui.horizontal_wrapped(|ui| {
         let p = &mut app.player;
         if ui
-            .button(if p.playing {
-                tr("⏸ Pause")
-            } else {
-                tr("▶ Play")
-            })
+            .button(if p.playing { tr("Pause") } else { tr("Play") })
             .clicked()
         {
             p.playing = !p.playing;
             p.last_frame_time = None;
         }
-        if ui.button(tr("⏮ To start")).clicked() {
+        if ui.button(tr("To start")).clicked() {
             pos = x0;
         }
-        if ui.button(tr("◀ step")).clicked() {
+        if ui.button(tr("< step")).clicked() {
             pos = step(pos, -1);
         }
-        if ui.button(tr("step ▶")).clicked() {
+        if ui.button(tr("step >")).clicked() {
             pos = step(pos, 1);
         }
         let l = ui.label(tr("speed"));
