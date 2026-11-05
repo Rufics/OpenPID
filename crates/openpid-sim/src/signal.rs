@@ -118,6 +118,9 @@ pub struct MotorNoise {
     pub harmonics: Vec<f64>,
     /// Motors differ in speed by up to this fraction, spread evenly.
     pub spread: f64,
+    /// Amplitude multiplier per motor (a "bent prop" is louder); missing
+    /// motors get 1.
+    pub gains: Vec<f64>,
 }
 
 impl Default for MotorNoise {
@@ -127,6 +130,7 @@ impl Default for MotorNoise {
             rpm_full: 25000.0,
             harmonics: vec![2.0, 1.0, 0.5],
             spread: 0.05,
+            gains: Vec::new(),
         }
     }
 }
@@ -396,9 +400,10 @@ impl SignalSpec {
                 for (m, (history, phase)) in rpm.iter_mut().zip(phases.iter_mut()).enumerate() {
                     let r = self.rpm_at(m, throttle[i]);
                     history.push(r);
+                    let gain = mn.gains.get(m).copied().unwrap_or(1.0);
                     for (k, (amp, ph)) in mn.harmonics.iter().zip(phase.iter_mut()).enumerate() {
                         *ph += TAU * r / 60.0 * (k + 1) as f64 / fs;
-                        let s = amp * ph.sin();
+                        let s = gain * amp * ph.sin();
                         v[0] += s;
                         v[1] += s * 0.8;
                         v[2] += s * 0.3;

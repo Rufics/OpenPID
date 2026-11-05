@@ -142,6 +142,7 @@ fn tab_names_and_titles() {
         ("throttle", Tab::ThrottleHeatmap),
         ("time", Tab::TimeHeatmap),
         ("filter", Tab::FilterSim),
+        ("motors", Tab::MotorNoise),
         ("sliders", Tab::Sliders),
         ("diagnostics", Tab::Diagnostics),
         ("settings", Tab::Settings),
@@ -301,8 +302,8 @@ fn every_tab_runs_its_analysis_on_a_real_log() {
     let kinds: std::collections::BTreeSet<&str> = app(&h).cache.keys().map(|k| k.kind).collect();
     assert_eq!(
         kinds.into_iter().collect::<Vec<_>>(),
-        ["fsim", "psd", "step", "stft", "thr"],
-        "debug_mode GYRO_SCALED gives the 4.2.0 log a raw gyro, so Filter Sim runs too"
+        ["fsim", "motors", "psd", "step", "stft", "thr"],
+        "debug_mode GYRO_SCALED gives the 4.2.0 log a raw gyro, so Filter Sim and Motor noise run too"
     );
     select_tab(&mut h, Tab::Diagnostics);
     assert!(has_label_containing(&h, "profile"));
@@ -1159,4 +1160,42 @@ fn json_export_equals_the_cli_serialisation_and_names_the_file() {
         .contains("empty")
     );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+// ------------------------------------------------------------------ motor noise
+
+#[test]
+fn motor_noise_tab_lists_every_motor() {
+    let mut h = harness(vec![LOG_4_5_1.into()], Some(Tab::MotorNoise));
+    run_until(&mut h, idle);
+    assert!(has_label_containing(&h, "rpm logged"));
+    for m in ["M1", "M2", "M3", "M4"] {
+        assert!(h.query_by_label(m).is_some(), "{m}");
+    }
+    assert!(has_label_containing(&h, "loudest M"));
+    assert!(has_label_containing(&h, "×1 amp (ratio)"));
+    let out = app(&h)
+        .cache
+        .values()
+        .find_map(|c| match c {
+            Cached::Ready(o) => match o.as_ref() {
+                crate::worker::Output::MotorNoise(m) => Some(m.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(out.motors.len(), 4);
+    assert!(out.motors.iter().all(|m| m.harmonics.len() == 3));
+    // a log without eRPM falls back to the estimate: one row
+    let mut h2 = harness(vec![LOG_4_2.into()], Some(Tab::MotorNoise));
+    run_until(&mut h2, idle);
+    assert!(has_label_containing(&h2, "rpm estimated"));
+    assert!(h2.query_by_label("M1").is_some() && h2.query_by_label("M2").is_none());
+    // a log without unfiltered gyro gets the hint
+    let mut h3 = harness(vec![LOG_TWO.into()], Some(Tab::MotorNoise));
+    run_until(&mut h3, no_slot_loading);
+    h3.step();
+    assert!(has_label_containing(&h3, "no unfiltered gyro"));
+    assert!(app(&h3).cache.is_empty());
 }

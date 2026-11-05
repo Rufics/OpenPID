@@ -326,6 +326,14 @@ impl ChannelSet {
         }
     }
 
+    /// Remove a channel by identity, returning it.
+    pub fn remove(&mut self, id: &ChannelId) -> Option<Channel> {
+        let i = *self.index.get(id)?;
+        let c = self.channels.remove(i);
+        self.reindex();
+        Some(c)
+    }
+
     /// Channel by identity.
     pub fn get(&self, id: &ChannelId) -> Option<&Channel> {
         self.index.get(id).map(|&i| &self.channels[i])

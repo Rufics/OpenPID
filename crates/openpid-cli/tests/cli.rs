@@ -335,3 +335,16 @@ fn rpm_command() {
     let (ok, _, err) = run(&["run", "rpm", f, "--channel", "gyro.filtered.roll"]);
     assert!(!ok && err.contains("gyro.raw"), "{err}");
 }
+
+#[test]
+fn motor_noise_command() {
+    let l = log("betaflight-4.5.1-two-sessions.bbl");
+    let f = l.to_str().unwrap();
+    let (ok, out, err) = run(&["run", "motor-noise", f, "--session", "1", "--axis", "pitch"]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert_eq!(v["rpm_source"], "logged");
+    assert_eq!(v["motors"].as_array().unwrap().len(), 4);
+    assert!(v["loudest"].is_number());
+    assert_eq!(v["channel"]["gyro"]["axis"], "pitch");
+}
