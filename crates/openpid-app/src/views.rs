@@ -661,6 +661,8 @@ pub fn step(app: &mut App, ui: &mut Ui) {
                 .range(0.0..=60.0)
                 .suffix(" ms"),
         );
+        ui.checkbox(&mut app.tools.step.y_offset, "Y-offset")
+            .on_hover_text("normalise every window on its settled tail before averaging");
     });
     let params = app.tools.step.clone();
     let mut outputs: Vec<(Slot, Arc<Output>)> = Vec::new();
@@ -677,12 +679,13 @@ pub fn step(app: &mut App, ui: &mut Ui) {
                 let m = s.metrics;
                 ui.label(
                     RichText::new(format!(
-                        "{}: {} / {} windows · rise {} ms · delay {} ms · overshoot {} % · settling {} ms · final {:.2}",
+                        "{}: {} / {} windows · rise {} ms · delay (50 %) {} ms · latency (xcorr) {} ms · overshoot {} % · settling {} ms · final {:.2}",
                         slot.name(),
                         s.windows_used,
                         s.windows_total,
                         m.rise_time_ms.map_or("–".into(), |v| format!("{v:.0}")),
                         m.delay_ms.map_or("–".into(), |v| format!("{v:.0}")),
+                        m.latency_ms.map_or("–".into(), |v| format!("{v:.1}")),
                         m.overshoot_pct.map_or("–".into(), |v| format!("{v:.0}")),
                         m.settling_ms.map_or("–".into(), |v| format!("{v:.0}")),
                         m.final_value
