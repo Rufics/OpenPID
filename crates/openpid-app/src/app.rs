@@ -137,6 +137,7 @@ pub struct App {
     pub touch_applied: bool,
     pub status: String,
     pub viewer: views::ViewerState,
+    pub spectrum: views::SpectrumState,
     pub slider_state: views::SliderState,
 }
 
@@ -169,6 +170,7 @@ impl App {
             touch_applied: false,
             status: "Open a blackbox log (File → Open, or drop it here)".into(),
             viewer: views::ViewerState::default(),
+            spectrum: views::SpectrumState::default(),
             slider_state: views::SliderState::default(),
         };
         for (i, p) in open_on_start.into_iter().take(2).enumerate() {

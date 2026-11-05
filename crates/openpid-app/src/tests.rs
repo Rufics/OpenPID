@@ -340,12 +340,46 @@ fn spectrum_and_heatmap_controls_change_parameters() {
     let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Spectrum));
     run_until(&mut h, idle);
     assert!(app(&h).tools.psd_db);
-    h.get_by_label("dB").click();
+    h.get_by_role_and_label(Role::CheckBox, "dB").click();
     h.step();
     assert!(!app(&h).tools.psd_db);
     h.get_by_label("pitch").click();
     h.step();
     assert_eq!(app(&h).tools.axis, openpid_core::Axis::Pitch);
+    run_until(&mut h, idle);
+    // automatic peaks: with a 3 dB prominence floor the gyro spectrum of a real log has some
+    app_mut(&mut h).spectrum.min_prominence_db = 3.0;
+    h.run_steps(2);
+    let peaks = app(&h).spectrum.peaks.clone();
+    assert!(
+        peaks.iter().any(|(s, p)| *s == Slot::A && !p.is_empty()),
+        "{peaks:?}"
+    );
+    assert!(has_label_containing(&h, "A top peak"));
+    app_mut(&mut h).spectrum.auto_peaks = 0;
+    h.run_steps(2);
+    assert!(app(&h).spectrum.peaks.iter().all(|(_, p)| p.is_empty()));
+    // manual markers: click the plot twice, read the delta, clear
+    let frame = app(&h).spectrum.plot_frame.expect("psd plot drawn");
+    let (x0, x1) = app(&h).spectrum.x_bounds.unwrap();
+    let at = |f: f64| frame.min.x + ((f - x0) / (x1 - x0)) as f32 * frame.width();
+    let y = frame.center().y;
+    for f in [100.0, 150.0] {
+        pointer_move(&mut h, egui::pos2(at(f), y));
+        pointer_button(&mut h, egui::pos2(at(f), y), true);
+        pointer_button(&mut h, egui::pos2(at(f), y), false);
+        h.step();
+    }
+    let m = app(&h).spectrum.markers.clone();
+    assert_eq!(m.len(), 2, "{m:?}");
+    assert!(
+        (m[0] - 100.0).abs() < 5.0 && (m[1] - 150.0).abs() < 5.0,
+        "{m:?}"
+    );
+    assert!(has_label_containing(&h, "Δ "));
+    h.get_by_label("Clear markers").click();
+    h.step();
+    assert!(app(&h).spectrum.markers.is_empty());
     select_tab(&mut h, Tab::ThrottleHeatmap);
     run_until(&mut h, idle);
     assert!(has_label_containing(&h, "throttle window"));
