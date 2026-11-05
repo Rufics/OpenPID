@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Parameters of [`PsdAnalysis`].
+#[serde(default)]
 pub struct PsdParams {
     /// Channel to analyse.
     pub channel: ChannelId,

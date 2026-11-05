@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Parameters of [`ThrottleHeatmap`].
+#[serde(default)]
 pub struct ThrottleHeatmapParams {
     /// Channel to analyse.
     pub channel: ChannelId,

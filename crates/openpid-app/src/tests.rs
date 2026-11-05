@@ -1199,3 +1199,103 @@ fn motor_noise_tab_lists_every_motor() {
     assert!(has_label_containing(&h3, "no unfiltered gyro"));
     assert!(app(&h3).cache.is_empty());
 }
+
+// ------------------------------------------------------------------ projects
+
+#[test]
+fn project_file_saves_and_restores_the_view() {
+    use openpid_analysis::Project;
+    let dir = std::env::temp_dir().join(format!("openpid-project-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    // the log lives beside the project file so its path is stored relative
+    let log = dir.join("two.bbl");
+    std::fs::copy(LOG_TWO, &log).unwrap();
+    let mut h = harness(vec![log.clone()], Some(Tab::Spectrum));
+    run_until(&mut h, no_slot_loading);
+    assert_eq!(app(&h).loaded(Slot::A).unwrap().sessions.len(), 2);
+    {
+        let a = app_mut(&mut h);
+        a.loaded_mut(Slot::A).unwrap().session = 0;
+        // session 0 is the short one (~0.2 s): an epoch inside it
+        a.loaded_mut(Slot::A).unwrap().epoch = Some(Epoch {
+            start_s: 0.05,
+            end_s: 0.15,
+        });
+        a.tools.step.cutoff_hz = 31.0;
+        a.tools.psd.segment_s = 0.4;
+        a.tools.min_segments = 7;
+        a.tools.filter_sim.overrides.set("lpf1_hz", 80.0).unwrap();
+        a.touch_mode = true;
+    }
+    h.step();
+    let file = dir.join("flight.openpid.json");
+    app_mut(&mut h).save_project(&file);
+    assert!(app(&h).status.contains("saved project"));
+    let saved = Project::load(&file).unwrap();
+    assert_eq!(saved.slots.len(), 1);
+    assert_eq!(
+        saved.slots[0].path,
+        PathBuf::from("two.bbl"),
+        "relative to the project"
+    );
+    assert_eq!(saved.slots[0].session, 0);
+    assert_eq!(saved.tab, "spectrum");
+    assert!(saved.touch_mode);
+    assert_eq!(saved.step.cutoff_hz, 31.0);
+    drop(h);
+    // a project on the command line restores everything once the log is in
+    let mut h2 = harness(vec![file.clone()], None);
+    run_until(&mut h2, no_slot_loading);
+    h2.step();
+    let a = app(&h2);
+    let l = a.loaded(Slot::A).expect("log reopened from the project");
+    assert_eq!(l.path, dir.join("two.bbl"));
+    assert_eq!(l.session, 0, "the project's session, not the longest");
+    assert_eq!(
+        l.epoch,
+        Some(Epoch {
+            start_s: 0.05,
+            end_s: 0.15
+        })
+    );
+    assert_eq!(a.tab, Tab::Spectrum);
+    assert!(a.touch_mode);
+    assert_eq!(a.tools.step.cutoff_hz, 31.0);
+    assert_eq!(a.tools.psd.segment_s, 0.4);
+    assert_eq!(a.tools.min_segments, 7);
+    assert_eq!(a.tools.filter_sim.overrides.lpf1_hz, Some(80.0));
+    assert!(a.loaded(Slot::B).is_none());
+    assert_eq!(a.project(&file), saved, "round trip");
+    // dropping a project file onto the window applies it too
+    let mut h3 = harness(vec![LOG_4_2.into()], Some(Tab::Step));
+    run_until(&mut h3, no_slot_loading);
+    drop_files(&mut h3, &[file.to_str().unwrap()]);
+    run_until(&mut h3, no_slot_loading);
+    h3.step();
+    assert_eq!(app(&h3).loaded(Slot::A).unwrap().path, dir.join("two.bbl"));
+    assert_eq!(app(&h3).tab, Tab::Spectrum);
+    // a bad project file reports in the status bar and keeps the slots
+    let bad = dir.join("bad.openpid.json");
+    std::fs::write(&bad, "{nope").unwrap();
+    app_mut(&mut h3).open_project(bad);
+    assert!(app(&h3).status.contains("not a project file"));
+    assert!(app(&h3).loaded(Slot::A).is_some());
+    assert!(
+        h3.query_by_label("Project").is_some(),
+        "menu on the top bar"
+    );
+    // a session index past the file falls back to the longest session
+    let mut p = saved.clone();
+    p.slots[0].session = 9;
+    let file2 = dir.join("nine.openpid.json");
+    p.save(&file2).unwrap();
+    app_mut(&mut h3).open_project(file2);
+    run_until(&mut h3, no_slot_loading);
+    assert_eq!(
+        app(&h3).loaded(Slot::A).unwrap().session,
+        1,
+        "longest of two"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

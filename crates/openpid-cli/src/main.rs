@@ -14,8 +14,8 @@ openpid - blackbox log analysis toolkit
 USAGE:
     openpid info <file> [--json] [--raw] [--session N]
     openpid decode <file> [--session N] [--out <path>] [--scaled]
-    openpid run <analysis> <file> [--session N] [--epoch A..B] [--axis roll|pitch|yaw]
-                [--channel KEY] [--out <path>] [--png <path>]
+    openpid run <analysis> [<file>] [--project <p.openpid.json>] [--session N] [--epoch A..B]
+                [--axis roll|pitch|yaw] [--channel KEY] [--out <path>] [--png <path>]
     openpid sliders <file> [--session N] [--set KEY=VALUE,...] [--json]
     openpid gen [<spec.json>] [--out synthetic.csv] | gen --example
     openpid --help | --version
@@ -64,6 +64,8 @@ OPTIONS:
     --raw         Skip firmware-profile scaling and derived channels
     --out <path>  Write to a file instead of stdout
     --png <path>  thr-heatmap / stft: also write the grid as a PNG image (viridis)
+    --project <p> run: take the log (slot A), session, epoch and tool parameters from
+                  a project file saved by the GUI; --axis / --channel / --epoch override
 ";
 
 #[derive(Debug, Default)]
@@ -82,6 +84,7 @@ struct Args {
     scaled: bool,
     out: Option<PathBuf>,
     png: Option<PathBuf>,
+    project: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -103,6 +106,9 @@ fn parse_args() -> Result<Args, String> {
             }
             "--out" => args.out = Some(PathBuf::from(it.next().ok_or("--out needs a path")?)),
             "--png" => args.png = Some(PathBuf::from(it.next().ok_or("--png needs a path")?)),
+            "--project" => {
+                args.project = Some(PathBuf::from(it.next().ok_or("--project needs a path")?));
+            }
             "--epoch" => {
                 let v = it.next().ok_or("--epoch needs A..B")?;
                 let (a, b) = v.split_once("..").ok_or("--epoch needs the form A..B")?;
@@ -404,8 +410,31 @@ fn cmd_run(args: &Args) -> Result<(), String> {
         .analysis
         .as_deref()
         .ok_or("run needs an analysis name")?;
-    let path = args.file.as_ref().ok_or("run needs a file")?;
-    let session = args.session.unwrap_or(0);
+    // a project supplies the log, session, epoch and parameters of slot A
+    let project = match &args.project {
+        Some(p) => Some((openpid_analysis::Project::load(p)?, p.clone())),
+        None => None,
+    };
+    let project_slot = project.as_ref().and_then(|(p, path)| {
+        p.slots.first().map(|s| {
+            (
+                openpid_analysis::Project::resolve(path, &s.path),
+                s.session,
+                s.epoch,
+            )
+        })
+    });
+    let resolved_file = args
+        .file
+        .clone()
+        .or_else(|| project_slot.as_ref().map(|(p, _, _)| p.clone()));
+    let path = resolved_file
+        .as_ref()
+        .ok_or("run needs a file (or --project with a log)")?;
+    let session = args
+        .session
+        .or_else(|| project_slot.as_ref().map(|(_, s, _)| *s))
+        .unwrap_or(0);
     let (_, log) = open(
         path,
         &OpenOptions {
@@ -418,15 +447,26 @@ fn cmd_run(args: &Args) -> Result<(), String> {
         .iter()
         .find(|s| s.index == session)
         .ok_or_else(|| format!("no session {session}"))?;
-    let epoch = args.epoch.map(|(a, b)| Epoch {
-        start_s: a,
-        end_s: b,
-    });
+    let epoch = args
+        .epoch
+        .map(|(a, b)| Epoch {
+            start_s: a,
+            end_s: b,
+        })
+        .or_else(|| project_slot.as_ref().and_then(|(_, _, e)| *e));
     let ctx = AnalysisCtx { session: s, epoch };
-    let axis = parse_axis(args.axis.as_deref())?;
-    let channel = match &args.channel {
-        Some(k) => ChannelId::parse(k).ok_or_else(|| format!("unknown channel key {k}"))?,
-        None => ChannelId::Gyro {
+    let base = project.as_ref().map(|(p, _)| p.clone()).unwrap_or_default();
+    let axis = match (&args.axis, &project) {
+        (None, Some(_)) => base.axis,
+        (a, _) => parse_axis(a.as_deref())?,
+    };
+    let channel = match (&args.channel, &project) {
+        (Some(k), _) => ChannelId::parse(k).ok_or_else(|| format!("unknown channel key {k}"))?,
+        (None, Some(_)) if analysis == "psd" => base.spectrum_channel.clone(),
+        (None, Some(_)) if analysis == "thr-heatmap" || analysis == "stft" => {
+            base.heatmap_channel.clone()
+        }
+        (None, _) => ChannelId::Gyro {
             axis,
             stage: openpid_core::GyroStage::Filtered,
         },
@@ -434,10 +474,7 @@ fn cmd_run(args: &Args) -> Result<(), String> {
     let mut grid: Option<openpid_core::analysis::Grid2D> = None;
     let json = match analysis {
         "step" => {
-            let p = openpid_analysis::StepParams {
-                axis,
-                ..Default::default()
-            };
+            let p = openpid_analysis::StepParams { axis, ..base.step };
             serde_json::to_string_pretty(
                 &openpid_analysis::StepAnalysis
                     .run(&ctx, &p)
@@ -447,7 +484,7 @@ fn cmd_run(args: &Args) -> Result<(), String> {
         "psd" => {
             let p = openpid_analysis::PsdParams {
                 channel,
-                ..Default::default()
+                ..base.psd
             };
             serde_json::to_string_pretty(
                 &openpid_analysis::PsdAnalysis
@@ -458,7 +495,7 @@ fn cmd_run(args: &Args) -> Result<(), String> {
         "thr-heatmap" => {
             let p = openpid_analysis::ThrottleHeatmapParams {
                 channel,
-                ..Default::default()
+                ..base.throttle
             };
             let out = openpid_analysis::ThrottleHeatmap
                 .run(&ctx, &p)
@@ -469,7 +506,7 @@ fn cmd_run(args: &Args) -> Result<(), String> {
         "stft" => {
             let p = openpid_analysis::StftParams {
                 channel,
-                ..Default::default()
+                ..base.stft
             };
             let out = openpid_analysis::StftAnalysis
                 .run(&ctx, &p)
@@ -514,7 +551,7 @@ fn cmd_run(args: &Args) -> Result<(), String> {
         "filter-sim" => {
             let mut p = openpid_analysis::FilterSimParams {
                 axis,
-                ..Default::default()
+                ..base.filter_sim
             };
             for (k, v) in &args.set {
                 p.overrides.set(k, *v)?;

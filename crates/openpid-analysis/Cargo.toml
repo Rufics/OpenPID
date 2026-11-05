@@ -12,11 +12,11 @@ openpid-core = { workspace = true }
 openpid-dsp = { workspace = true }
 openpid-sim = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 openpid-fmt-blackbox = { workspace = true }
-serde_json = { workspace = true }
 
 [lints]
 workspace = true
