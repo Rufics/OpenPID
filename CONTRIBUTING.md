@@ -45,4 +45,4 @@ cargo llvm-cov --workspace --fail-under-lines 90   # cargo install cargo-llvm-co
 
 ## Процес
 
-Backlog, milestones за фазами, спринти й Definition of Ready/Done описані в [`docs/PROCESS.md`](docs/PROCESS.md). Кожен PR закриває issue (`Closes #N`).
+Backlog, milestones за фазами, спринти й Definition of Ready/Done описані в [`docs/PROCESS.md`](docs/PROCESS.md). **Кожен PR обов'язково посилається на issue**: `Closes #N` (закриває) або `Part of #N` (частина епіку) в описі PR. Немає issue — спочатку створіть його (Context / Scope / Acceptance). CI перевіряє це кроком «PR references an issue» job‑а `conventional commits`; PR від ботів (release‑plz, Dependabot) звільнені.

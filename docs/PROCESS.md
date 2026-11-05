@@ -12,6 +12,7 @@
 | Sprint Backlog | поле *Sprint* (iteration, 2 тижні) у Project | вид *Sprint board* |
 | Increment | squash‑merge у `master` → release‑plz → тег і реліз із бінарниками | `docs/RELEASING.md` |
 | Definition of Done | нижче | кожне issue має цей блок |
+| Зв'язок PR ↔ issue | обов'язковий: `Closes #N` / `Part of #N` в описі PR | крок «PR references an issue» у CI; у ruleset `master` — як required status check |
 
 ### Milestones
 

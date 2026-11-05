@@ -62,6 +62,21 @@ jobs:
         uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6.2.1
         with:
           configFile: .commitlintrc.json
+      - name: PR references an issue (Closes/Fixes/Part of #N); bots are exempt
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          case "$AUTHOR" in
+            *"[bot]"|dependabot*) echo "bot PR ($AUTHOR): no issue reference required"; exit 0;;
+          esac
+          if printf '%s' "$BODY" | grep -Eiq '(closes|fixes|resolves|part of|refs?|see)[[:space:]]+(https://github.com/[^ ]+/issues/)?#?[0-9]+'; then
+            echo "ok: $(printf '%s' "$BODY" | grep -Eio '(closes|fixes|resolves|part of|refs?|see)[[:space:]]+(https://github.com/[^ ]+/issues/)?#?[0-9]+' | head -3 | tr '\n' ' ')"
+          else
+            echo "::error title=PR must reference an issue::Add 'Closes #N' (or 'Part of #N' for an epic) to the PR description: $TITLE"
+            exit 1
+          fi
       - name: PR title follows Conventional Commits (used for squash merges)
         uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
         env:
