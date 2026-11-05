@@ -3,8 +3,9 @@
 use openpid_analysis::{
     Analysis, AnalysisCtx, Epoch, FilterSimAnalysis, FilterSimOutput, FilterSimParams,
     MotorNoiseAnalysis, MotorNoiseOutput, MotorNoiseParams, PsdAnalysis, PsdOutput, PsdParams,
-    StepAnalysis, StepOutput, StepParams, StftAnalysis, StftOutput, StftParams, ThrottleHeatmap,
-    ThrottleHeatmapOutput, ThrottleHeatmapParams,
+    Recommend, RecommendOutput, RecommendParams, StepAnalysis, StepOutput, StepParams,
+    StftAnalysis, StftOutput, StftParams, ThrottleHeatmap, ThrottleHeatmapOutput,
+    ThrottleHeatmapParams,
 };
 use openpid_core::{FlightSession, FormatRegistry, LogFile, OpenOptions};
 use std::hash::{Hash, Hasher};
@@ -35,6 +36,7 @@ pub enum Kind {
     Stft(StftParams),
     FilterSim(FilterSimParams),
     MotorNoise(MotorNoiseParams),
+    Recommend(RecommendParams),
 }
 
 impl Kind {
@@ -46,6 +48,7 @@ impl Kind {
             Kind::Stft(_) => "stft",
             Kind::FilterSim(_) => "fsim",
             Kind::MotorNoise(_) => "motors",
+            Kind::Recommend(_) => "advice",
         }
     }
 }
@@ -59,6 +62,7 @@ pub enum Output {
     /// Boxed: it carries four time series and four spectra.
     FilterSim(Box<FilterSimOutput>),
     MotorNoise(MotorNoiseOutput),
+    Recommend(RecommendOutput),
 }
 
 /// Identity of one analysis request; equal keys give equal results.
@@ -81,6 +85,7 @@ impl JobKey {
             Kind::Stft(p) => p.hash(&mut h),
             Kind::FilterSim(p) => p.hash(&mut h),
             Kind::MotorNoise(p) => p.hash(&mut h),
+            Kind::Recommend(p) => p.hash(&mut h),
         }
         JobKey {
             slot,
@@ -161,6 +166,7 @@ fn analyze(session: &FlightSession, kind: &Kind, epoch: Option<Epoch>) -> Result
             .run(&ctx, p)
             .map(|o| Output::FilterSim(Box::new(o))),
         Kind::MotorNoise(p) => MotorNoiseAnalysis.run(&ctx, p).map(Output::MotorNoise),
+        Kind::Recommend(p) => Recommend.run(&ctx, p).map(Output::Recommend),
     }
     .map_err(|e| e.to_string())
 }

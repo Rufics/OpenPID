@@ -13,7 +13,7 @@
 - `openpid-fmt-blackbox` — власний декодер бінарного Blackbox (усі кодування та предиктори, I/P/S/G/H/E‑кадри, валідація, ресинхронізація, rollover часу, події) та профілі прошивок Betaflight, EmuFlight, Rotorflight, INAV (базовий) і generic.
 - `openpid-fmt-csv` — читання CSV‑експорту `blackbox_decode`.
 - `openpid-dsp` — FFT‑обгортка, вікна, Welch PSD, STFT, деконволюція Вінера, ресемплінг; кожна функція звірена з фікстурами NumPy/SciPy (`tests/reference`, генератор `tools/reference/make_fixtures.py`).
-- `openpid-analysis` — step response (деконволюція setpoint → gyro), PSD, heatmap freq×throttle та freq×time. Рекомендатор (фаза 3): правила з явними доказами (overshoot → більше D, пік без notch → notch, запас над gyro LPF → вища частота зрізу), кожна пропозиція з поясненням і впевненістю; експорт у Betaflight CLI.
+- `openpid-analysis` — step response (деконволюція setpoint → gyro), PSD, heatmap freq×throttle та freq×time. Рекомендатор (фаза 3): правила з явними доказами (overshoot → більше D, пік без notch → notch, запас над gyro LPF → вища частота зрізу), кожна пропозиція з поясненням і впевненістю; вкладка Advice у GUI та `openpid run recommend`; експорт у Betaflight CLI.
 - `openpid-cli` — `openpid info`, `openpid decode`, `openpid run`, `openpid sliders`.
 - `openpid-app` — десктопний GUI (`openpid-gui`, egui/eframe): log viewer з вибором епохи, step response, спектр, heatmap‑и freq×throttle і freq×time (з програвачем спектра по стовпцях STFT, синхронним із курсором log viewer), 3D‑поверхня freq×throttle×amplitude з RPM‑overlay (програмне проєктування, без GPU‑залежностей), PID‑слайдери Betaflight (simplified tuning: позиції з логу → гейни, порівняння з фактичними, готові CLI‑команди), діагностика; два слоти A/B для порівняння; аналізи у фоновому потоці з кешем; touch‑режим (вмикається автоматично при першому дотику); інтерфейс англійською або українською (Settings → Language), темна і світла теми.
 
@@ -51,6 +51,7 @@ cargo run --release -p openpid-app                # або ./target/release/open
 ![Step response](docs/screenshots/step.png)
 ![Freq × throttle](docs/screenshots/throttle.png)
 ![Surface 3D](docs/screenshots/surface.png)
+![Advice](docs/screenshots/advice.png)
 ![Log viewer, українською](docs/screenshots/log-ua.png)
 ![Filter Sim](docs/screenshots/filter.png)
 ![Motor noise](docs/screenshots/motors.png)
