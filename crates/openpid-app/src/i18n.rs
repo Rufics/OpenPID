@@ -60,7 +60,7 @@ pub fn tr(en: &'static str) -> &'static str {
 static UA: &[(&str, &str)] = &[
     (
         "0 = as many as the RPM filter removes",
-        "0 = стільки, скільки знімає RPM‑фільтр",
+        "0 = стільки, скільки знімає RPM-фільтр",
     ),
     (
         "A log without eRPM: estimate motor speed from the gyro",
@@ -92,7 +92,7 @@ static UA: &[(&str, &str)] = &[
     ("Light", "Світла"),
     (
         "Load a Betaflight 4.3+ log into slot A to use the PID sliders.",
-        "Завантажте лог Betaflight 4.3+ у слот A, щоб користуватися PID‑слайдерами.",
+        "Завантажте лог Betaflight 4.3+ у слот A, щоб користуватися PID-слайдерами.",
     ),
     ("Log viewer", "Перегляд логу"),
     ("Motor noise", "Шум моторів"),
@@ -104,11 +104,11 @@ static UA: &[(&str, &str)] = &[
     ("Open", "Відкрити"),
     ("Open…", "Відкрити…"),
     ("PID roll / pitch / yaw", "PID roll / pitch / yaw"),
-    ("PID sliders", "PID‑слайдери"),
+    ("PID sliders", "PID-слайдери"),
     ("Plot as PNG…", "Графік як PNG…"),
     ("Project", "Проєкт"),
     ("RPM notch", "RPM notch"),
-    ("RPM overlay", "RPM‑overlay"),
+    ("RPM overlay", "RPM-overlay"),
     ("Reset to defaults", "Скинути до типових"),
     ("Reset to log", "Скинути до логу"),
     ("Reset view", "Скинути вид"),
@@ -140,7 +140,7 @@ static UA: &[(&str, &str)] = &[
     ("cutoff", "зріз"),
     (
         "drag: orbit · wheel / pinch: zoom · shift-drag, right-drag or two fingers: pan · double-click: reset",
-        "перетягування: обертання · коліщатко / щипок: масштаб · shift‑, праве або два пальці: зсув · подвійний клік: скинути",
+        "перетягування: обертання · коліщатко / щипок: масштаб · shift-, праве або два пальці: зсув · подвійний клік: скинути",
     ),
     ("empty", "порожній"),
     ("epoch", "епоха"),
@@ -162,7 +162,7 @@ static UA: &[(&str, &str)] = &[
         "normalise every window on its settled tail before averaging",
         "нормувати кожне вікно за усталеним хвостом перед усередненням",
     ),
-    ("notches", "notch‑и"),
+    ("notches", "notch-и"),
     ("note", "примітка"),
     ("peaks", "піки"),
     ("position", "позиція"),

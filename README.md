@@ -49,6 +49,7 @@ cargo run --release -p openpid-app                # або ./target/release/open
 ![Step response](docs/screenshots/step.png)
 ![Freq × throttle](docs/screenshots/throttle.png)
 ![Surface 3D](docs/screenshots/surface.png)
+![Log viewer, українською](docs/screenshots/log-ua.png)
 ![Filter Sim](docs/screenshots/filter.png)
 ![Motor noise](docs/screenshots/motors.png)
 ![PID sliders](docs/screenshots/sliders.png)
