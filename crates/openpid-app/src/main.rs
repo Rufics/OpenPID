@@ -1,12 +1,13 @@
 //! `openpid-gui`: desktop front-end. All math lives in `openpid-analysis`;
 //! this crate only loads files, runs analyses on a worker thread and draws.
 //!
-//! Usage: `openpid-gui [--tab log|step|spectrum|throttle|time|sliders|diagnostics] [logA] [logB]`
+//! Usage: `openpid-gui [--tab log|step|spectrum|throttle|time|surface|filter|motors|sliders|diagnostics|settings] [logA] [logB]`
 
 mod app;
 mod colormap;
 mod export;
 mod prefs;
+mod surface;
 #[cfg(test)]
 mod tests;
 mod views;

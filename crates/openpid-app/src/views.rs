@@ -165,7 +165,7 @@ fn nearest_bin(freq: &[f64], x: f64) -> Option<usize> {
         .map(|(i, _)| i)
 }
 
-fn slot_color(slot: Slot) -> Color32 {
+pub(crate) fn slot_color(slot: Slot) -> Color32 {
     match slot {
         Slot::A => SLOT_A,
         Slot::B => SLOT_B,
@@ -215,7 +215,7 @@ pub fn decimate(
     out
 }
 
-fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
+pub(crate) fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
     match app.slots.get(&slot) {
         Some(SlotState::Empty) | None => {
             ui.label(RichText::new(format!("Slot {}: empty", slot.name())).color(MUTED));
@@ -370,7 +370,7 @@ fn channel_picker(
     changed
 }
 
-fn show_error(ui: &mut Ui, slot: Slot, e: &str) {
+pub(crate) fn show_error(ui: &mut Ui, slot: Slot, e: &str) {
     ui.colored_label(Color32::LIGHT_RED, format!("{}: {e}", slot.name()));
 }
 
@@ -1013,7 +1013,7 @@ fn marker_readout(markers: &[f64], peaks: &[(Slot, Vec<Peak>)]) -> Option<String
     (!parts.is_empty()).then(|| parts.join("   ·   "))
 }
 
-fn heatmap_controls(app: &mut App, ui: &mut Ui) {
+pub(crate) fn heatmap_controls(app: &mut App, ui: &mut Ui) {
     let session_a = app.loaded(Slot::A).and_then(|l| l.current().cloned());
     ui.horizontal_wrapped(|ui| {
         channel_picker(
@@ -1100,7 +1100,7 @@ const LONG_PRESS_S: f64 = 0.6;
 const LONG_PRESS_SLOP_PX: f32 = 8.0;
 
 /// A slot's analysis result: `None` while it is still computing.
-type SlotResult = (Slot, Option<Result<Arc<Output>, String>>);
+pub(crate) type SlotResult = (Slot, Option<Result<Arc<Output>, String>>);
 
 /// What of the RPM / notch overlay is drawn on the freq × throttle heatmap.
 #[derive(Debug, Clone, PartialEq)]
@@ -1126,9 +1126,70 @@ impl Default for OverlayState {
     }
 }
 
-fn motor_color(m: usize) -> Color32 {
+pub(crate) fn motor_color(m: usize) -> Color32 {
     let hue = (m as f32 * 0.23 + 0.08) % 1.0;
     egui::ecolor::Hsva::new(hue, 0.85, 1.0, 1.0).into()
+}
+
+/// RPM overlay controls (shown once the motor count of a result is known);
+/// shared by the freq × throttle heatmap and the 3D surface.
+pub(crate) fn overlay_controls(app: &mut App, ui: &mut Ui, results: &[SlotResult]) {
+    let motors = results
+        .iter()
+        .filter_map(|(_, r)| match r {
+            Some(Ok(o)) => match o.as_ref() {
+                Output::Throttle(t) => t.overlay.as_ref().map(|ov| ov.motors.len()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .max();
+    if let Some(n) = motors {
+        let ov = &mut app.overlay;
+        ov.motors.resize(n, true);
+        ui.horizontal_wrapped(|ui| {
+            ui.checkbox(&mut ov.show, "RPM overlay");
+            for (m, on) in ov.motors.iter_mut().enumerate() {
+                ui.checkbox(on, format!("M{}", m + 1));
+            }
+            let l = ui.label("harmonics");
+            ui.add(egui::DragValue::new(&mut ov.harmonics).range(0..=8))
+                .labelled_by(l.id)
+                .on_hover_text("0 = as many as the RPM filter removes");
+            ui.checkbox(&mut ov.notches, "notches");
+        });
+    }
+}
+
+/// Harmonic frequencies to draw for `o` under `ov`: `(motor, harmonic, per-x Hz)`
+/// with `None` where the bin has no motor speed or the harmonic is above `y_max`.
+pub(crate) fn overlay_harmonics(
+    o: &RpmOverlay,
+    y_max: f64,
+    ov: &OverlayState,
+) -> Vec<(usize, u32, Vec<Option<f64>>)> {
+    if !ov.show {
+        return Vec::new();
+    }
+    let harmonics = if ov.harmonics == 0 {
+        o.harmonics
+    } else {
+        ov.harmonics
+    };
+    let mut out = Vec::new();
+    for (m, bins) in o.motors.iter().enumerate() {
+        if !ov.motors.get(m).copied().unwrap_or(true) {
+            continue;
+        }
+        for k in 1..=harmonics {
+            let f: Vec<Option<f64>> = bins
+                .iter()
+                .map(|rpm| rpm.map(|r| r / 60.0 * f64::from(k)).filter(|f| *f <= y_max))
+                .collect();
+            out.push((m, k, f));
+        }
+    }
+    out
 }
 
 /// The motor harmonics and notch bands of `o` over a heatmap whose frequency axis ends at `y_max`.
@@ -1365,32 +1426,7 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
         .iter()
         .map(|slot| (*slot, app.result(*slot, Kind::Throttle(params.clone()))))
         .collect();
-    // overlay controls, once the motor count is known
-    let motors = results
-        .iter()
-        .filter_map(|(_, r)| match r {
-            Some(Ok(o)) => match o.as_ref() {
-                Output::Throttle(t) => t.overlay.as_ref().map(|ov| ov.motors.len()),
-                _ => None,
-            },
-            _ => None,
-        })
-        .max();
-    if let Some(n) = motors {
-        let ov = &mut app.overlay;
-        ov.motors.resize(n, true);
-        ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut ov.show, "RPM overlay");
-            for (m, on) in ov.motors.iter_mut().enumerate() {
-                ui.checkbox(on, format!("M{}", m + 1));
-            }
-            let l = ui.label("harmonics");
-            ui.add(egui::DragValue::new(&mut ov.harmonics).range(0..=8))
-                .labelled_by(l.id)
-                .on_hover_text("0 = as many as the RPM filter removes");
-            ui.checkbox(&mut ov.notches, "notches");
-        });
-    }
+    overlay_controls(app, ui, &results);
     let overlay = app.overlay.clone();
     let w = ui.available_width() / slots.len().max(1) as f32;
     let h = ui.available_height();

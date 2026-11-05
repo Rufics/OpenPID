@@ -15,7 +15,7 @@
 - `openpid-dsp` — FFT‑обгортка, вікна, Welch PSD, STFT, деконволюція Вінера, ресемплінг; кожна функція звірена з фікстурами NumPy/SciPy (`tests/reference`, генератор `tools/reference/make_fixtures.py`).
 - `openpid-analysis` — step response (деконволюція setpoint → gyro), PSD, heatmap freq×throttle та freq×time.
 - `openpid-cli` — `openpid info`, `openpid decode`, `openpid run`, `openpid sliders`.
-- `openpid-app` — десктопний GUI (`openpid-gui`, egui/eframe): log viewer з вибором епохи, step response, спектр, heatmap‑и freq×throttle і freq×time, PID‑слайдери Betaflight (simplified tuning: позиції з логу → гейни, порівняння з фактичними, готові CLI‑команди), діагностика; два слоти A/B для порівняння; аналізи у фоновому потоці з кешем; touch‑режим (вмикається автоматично при першому дотику).
+- `openpid-app` — десктопний GUI (`openpid-gui`, egui/eframe): log viewer з вибором епохи, step response, спектр, heatmap‑и freq×throttle і freq×time, 3D‑поверхня freq×throttle×amplitude з RPM‑overlay (програмне проєктування, без GPU‑залежностей), PID‑слайдери Betaflight (simplified tuning: позиції з логу → гейни, порівняння з фактичними, готові CLI‑команди), діагностика; два слоти A/B для порівняння; аналізи у фоновому потоці з кешем; touch‑режим (вмикається автоматично при першому дотику).
 
 Подальший план — у [`docs/DESIGN.md`](docs/DESIGN.md) (§12).
 
@@ -48,6 +48,7 @@ cargo run --release -p openpid-app                # або ./target/release/open
 ![Log viewer](docs/screenshots/log.png)
 ![Step response](docs/screenshots/step.png)
 ![Freq × throttle](docs/screenshots/throttle.png)
+![Surface 3D](docs/screenshots/surface.png)
 ![Filter Sim](docs/screenshots/filter.png)
 ![Motor noise](docs/screenshots/motors.png)
 ![PID sliders](docs/screenshots/sliders.png)
@@ -68,7 +69,8 @@ cargo bench -p openpid-analysis --bench analyses   # таймінги декод
 у summary job‑а `benchmarks`): декодер Betaflight 30–47 МБ/с (лог 8 кГц × 3 хв ≈ 40 МБ —
 близько секунди), на сесії 40 с @ 1 кГц: step response 22 мс, PSD 1 мс, freq×throttle
 4 мс, freq×time 8 мс, Filter Sim 46 мс, RPM‑естиматор 13 мс, motor noise 5 мс
-(ціль DESIGN §11 — < 2 с на аналіз).
+(ціль DESIGN §11 — < 2 с на аналіз); mesh 3D‑поверхні для сітки 100 × 1000 — 3 мс
+(ціль #26 — 60 fps).
 
 
 Якщо поруч із логом у `tests/logs/` покласти `<лог>.<сесія>.csv`, згенерований офіційним `blackbox_decode --index <сесія>`, тест `csv_conformance` порівняє наш сирий декод із ним поле в поле.

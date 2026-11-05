@@ -27,7 +27,7 @@ export DISPLAY=":$DISPLAY_NO"
 # the app reads prefs from this directory: a clean one keeps the dark theme
 export OPENPID_CONFIG_DIR="$(mktemp -d)"
 
-for tab in log step spectrum throttle time filter motors sliders diagnostics settings; do
+for tab in log step spectrum throttle time surface filter motors sliders diagnostics settings; do
   "$BIN" "$LOG" --tab "$tab" >/dev/null 2>&1 &
   APP=$!
   sleep "$WAIT"

@@ -12,6 +12,7 @@ pub mod render;
 pub mod rpm;
 pub mod step;
 pub mod stft;
+pub mod surface;
 pub mod throttle;
 
 pub use filter_sim::{
