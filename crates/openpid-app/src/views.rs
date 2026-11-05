@@ -1113,13 +1113,25 @@ fn draw_rpm_overlay(
             );
         }
         if let Some((lo, hi)) = o.dyn_notch_hz {
+            // an outline, not a fill: the band spans most of the useful range
+            // and a tint over it would wash out the heatmap
             band(
                 pu,
                 "dyn notch band".into(),
                 lo,
                 hi,
-                ACCENT.gamma_multiply(0.12),
+                ACCENT.gamma_multiply(0.04),
             );
+            for (name, f) in [("dyn notch min", lo), ("dyn notch max", hi)] {
+                if f < y_max {
+                    pu.hline(
+                        HLine::new(format!("{name} {}", hz(f)), f)
+                            .color(ACCENT)
+                            .style(LineStyle::dashed_loose())
+                            .width(1.0),
+                    );
+                }
+            }
         }
         if let Some(min) = o.rpm_min_hz {
             pu.hline(
