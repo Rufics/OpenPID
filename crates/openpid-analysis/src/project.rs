@@ -194,9 +194,12 @@ mod tests {
             Project::resolve(&file, &p.slots[0].path),
             dir.join("logs").join("a.bbl")
         );
-        let outside = Path::new("/elsewhere/b.bbl");
-        assert_eq!(Project::relativise(&file, outside), outside);
-        assert_eq!(Project::resolve(&file, outside), outside);
+        // an absolute path outside the project directory stays absolute (on
+        // Windows a bare "/x" is not absolute, so build one from the temp dir)
+        let outside = std::env::temp_dir().join("elsewhere").join("b.bbl");
+        assert!(outside.is_absolute());
+        assert_eq!(Project::relativise(&file, &outside), outside);
+        assert_eq!(Project::resolve(&file, &outside), outside);
         assert_eq!(
             Project::resolve(Path::new("p.openpid.json"), Path::new("a.bbl")),
             PathBuf::from("a.bbl")
