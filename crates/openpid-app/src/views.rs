@@ -1000,6 +1000,59 @@ fn heatmap_controls(app: &mut App, ui: &mut Ui) {
 /// Height of the segments-per-bin bar under the freq × throttle heatmap.
 const COUNT_BAR_HEIGHT: f32 = 56.0;
 
+/// Textures kept before the cache is emptied (one per result and colour scale).
+const MAX_HEATMAP_TEXTURES: usize = 32;
+
+/// A heatmap grid as a texture, rasterised once per result and colour scale
+/// and redrawn as one image instead of a cell mesh every frame. `owner` is
+/// the result the grid belongs to (its address keys the texture while it is
+/// cached). Returns the image item positioned over the grid.
+fn grid_image(
+    app: &mut App,
+    ctx: &egui::Context,
+    owner: &Arc<Output>,
+    g: &Grid2D,
+    max: f64,
+    min_y_for_scale: f64,
+) -> Option<egui_plot::PlotImage> {
+    use std::hash::{Hash, Hasher};
+    if g.x.len() < 2 || g.y.len() < 2 {
+        return None;
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (Arc::as_ptr(owner) as usize).hash(&mut hasher);
+    max.to_bits().hash(&mut hasher);
+    min_y_for_scale.to_bits().hash(&mut hasher);
+    let key = hasher.finish();
+    if !app.heatmap_textures.contains_key(&key) {
+        if app.heatmap_textures.len() >= MAX_HEATMAP_TEXTURES {
+            app.heatmap_textures.clear();
+        }
+        let (w, h, rgba) = openpid_analysis::render::grid_rgba(g, max, min_y_for_scale);
+        let image = egui::ColorImage::from_rgba_unmultiplied([w, h], &rgba);
+        let handle = ctx.load_texture(
+            format!("heatmap-{key:x}"),
+            image,
+            egui::TextureOptions::NEAREST,
+        );
+        app.heatmap_textures.insert(key, handle);
+    }
+    let tex = &app.heatmap_textures[&key];
+    let dx = g.x[1] - g.x[0];
+    let dy = g.y[1] - g.y[0];
+    let (x0, x1) = (g.x[0] - dx / 2.0, g.x[g.x.len() - 1] + dx / 2.0);
+    let (y0, y1) = (g.y[0] - dy / 2.0, g.y[g.y.len() - 1] + dy / 2.0);
+    Some(
+        egui_plot::PlotImage::new(
+            "amplitude",
+            tex.id(),
+            PlotPoint::new(f64::midpoint(x0, x1), f64::midpoint(y0, y1)),
+            egui::vec2((x1 - x0) as f32, (y1 - y0) as f32),
+        )
+        .allow_hover(false),
+    )
+}
+
 /// A slot's analysis result: `None` while it is still computing.
 type SlotResult = (Slot, Option<Result<Arc<Output>, String>>);
 
@@ -1314,15 +1367,15 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
                             );
                             let link = ui.scope_id().with(("thr-link", slot.name()));
                             let y_max = t.grid.y.last().copied().unwrap_or(0.0);
+                            let image = grid_image(app, ui.ctx(), &o, &t.grid, max, 20.0);
                             Plot::new(("thr", slot.name()))
                                 .legend(Legend::default())
                                 .y_axis_label("frequency (Hz)")
                                 .link_axis(link, [true, false])
                                 .height(h - 24.0 - COUNT_BAR_HEIGHT - 24.0)
                                 .show(ui, |pu| {
-                                    if let Some(hm) = grid_heatmap("amplitude", &t.grid, max, 20.0)
-                                    {
-                                        pu.heatmap(hm);
+                                    if let Some(img) = image {
+                                        pu.image(img);
                                     }
                                     for poly in sparse_bins(&t.grid, &t.counts, min_segments) {
                                         pu.polygon(poly);
@@ -1405,13 +1458,14 @@ pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
                         RichText::new(format!("{}: {} ({})", slot.name(), t.channel.key(), t.unit))
                             .color(slot_color(slot)),
                     );
+                    let image = grid_image(app, ui.ctx(), &o, &t.grid, max, 20.0);
                     Plot::new(("stft", slot.name()))
                         .x_axis_label("time (s)")
                         .y_axis_label("frequency (Hz)")
                         .height(h - 24.0)
                         .show(ui, |pu| {
-                            if let Some(hm) = grid_heatmap("amplitude", &t.grid, max, 20.0) {
-                                pu.heatmap(hm);
+                            if let Some(img) = image {
+                                pu.image(img);
                             }
                             marker_hlines(pu, &markers);
                         });

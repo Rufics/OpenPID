@@ -20,3 +20,7 @@ openpid-fmt-blackbox = { workspace = true }
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "analyses"
+harness = false

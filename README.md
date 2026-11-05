@@ -55,7 +55,14 @@ cargo run --release -p openpid-app                # або ./target/release/open
 cargo test --workspace            # unit, golden, конформанс, стійкість до пошкоджень
 OPENPID_UPDATE_GOLDEN=1 cargo test -p openpid-fmt-blackbox --test fixtures   # оновити golden‑файли після свідомої зміни
 python3 -I tools/reference/make_fixtures.py   # перегенерувати фікстури NumPy/SciPy (потрібні numpy, scipy)
+cargo bench -p openpid-analysis --bench analyses   # таймінги декодера й аналізів (без залежностей, лише звіт)
 ```
+
+Орієнтовні таймінги (release, один потік, ноутбучний x86‑64; CI друкує свою таблицю
+у summary job‑а `benchmarks`): декодер Betaflight 30–47 МБ/с (лог 8 кГц × 3 хв ≈ 40 МБ —
+близько секунди), на сесії 40 с @ 1 кГц: step response 22 мс, PSD 1 мс, freq×throttle
+4 мс, freq×time 8 мс, Filter Sim 46 мс, RPM‑естиматор 13 мс, motor noise 5 мс
+(ціль DESIGN §11 — < 2 с на аналіз).
 
 
 Якщо поруч із логом у `tests/logs/` покласти `<лог>.<сесія>.csv`, згенерований офіційним `blackbox_decode --index <сесія>`, тест `csv_conformance` порівняє наш сирий декод із ним поле в поле.
