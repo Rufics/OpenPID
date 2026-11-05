@@ -172,6 +172,9 @@ pub struct App {
     pub worker: Worker,
     pub slots: HashMap<Slot, SlotState>,
     pub cache: HashMap<JobKey, Cached>,
+    /// Heatmap grids rasterised once per result and colour scale (DESIGN §7.2),
+    /// keyed by the result's address and the scale.
+    pub heatmap_textures: HashMap<u64, egui::TextureHandle>,
     pub tab: Tab,
     pub tools: Tools,
     pub touch_mode: bool,
@@ -230,6 +233,7 @@ impl App {
             worker,
             slots: HashMap::from([(Slot::A, SlotState::Empty), (Slot::B, SlotState::Empty)]),
             cache: HashMap::new(),
+            heatmap_textures: HashMap::new(),
             tab: tab.unwrap_or(Tab::LogViewer),
             tools: Tools::default(),
             touch_mode: prefs.touch_mode,

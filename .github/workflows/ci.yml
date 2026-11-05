@@ -112,6 +112,31 @@ jobs:
       - run: cargo test --workspace --all-targets
       - run: cargo test --workspace --doc
 
+  # ---------------------------------------------------------------- timings (report only)
+  bench:
+    name: benchmarks (report only)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Test logs from Git LFS (cached by content, pulled only when they change)
+        shell: bash
+        run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git/lfs
+          key: lfs-${{ hashFiles('.lfs-assets-id') }}
+      - run: git lfs pull
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-11
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: bench
+      - name: Decoder and analysis timings (DESIGN §11 targets; never gates)
+        run: |
+          echo "## Timings (release, ${{ runner.os }} hosted runner)" >> "$GITHUB_STEP_SUMMARY"
+          cargo bench -p openpid-analysis --bench analyses -- --runs 5 | tee -a "$GITHUB_STEP_SUMMARY"
+
   # ---------------------------------------------------------------- coverage gate
   coverage:
     name: coverage (>= 90% lines)

@@ -407,6 +407,18 @@ fn spectrum_and_heatmap_controls_change_parameters() {
     select_tab(&mut h, Tab::ThrottleHeatmap);
     run_until(&mut h, idle);
     assert!(has_label_containing(&h, "throttle window"));
+    // the grid is rasterised once and reused frame after frame
+    h.run_steps(2);
+    assert_eq!(app(&h).heatmap_textures.len(), 1);
+    h.run_steps(2);
+    assert_eq!(app(&h).heatmap_textures.len(), 1, "no re-upload");
+    app_mut(&mut h).tools.heatmap_max = 5.0;
+    h.run_steps(2);
+    assert_eq!(
+        app(&h).heatmap_textures.len(),
+        2,
+        "a new colour scale is a new texture"
+    );
     // segments per bin: the hint names the bins below the minimum
     let counts: Vec<usize> = app(&h)
         .cache
