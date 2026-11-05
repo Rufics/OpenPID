@@ -258,7 +258,7 @@ pub trait Exporter: Send + Sync {
 - **Контейнер**: один файл → N логів, межа — маркер заголовка `H Product:Blackbox flight data recorder by Nicholas Sherlock`. Підтримати `.BBL/.BFL/.TXT` і дампи SD‑карти з «сміттям» між логами.
 - **Заголовки**: `H Field I name/signed/predictor/encoding`, `H Field P predictor/encoding`, `H Field S …`, `H Field G/H …`, `I interval`, `P interval`, `P ratio`, `Data version`, `minthrottle`, `vbatref`, `gyro_scale`, `motorOutput` та всі інші — зберігаються сирими та передаються `FirmwareProfile`.
 - **Кадри**: `I` (intra), `P` (inter), `S` (slow), `G`/`H` (GPS), `E` (events). Предиктори 0–10, кодування 0–10 (SignedVB, UnsignedVB, Neg14, EliasDelta u/s, TAG8_8SVB, TAG2_3S32, TAG8_4S16, Null, TAG2_3SVariable). Кожне кодування — окрема функція з property‑тестами (кодер у тестах → декодер → ідентичність).
-- **Стійкість**: валідація кадру по наступному байту (має бути початком відомого кадру), перевірка монотонності `loopIteration`/`time`, resync на наступний `I`‑кадр, облік статистики пошкоджень у `Diagnostics`. Фаззинг (`cargo fuzz`) на декодері — обов'язковий, бо вхід недовірений.
+- **Стійкість**: валідація кадру по наступному байту (має бути початком відомого кадру), перевірка монотонності `loopIteration`/`time`, resync на наступний `I`‑кадр, облік статистики пошкоджень у `Diagnostics`. Фаззинг декодера — обов'язковий, бо вхід недовірений (мутаційний фаззер без `cargo fuzz`, ADR‑0013).
 - **Події**: sync beep, inflight adjustment, logging resume, disarm, flight mode flags → `Event`.
 - **Вихід**: колонки `i64` → після мапінгу профілем стають `Channel` з `f64` та одиницями (масштаб застосовується один раз, у `f64`, без проміжного округлення).
 
@@ -409,7 +409,7 @@ CLI використовує ті самі реєстри, що й GUI, і є о
 | `thiserror` | типи помилок | лише derive‑макрос; можна й без нього |
 | `clap` (тільки cli) | парсинг аргументів | опційно; можна замінити ручним парсером |
 
-Dev‑only: `proptest`, `criterion`, `cargo-fuzz`, `insta` (snapshot). Усе інше — додається лише через ADR. `cargo deny` перевіряє ліцензії (allow: MIT/Apache‑2.0/BSD/Zlib/MPL‑2.0 — узгодити з Q1) та дублікати.
+Dev‑only: `proptest`, `criterion`, `insta` (snapshot); `cargo-fuzz` не використовується (ADR‑0013). Усе інше — додається лише через ADR. `cargo deny` перевіряє ліцензії (allow: MIT/Apache‑2.0/BSD/Zlib/MPL‑2.0 — узгодити з Q1) та дублікати.
 
 ---
 
@@ -419,7 +419,7 @@ Dev‑only: `proptest`, `criterion`, `cargo-fuzz`, `insta` (snapshot). Усе і
 - **Reference**: `tools/reference/*.py` генерує fixtures (JSON) для step/PSD/heatmap на синтетичних сигналах і на еталонних логах; Rust‑тести порівнюють з допусками.
 - **Conformance**: наш декодер vs CSV `blackbox_decode` на `tests/logs/*` (усі канали, усі кадри).
 - **Golden**: вихід CLI на еталонних логах зафіксований у `tests/golden`; зміна алгоритму = свідоме оновлення golden з описом у PR.
-- **Fuzz**: декодер blackbox, парсер заголовків.
+- **Fuzz**: декодер blackbox, парсер заголовків — власний мутаційний фаззер (`tests/fuzz.rs`, ADR‑0013): короткий прогін у кожному CI, щотижневий із бюджетом часу (`fuzz.yml`).
 - **Bench**: `criterion` для декодера (МБ/с) і для step/heatmap (мс на 60 с логу при 8 kHz).
 - **CI**: GitHub Actions матриця macOS/Windows/Linux: `fmt`, `clippy -D warnings`, тести, `cargo deny`, збірка релізних бінарників. Цілі продуктивності: лог 8 kHz × 3 хв декодується < 1 с, усі аналізи фази 1 — < 2 с на ноутбуці.
 - **Lints**: `#![deny(unsafe_code)]` у всіх crate‑ах, крім `fmt-blackbox` (mmap) із задокументованими `unsafe`‑блоками; `clippy::pedantic` вибірково.

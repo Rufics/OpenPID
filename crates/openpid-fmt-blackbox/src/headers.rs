@@ -212,7 +212,10 @@ impl Headers {
             return Err(HeaderError::MissingMainField("time"));
         }
 
-        let i_interval = raw.get_i64("I interval").map_or(32, |v| v.max(1) as u32);
+        // Clamp instead of truncating: a damaged "4294967296" must not become 0.
+        let i_interval = raw
+            .get_i64("I interval")
+            .map_or(32, |v| v.clamp(1, i64::from(u32::MAX)) as u32);
         let p_interval = match raw.get("P interval").map(str::trim) {
             Some(v) if v.contains('/') => {
                 let (a, b) = v.split_once('/').unwrap_or(("1", "1"));
@@ -273,7 +276,9 @@ impl Headers {
         match self.p_interval {
             PInterval::IntraOnly => iteration.is_multiple_of(self.i_interval),
             PInterval::Fraction { num, denom } => {
-                (iteration % self.i_interval + num - 1) % denom < num
+                // u64: a damaged header may carry `num` close to u32::MAX
+                (u64::from(iteration % self.i_interval) + u64::from(num) - 1) % u64::from(denom)
+                    < u64::from(num)
             }
         }
     }
@@ -354,6 +359,31 @@ I\x00";
         assert_eq!(h.p_interval, PInterval::IntraOnly);
         assert!(h.should_have_frame(256));
         assert!(!h.should_have_frame(255));
+    }
+
+    /// Found by the mutation fuzzer (ADR-0013): an interval that does not fit
+    /// in 32 bits truncated to 0 and `should_have_frame` divided by zero; a
+    /// numerator near `u32::MAX` overflowed the modulo arithmetic.
+    #[test]
+    fn damaged_intervals_never_panic() {
+        let text = String::from_utf8_lossy(SAMPLE).into_owned();
+        for interval in ["4294967296", "-1", "0", "18446744073709551616", "x"] {
+            let t = text.replace("H I interval:256\n", &format!("H I interval:{interval}\n"));
+            let h = Headers::parse(t.as_bytes()).unwrap();
+            assert!(h.i_interval >= 1, "{interval}");
+            assert!(h.should_have_frame(0));
+            let _ = h.should_have_frame(u32::MAX);
+        }
+        for p in [
+            "4294967295/4294967295",
+            "4294967295/1",
+            "1/4294967295",
+            "4294967296/2",
+        ] {
+            let t = text.replace("H P interval:16\n", &format!("H P interval:{p}\n"));
+            let h = Headers::parse(t.as_bytes()).unwrap();
+            let _ = (h.should_have_frame(u32::MAX), h.iterations_per_frame());
+        }
     }
 
     #[test]
