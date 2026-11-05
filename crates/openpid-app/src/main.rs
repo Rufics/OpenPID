@@ -5,6 +5,7 @@
 
 mod app;
 mod colormap;
+mod prefs;
 #[cfg(test)]
 mod tests;
 mod views;
