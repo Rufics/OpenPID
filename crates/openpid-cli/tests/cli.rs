@@ -447,3 +447,48 @@ fn diff_command_lists_changed_headers_and_cli_commands() {
     ]);
     assert!(!ok && err.contains("no session 9"));
 }
+
+#[test]
+fn recommend_command_reports_evidence_and_cli_commands() {
+    let a = log("betaflight-4.2.0.BFL");
+    let (ok, out, err) = run(&["run", "recommend", a.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let findings = v["findings"].as_array().unwrap();
+    assert!(
+        findings
+            .iter()
+            .any(|f| f["rule"] == "overshoot" && f["axis"] == "roll")
+    );
+    assert!(findings.iter().any(|f| f["rule"] == "gyro-lpf"));
+    let proposals = v["proposals"].as_array().unwrap();
+    assert!(
+        proposals
+            .iter()
+            .all(|p| p["confidence"].as_f64().unwrap() >= 0.3)
+    );
+    assert!(
+        !proposals.iter().any(|p| p["path"] == "pid.yaw.d"),
+        "no D on yaw"
+    );
+    let (ok, out, _) = run(&["run", "recommend", a.to_str().unwrap(), "--cli"]);
+    assert!(ok);
+    assert!(out.starts_with("# evidence\n# [overshoot roll]"), "{out}");
+    assert!(out.contains("# OpenPID proposals for Betaflight 4.2.0"));
+    if out.contains("set d_roll = ") {
+        assert!(out.trim_end().ends_with("save"), "{out}");
+    } else {
+        assert!(out.contains("nothing to change"));
+    }
+    // an epoch with no stick input: findings explain, nothing is proposed blindly
+    let (ok, out, _) = run(&[
+        "run",
+        "recommend",
+        a.to_str().unwrap(),
+        "--epoch",
+        "0..1.5",
+        "--cli",
+    ]);
+    assert!(ok, "{out}");
+    assert!(!out.contains("set p_"), "{out}");
+}

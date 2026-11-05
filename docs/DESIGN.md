@@ -390,6 +390,7 @@ CLI використовує ті самі реєстри, що й GUI, і є о
 
 - `Recommender` отримує `FlightSession` + результати аналізів і повертає `Vec<Proposal>` (`{ path: "pid.roll.d", from, to, rationale, confidence }`).
 - `Exporter("betaflight-cli")` перетворює `Proposal` у `set …` команди / diff.
+- Реалізовано (v1.0): `openpid-core::recommend` (`Proposal`, `Exporter`, `diff_headers`), `openpid-analysis::recommend::Recommend` — три правила з явними доказами (overshoot → D, пік без notch → notch, запас над gyro LPF → зріз), `openpid-fmt-blackbox::BetaflightCli`, `openpid diff` і `openpid run recommend --cli`.
 - Пізніше — `Device` trait (MSP через serial) для читання/запису налаштувань і завантаження логів з FC. Залежність на serial‑порт (`serialport` — має C‑код на деяких ОС) — предмет окремого ADR, коли дійдемо.
 
 Жодна з цих частин не вимагає змін у `core`: усе — нові реалізації існуючих trait‑ів.
