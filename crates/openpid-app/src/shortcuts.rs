@@ -330,10 +330,15 @@ mod tests {
             assert!(!b.action.label().is_empty());
             assert!(!keys_of(&ctx, b.action).is_empty());
         }
-        let cmd = if ctx.os().is_mac() { "Cmd" } else { "Ctrl" };
+        // egui orders the names the Apple way on macOS: "Shift+Cmd+Tab"
+        let (cmd, cmd_shift) = if ctx.os().is_mac() {
+            ("Cmd", "Shift+Cmd")
+        } else {
+            ("Ctrl", "Ctrl+Shift")
+        };
         assert_eq!(keys_of(&ctx, Action::Help), format!("? / {cmd}+/ / F1"));
         assert_eq!(keys_of(&ctx, Action::Tab(10)), "-");
-        assert_eq!(keys_of(&ctx, Action::PrevTab), format!("{cmd}+Shift+Tab"));
+        assert_eq!(keys_of(&ctx, Action::PrevTab), format!("{cmd_shift}+Tab"));
         assert_eq!(keys_of(&ctx, Action::EpochWhole), "Shift+A");
         assert!(hint(&ctx, "Open log…", Action::OpenLog).contains("O)"));
         assert!(is_single_key(KeyboardShortcut::new(
