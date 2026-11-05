@@ -1,6 +1,11 @@
-# release-plz: one version for the whole workspace, one tag per release.
+# release-plz: one version for the whole workspace, one tag per release and
+# one CHANGELOG at the root. Per-crate changelogs are off: they would link to
+# per-crate tags that are never created, and a commit's path decides which
+# crate's changelog it lands in, so GUI-only changes would be missing from the
+# root file. `changelog_include` folds every crate's commits into the CLI's
+# (root) changelog instead.
 [workspace]
-changelog_update = true
+changelog_update = false
 git_release_enable = false
 git_tag_enable = false
 publish = false           # crates are not published to crates.io
@@ -16,4 +21,15 @@ git_tag_enable = true
 git_tag_name = "v{{ version }}"
 git_release_enable = true
 git_release_name = "OpenPID v{{ version }}"
+changelog_update = true
 changelog_path = "./CHANGELOG.md"
+changelog_include = [
+    "openpid-core",
+    "openpid-dsp",
+    "openpid-sim",
+    "openpid-analysis",
+    "openpid-fmt-blackbox",
+    "openpid-fmt-ardupilot",
+    "openpid-fmt-csv",
+    "openpid-app",
+]
