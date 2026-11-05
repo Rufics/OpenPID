@@ -312,7 +312,7 @@ STFT з `nfft`, hop, Hann → `Grid2D { x: time, y: freq, z: amp/dB }`. Це ж 
 
 ### 6.6 Фільтри та overlay (фаза 2)
 
-- `dsp::filters`: PT1/PT2/PT3, biquad LPF/notch (формули Betaflight/RBJ), дин. notch (модель за налаштуваннями), RPM‑notch (гармоніки `k·rpm/60`). Усі — у `f64`, з тестами частотної відповіді проти аналітичних формул.
+- `openpid-sim` (ADR‑0012): PT1/PT2/PT3, biquad LPF/notch (формули Betaflight/RBJ) як машини станів `update(x)` з аналітичною `response(f)`, зібрані в `Chain`; дин. notch (модель за налаштуваннями) і RPM‑notch (гармоніки `k·rpm/60`) — наступний крок. Усі — у `f64`, з тестами частотної відповіді проти аналітичних формул і узгодженості `update` ↔ `response`.
 - **Filter Sim**: `gyro raw → FilterChainModel(settings) → gyro sim`, порівняння з `gyro filtered` з логу (валідація моделі) і з «what‑if» налаштуваннями.
 - **RPM/dyn‑notch overlay**: з `Erpm{idx}` і `motor_poles` → RPM(t); на heatmap freq×throttle наносяться лінії гармонік 1..n і смуги notch; 3D — та сама сітка як поверхня.
 - **RPM estimator**: коли eRPM відсутній, відстежувати домінантний пік у ковзному спектрі `Motor{idx}`/gyro, обмежений діапазоном `rpm_min..rpm_max`, з оцінкою достовірності.
