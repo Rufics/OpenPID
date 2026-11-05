@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Parameters of [`StepAnalysis`].
+#[serde(default)]
 pub struct StepParams {
     /// Axis to analyse.
     pub axis: Axis,

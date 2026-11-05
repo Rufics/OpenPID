@@ -317,6 +317,49 @@ fn png_of_a_heatmap() {
 }
 
 #[test]
+fn run_takes_the_log_and_parameters_from_a_project() {
+    let project = temp("flight.openpid.json");
+    let log = log("betaflight-4.2.0.BFL");
+    std::fs::write(
+        &project,
+        format!(
+            r#"{{"version":1,"slots":[{{"path":"{}","session":0,"epoch":{{"start_s":2.0,"end_s":8.0}}}}],"axis":"pitch","step":{{"cutoff_hz":40.0,"window_s":1.5}}}}"#,
+            log.to_str().unwrap().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    let (ok, out, err) = run(&["run", "step", "--project", project.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert_eq!(v["axis"], "pitch", "axis from the project");
+    assert_eq!(v["time_ms"].as_array().unwrap().len(), 500);
+    // the epoch came from the project: fewer windows than the whole log
+    let (ok, whole, _) = run(&["run", "step", log.to_str().unwrap(), "--axis", "pitch"]);
+    assert!(ok);
+    let w: serde_json::Value = serde_json::from_str(&whole).unwrap();
+    assert!(v["windows_total"].as_u64().unwrap() < w["windows_total"].as_u64().unwrap());
+    // flags override the project
+    let (ok, out, _) = run(&[
+        "run",
+        "step",
+        "--project",
+        project.to_str().unwrap(),
+        "--axis",
+        "roll",
+    ]);
+    assert!(ok);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["axis"], "roll");
+    std::fs::write(&project, r#"{"version":1,"slots":[]}"#).unwrap();
+    let (ok, _, err) = run(&["run", "step", "--project", project.to_str().unwrap()]);
+    assert!(!ok && err.contains("needs a file"), "{err}");
+    std::fs::write(&project, r#"{"version":7}"#).unwrap();
+    let (ok, _, err) = run(&["run", "step", "--project", project.to_str().unwrap()]);
+    assert!(!ok && err.contains("newer"), "{err}");
+    std::fs::remove_file(&project).ok();
+}
+
+#[test]
 fn rpm_command() {
     let l = log("betaflight-4.5.1-two-sessions.bbl");
     let f = l.to_str().unwrap();
@@ -334,4 +377,17 @@ fn rpm_command() {
     );
     let (ok, _, err) = run(&["run", "rpm", f, "--channel", "gyro.filtered.roll"]);
     assert!(!ok && err.contains("gyro.raw"), "{err}");
+}
+
+#[test]
+fn motor_noise_command() {
+    let l = log("betaflight-4.5.1-two-sessions.bbl");
+    let f = l.to_str().unwrap();
+    let (ok, out, err) = run(&["run", "motor-noise", f, "--session", "1", "--axis", "pitch"]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert_eq!(v["rpm_source"], "logged");
+    assert_eq!(v["motors"].as_array().unwrap().len(), 4);
+    assert!(v["loudest"].is_number());
+    assert_eq!(v["channel"]["gyro"]["axis"], "pitch");
 }

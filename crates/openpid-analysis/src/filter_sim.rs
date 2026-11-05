@@ -281,6 +281,7 @@ impl FilterOverrides {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Parameters of [`FilterSimAnalysis`].
+#[serde(default)]
 pub struct FilterSimParams {
     /// Axis to simulate.
     pub axis: Axis,

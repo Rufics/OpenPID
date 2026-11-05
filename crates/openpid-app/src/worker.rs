@@ -1,9 +1,10 @@
 //! Background thread: file loading and analyses never block the UI.
 
 use openpid_analysis::{
-    Analysis, AnalysisCtx, Epoch, FilterSimAnalysis, FilterSimOutput, FilterSimParams, PsdAnalysis,
-    PsdOutput, PsdParams, StepAnalysis, StepOutput, StepParams, StftAnalysis, StftOutput,
-    StftParams, ThrottleHeatmap, ThrottleHeatmapOutput, ThrottleHeatmapParams,
+    Analysis, AnalysisCtx, Epoch, FilterSimAnalysis, FilterSimOutput, FilterSimParams,
+    MotorNoiseAnalysis, MotorNoiseOutput, MotorNoiseParams, PsdAnalysis, PsdOutput, PsdParams,
+    StepAnalysis, StepOutput, StepParams, StftAnalysis, StftOutput, StftParams, ThrottleHeatmap,
+    ThrottleHeatmapOutput, ThrottleHeatmapParams,
 };
 use openpid_core::{FlightSession, FormatRegistry, LogFile, OpenOptions};
 use std::hash::{Hash, Hasher};
@@ -33,6 +34,7 @@ pub enum Kind {
     Throttle(ThrottleHeatmapParams),
     Stft(StftParams),
     FilterSim(FilterSimParams),
+    MotorNoise(MotorNoiseParams),
 }
 
 impl Kind {
@@ -43,6 +45,7 @@ impl Kind {
             Kind::Throttle(_) => "thr",
             Kind::Stft(_) => "stft",
             Kind::FilterSim(_) => "fsim",
+            Kind::MotorNoise(_) => "motors",
         }
     }
 }
@@ -55,6 +58,7 @@ pub enum Output {
     Stft(StftOutput),
     /// Boxed: it carries four time series and four spectra.
     FilterSim(Box<FilterSimOutput>),
+    MotorNoise(MotorNoiseOutput),
 }
 
 /// Identity of one analysis request; equal keys give equal results.
@@ -76,6 +80,7 @@ impl JobKey {
             Kind::Throttle(p) => p.hash(&mut h),
             Kind::Stft(p) => p.hash(&mut h),
             Kind::FilterSim(p) => p.hash(&mut h),
+            Kind::MotorNoise(p) => p.hash(&mut h),
         }
         JobKey {
             slot,
@@ -155,6 +160,7 @@ fn analyze(session: &FlightSession, kind: &Kind, epoch: Option<Epoch>) -> Result
         Kind::FilterSim(p) => FilterSimAnalysis
             .run(&ctx, p)
             .map(|o| Output::FilterSim(Box::new(o))),
+        Kind::MotorNoise(p) => MotorNoiseAnalysis.run(&ctx, p).map(Output::MotorNoise),
     }
     .map_err(|e| e.to_string())
 }
