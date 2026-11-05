@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Parameters of [`StftAnalysis`].
+#[serde(default)]
 pub struct StftParams {
     /// Channel to analyse.
     pub channel: ChannelId,

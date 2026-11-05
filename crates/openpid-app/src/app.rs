@@ -5,7 +5,8 @@ use crate::views;
 use crate::worker::{Done, Job, JobKey, Kind, Output, Slot, Worker};
 use eframe::egui;
 use openpid_analysis::{
-    Epoch, FilterSimParams, PsdParams, StepParams, StftParams, ThrottleHeatmapParams,
+    Epoch, FilterSimParams, Project, ProjectSlot, PsdParams, StepParams, StftParams,
+    ThrottleHeatmapParams,
 };
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use std::collections::HashMap;
@@ -179,6 +180,8 @@ pub struct App {
     pub prefs_path: Option<PathBuf>,
     /// Theme the egui visuals currently follow.
     theme_applied: Option<Theme>,
+    /// Session and epoch to apply to a slot once its file has loaded (project files).
+    pending: HashMap<Slot, (Option<usize>, Option<Epoch>)>,
     /// Screen rectangle of the tab area, for the PNG export.
     pub central_rect: egui::Rect,
     /// Outcome of the last PNG export, filled by the screenshot callback.
@@ -231,11 +234,17 @@ impl App {
             prefs,
             prefs_path,
             theme_applied: None,
+            pending: HashMap::new(),
             central_rect: egui::Rect::NOTHING,
             export_message: Arc::new(std::sync::Mutex::new(None)),
         };
-        for (i, p) in open_on_start.into_iter().take(2).enumerate() {
-            app.open(if i == 0 { Slot::A } else { Slot::B }, p);
+        // a project file on the command line replaces the log list
+        if let Some(project) = open_on_start.iter().find(|p| Project::is_project_path(p)) {
+            app.open_project(project.clone());
+        } else {
+            for (i, p) in open_on_start.into_iter().take(2).enumerate() {
+                app.open(if i == 0 { Slot::A } else { Slot::B }, p);
+            }
         }
         app
     }
@@ -256,10 +265,105 @@ impl App {
     }
 
     pub fn open(&mut self, slot: Slot, path: PathBuf) {
+        self.pending.remove(&slot);
         self.status = format!("Loading {} into slot {}…", path.display(), slot.name());
         self.slots.insert(slot, SlotState::Loading(path.clone()));
         self.cache.retain(|k, _| k.slot != slot);
         self.worker.submit(Job::Load { slot, path });
+    }
+
+    /// Load a log and, once it is in, select `session` and `epoch`.
+    pub fn open_with(
+        &mut self,
+        slot: Slot,
+        path: PathBuf,
+        session: Option<usize>,
+        epoch: Option<Epoch>,
+    ) {
+        self.open(slot, path);
+        self.pending.insert(slot, (session, epoch));
+    }
+
+    /// The current view as a project, with log paths relative to `project_path`.
+    pub fn project(&self, project_path: &std::path::Path) -> Project {
+        let t = &self.tools;
+        let mut slots = Vec::new();
+        for slot in [Slot::A, Slot::B] {
+            let Some(l) = self.loaded(slot) else { break };
+            slots.push(ProjectSlot {
+                path: Project::relativise(project_path, &l.path),
+                session: l.session,
+                epoch: l.epoch,
+            });
+        }
+        Project {
+            slots,
+            tab: self.tab.name().into(),
+            touch_mode: self.touch_mode,
+            axis: t.axis,
+            step: t.step.clone(),
+            psd: t.psd.clone(),
+            throttle: t.throttle.clone(),
+            stft: t.stft.clone(),
+            filter_sim: t.filter_sim.clone(),
+            spectrum_channel: t.spectrum_channel.clone(),
+            heatmap_channel: t.heatmap_channel.clone(),
+            psd_db: t.psd_db,
+            heatmap_max: t.heatmap_max,
+            min_segments: t.min_segments,
+            viewer_channels: t.viewer_channels.clone(),
+            ..Project::default()
+        }
+    }
+
+    /// Save the current view as a project file.
+    pub fn save_project(&mut self, path: &std::path::Path) {
+        self.status = match self.project(path).save(path) {
+            Ok(()) => format!("saved project {}", path.display()),
+            Err(e) => e,
+        };
+    }
+
+    /// Apply a project: tool parameters, tab, touch mode, and the logs with
+    /// their session and epoch (loaded in the background).
+    pub fn apply_project(&mut self, p: &Project, project_path: &std::path::Path) {
+        self.tools = Tools {
+            axis: p.axis,
+            step: p.step.clone(),
+            psd: p.psd.clone(),
+            throttle: p.throttle.clone(),
+            stft: p.stft.clone(),
+            filter_sim: p.filter_sim.clone(),
+            spectrum_channel: p.spectrum_channel.clone(),
+            heatmap_channel: p.heatmap_channel.clone(),
+            psd_db: p.psd_db,
+            heatmap_max: p.heatmap_max,
+            min_segments: p.min_segments,
+            viewer_channels: p.viewer_channels.clone(),
+        };
+        self.tab = Tab::from_name(&p.tab).unwrap_or(Tab::LogViewer);
+        self.touch_mode = p.touch_mode;
+        self.cache.clear();
+        for slot in [Slot::A, Slot::B] {
+            self.slots.insert(slot, SlotState::Empty);
+        }
+        for (slot, s) in [Slot::A, Slot::B].into_iter().zip(&p.slots) {
+            self.open_with(
+                slot,
+                Project::resolve(project_path, &s.path),
+                Some(s.session),
+                s.epoch,
+            );
+        }
+        self.status = format!("opened project {}", project_path.display());
+    }
+
+    /// Load and apply a project file; errors go to the status bar.
+    pub fn open_project(&mut self, path: PathBuf) {
+        match Project::load(&path) {
+            Ok(p) => self.apply_project(&p, &path),
+            Err(e) => self.status = e,
+        }
     }
 
     pub fn loaded(&self, slot: Slot) -> Option<&Loaded> {
@@ -306,12 +410,15 @@ impl App {
                     Ok(file) => {
                         let sessions: Vec<Arc<FlightSession>> =
                             file.sessions.iter().cloned().map(Arc::new).collect();
-                        // pick the longest session by default
-                        let session = sessions
-                            .iter()
-                            .enumerate()
-                            .max_by_key(|(_, s)| s.len())
-                            .map_or(0, |(i, _)| i);
+                        // pick the longest session by default, or what the project asked for
+                        let (wanted, epoch) = self.pending.remove(&slot).unwrap_or((None, None));
+                        let session = wanted.filter(|w| *w < sessions.len()).unwrap_or_else(|| {
+                            sessions
+                                .iter()
+                                .enumerate()
+                                .max_by_key(|(_, s)| s.len())
+                                .map_or(0, |(i, _)| i)
+                        });
                         self.status = format!(
                             "{}: {} session(s), {} samples in session {}",
                             path.display(),
@@ -325,7 +432,7 @@ impl App {
                                 path,
                                 sessions,
                                 session,
-                                epoch: None,
+                                epoch,
                             }),
                         );
                     }
@@ -375,6 +482,10 @@ impl App {
                 .map(|f| f.path().to_path_buf())
                 .collect()
         });
+        if let Some(p) = dropped.iter().find(|p| Project::is_project_path(p)) {
+            self.open_project(p.clone());
+            return;
+        }
         let n = dropped.len().min(2);
         for (i, p) in dropped.into_iter().take(2).enumerate() {
             let a_free = self.loaded(Slot::A).is_none();
@@ -416,8 +527,37 @@ impl App {
                 ui.separator();
                 ui.checkbox(&mut self.touch_mode, "Touch mode");
                 ui.separator();
+                self.project_menu(ui);
                 self.export_menu(ui);
             });
+        });
+    }
+
+    /// "Project" menu: open or save a `.openpid.json`.
+    fn project_menu(&mut self, ui: &mut egui::Ui) {
+        ui.menu_button("Project", |ui| {
+            if ui.button("Open…").clicked() {
+                ui.close();
+                if let Some(p) = rfd::FileDialog::new()
+                    .add_filter("OpenPID project", &["json"])
+                    .pick_file()
+                {
+                    self.open_project(p);
+                }
+            }
+            if ui.button("Save as…").clicked() {
+                ui.close();
+                if let Some(p) = rfd::FileDialog::new()
+                    .add_filter("OpenPID project", &["json"])
+                    .set_file_name(format!(
+                        "{}.openpid.json",
+                        self.export_file_name(Slot::A, "").trim_end_matches('.')
+                    ))
+                    .save_file()
+                {
+                    self.save_project(&p);
+                }
+            }
         });
     }
 
