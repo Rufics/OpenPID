@@ -93,7 +93,9 @@ fn run_until(h: &mut H, mut cond: impl FnMut(&App) -> bool) {
 }
 
 fn no_slot_loading(a: &App) -> bool {
-    !a.slots.values().any(|s| matches!(s, SlotState::Loading(_)))
+    !a.slots
+        .iter()
+        .any(|e| matches!(e.state, SlotState::Loading(_)))
 }
 
 fn idle(a: &App) -> bool {
@@ -234,19 +236,22 @@ fn missing_and_garbage_files_fail_visibly() {
         None,
     );
     run_until(&mut h, no_slot_loading);
-    let a = &app(&h).slots[&Slot::A];
+    let a = app(&h).slot_state(Slot::A).unwrap();
     assert!(
         matches!(a, SlotState::Failed(_, e) if e.contains("cannot read")),
         "{a:?}"
     );
-    assert!(matches!(app(&h).slots[&Slot::B], SlotState::Failed(..)));
+    assert!(matches!(
+        app(&h).slot_state(Slot::B),
+        Some(SlotState::Failed(..))
+    ));
     assert!(has_label_containing(&h, "Slot A: /definitely/not/here.bbl"));
     assert!(has_label_containing(&h, "Slot B:"));
     let _ = std::fs::remove_file(garbage);
 }
 
 #[test]
-fn dropped_files_fill_free_slots_then_replace() {
+fn dropped_files_fill_free_slots_then_add_new_ones() {
     let mut h = harness(Vec::new(), None);
     drop_files(&mut h, &[LOG_4_2]);
     run_until(&mut h, no_slot_loading);
@@ -262,22 +267,142 @@ fn dropped_files_fill_free_slots_then_replace() {
             .ends_with("betaflight-4.2.11-two-logs.bbl"),
         "second drop goes to the free slot B"
     );
-    drop_files(&mut h, &[LOG_TWO, LOG_4_2]);
+    // both full: two more files open two more slots, nothing is replaced
+    drop_files(&mut h, &[LOG_4_5, LOG_4_5_1]);
     run_until(&mut h, no_slot_loading);
+    assert_eq!(app(&h).slot_ids(), vec![Slot(0), Slot(1), Slot(2), Slot(3)]);
     assert!(
         app(&h)
             .loaded(Slot::A)
             .unwrap()
             .path
-            .ends_with("betaflight-4.2.11-two-logs.bbl")
+            .ends_with("betaflight-4.2.0.BFL")
     );
     assert!(
         app(&h)
-            .loaded(Slot::B)
+            .loaded(Slot(2))
             .unwrap()
             .path
-            .ends_with("betaflight-4.2.0.BFL")
+            .ends_with("betaflight-4.5.0-gps-rescue.bbl")
     );
+    assert!(
+        app(&h)
+            .loaded(Slot(3))
+            .unwrap()
+            .path
+            .ends_with("betaflight-4.5.1-two-sessions.bbl")
+    );
+    assert_eq!(Slot(2).name(), "C");
+    assert_eq!(Slot(7).name(), "H");
+}
+
+#[test]
+fn many_slots_have_colours_visibility_solo_and_stable_letters() {
+    // three logs with enough stick input for a step response each
+    let mut h = harness(
+        vec![LOG_4_2.into(), LOG_2025.into(), LOG_4_5_1.into()],
+        Some(Tab::Step),
+    );
+    run_until(&mut h, idle);
+    assert_eq!(app(&h).loaded_slots(), vec![Slot(0), Slot(1), Slot(2)]);
+    assert_eq!(app(&h).visible_slots().len(), 3);
+    // three distinct colours, three step curves in the legend
+    let colours: std::collections::BTreeSet<[u8; 4]> = app(&h)
+        .loaded_slots()
+        .iter()
+        .map(|s| crate::views::slot_color(*s).to_array())
+        .collect();
+    assert_eq!(colours.len(), 3);
+    for name in ["A mean", "B mean", "C mean"] {
+        assert!(has_label_containing(&h, name), "{name}");
+    }
+    assert!(h.query_by_label("Slot C").is_some());
+    // hide B: it stays loaded but leaves the plot
+    app_mut(&mut h).set_visible(Slot::B, false);
+    h.run_steps(2);
+    assert_eq!(app(&h).visible_slots(), vec![Slot(0), Slot(2)]);
+    assert!(app(&h).loaded(Slot::B).is_some());
+    assert!(!has_label_containing(&h, "B mean"));
+    // solo C, then solo C again brings everyone back
+    app_mut(&mut h).solo(Slot(2));
+    h.run_steps(2);
+    assert_eq!(app(&h).visible_slots(), vec![Slot(2)]);
+    assert!(has_label_containing(&h, "C mean") && !has_label_containing(&h, "A mean"));
+    app_mut(&mut h).solo(Slot(2));
+    h.run_steps(2);
+    assert_eq!(app(&h).visible_slots().len(), 3);
+    // the panel tabs lay the slots out side by side
+    select_tab(&mut h, Tab::ThrottleHeatmap);
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    assert!(has_label_containing(&h, "C: gyro"));
+    // closing B keeps C's letter; the next log reuses the free letter B
+    app_mut(&mut h).close_slot(Slot::B);
+    h.step();
+    assert_eq!(app(&h).slot_ids(), vec![Slot(0), Slot(2)]);
+    assert!(app(&h).cache.keys().all(|k| k.slot != Slot::B));
+    assert_eq!(app_mut(&mut h).free_slot(), Some(Slot::B));
+    assert_eq!(app(&h).slot_ids(), vec![Slot(0), Slot(2), Slot(1)]);
+    // the limit
+    while app_mut(&mut h).add_slot().is_some() {}
+    assert_eq!(app(&h).slots.len(), Slot::MAX);
+    assert!(
+        app_mut(&mut h).free_slot().is_some(),
+        "empty slots are free"
+    );
+    for s in app(&h).slot_ids() {
+        if app(&h).loaded(s).is_none() {
+            app_mut(&mut h).close_slot(s);
+        }
+    }
+    // closing everything leaves an empty slot A behind
+    for s in app(&h).loaded_slots() {
+        app_mut(&mut h).close_slot(s);
+    }
+    h.step();
+    assert_eq!(app(&h).slot_ids(), vec![Slot::A]);
+    assert!(h.query_by_label("Slot A: empty").is_some());
+}
+
+#[test]
+fn projects_keep_every_slot_and_read_version_1_files() {
+    use openpid_analysis::project::{PROJECT_VERSION, Project};
+    let dir = std::env::temp_dir().join(format!("openpid-slots-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("three.openpid.json");
+    let mut h = harness(
+        vec![LOG_4_2.into(), LOG_TWO.into(), LOG_4_5.into()],
+        Some(Tab::Spectrum),
+    );
+    run_until(&mut h, no_slot_loading);
+    app_mut(&mut h).set_visible(Slot::B, false);
+    app_mut(&mut h).save_project(&file);
+    let saved = Project::load(&file).unwrap();
+    assert_eq!(saved.version, PROJECT_VERSION);
+    assert_eq!(saved.slots.len(), 3);
+    assert_eq!(saved.slots[1].id, Some(1));
+    assert!(!saved.slots[1].visible && saved.slots[2].visible);
+    // reopen: letters, visibility and order come back
+    let mut h2 = harness(vec![file.clone()], None);
+    run_until(&mut h2, no_slot_loading);
+    assert_eq!(app(&h2).loaded_slots(), vec![Slot(0), Slot(1), Slot(2)]);
+    assert_eq!(app(&h2).visible_slots(), vec![Slot(0), Slot(2)]);
+    // a version-1 file without letters: slots by position
+    let v1 = dir.join("old.openpid.json");
+    std::fs::write(
+        &v1,
+        format!(
+            r#"{{"version":1,"slots":[{{"path":"{}","session":0}},{{"path":"{}","session":0}}],"tab":"step"}}"#,
+            LOG_4_2.replace('\\', "/"),
+            LOG_4_5.replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    let mut h3 = harness(vec![v1], None);
+    run_until(&mut h3, no_slot_loading);
+    assert_eq!(app(&h3).loaded_slots(), vec![Slot::A, Slot::B]);
+    assert_eq!(app(&h3).tab, Tab::Step);
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // ------------------------------------------------------------------ analyses

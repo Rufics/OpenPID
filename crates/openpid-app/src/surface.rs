@@ -8,7 +8,7 @@ use crate::colormap::MUTED;
 use crate::i18n::tr;
 use crate::views::{
     OverlayState, SlotResult, heatmap_controls, motor_color, overlay_controls, overlay_harmonics,
-    show_error, slot_color, slot_header,
+    panel_width, show_error, slot_color, slot_headers,
 };
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, Pos2, RichText, Sense, Stroke, Ui, Vec2};
@@ -71,9 +71,7 @@ impl SurfaceState {
 
 /// The tab.
 pub fn surface(app: &mut App, ui: &mut Ui) {
-    for slot in [Slot::A, Slot::B] {
-        slot_header(app, ui, slot);
-    }
+    slot_headers(app, ui);
     ui.separator();
     heatmap_controls(app, ui);
     ui.horizontal_wrapped(|ui| {
@@ -97,48 +95,49 @@ pub fn surface(app: &mut App, ui: &mut Ui) {
     app.tools.throttle.channel = app.tools.heatmap_channel.clone();
     let params = app.tools.throttle.clone();
     let max = app.tools.heatmap_max;
-    let slots: Vec<Slot> = [Slot::A, Slot::B]
-        .into_iter()
-        .filter(|s| app.loaded(*s).is_some())
-        .collect();
+    let slots: Vec<Slot> = app.visible_slots();
     let results: Vec<SlotResult> = slots
         .iter()
         .map(|slot| (*slot, app.result(*slot, Kind::Throttle(params.clone()))))
         .collect();
     overlay_controls(app, ui, &results);
     let overlay = app.overlay.clone();
-    let w = ui.available_width() / slots.len().max(1) as f32;
+    let w = panel_width(ui, slots.len());
     let h = ui.available_height();
     app.surface.hover = None;
-    ui.horizontal(|ui| {
-        for (i, (slot, result)) in results.into_iter().enumerate() {
-            ui.vertical(|ui| {
-                ui.set_width(w - 8.0);
-                match result {
-                    Some(Ok(o)) => {
-                        if let Output::Throttle(t) = o.as_ref() {
-                            ui.label(
-                                RichText::new(format!(
-                                    "{}: {} ({}), {} segments",
-                                    slot.name(),
-                                    t.channel.key(),
-                                    t.unit,
-                                    t.segments
-                                ))
-                                .color(slot_color(slot)),
-                            );
-                            let size = Vec2::new(w - 8.0, (h - 24.0).max(50.0));
-                            draw_surface(app, ui, slot, t, max, &overlay, size, i == 0);
+    egui::ScrollArea::horizontal()
+        .id_salt("surface-panels")
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                for (i, (slot, result)) in results.into_iter().enumerate() {
+                    ui.vertical(|ui| {
+                        ui.set_width(w - 8.0);
+                        match result {
+                            Some(Ok(o)) => {
+                                if let Output::Throttle(t) = o.as_ref() {
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "{}: {} ({}), {} segments",
+                                            slot.name(),
+                                            t.channel.key(),
+                                            t.unit,
+                                            t.segments
+                                        ))
+                                        .color(slot_color(slot)),
+                                    );
+                                    let size = Vec2::new(w - 8.0, (h - 24.0).max(50.0));
+                                    draw_surface(app, ui, slot, t, max, &overlay, size, i == 0);
+                                }
+                            }
+                            Some(Err(e)) => show_error(ui, slot, &e),
+                            None => {
+                                ui.spinner();
+                            }
                         }
-                    }
-                    Some(Err(e)) => show_error(ui, slot, &e),
-                    None => {
-                        ui.spinner();
-                    }
+                    });
                 }
             });
-        }
-    });
+        });
 }
 
 /// Orbit, zoom and pan from the panel's response.

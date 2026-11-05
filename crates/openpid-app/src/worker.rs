@@ -13,18 +13,25 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Slot {
-    A,
-    B,
-}
+/// A log slot: one open file with its session and epoch. Slots are added as
+/// logs are opened (up to [`Slot::MAX`]); the letter stays with a slot for
+/// its lifetime, so legends and screenshots keep meaning when another slot
+/// is closed (docs/design/multi-slot, R2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Slot(pub u8);
 
 impl Slot {
+    /// The first slot.
+    pub const A: Slot = Slot(0);
+    /// The second slot.
+    pub const B: Slot = Slot(1);
+    /// How many logs can be open at once.
+    pub const MAX: usize = 8;
+
+    /// Letter A…H.
     pub fn name(self) -> &'static str {
-        match self {
-            Slot::A => "A",
-            Slot::B => "B",
-        }
+        const NAMES: [&str; Slot::MAX] = ["A", "B", "C", "D", "E", "F", "G", "H"];
+        NAMES[self.0 as usize % Slot::MAX]
     }
 }
 

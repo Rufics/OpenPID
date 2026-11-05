@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Current schema version.
-pub const PROJECT_VERSION: u32 = 1;
+pub const PROJECT_VERSION: u32 = 2;
 /// File name suffix that marks a project file.
 pub const PROJECT_SUFFIX: &str = ".openpid.json";
 
@@ -30,6 +30,11 @@ pub struct ProjectSlot {
     pub session: usize,
     /// Selected epoch.
     pub epoch: Option<Epoch>,
+    /// Slot letter as an index (0 = A); `None` (version 1 files) means "by
+    /// position in the list".
+    pub id: Option<u8>,
+    /// Drawn on the plots (a hidden slot stays open but out of the way).
+    pub visible: bool,
 }
 
 impl Default for ProjectSlot {
@@ -38,6 +43,8 @@ impl Default for ProjectSlot {
             path: PathBuf::new(),
             session: 0,
             epoch: None,
+            id: None,
+            visible: true,
         }
     }
 }
@@ -48,7 +55,7 @@ impl Default for ProjectSlot {
 pub struct Project {
     /// Schema version (see [`PROJECT_VERSION`]).
     pub version: u32,
-    /// Open logs: slot A first, then B.
+    /// Open logs in slot-bar order (version 2: with their letter and visibility).
     pub slots: Vec<ProjectSlot>,
     /// Active tab by its short name (`log`, `step`, `spectrum`, …).
     pub tab: String,
@@ -195,6 +202,8 @@ mod tests {
                 start_s: 1.0,
                 end_s: 2.0,
             }),
+            id: None,
+            visible: true,
         });
         p.step.cutoff_hz = 33.0;
         p.tab = "step".into();
