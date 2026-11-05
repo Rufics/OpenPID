@@ -8,6 +8,7 @@
 
 Фаза 0 (фундамент) і фаза 1 (математика, аналізи, GUI, PID‑слайдери) реалізовані:
 
+- `openpid-fmt-ardupilot` — декодер ArduPilot DataFlash (`.bin`), див. `docs/ARDUPILOT.md`.
 - `openpid-core` — доменна модель (`FlightSession`, `Channel`, `ChannelId`, `Series`, `Timebase`, `Settings`) і trait‑и розширення (`LogFormat`, `FirmwareProfile`, `Analysis`).
 - `openpid-fmt-blackbox` — власний декодер бінарного Blackbox (усі кодування та предиктори, I/P/S/G/H/E‑кадри, валідація, ресинхронізація, rollover часу, події) та профілі прошивок Betaflight, EmuFlight, Rotorflight, INAV (базовий) і generic.
 - `openpid-fmt-csv` — читання CSV‑експорту `blackbox_decode`.
@@ -32,6 +33,7 @@ cargo build --release
 ./target/release/openpid run thr-heatmap path/to/LOG.BBL                       # freq × throttle
 ./target/release/openpid run stft path/to/LOG.BBL --channel pid.d.roll         # freq × time
 ./target/release/openpid sliders path/to/LOG.BBL --set simplified_d_gain=90     # PID-слайдери Betaflight
+./target/release/openpid info path/to/00000042.BIN                              # ArduPilot DataFlash — той самий набір команд
 ```
 
 ### GUI
@@ -71,5 +73,6 @@ python3 -I tools/reference/make_fixtures.py   # перегенерувати ф�
 - [`docs/adr/`](docs/adr/) — архітектурні рішення
 - [`docs/OPEN-QUESTIONS.md`](docs/OPEN-QUESTIONS.md) — питання та ухвалені рішення
 - [`docs/PROCESS.md`](docs/PROCESS.md) — процес: backlog, milestones, спринти, Definition of Done
+- [`docs/ARDUPILOT.md`](docs/ARDUPILOT.md) — як лог ArduPilot DataFlash відображається на канали й налаштування
 - [`docs/BLACKBOX-VERSIONS.md`](docs/BLACKBOX-VERSIONS.md) — відмінності формату між версіями Betaflight і покриття логами
 - [`tests/logs/README.md`](tests/logs/README.md) — походження тестових логів

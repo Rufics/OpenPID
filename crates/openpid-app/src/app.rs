@@ -320,8 +320,11 @@ impl App {
                     if ui.button(format!("Open {}…", slot.name())).clicked()
                         && let Some(p) = rfd::FileDialog::new()
                             .add_filter(
-                                "Blackbox logs",
-                                &["bbl", "bfl", "txt", "csv", "BBL", "BFL", "TXT", "CSV"],
+                                "Flight logs",
+                                &[
+                                    "bbl", "bfl", "txt", "csv", "bin", "BBL", "BFL", "TXT", "CSV",
+                                    "BIN",
+                                ],
                             )
                             .pick_file()
                     {

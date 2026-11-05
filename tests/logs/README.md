@@ -19,6 +19,9 @@ licence; the table names the source so the attribution stays with the data.
 | `emuflight-3.7.0-truncated.BFL` | EmuFlight 3.7.0 | fc-blackbox `crashing-LOG00002.BFL`, first 1 MiB | MIT / Apache-2.0 | truncated mid-frame on purpose |
 | `inav-3.0.1-truncated.TXT` | INAV 3.0.1 | fc-blackbox `LOG00004.TXT`, first 1 MiB | MIT / Apache-2.0 | `P interval:1/2`, GPS and slow frames; INAV is a phase-2 target |
 | `inav-9.0.1-truncated.TXT` | INAV 9.0.1 | propwash `tests/fixtures/inav/LOG00005.TXT`, first 1 MiB | MIT | phase-2 target; the decoder still reports corrupt frames on it |
+| `ardupilot-copter-3.3-dronekit.bin` | ArduCopter 3.3-dev | propwash `tests/fixtures/ardupilot/dronekit-copter-log171.bin` (originally dronekit-la, Apache-2.0), first 1 MiB | MIT / Apache-2.0 | legacy DataFlash (`TimeMS`, no `FMTU`), IMU 50 Hz, RATE 10 Hz |
+| `ardupilot-plane-4.3.5.bin` | ArduPlane 4.3.5 | propwash `tests/fixtures/ardupilot/pyflightcoach-plane-v4.3.5.bin` | MIT | bench log, `PIDR/P/Y`, `FMTU` units |
+| `ardupilot-quadplane-4.4.4-esc-telemetry.bin` | ArduPlane 4.4.4 (QuadPlane) | propwash `tests/fixtures/ardupilot/esc-telem-quadplane-v4.4.4.bin`, first 1 MiB | MIT | IMU 300 Hz, ESC telemetry (5 instances), harmonic notch, `VER` |
 
 Still wanted (no permissively licensed public log found as of 2026-11-04):
 Betaflight 4.3.x, 4.4.x, 2026.6.x and EmuFlight 0.4.x. See

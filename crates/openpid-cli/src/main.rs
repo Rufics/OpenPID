@@ -126,7 +126,8 @@ fn parse_args() -> Result<Args, String> {
 fn registry() -> FormatRegistry {
     let mut r = FormatRegistry::new();
     r.register(Box::new(BlackboxFormat::new()))
-        .register(Box::new(CsvFormat::new()));
+        .register(Box::new(CsvFormat::new()))
+        .register(Box::new(openpid_fmt_ardupilot::ArdupilotFormat::new()));
     r
 }
 

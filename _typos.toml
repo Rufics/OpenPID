@@ -15,6 +15,8 @@ xin = "xin"
 yout = "yout"
 
 [default.extend-words]
+# ArduPilot DataFlash message name
+PARM = "PARM"
 # domain vocabulary that is not a typo
 thr = "thr"
 SITL = "SITL"

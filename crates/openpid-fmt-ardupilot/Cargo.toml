@@ -1,0 +1,17 @@
+[package]
+name = "openpid-fmt-ardupilot"
+description = "Decoder for ArduPilot DataFlash (.bin) logs: self-describing FMT/FMTU messages mapped onto the OpenPID flight-session model"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+openpid-core = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
