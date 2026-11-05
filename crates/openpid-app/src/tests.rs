@@ -394,6 +394,39 @@ fn spectrum_and_heatmap_controls_change_parameters() {
     select_tab(&mut h, Tab::ThrottleHeatmap);
     run_until(&mut h, idle);
     assert!(has_label_containing(&h, "throttle window"));
+    // segments per bin: the hint names the bins below the minimum
+    let counts: Vec<usize> = app(&h)
+        .cache
+        .values()
+        .find_map(|c| match c {
+            Cached::Ready(o) => match o.as_ref() {
+                crate::worker::Output::Throttle(t) => Some(t.counts.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("throttle heatmap computed");
+    assert!(counts.iter().sum::<usize>() > 0);
+    let min = app(&h).tools.min_segments;
+    let below = counts.iter().filter(|&&c| c < min).count();
+    assert!(has_label_containing(&h, "min segments"));
+    if below > 0 {
+        assert!(has_label_containing(
+            &h,
+            &format!("{below} of {} throttle bins", counts.len())
+        ));
+    } else {
+        assert!(has_label_containing(&h, "every throttle bin"));
+    }
+    // a minimum above every count flags every bin; the analysis is not rerun
+    let jobs = app(&h).cache.len();
+    app_mut(&mut h).tools.min_segments = counts.iter().max().copied().unwrap_or(0) + 1;
+    h.step();
+    assert!(has_label_containing(
+        &h,
+        &format!("{} of {} throttle bins", counts.len(), counts.len())
+    ));
+    assert_eq!(app(&h).cache.len(), jobs);
     select_tab(&mut h, Tab::TimeHeatmap);
     run_until(&mut h, idle);
     assert!(has_label_containing(&h, "segment"));

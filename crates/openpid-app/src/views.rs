@@ -7,7 +7,8 @@ use crate::prefs::{AccUnit, Prefs, RateUnit, Theme};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{
-    HLine, Heatmap, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, Text, VLine,
+    Bar, BarChart, HLine, Heatmap, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, Text,
+    VLine,
 };
 use openpid_analysis::Epoch;
 use openpid_core::analysis::Grid2D;
@@ -978,6 +979,76 @@ fn heatmap_controls(app: &mut App, ui: &mut Ui) {
     });
 }
 
+/// Height of the segments-per-bin bar under the freq × throttle heatmap.
+const COUNT_BAR_HEIGHT: f32 = 56.0;
+
+/// Grey columns over the throttle bins with fewer than `min_segments`
+/// segments, so an unsampled bin does not read as a quiet one.
+fn sparse_bins(
+    g: &Grid2D,
+    counts: &[usize],
+    min_segments: usize,
+) -> Vec<egui_plot::Polygon<'static>> {
+    if g.x.len() < 2 || g.y.len() < 2 {
+        return Vec::new();
+    }
+    let dx = g.x[1] - g.x[0];
+    let dy = g.y[1] - g.y[0];
+    let (y0, y1) = (g.y[0] - dy / 2.0, g.y[g.y.len() - 1] + dy / 2.0);
+    let grey = Color32::from_rgba_unmultiplied(128, 128, 128, 170);
+    g.x.iter()
+        .zip(counts)
+        .filter(|(_, c)| **c < min_segments)
+        .map(|(&x, _)| {
+            let (x0, x1) = (x - dx / 2.0, x + dx / 2.0);
+            egui_plot::Polygon::new(
+                "unsampled",
+                PlotPoints::from(vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1]]),
+            )
+            .fill_color(grey)
+            .stroke(egui::Stroke::NONE)
+        })
+        .collect()
+}
+
+/// Thin bar chart of the segment count per throttle bin, x-linked to the heatmap.
+fn segment_count_bar(
+    ui: &mut Ui,
+    slot: Slot,
+    link: egui::Id,
+    g: &Grid2D,
+    counts: &[usize],
+    min_segments: usize,
+) {
+    let dx = if g.x.len() >= 2 { g.x[1] - g.x[0] } else { 1.0 };
+    let bars: Vec<Bar> =
+        g.x.iter()
+            .zip(counts)
+            .map(|(&x, &c)| {
+                Bar::new(x, c as f64).width(dx).fill(if c < min_segments {
+                    Color32::GRAY
+                } else {
+                    slot_color(slot)
+                })
+            })
+            .collect();
+    Plot::new(("thr-count", slot.name()))
+        .x_axis_label("throttle (%)")
+        .y_axis_label("segments")
+        .link_axis(link, [true, false])
+        .height(COUNT_BAR_HEIGHT)
+        .include_y(0.0)
+        .allow_zoom([true, false])
+        .allow_drag([true, false])
+        .show(ui, |pu| {
+            pu.bar_chart(
+                BarChart::new("segments per bin", bars).element_formatter(Box::new(|b, _| {
+                    format!("throttle {:.0} %: {} segments", b.argument, b.value)
+                })),
+            );
+        });
+}
+
 pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
     let markers = app.spectrum.markers.clone();
     for slot in [Slot::A, Slot::B] {
@@ -1007,10 +1078,20 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
                 .range(50.0..=8000.0)
                 .suffix(" Hz"),
         );
+        ui.label("min segments");
+        ui.add(
+            egui::DragValue::new(&mut app.tools.min_segments)
+                .speed(1.0)
+                .range(1..=1000),
+        )
+        .on_hover_text(
+            "throttle bins with fewer segments are greyed out: they are unsampled, not quiet",
+        );
     });
     app.tools.throttle.channel = app.tools.heatmap_channel.clone();
     let params = app.tools.throttle.clone();
     let max = app.tools.heatmap_max;
+    let min_segments = app.tools.min_segments;
     let slots: Vec<Slot> = [Slot::A, Slot::B]
         .into_iter()
         .filter(|s| app.loaded(*s).is_some())
@@ -1034,17 +1115,36 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
                                 ))
                                 .color(slot_color(slot)),
                             );
+                            let link = ui.scope_id().with(("thr-link", slot.name()));
                             Plot::new(("thr", slot.name()))
-                                .x_axis_label("throttle (%)")
                                 .y_axis_label("frequency (Hz)")
-                                .height(h - 24.0)
+                                .link_axis(link, [true, false])
+                                .height(h - 24.0 - COUNT_BAR_HEIGHT - 24.0)
                                 .show(ui, |pu| {
                                     if let Some(hm) = grid_heatmap("amplitude", &t.grid, max, 20.0)
                                     {
                                         pu.heatmap(hm);
                                     }
+                                    for poly in sparse_bins(&t.grid, &t.counts, min_segments) {
+                                        pu.polygon(poly);
+                                    }
                                     marker_hlines(pu, &markers);
                                 });
+                            segment_count_bar(ui, slot, link, &t.grid, &t.counts, min_segments);
+                            let below = t.counts.iter().filter(|&&c| c < min_segments).count();
+                            ui.label(
+                                RichText::new(if below > 0 {
+                                    format!(
+                                        "{below} of {} throttle bins have fewer than {min_segments} segments (greyed)",
+                                        t.counts.len()
+                                    )
+                                } else {
+                                    format!(
+                                        "every throttle bin has at least {min_segments} segments"
+                                    )
+                                })
+                                .color(MUTED),
+                            );
                         }
                     }
                     Some(Err(e)) => show_error(ui, slot, &e),
