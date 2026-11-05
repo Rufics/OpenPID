@@ -33,6 +33,7 @@ cargo build --release
 ./target/release/openpid run thr-heatmap path/to/LOG.BBL                       # freq × throttle
 ./target/release/openpid run stft path/to/LOG.BBL --channel pid.d.roll         # freq × time
 ./target/release/openpid sliders path/to/LOG.BBL --set simplified_d_gain=90     # PID-слайдери Betaflight
+./target/release/openpid diff before.BBL after.BBL [--cli]                       # що змінилось у налаштуваннях; --cli дає `set …` для CLI
 ./target/release/openpid info path/to/00000042.BIN                              # ArduPilot DataFlash — той самий набір команд
 ```
 
