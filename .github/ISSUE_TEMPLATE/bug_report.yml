@@ -1,0 +1,28 @@
+name: Bug report
+description: Щось працює не так
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Що сталося
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Як відтворити
+      description: Команда CLI або кроки в GUI. Прикріпіть лог (.BBL/.BFL/.TXT/.bin), якщо можете ним поділитися під MIT-сумісною ліцензією — тоді він стане фікстурою
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Очікувана поведінка
+  - type: input
+    id: version
+    attributes:
+      label: Версія
+      placeholder: "openpid --version, ОС, прошивка польотного контролера"
+    validations:
+      required: true

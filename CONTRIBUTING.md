@@ -42,3 +42,7 @@ cargo llvm-cov --workspace --fail-under-lines 90   # cargo install cargo-llvm-co
 ## Тестові дані
 
 Закомічені логи — лише з MIT/Apache‑сумісних джерел (`tests/logs/README.md`). Решту завантажує `tools/fetch-community-logs.sh`. Golden‑файли оновлюються свідомо: `OPENPID_UPDATE_GOLDEN=1 cargo test -p openpid-fmt-blackbox --test fixtures`, фікстури математики — `python3 -I tools/reference/make_fixtures.py`.
+
+## Процес
+
+Backlog, milestones за фазами, спринти й Definition of Ready/Done описані в [`docs/PROCESS.md`](docs/PROCESS.md). Кожен PR закриває issue (`Closes #N`).

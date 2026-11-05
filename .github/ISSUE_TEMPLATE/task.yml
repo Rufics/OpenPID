@@ -1,0 +1,42 @@
+name: Task
+description: Робота з плану (feature, tech-debt, тести, CI) у форматі Definition of Ready
+labels: ["type: feature"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Навіщо це потрібно; посилання на docs/DESIGN.md, ADR або issue
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Що саме робимо і чого не робимо
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Як перевіримо, що зроблено (тести, цифри, скриншоти)
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [core, dsp, analysis, sim, gui, cli, fmt-blackbox, fmt-ardupilot, ci, docs]
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options: [P0, P1, P2, P3]
+      default: 2
+  - type: markdown
+    attributes:
+      value: |
+        **Definition of Done:** PR із зеленим CI (fmt, clippy, тести на 3 ОС, покриття ≥ 90 %, cargo-deny, Sonar), оновлені docs/ADR за потреби, фікстури лише з MIT-сумісною ліцензією. Після створення додайте мітки `area: …` і `priority: …`, milestone і Size у Project (docs/PROCESS.md).
