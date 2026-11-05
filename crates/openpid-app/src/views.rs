@@ -23,8 +23,12 @@ use std::sync::Arc;
 /// Per-tab UI state that is not an analysis parameter.
 #[derive(Debug, Default)]
 pub struct ViewerState {
-    /// Time (s) of the last click/tap on the log viewer plot.
+    /// Time (s) of the last click, tap or long press on the log viewer plot.
     pub cursor_s: Option<f64>,
+    /// Vertical range of the last drawn log-viewer plot.
+    pub y_bounds: Option<(f64, f64)>,
+    /// A finger resting on the plot: when it started (s) and where, for the long press.
+    pub press: Option<(f64, egui::Pos2)>,
     pub channel_filter: String,
     /// Epoch handle (slot, `true` = start) under the pointer last frame.
     pub hover_handle: Option<(Slot, bool)>,
@@ -555,7 +559,14 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
     ui.separator();
     let session_a: Option<Arc<FlightSession>> =
         app.loaded(Slot::A).and_then(|l| l.current().cloned());
-    viewer_channel_picker(app, ui, session_a.as_deref());
+    // many channels in touch mode would wrap over the whole panel: cap the
+    // picker and let it scroll, the plot keeps its height
+    egui::ScrollArea::vertical()
+        .id_salt("viewer_channels")
+        .max_height(if app.touch_mode { 150.0 } else { 180.0 })
+        .show(ui, |ui| {
+            viewer_channel_picker(app, ui, session_a.as_deref())
+        });
     viewer_cursor_controls(app, ui);
     let touch = app.touch_mode;
     let channels = app.tools.viewer_channels.clone();
@@ -574,6 +585,7 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
     let mut drag_stopped = false;
     let mut frame = None;
     let mut x_bounds = None;
+    let mut y_bounds = None;
     Plot::new("log_viewer")
         .legend(Legend::default())
         .x_axis_label("time (s)")
@@ -600,20 +612,49 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
                 let t = pu.transform().value_from_position(p).x;
                 drag_to = Some((handle.0, handle.1, t));
             }
+            // a click, or a long press on a touch screen, places the cursor;
+            // hover_pos() is gone once egui counts the press as a drag, so the
+            // long press reads the interact position instead
             if resp.clicked()
                 && app.viewer.drag_handle.is_none()
                 && let Some(p) = pu.pointer_coordinate()
             {
                 cursor = Some(p.x);
             }
+            if resp.long_touched()
+                && app.viewer.drag_handle.is_none()
+                && let Some(p) = resp.interact_pointer_pos()
+            {
+                cursor = Some(pu.transform().value_from_position(p).x);
+            }
+            // in touch mode a finger held still for a moment places the cursor too
+            // (not every backend reports long touches)
+            if touch && app.viewer.drag_handle.is_none() {
+                let now = pu.ctx().input(|i| i.time);
+                let down = resp.is_pointer_button_down_on();
+                match (app.viewer.press, resp.interact_pointer_pos()) {
+                    (None, Some(p)) if down => app.viewer.press = Some((now, p)),
+                    (Some((t0, p0)), Some(p)) if down => {
+                        if p.distance(p0) > LONG_PRESS_SLOP_PX {
+                            app.viewer.press = None; // it is a pan
+                        } else if now - t0 >= LONG_PRESS_S {
+                            cursor = Some(pu.transform().value_from_position(p0).x);
+                            app.viewer.press = None;
+                        }
+                    }
+                    _ => app.viewer.press = None,
+                }
+            }
             let b = pu.plot_bounds();
             x_bounds = Some((b.min()[0], b.max()[0]));
+            y_bounds = Some((b.min()[1], b.max()[1]));
             frame = Some(*pu.transform().frame());
         });
     app.viewer.cursor_s = cursor;
     app.viewer.hover_handle = hovered;
     app.viewer.plot_frame = frame;
     app.viewer.x_bounds = x_bounds;
+    app.viewer.y_bounds = y_bounds;
     // the drag is recognised a few pixels after the press: use the handle hovered at the press
     if drag_started && let Some(h) = prev_hover.or(hovered) {
         app.viewer.drag_handle = Some(h);
@@ -999,6 +1040,11 @@ fn heatmap_controls(app: &mut App, ui: &mut Ui) {
 
 /// Height of the segments-per-bin bar under the freq × throttle heatmap.
 const COUNT_BAR_HEIGHT: f32 = 56.0;
+
+/// How long a finger must rest on the log viewer to place the cursor, seconds.
+const LONG_PRESS_S: f64 = 0.6;
+/// Movement that turns a resting finger into a pan, logical pixels.
+const LONG_PRESS_SLOP_PX: f32 = 8.0;
 
 /// A slot's analysis result: `None` while it is still computing.
 type SlotResult = (Slot, Option<Result<Arc<Output>, String>>);
