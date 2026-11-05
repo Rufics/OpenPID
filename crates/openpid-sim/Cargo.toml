@@ -8,7 +8,11 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+openpid-core = { workspace = true }
 openpid-dsp = { workspace = true }
+
+[dev-dependencies]
+openpid-fmt-blackbox = { workspace = true }
 
 [lints]
 workspace = true

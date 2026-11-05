@@ -63,6 +63,18 @@ impl Pt1 {
     pub fn gain(&self) -> f64 {
         self.k
     }
+
+    /// Move the cutoff without touching the state (a firmware's dynamic
+    /// low-pass retunes the running filter).
+    ///
+    /// # Panics
+    /// Panics unless `0 < cutoff_hz`.
+    pub fn set_cutoff(&mut self, cutoff_hz: f64) {
+        assert!(cutoff_hz > 0.0, "cutoff must be positive");
+        let rc = 1.0 / (2.0 * PI * cutoff_hz);
+        let dt = 1.0 / self.fs;
+        self.k = dt / (rc + dt);
+    }
 }
 
 impl Filter for Pt1 {
@@ -117,6 +129,15 @@ impl Ptn {
     /// Number of stages.
     pub fn order(&self) -> usize {
         self.stages.len()
+    }
+
+    /// Move the overall cutoff without touching the state.
+    ///
+    /// # Panics
+    /// Panics unless `0 < cutoff_hz`.
+    pub fn set_cutoff(&mut self, cutoff_hz: f64) {
+        let corrected = cutoff_hz * pt_cutoff_correction(self.stages.len() as u32);
+        self.stages.iter_mut().for_each(|s| s.set_cutoff(corrected));
     }
 }
 
@@ -240,6 +261,29 @@ impl Biquad {
     /// Normalised coefficients `(b0, b1, b2, a1, a2)` with `a0 = 1`.
     pub fn coefficients(&self) -> (f64, f64, f64, f64, f64) {
         (self.b0, self.b1, self.b2, self.a1, self.a2)
+    }
+
+    /// Take the coefficients of `other` (same sample rate) and keep the state.
+    ///
+    /// # Panics
+    /// Panics if the sample rates differ.
+    pub fn retune(&mut self, other: &Biquad) {
+        assert!(
+            (self.fs - other.fs).abs() < 1e-9,
+            "retune needs the same sample rate"
+        );
+        self.b0 = other.b0;
+        self.b1 = other.b1;
+        self.b2 = other.b2;
+        self.a1 = other.a1;
+        self.a2 = other.a2;
+    }
+
+    /// Feed one sample and blend the filtered value with the input:
+    /// `weight · y + (1 − weight) · x` (the state always advances).
+    pub fn update_weighted(&mut self, x: f64, weight: f64) -> f64 {
+        let y = self.update(x);
+        weight * y + (1.0 - weight) * x
     }
 }
 
@@ -574,6 +618,46 @@ mod tests {
                     assert!(g <= 1.0 + 1e-9, "gain {g}");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn retuning_keeps_the_state() {
+        let mut a = Pt1::new(100.0, FS);
+        let mut b = Pt1::new(300.0, FS);
+        for i in 0..50 {
+            a.update(f64::from(i));
+            b.update(f64::from(i));
+        }
+        a.set_cutoff(300.0);
+        assert!((a.gain() - b.gain()).abs() < 1e-15);
+        assert!(
+            (a.update(50.0) - b.update(50.0)).abs() > 1e-9,
+            "states differ, so outputs do"
+        );
+        let mut p = Ptn::new(2, 100.0, FS);
+        p.set_cutoff(200.0);
+        assert!(
+            (p.response(200.0).norm() - Ptn::new(2, 200.0, FS).response(200.0).norm()).abs()
+                < 1e-15
+        );
+        let mut n = Biquad::notch(200.0, 150.0, FS);
+        n.update(1.0);
+        let before = n.coefficients();
+        n.retune(&Biquad::notch(300.0, 250.0, FS));
+        assert_ne!(n.coefficients(), before);
+        assert_eq!(
+            n.coefficients(),
+            Biquad::notch(300.0, 250.0, FS).coefficients()
+        );
+        // weight 0 passes the input through, weight 1 is the plain filter
+        let mut w0 = Biquad::lowpass(50.0, FS);
+        let mut w1 = Biquad::lowpass(50.0, FS);
+        let mut plain = Biquad::lowpass(50.0, FS);
+        for i in 0..20 {
+            let x = f64::from(i % 3);
+            assert_eq!(w0.update_weighted(x, 0.0), x);
+            assert_eq!(w1.update_weighted(x, 1.0), plain.update(x));
         }
     }
 
