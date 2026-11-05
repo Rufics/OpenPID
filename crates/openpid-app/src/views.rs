@@ -2071,6 +2071,157 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
 
 // ---------------------------------------------------------------------------
 
+/// Advice tab: the recommender's proposals with their evidence, and the
+/// Betaflight CLI commands that apply them.
+pub fn advice(app: &mut App, ui: &mut Ui) {
+    for slot in [Slot::A, Slot::B] {
+        slot_header(app, ui, slot);
+    }
+    ui.separator();
+    ui.horizontal_wrapped(|ui| {
+        let l = ui.label(tr("overshoot limit"));
+        ui.add(
+            egui::DragValue::new(&mut app.tools.recommend.overshoot_max_pct)
+                .speed(1.0)
+                .range(1.0..=100.0)
+                .suffix(" %"),
+        )
+        .labelled_by(l.id);
+        let l = ui.label(tr("D step"));
+        ui.add(
+            egui::DragValue::new(&mut app.tools.recommend.d_step_pct)
+                .speed(1.0)
+                .range(1.0..=50.0)
+                .suffix(" %"),
+        )
+        .labelled_by(l.id);
+        let l = ui.label(tr("peak prominence"));
+        ui.add(
+            egui::DragValue::new(&mut app.tools.recommend.peak_min_prominence_db)
+                .speed(0.5)
+                .range(1.0..=40.0)
+                .suffix(" dB"),
+        )
+        .labelled_by(l.id);
+        let l = ui.label(tr("LPF headroom"));
+        ui.add(
+            egui::DragValue::new(&mut app.tools.recommend.lpf_headroom_db)
+                .speed(0.5)
+                .range(1.0..=40.0)
+                .suffix(" dB"),
+        )
+        .labelled_by(l.id);
+    });
+    ui.label(
+        RichText::new(tr(
+            "Rules are hints with their evidence, not an autotune: apply one change, fly, compare the new log.",
+        ))
+        .color(MUTED),
+    );
+    let params = app.tools.recommend.clone();
+    let slots: Vec<Slot> = [Slot::A, Slot::B]
+        .into_iter()
+        .filter(|s| app.loaded(*s).is_some())
+        .collect();
+    let results: Vec<SlotResult> = slots
+        .iter()
+        .map(|slot| (*slot, app.result(*slot, Kind::Recommend(params.clone()))))
+        .collect();
+    let w = ui.available_width() / slots.len().max(1) as f32;
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        ui.horizontal_top(|ui| {
+            for (slot, result) in results {
+                ui.vertical(|ui| {
+                    ui.set_width(w - 8.0);
+                    match result {
+                        Some(Ok(o)) => {
+                            if let Output::Recommend(r) = o.as_ref() {
+                                advice_slot(app, ui, slot, r);
+                            }
+                        }
+                        Some(Err(e)) => show_error(ui, slot, &e),
+                        None => {
+                            ui.spinner();
+                        }
+                    }
+                });
+            }
+        });
+    });
+}
+
+fn advice_slot(app: &App, ui: &mut Ui, slot: Slot, r: &openpid_analysis::RecommendOutput) {
+    use openpid_core::Exporter as _;
+    ui.label(
+        RichText::new(format!("{} {}", tr("Slot"), slot.name()))
+            .color(slot_color(slot))
+            .strong(),
+    );
+    {
+        let ui = &mut *ui;
+        {
+            ui.heading(tr("Proposals"));
+            if r.proposals.is_empty() {
+                ui.label(
+                    RichText::new(tr("nothing to change: every rule is satisfied")).color(MUTED),
+                );
+            } else {
+                egui::Grid::new(("proposals", slot.name()))
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for p in &r.proposals {
+                            ui.label(RichText::new(&p.path).strong());
+                            ui.label(format!("{} -> {}", p.from.as_deref().unwrap_or("?"), p.to));
+                            ui.label(format!("{:.0} %", p.confidence * 100.0));
+                            ui.label(&p.rationale);
+                            ui.end_row();
+                        }
+                    });
+            }
+            ui.add_space(6.0);
+            ui.heading(tr("Evidence"));
+            egui::Grid::new(("findings", slot.name()))
+                .striped(true)
+                .show(ui, |ui| {
+                    for f in &r.findings {
+                        ui.label(if f.proposed { "*" } else { "-" });
+                        ui.label(
+                            RichText::new(format!(
+                                "{}{}",
+                                f.rule,
+                                f.axis.map_or(String::new(), |a| format!(" {}", a.name()))
+                            ))
+                            .color(MUTED),
+                        );
+                        ui.label(&f.text);
+                        ui.end_row();
+                    }
+                });
+            if !r.proposals.is_empty()
+                && let Some(session) = app.loaded(slot).and_then(Loaded::current)
+            {
+                ui.add_space(6.0);
+                let l = ui.label(tr("Betaflight CLI to apply (select all, copy):"));
+                let mut cli =
+                    match openpid_fmt_blackbox::BetaflightCli.export(session, &r.proposals) {
+                        Ok(text) => text,
+                        Err(e) => format!("# {e}"),
+                    };
+                ui.add(
+                    egui::TextEdit::multiline(&mut cli)
+                        .code_editor()
+                        .desired_rows(6)
+                        .desired_width(f32::INFINITY)
+                        .interactive(true),
+                )
+                .labelled_by(l.id);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+
 /// Settings tab: theme, touch mode and display units, saved on every change.
 pub fn settings(app: &mut App, ui: &mut Ui) {
     let mut changed = false;

@@ -144,6 +144,7 @@ fn tab_names_and_titles() {
         ("surface", Tab::Surface),
         ("filter", Tab::FilterSim),
         ("motors", Tab::MotorNoise),
+        ("advice", Tab::Advice),
         ("sliders", Tab::Sliders),
         ("diagnostics", Tab::Diagnostics),
         ("settings", Tab::Settings),
@@ -303,7 +304,7 @@ fn every_tab_runs_its_analysis_on_a_real_log() {
     let kinds: std::collections::BTreeSet<&str> = app(&h).cache.keys().map(|k| k.kind).collect();
     assert_eq!(
         kinds.into_iter().collect::<Vec<_>>(),
-        ["fsim", "motors", "psd", "step", "stft", "thr"],
+        ["advice", "fsim", "motors", "psd", "step", "stft", "thr"],
         "debug_mode GYRO_SCALED gives the 4.2.0 log a raw gyro, so Filter Sim and Motor noise run too"
     );
     select_tab(&mut h, Tab::Diagnostics);
@@ -1438,6 +1439,33 @@ fn time_heatmap_player_plays_scrubs_and_syncs_the_cursor() {
     let mut h2 = harness(Vec::new(), Some(Tab::TimeHeatmap));
     h2.step();
     assert!(h2.query_by_label("▶ Play").is_none());
+}
+
+// ------------------------------------------------------------------ advice
+
+#[test]
+fn advice_tab_lists_proposals_evidence_and_cli() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Advice));
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    assert!(h.query_by_label("Proposals").is_some());
+    assert!(h.query_by_label("Evidence").is_some());
+    // the 4.2.0 log overshoots on roll and pitch: D proposals with rationale and CLI text
+    assert!(has_label_containing(&h, "pid.roll.d"), "roll D proposed");
+    assert!(has_label_containing(&h, "overshoots"));
+    assert!(has_label_containing(&h, "Betaflight CLI to apply"));
+    let cached = app(&h).cache.len();
+    // a looser overshoot limit: recomputed, nothing left to propose on the PIDs
+    app_mut(&mut h).tools.recommend.overshoot_max_pct = 90.0;
+    h.step();
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    assert_eq!(app(&h).cache.len(), cached + 1, "new parameters, new job");
+    assert!(!has_label_containing(&h, "pid.roll.d"));
+    assert!(has_label_containing(&h, "within the 90 % limit"));
+    // the project round-trip keeps the thresholds
+    let project = app(&h).project(Path::new("advice.openpid.json"));
+    assert_eq!(project.recommend.overshoot_max_pct, 90.0);
 }
 
 // ------------------------------------------------------------------ export

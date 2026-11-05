@@ -18,6 +18,7 @@ pub fn output_json(o: &Output) -> Result<String, String> {
         Output::Stft(s) => serde_json::to_string_pretty(s),
         Output::FilterSim(f) => serde_json::to_string_pretty(f.as_ref()),
         Output::MotorNoise(m) => serde_json::to_string_pretty(m),
+        Output::Recommend(r) => serde_json::to_string_pretty(r),
     }
     .map_err(|e| e.to_string())
 }
@@ -64,6 +65,7 @@ impl App {
             Tab::TimeHeatmap => Kind::Stft(self.tools.stft.clone()),
             Tab::FilterSim => Kind::FilterSim(self.tools.filter_sim.clone()),
             Tab::MotorNoise => Kind::MotorNoise(self.tools.motor_noise.clone()),
+            Tab::Advice => Kind::Recommend(self.tools.recommend.clone()),
             Tab::LogViewer | Tab::Sliders | Tab::Diagnostics | Tab::Settings => return None,
         })
     }

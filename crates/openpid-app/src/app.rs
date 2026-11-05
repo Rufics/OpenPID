@@ -7,8 +7,8 @@ use crate::views;
 use crate::worker::{Done, Job, JobKey, Kind, Output, Slot, Worker};
 use eframe::egui;
 use openpid_analysis::{
-    Epoch, FilterSimParams, MotorNoiseParams, Project, ProjectSlot, PsdParams, StepParams,
-    StftParams, ThrottleHeatmapParams,
+    Epoch, FilterSimParams, MotorNoiseParams, Project, ProjectSlot, PsdParams, RecommendParams,
+    StepParams, StftParams, ThrottleHeatmapParams,
 };
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use std::collections::HashMap;
@@ -26,13 +26,15 @@ pub enum Tab {
     Surface,
     FilterSim,
     MotorNoise,
+    /// Rule-based proposals with their evidence.
+    Advice,
     Sliders,
     Diagnostics,
     Settings,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 11] = [
+    pub const ALL: [Tab; 12] = [
         Tab::LogViewer,
         Tab::Step,
         Tab::Spectrum,
@@ -41,6 +43,7 @@ impl Tab {
         Tab::Surface,
         Tab::FilterSim,
         Tab::MotorNoise,
+        Tab::Advice,
         Tab::Sliders,
         Tab::Diagnostics,
         Tab::Settings,
@@ -56,6 +59,7 @@ impl Tab {
             "surface" => Tab::Surface,
             "filter" => Tab::FilterSim,
             "motors" => Tab::MotorNoise,
+            "advice" => Tab::Advice,
             "sliders" => Tab::Sliders,
             "diagnostics" => Tab::Diagnostics,
             "settings" => Tab::Settings,
@@ -74,6 +78,7 @@ impl Tab {
             Tab::Surface => "surface",
             Tab::FilterSim => "filter",
             Tab::MotorNoise => "motors",
+            Tab::Advice => "advice",
             Tab::Sliders => "sliders",
             Tab::Diagnostics => "diagnostics",
             Tab::Settings => "settings",
@@ -90,6 +95,7 @@ impl Tab {
             Tab::Surface => tr("Surface 3D"),
             Tab::FilterSim => tr("Filter Sim"),
             Tab::MotorNoise => tr("Motor noise"),
+            Tab::Advice => tr("Advice"),
             Tab::Sliders => tr("PID sliders"),
             Tab::Diagnostics => tr("Diagnostics"),
             Tab::Settings => tr("Settings"),
@@ -139,6 +145,8 @@ pub struct Tools {
     pub filter_sim: FilterSimParams,
     /// Motor noise table parameters.
     pub motor_noise: MotorNoiseParams,
+    /// Advice tab thresholds.
+    pub recommend: RecommendParams,
     pub spectrum_channel: ChannelId,
     pub heatmap_channel: ChannelId,
     pub psd_db: bool,
@@ -162,6 +170,7 @@ impl Default for Tools {
             stft: StftParams::default(),
             filter_sim: FilterSimParams::default(),
             motor_noise: MotorNoiseParams::default(),
+            recommend: RecommendParams::default(),
             spectrum_channel: gyro.clone(),
             heatmap_channel: gyro.clone(),
             psd_db: true,
@@ -333,6 +342,7 @@ impl App {
             stft: t.stft.clone(),
             filter_sim: t.filter_sim.clone(),
             motor_noise: t.motor_noise.clone(),
+            recommend: t.recommend.clone(),
             spectrum_channel: t.spectrum_channel.clone(),
             heatmap_channel: t.heatmap_channel.clone(),
             psd_db: t.psd_db,
@@ -362,6 +372,7 @@ impl App {
             stft: p.stft.clone(),
             filter_sim: p.filter_sim.clone(),
             motor_noise: p.motor_noise.clone(),
+            recommend: p.recommend.clone(),
             spectrum_channel: p.spectrum_channel.clone(),
             heatmap_channel: p.heatmap_channel.clone(),
             psd_db: p.psd_db,
@@ -675,6 +686,7 @@ impl App {
             Tab::Surface => surface::surface(self, ui),
             Tab::FilterSim => views::filter_sim(self, ui),
             Tab::MotorNoise => views::motor_noise(self, ui),
+            Tab::Advice => views::advice(self, ui),
             Tab::Sliders => views::sliders(self, ui),
             Tab::Diagnostics => views::diagnostics(self, ui),
             Tab::Settings => views::settings(self, ui),

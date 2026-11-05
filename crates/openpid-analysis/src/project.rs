@@ -5,6 +5,7 @@
 //! The schema is versioned and every field has a default, so an older or
 //! newer `OpenPID` reads what it understands and ignores the rest.
 
+use crate::recommend::RecommendParams;
 use crate::{
     FilterSimParams, MotorNoiseParams, PsdParams, StepParams, StftParams, ThrottleHeatmapParams,
 };
@@ -67,6 +68,8 @@ pub struct Project {
     pub filter_sim: FilterSimParams,
     /// Motor noise parameters.
     pub motor_noise: MotorNoiseParams,
+    /// Advice (recommender) thresholds.
+    pub recommend: RecommendParams,
     /// Channel shown on the spectrum tab.
     pub spectrum_channel: ChannelId,
     /// Channel shown on the heatmap tabs.
@@ -99,6 +102,7 @@ impl Default for Project {
             stft: StftParams::default(),
             filter_sim: FilterSimParams::default(),
             motor_noise: MotorNoiseParams::default(),
+            recommend: RecommendParams::default(),
             spectrum_channel: gyro.clone(),
             heatmap_channel: gyro.clone(),
             psd_db: true,
