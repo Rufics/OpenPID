@@ -39,3 +39,25 @@ feature branch ──PR──▶ master ──release-plz──▶ PR "chore: re
 ## Кеш
 
 `Swatinem/rust-cache` кешує `~/.cargo` і `target/` за ключем `Cargo.lock` + toolchain окремо для job‑ів `check`, `test`, `coverage`, `build-<os>`; повторні запуски перезбирають лише змінені crate‑и.
+
+## Покинуті job‑и на macOS (нестача arm64‑runner‑ів)
+
+GitHub час від часу не виділяє `macos-15` (arm64) runner: job завершується як
+*abandoned* («The job was not acquired by Runner of type hosted even after
+multiple attempts»). `CI OK` рахує такий результат червоним — це свідомо (#9),
+щоб злиття не проходило з непротестованою платформою. Політика:
+
+1. **Нічого не пушити заради перезапуску** — ні порожніх комітів, ні
+   закриття/відкриття PR. Перезапуск: у Actions → run → *Re‑run failed jobs*,
+   або `gh run rerun <run-id> --failed` (потрібен `repo` scope). Перезапускаються
+   лише покинуті/впалі job‑и, зелені не рахуються заново.
+2. **Дві спроби, потім чекати.** Якщо після другого перезапуску runner так і не
+   з'явився, нестача глобальна — дивитись https://www.githubstatus.com і
+   повторити пізніше; CI не послаблюємо.
+3. **Автоматичний retry не додаємо.** `nick-fields/retry` чи аналог — нова
+   залежність у workflow (ADR‑0007), а повторний `cargo test` не допомагає,
+   коли проблема у виділенні машини, а не в тесті.
+4. **macOS‑артефакти двох архітектур.** `build (macos)` збирає arm64 на
+   `macos-15`, `build (macos-intel)` — x86_64 на `macos-15-intel` (інший пул
+   runner‑ів). Коли arm64‑пул порожній, реліз усе одно має macOS‑збірку, а
+   користувачі Intel‑Mac — свою.

@@ -24,6 +24,7 @@
 
 - Кожен GitHub Action вказується **повним SHA коміту** з тегом у коментарі (`uses: actions/checkout@3d3c42e… # v7.0.1`). Тег можна переписати, SHA — ні; Dependabot (`.github/dependabot.yml`, екосистема `github-actions`) оновлює SHA і коментар разом.
 - Runner‑и — лише датовані образи (`ubuntu-24.04`, `macos-15`, `macos-15-intel`, `windows-2025`), не `*-latest`: зміна образу — свідомий коміт, а не сюрприз від GitHub.
+- Покинуті через нестачу runner‑ів job‑и перезапускаються вручну (docs/RELEASING.md), без retry‑action: це нова залежність, яка не лікує причину. macOS збирається на обох пулах (`macos-15` arm64 і `macos-15-intel` x86_64), тож реліз не залежить від одного з них (#44).
 - Інструменти, які ставляться в CI, також із версією (`cargo-llvm-cov@0.9.1` через `taiki-e/install-action`; toolchain — `RUST_TOOLCHAIN`, той самий, що в `rust-toolchain.toml`).
 - Назви job‑ів у matrix не містять імені runner‑а (`test (linux)`, а не `test (ubuntu-24.04)`), щоб оновлення образу не ламало список обов'язкових перевірок у ruleset‑і.
 
