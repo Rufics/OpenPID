@@ -35,7 +35,7 @@ feature branch ──PR──▶ master ──release-plz──▶ PR "chore: re
                                                                                          Linux x86_64, macOS arm64/x86_64, Windows x86_64
 ```
 
-Версія єдина для всього workspace (`[workspace.package].version`), тег — `v<version>`, журнал — `CHANGELOG.md` з Conventional Commits. Публікації на crates.io немає (`publish = false`).
+Версія єдина для всього workspace (`[workspace.package].version`), тег — `v<version>`, журнал — `CHANGELOG.md` з Conventional Commits. Публікації на crates.io немає (`publish = false`). Тег і GitHub release (назва «OpenPID v<version>», опис — запис із CHANGELOG) створює лише крейт `openpid-cli`; для решти крейтів `git_tag_enable = false`, інакше кожен намагався б створити той самий тег і другий падав би з 422 (#113). Решта крейтів вважаються випущеними за цим спільним тегом.
 
 ## Артефакти CI
 
