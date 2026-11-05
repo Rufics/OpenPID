@@ -1709,6 +1709,7 @@ dependencies = [
  "egui_plot",
  "openpid-analysis",
  "openpid-core",
+ "openpid-dsp",
  "openpid-fmt-ardupilot",
  "openpid-fmt-blackbox",
  "openpid-fmt-csv",

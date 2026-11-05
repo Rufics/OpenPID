@@ -142,6 +142,7 @@ pub struct App {
     pub touch_applied: bool,
     pub status: String,
     pub viewer: views::ViewerState,
+    pub spectrum: views::SpectrumState,
     pub slider_state: views::SliderState,
     /// Persisted preferences (Settings tab).
     pub prefs: Prefs,
@@ -191,6 +192,7 @@ impl App {
             touch_applied: false,
             status: "Open a blackbox log (File → Open, or drop it here)".into(),
             viewer: views::ViewerState::default(),
+            spectrum: views::SpectrumState::default(),
             slider_state: views::SliderState::default(),
             prefs,
             prefs_path,
