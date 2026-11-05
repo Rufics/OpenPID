@@ -357,7 +357,9 @@ fn run_takes_the_log_and_parameters_from_a_project() {
     let (ok, _, err) = run(&["run", "step", "--project", project.to_str().unwrap()]);
     assert!(!ok && err.contains("newer"), "{err}");
     std::fs::remove_file(&project).ok();
+}
 
+#[test]
 fn rpm_command() {
     let l = log("betaflight-4.5.1-two-sessions.bbl");
     let f = l.to_str().unwrap();
