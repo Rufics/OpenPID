@@ -54,7 +54,7 @@ fn harness_with_prefs(files: Vec<PathBuf>, tab: Option<Tab>, prefs_path: Option<
     let mut init = Some((files, tab, prefs_path));
     Harness::builder()
         .with_size(egui::Vec2::new(1280.0, 800.0))
-        .with_accessibility_check(false)
+        .with_accessibility_check(true)
         .allow_missing_glyphs()
         .with_max_steps(500)
         .build_ui_state(
@@ -616,7 +616,7 @@ fn channel_filter_and_toggles_edit_the_channel_list() {
             .iter()
             .any(|c| c.key() == first)
     );
-    let filter = h.get_by_role(Role::TextInput);
+    let filter = h.get_by_role_and_label(Role::TextInput, "filter");
     filter.focus();
     filter.type_text("thr");
     h.step();
@@ -636,8 +636,8 @@ fn session_picker_switches_session_and_clears_epoch() {
         end_s: 0.5,
     });
     h.step();
-    // the combo's selected text is not its accessible name; the status bar also says "session N"
-    h.get_by_role(Role::ComboBox).click();
+    // the picker is named by its label; the status bar also says "session N"
+    h.get_by_role_and_label(Role::ComboBox, "session").click();
     h.run_steps(2);
     h.get_by_label_contains(&format!("session {other} ("))
         .click();
@@ -678,11 +678,10 @@ fn sliders_tab_edits_resets_and_prints_cli() {
         75.0
     );
     assert!(!has_label_containing(&h, "⟵ changed"));
-    let sliders: Vec<_> = h.get_all_by_role(Role::Slider).collect();
-    assert_eq!(sliders.len(), 12);
-    // the first slider is the mode (0..=2), the second the master multiplier
-    sliders[1].set_value_accesskit(150.0);
-    drop(sliders);
+    assert_eq!(h.get_all_by_role(Role::Slider).count(), 12);
+    // every slider is named by its label
+    h.get_by_role_and_label(Role::Slider, "Master multiplier")
+        .set_value_accesskit(150.0);
     h.step();
     assert_eq!(
         app(&h).slider_state.values["simplified_master_multiplier"],
