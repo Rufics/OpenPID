@@ -53,7 +53,7 @@ fn info_text_and_json() {
     assert!(out.contains("session 0") && out.contains("session 1"));
     assert!(out.contains("Betaflight 4.2.11") && out.contains("gyro.filtered.roll"));
     assert!(
-        out.contains("fitness  : [") && out.contains("[ok] rate"),
+        out.contains("fitness  : [") && out.contains("[!]  rate"),
         "{out}"
     );
     let (ok, out, _) = run(&["info", l.to_str().unwrap(), "--json", "--session", "1"]);
