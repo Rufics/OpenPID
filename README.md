@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/Rufics/OpenPID/actions/workflows/ci.yml/badge.svg)](https://github.com/Rufics/OpenPID/actions/workflows/ci.yml)
 
-Фаза 0 (фундамент) і фаза 1 (математика, аналізи, GUI, PID‑слайдери) реалізовані:
+Фази 0–3 плану (`docs/DESIGN.md` §12) реалізовані: фундамент, паритет з PIDtoolbox free і Pro, рекомендації з доказами; відкриті лише формати без зразків логів і доступ до пристрою (ADR‑0014):
 
 - `openpid-fmt-ardupilot` — декодер ArduPilot DataFlash (`.bin`), див. `docs/ARDUPILOT.md`.
 - `openpid-core` — доменна модель (`FlightSession`, `Channel`, `ChannelId`, `Series`, `Timebase`, `Settings`) і trait‑и розширення (`LogFormat`, `FirmwareProfile`, `Analysis`).
