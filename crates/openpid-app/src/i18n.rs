@@ -83,6 +83,7 @@ static UA: &[(&str, &str)] = &[
         "Click or tap the plot to place the cursor, then set the epoch from it.",
         "Клацніть або торкніться графіка, щоб поставити курсор, і виставте епоху з нього.",
     ),
+    ("Copy", "Копіювати"),
     ("D step", "крок D"),
     ("Dark", "Темна"),
     ("Diagnostics", "Діагностика"),
@@ -100,6 +101,7 @@ static UA: &[(&str, &str)] = &[
         "Load a Betaflight 4.3+ log into slot A to use the PID sliders.",
         "Завантажте лог Betaflight 4.3+ у слот A, щоб користуватися PID-слайдерами.",
     ),
+    ("Log check", "Перевірка логу"),
     ("Log viewer", "Перегляд логу"),
     ("Motor noise", "Шум моторів"),
     (
@@ -149,6 +151,7 @@ static UA: &[(&str, &str)] = &[
     ("channel", "канал"),
     ("close", "закрити"),
     ("colour max (0 = auto)", "стеля кольору (0 = авто)"),
+    ("copy", "скопіювати"),
     (
         "corrupt / desync / skipped bytes",
         "пошкоджені / десинхр. / пропущені байти",

@@ -131,6 +131,55 @@ pub struct StepOutput {
     pub histogram: Grid2D,
 }
 
+/// How many step windows `axis` would contribute with `p`: `(used, total)`.
+/// The same selection as [`StepAnalysis::run`] (peak input at or above
+/// `min_input`, at least 95 % valid samples) without the deconvolution, so
+/// a fitness check can judge the stick activity cheaply.
+pub fn count_windows(
+    ctx: &AnalysisCtx<'_>,
+    axis: Axis,
+    p: &StepParams,
+) -> Result<(usize, usize), AnalysisError> {
+    let sp = prepare(
+        ctx,
+        &ChannelId::Setpoint { axis },
+        Some(&Unit::DegreesPerSecond),
+    )?;
+    let gy = prepare(
+        ctx,
+        &ChannelId::Gyro {
+            axis,
+            stage: GyroStage::Filtered,
+        },
+        Some(&Unit::DegreesPerSecond),
+    )?;
+    let fs = sp.fs;
+    let win = ((p.window_s * fs).round() as usize).max(1);
+    let hop = (win / p.superpos.max(1)).max(1);
+    let input = sp.filled();
+    let (mut used, mut total) = (0, 0);
+    let mut start = 0;
+    while start + win <= input.len() {
+        total += 1;
+        let peak = input[start..start + win]
+            .iter()
+            .fold(0.0f64, |m, v| m.max(v.abs()));
+        let valid_in = sp.data.valid[start..start + win]
+            .iter()
+            .filter(|v| **v)
+            .count();
+        let valid_out = gy.data.valid[start..start + win]
+            .iter()
+            .filter(|v| **v)
+            .count();
+        if peak >= p.min_input && valid_in * 20 >= win * 19 && valid_out * 20 >= win * 19 {
+            used += 1;
+        }
+        start += hop;
+    }
+    Ok((used, total))
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 /// Step response by deconvolution of setpoint → gyro.
 pub struct StepAnalysis;

@@ -319,3 +319,37 @@ fn rpm_estimate_tracks_the_logged_motor_speed() {
         ));
     }
 }
+
+#[test]
+fn fitness_of_the_real_logs() {
+    use openpid_analysis::{FitnessLevel, check_session};
+    // a long flight with raw gyro, eRPM and plenty of stick input
+    let log = load("betaflight-2025.12.2-btfl_027.bbl");
+    let f = check_session(&log.sessions[0]);
+    assert_eq!(f.overall, FitnessLevel::Ok, "{f:?}");
+    for id in [
+        "rate", "duration", "raw_gyro", "erpm", "frames", "gaps", "sticks",
+    ] {
+        assert_eq!(f.level(id), FitnessLevel::Ok, "{id}: {:?}", f.check(id));
+    }
+    // 4.2.0: raw gyro through debug_mode GYRO_SCALED, no eRPM
+    let log = load("betaflight-4.2.0.BFL");
+    let f = check_session(&log.sessions[0]);
+    assert_eq!(f.level("raw_gyro"), FitnessLevel::Ok);
+    let erpm = f.check("erpm").unwrap();
+    assert_eq!(erpm.level, FitnessLevel::Warn);
+    assert!(erpm.fix.as_deref().unwrap().contains("dshot_telemetry"));
+    assert_eq!(
+        f.level("sticks"),
+        FitnessLevel::Ok,
+        "{:?}",
+        f.check("sticks")
+    );
+    // 4.5.1 session 0: three seconds of arming, nothing to analyse
+    let log = load("betaflight-4.5.1-two-sessions.bbl");
+    let f = check_session(&log.sessions[0]);
+    assert_eq!(f.overall, FitnessLevel::Fail);
+    assert_eq!(f.level("duration"), FitnessLevel::Fail);
+    assert_eq!(f.level("sticks"), FitnessLevel::Fail);
+    assert!(f.check("duration").unwrap().fix.is_some());
+}

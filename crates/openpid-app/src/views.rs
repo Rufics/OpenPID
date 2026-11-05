@@ -11,7 +11,7 @@ use egui_plot::{
     Bar, BarChart, HLine, Heatmap, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, Text,
     VLine,
 };
-use openpid_analysis::{Epoch, FilterOverrides, RpmOverlay};
+use openpid_analysis::{Epoch, FilterOverrides, Fitness, FitnessLevel, RpmOverlay};
 use openpid_core::analysis::Grid2D;
 use openpid_core::settings::LowpassKind;
 use openpid_core::settings::{PerAxis, PidGains};
@@ -304,6 +304,79 @@ pub fn decimate(
     out
 }
 
+/// Colour of a fitness level (green / yellow / red, colour-blind safe).
+fn level_color(level: FitnessLevel) -> Color32 {
+    match level {
+        FitnessLevel::Ok => Color32::from_rgb(0, 158, 115),
+        FitnessLevel::Warn => Color32::from_rgb(240, 228, 66),
+        FitnessLevel::Fail => Color32::from_rgb(213, 94, 0),
+    }
+}
+
+/// Fitness badges in a slot row: the overall marker and raw / rpm / sticks
+/// (docs/design/log-fitness, R5); hovering lists every check.
+fn fitness_badges(ui: &mut Ui, f: &Fitness) {
+    let summary: String = f
+        .checks
+        .iter()
+        .map(|c| format!("{} {}: {}", c.level.marker(), c.title, c.detail))
+        .collect::<Vec<_>>()
+        .join("\n");
+    ui.label(RichText::new(f.overall.marker()).color(level_color(f.overall)))
+        .on_hover_text(summary.clone());
+    for id in ["raw_gyro", "erpm", "sticks"] {
+        if let Some(c) = f.check(id) {
+            ui.label(
+                RichText::new(format!("{} {}", c.title, c.level.marker()))
+                    .color(level_color(c.level)),
+            )
+            .on_hover_text(match &c.fix {
+                Some(fix) => format!("{}\n{fix}", c.detail),
+                None => c.detail.clone(),
+            });
+        }
+    }
+}
+
+/// The log check's fix for a missing unfiltered gyro, for the tabs that need it.
+fn raw_gyro_fix(app: &App, slot: Slot) -> String {
+    app.loaded(slot)
+        .and_then(|l| l.fitness())
+        .and_then(|f| f.check("raw_gyro"))
+        .and_then(|c| c.fix.clone())
+        .unwrap_or_else(|| "log the unfiltered gyro".to_string())
+}
+
+/// The "Log check" card on Diagnostics: every check with its fix to copy.
+fn fitness_card(ui: &mut Ui, slot: Slot, f: &Fitness) {
+    ui.heading(format!("{} {}", tr("Log check"), f.overall.marker()));
+    egui::Grid::new(("fitness", slot.name()))
+        .striped(true)
+        .show(ui, |ui| {
+            for c in &f.checks {
+                ui.label(RichText::new(c.level.marker()).color(level_color(c.level)));
+                ui.label(RichText::new(&c.title).strong());
+                ui.label(&c.detail);
+                if let Some(fix) = &c.fix {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(fix).monospace());
+                        if ui
+                            .small_button(tr("Copy"))
+                            .on_hover_text(format!("{} {}", tr("copy"), c.title))
+                            .clicked()
+                        {
+                            ui.ctx().copy_text(fix.clone());
+                        }
+                    });
+                } else {
+                    ui.label("");
+                }
+                ui.end_row();
+            }
+        });
+    ui.add_space(6.0);
+}
+
 /// What the chip buttons of a slot header asked for.
 enum SlotAction {
     Visible(bool),
@@ -412,6 +485,9 @@ pub(crate) fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
                         s.timebase.duration_s(),
                         s.timebase.sample_rate_hz()
                     ));
+                    if let Some(f) = loaded.fitness() {
+                        fitness_badges(ui, f);
+                    }
                     if s.diagnostics.corrupt_frames > 0 {
                         ui.colored_label(
                             Color32::YELLOW,
@@ -2096,6 +2172,9 @@ pub fn diagnostics(app: &mut App, ui: &mut Ui) {
             let Some(l) = app.loaded(slot) else { continue };
             let Some(s) = l.current() else { continue };
             ui.heading(format!("Slot {} — {}", slot.name(), s.firmware.revision));
+            if let Some(f) = l.fitness() {
+                fitness_card(ui, slot, f);
+            }
             egui::Grid::new(("diag", slot.name()))
                 .striped(true)
                 .show(ui, |ui| {
@@ -2875,8 +2954,9 @@ pub fn filter_sim(app: &mut App, ui: &mut Ui) {
         if app.loaded(slot).is_some() && !has_raw {
             ui.label(
                 RichText::new(format!(
-                    "{}: no unfiltered gyro in this log (Betaflight: log gyroUnfilt or set debug_mode GYRO_SCALED; ArduPilot: enable the batch sampler)",
-                    slot.name()
+                    "{}: no unfiltered gyro in this log; {}",
+                    slot.name(),
+                    raw_gyro_fix(app, slot)
                 ))
                 .color(MUTED),
             );
@@ -3068,8 +3148,9 @@ pub fn motor_noise(app: &mut App, ui: &mut Ui) {
         if app.loaded(slot).is_some() && !has_raw {
             ui.label(
                 RichText::new(format!(
-                    "{}: no unfiltered gyro in this log; the filtered one has the motor peaks removed",
-                    slot.name()
+                    "{}: no unfiltered gyro in this log (the filtered one has the motor peaks removed); {}",
+                    slot.name(),
+                    raw_gyro_fix(app, slot)
                 ))
                 .color(MUTED),
             );

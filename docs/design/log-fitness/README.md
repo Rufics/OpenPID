@@ -73,3 +73,17 @@ level: Level (Ok | Warn | Fail), title, detail, fix: Option<String> }`. Пере
 ## Розмір
 
 S (≈ 1–1½ дня).
+
+## Реалізація (05.11.2026, #100)
+
+- `openpid-analysis::fitness::check_session` + `step::count_windows`; результат
+  у `Loaded.fitness: Vec<Fitness>` (по сесії), рахується у worker при відкритті.
+- GUI: бейджі в рядку слота (`raw [ok]`, `rpm [!]`, `sticks [x]` + загальний маркер,
+  hover — пояснення і fix), картка «Log check» на Diagnostics із кнопкою Copy,
+  Filter Sim і Motor noise показують fix з перевірки `raw_gyro`.
+- CLI: `openpid info` друкує блок `fitness`, `--json` додає `fitness` до сесії.
+- Відхилення від таблиці порогів після звірки з реальними логами:
+  `rate` Ok від **950 Hz** (1 kHz із джитером логує 997 Hz); `throttle` рахує
+  покриття з вікном ±3 % газу, як у heatmap, і Ok від **30 %**, Warn від 10 %
+  (40-секундний freestyle-лог покриває ~30 % діапазону, не 50 %); кружки замінено
+  на ASCII-маркери `[ok] [!] [x]` (шрифт egui не має потрібних гліфів).

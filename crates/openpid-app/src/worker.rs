@@ -1,11 +1,11 @@
 //! Background thread: file loading and analyses never block the UI.
 
 use openpid_analysis::{
-    Analysis, AnalysisCtx, Epoch, FilterSimAnalysis, FilterSimOutput, FilterSimParams,
+    Analysis, AnalysisCtx, Epoch, FilterSimAnalysis, FilterSimOutput, FilterSimParams, Fitness,
     MotorNoiseAnalysis, MotorNoiseOutput, MotorNoiseParams, PsdAnalysis, PsdOutput, PsdParams,
     Recommend, RecommendOutput, RecommendParams, StepAnalysis, StepOutput, StepParams,
     StftAnalysis, StftOutput, StftParams, ThrottleHeatmap, ThrottleHeatmapOutput,
-    ThrottleHeatmapParams,
+    ThrottleHeatmapParams, check_session,
 };
 use openpid_core::{FlightSession, FormatRegistry, LogFile, OpenOptions};
 use std::hash::{Hash, Hasher};
@@ -126,6 +126,8 @@ pub enum Done {
         slot: Slot,
         path: PathBuf,
         result: Result<Box<LogFile>, String>,
+        /// One entry per session of the file.
+        fitness: Vec<Fitness>,
     },
     Analyzed {
         key: JobKey,
@@ -190,7 +192,17 @@ impl Worker {
                     let done = match job {
                         Job::Load { slot, path } => {
                             let result = load(&path).map(Box::new);
-                            Done::Loaded { slot, path, result }
+                            // what the log can show, once per session (docs/design/log-fitness)
+                            let fitness = result.as_ref().map_or_else(
+                                |_| Vec::new(),
+                                |f| f.sessions.iter().map(check_session).collect(),
+                            );
+                            Done::Loaded {
+                                slot,
+                                path,
+                                result,
+                                fitness,
+                            }
                         }
                         Job::Analyze {
                             key,
