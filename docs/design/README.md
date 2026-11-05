@@ -20,17 +20,17 @@
 | Масштабування / touch | 1 | 1280×800 і touch-режим, 44 pt цілі |
 | Вартість | 1 | розмір реалізації (XS ≈ ½ дня … L ≈ 5 днів) |
 
-## Спринт UX-1 (milestone v1.1)
+## Спринт UX-1 (milestone v1.1, епік [#98](https://github.com/Rufics/OpenPID/issues/98))
 
 | Тема | Документ | Issue |
 |---|---|---|
-| N логів замість A/B | [multi-slot](multi-slot/README.md) | — |
-| Перший запуск: тур і стартовий екран | [onboarding-tour](onboarding-tour/README.md) | — |
-| Вікно аналізу для кожного логу | [analysis-window](analysis-window/README.md) | — |
-| Чи придатний лог | [log-fitness](log-fitness/README.md) | — |
-| Колірна шкала heatmap | [colour-scale](colour-scale/README.md) | — |
-| Step response: вердикти | [step-verdicts](step-verdicts/README.md) | — |
-| Гарячі клавіші | [hotkeys](hotkeys/README.md) | — |
+| N логів замість A/B | [multi-slot](multi-slot/README.md) | [#105](https://github.com/Rufics/OpenPID/issues/105) |
+| Перший запуск: тур і стартовий екран | [onboarding-tour](onboarding-tour/README.md) | [#104](https://github.com/Rufics/OpenPID/issues/104) |
+| Вікно аналізу для кожного логу | [analysis-window](analysis-window/README.md) | [#102](https://github.com/Rufics/OpenPID/issues/102) |
+| Чи придатний лог | [log-fitness](log-fitness/README.md) | [#100](https://github.com/Rufics/OpenPID/issues/100) |
+| Колірна шкала heatmap | [colour-scale](colour-scale/README.md) | [#99](https://github.com/Rufics/OpenPID/issues/99) |
+| Step response: вердикти | [step-verdicts](step-verdicts/README.md) | [#103](https://github.com/Rufics/OpenPID/issues/103) |
+| Гарячі клавіші | [hotkeys](hotkeys/README.md) | [#101](https://github.com/Rufics/OpenPID/issues/101) |
 
 Спільні правила для всіх тем спринту:
 
