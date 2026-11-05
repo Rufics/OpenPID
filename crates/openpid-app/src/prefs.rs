@@ -1,0 +1,198 @@
+//! User preferences that survive restarts: theme, touch mode, display units.
+//!
+//! Stored as JSON in the platform configuration directory
+//! (`$XDG_CONFIG_HOME/openpid` or `~/.config/openpid` on Linux,
+//! `~/Library/Application Support/openpid` on macOS, `%APPDATA%\openpid` on
+//! Windows), or wherever `OPENPID_CONFIG_DIR` points. Unknown fields are
+//! ignored and missing ones take their defaults, so older and newer versions
+//! can share the file.
+
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+
+/// Colour theme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Theme {
+    /// Dark (default, like `PIDtoolbox`).
+    #[default]
+    Dark,
+    /// Light.
+    Light,
+}
+
+/// Unit for angular rates in the log viewer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RateUnit {
+    /// Degrees per second (what the firmware logs).
+    #[default]
+    DegPerS,
+    /// Radians per second.
+    RadPerS,
+}
+
+impl RateUnit {
+    /// Multiplier from deg/s and the symbol to show.
+    pub fn scale_deg_per_s(self) -> (f64, &'static str) {
+        match self {
+            RateUnit::DegPerS => (1.0, "deg/s"),
+            RateUnit::RadPerS => (std::f64::consts::PI / 180.0, "rad/s"),
+        }
+    }
+}
+
+/// Unit for accelerations in the log viewer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AccUnit {
+    /// Standard gravity.
+    #[default]
+    G,
+    /// Metres per second squared.
+    MPerS2,
+}
+
+impl AccUnit {
+    /// Multiplier from g and the symbol to show.
+    pub fn scale_g(self) -> (f64, &'static str) {
+        match self {
+            AccUnit::G => (1.0, "g"),
+            AccUnit::MPerS2 => (9.806_65, "m/s²"),
+        }
+    }
+}
+
+/// Everything the Settings tab edits.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Prefs {
+    /// Colour theme.
+    pub theme: Theme,
+    /// Start in touch mode (larger controls, touch gestures).
+    pub touch_mode: bool,
+    /// Angular-rate unit in the log viewer.
+    pub rate_unit: RateUnit,
+    /// Acceleration unit in the log viewer.
+    pub acc_unit: AccUnit,
+}
+
+impl Prefs {
+    /// Default file: `<config dir>/openpid/prefs.json`.
+    pub fn default_path() -> Option<PathBuf> {
+        let var = |k: &str| std::env::var_os(k).map(PathBuf::from);
+        Self::path_from(
+            var("OPENPID_CONFIG_DIR"),
+            var("APPDATA"),
+            var("HOME"),
+            var("XDG_CONFIG_HOME"),
+        )
+    }
+
+    /// `default_path` on explicit environment values (pure, for the tests).
+    fn path_from(
+        override_dir: Option<PathBuf>,
+        appdata: Option<PathBuf>,
+        home: Option<PathBuf>,
+        xdg_config_home: Option<PathBuf>,
+    ) -> Option<PathBuf> {
+        if let Some(dir) = override_dir {
+            return Some(dir.join("prefs.json"));
+        }
+        let base = if cfg!(target_os = "windows") {
+            appdata
+        } else if cfg!(target_os = "macos") {
+            home.map(|h| h.join("Library/Application Support"))
+        } else {
+            xdg_config_home.or_else(|| home.map(|h| h.join(".config")))
+        }?;
+        Some(base.join("openpid").join("prefs.json"))
+    }
+
+    /// Load from `path`; a missing or unreadable file gives the defaults.
+    pub fn load(path: &Path) -> Prefs {
+        std::fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default()
+    }
+
+    /// Write to `path`, creating the directory.
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
+        std::fs::write(path, json)
+    }
+
+    /// egui visuals for the theme.
+    pub fn visuals(&self) -> eframe::egui::Visuals {
+        match self.theme {
+            Theme::Dark => eframe::egui::Visuals::dark(),
+            Theme::Light => eframe::egui::Visuals::light(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trips_and_tolerates_unknown_fields() {
+        let dir = std::env::temp_dir().join(format!("openpid-prefs-{}", std::process::id()));
+        let path = dir.join("nested").join("prefs.json");
+        assert_eq!(
+            Prefs::load(&path),
+            Prefs::default(),
+            "missing file = defaults"
+        );
+        let p = Prefs {
+            theme: Theme::Light,
+            touch_mode: true,
+            rate_unit: RateUnit::RadPerS,
+            acc_unit: AccUnit::MPerS2,
+        };
+        p.save(&path).unwrap();
+        assert_eq!(Prefs::load(&path), p);
+        std::fs::write(&path, r#"{"theme":"light","future_field":42}"#).unwrap();
+        let loaded = Prefs::load(&path);
+        assert_eq!(loaded.theme, Theme::Light);
+        assert_eq!(loaded.rate_unit, RateUnit::DegPerS);
+        std::fs::write(&path, b"not json").unwrap();
+        assert_eq!(Prefs::load(&path), Prefs::default(), "garbage = defaults");
+        assert!(!p.visuals().dark_mode);
+        assert!(Prefs::default().visuals().dark_mode);
+        assert_eq!(RateUnit::RadPerS.scale_deg_per_s().1, "rad/s");
+        assert!((AccUnit::MPerS2.scale_g().0 - 9.806_65).abs() < 1e-12);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn default_path_honours_the_override() {
+        let home = PathBuf::from("/home/pilot");
+        let all = |o: Option<&str>| {
+            Prefs::path_from(
+                o.map(PathBuf::from),
+                Some(home.join("appdata")),
+                Some(home.clone()),
+                Some(home.join("xdg")),
+            )
+        };
+        assert_eq!(
+            all(Some("/etc/openpid")),
+            Some(PathBuf::from("/etc/openpid/prefs.json"))
+        );
+        let p = all(None).expect("a base directory exists");
+        assert!(p.starts_with(&home), "{}", p.display());
+        assert!(p.ends_with("openpid/prefs.json") || p.ends_with("openpid\\prefs.json"));
+        assert_eq!(
+            Prefs::path_from(None, None, None, None),
+            None,
+            "no home, no file"
+        );
+        // the real one only needs some home directory
+        assert!(Prefs::default_path().is_none_or(|p| p.ends_with("prefs.json")));
+    }
+}

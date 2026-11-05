@@ -1714,6 +1714,8 @@ dependencies = [
  "openpid-fmt-blackbox",
  "openpid-fmt-csv",
  "rfd",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

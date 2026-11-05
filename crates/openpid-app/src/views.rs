@@ -3,6 +3,7 @@
 
 use crate::app::{App, SlotState};
 use crate::colormap::{ACCENT, MUTED, SLOT_A, SLOT_B};
+use crate::prefs::{AccUnit, Prefs, RateUnit, Theme};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{
@@ -11,6 +12,7 @@ use egui_plot::{
 use openpid_analysis::Epoch;
 use openpid_core::analysis::Grid2D;
 use openpid_core::settings::{PerAxis, PidGains};
+use openpid_core::units::Unit;
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use openpid_dsp::Peak;
 use std::sync::Arc;
@@ -481,6 +483,22 @@ fn viewer_cursor_controls(app: &mut App, ui: &mut Ui) {
     });
 }
 
+/// Scale factor and symbol for showing a channel in the preferred display units
+/// (angular rates and accelerations; everything else is shown as logged).
+pub fn display_unit(unit: &Unit, prefs: &Prefs) -> (f64, String) {
+    match unit {
+        Unit::DegreesPerSecond => {
+            let (k, sym) = prefs.rate_unit.scale_deg_per_s();
+            (k, sym.to_string())
+        }
+        Unit::Gs => {
+            let (k, sym) = prefs.acc_unit.scale_g();
+            (k, sym.to_string())
+        }
+        other => (1.0, other.to_string()),
+    }
+}
+
 /// Draws one slot's selected channels (decimated to the plot width) and its epoch lines.
 fn viewer_plot_slot(
     pu: &mut egui_plot::PlotUi<'_>,
@@ -501,12 +519,18 @@ fn viewer_plot_slot(
         .collect();
     for (ci, id) in channels.iter().enumerate() {
         let Some(c) = s.channel(id) else { continue };
-        let pts = decimate(&xs, c.data.values(), |i| c.data.is_valid(i), px * 2);
+        let (scale, symbol) = display_unit(&c.unit, &app.prefs);
+        let mut pts = decimate(&xs, c.data.values(), |i| c.data.is_valid(i), px * 2);
+        if scale != 1.0 {
+            for p in &mut pts {
+                p[1] *= scale;
+            }
+        }
         let hue = (ci as f32 / n_lines + if slot == Slot::B { 0.5 } else { 0.0 }) % 1.0;
         let color: Color32 = egui::ecolor::Hsva::new(hue, 0.7, 0.95, 1.0).into();
         pu.line(
             Line::new(
-                format!("{} {} ({})", slot.name(), id.key(), c.unit),
+                format!("{} {} ({symbol})", slot.name(), id.key()),
                 PlotPoints::from(pts),
             )
             .color(color)
@@ -1356,6 +1380,73 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
             .desired_width(f32::INFINITY)
             .interactive(true),
     );
+}
+
+// ---------------------------------------------------------------------------
+
+/// Settings tab: theme, touch mode and display units, saved on every change.
+pub fn settings(app: &mut App, ui: &mut Ui) {
+    let mut changed = false;
+    ui.heading("Appearance");
+    ui.horizontal(|ui| {
+        ui.label("Theme");
+        changed |= ui
+            .radio_value(&mut app.prefs.theme, Theme::Dark, "Dark")
+            .changed();
+        changed |= ui
+            .radio_value(&mut app.prefs.theme, Theme::Light, "Light")
+            .changed();
+    });
+    if ui
+        .checkbox(
+            &mut app.prefs.touch_mode,
+            "Touch mode (larger controls, touch gestures)",
+        )
+        .changed()
+    {
+        app.touch_mode = app.prefs.touch_mode;
+        changed = true;
+    }
+    ui.add_space(8.0);
+    ui.heading("Units");
+    ui.horizontal(|ui| {
+        ui.label("Angular rate");
+        changed |= ui
+            .radio_value(&mut app.prefs.rate_unit, RateUnit::DegPerS, "deg/s")
+            .changed();
+        changed |= ui
+            .radio_value(&mut app.prefs.rate_unit, RateUnit::RadPerS, "rad/s")
+            .changed();
+    });
+    ui.horizontal(|ui| {
+        ui.label("Acceleration");
+        changed |= ui
+            .radio_value(&mut app.prefs.acc_unit, AccUnit::G, "g")
+            .changed();
+        changed |= ui
+            .radio_value(&mut app.prefs.acc_unit, AccUnit::MPerS2, "m/s²")
+            .changed();
+    });
+    ui.label(
+        RichText::new("Units apply to the log viewer traces; analyses stay in deg/s.").color(MUTED),
+    );
+    ui.add_space(8.0);
+    if ui.button("Reset to defaults").clicked() {
+        app.prefs = Prefs::default();
+        app.touch_mode = app.prefs.touch_mode;
+        changed = true;
+    }
+    ui.add_space(8.0);
+    match &app.prefs_path {
+        Some(p) => ui.label(RichText::new(format!("Saved in {}", p.display())).color(MUTED)),
+        None => ui.label(
+            RichText::new("No configuration directory: settings last until the app closes.")
+                .color(MUTED),
+        ),
+    };
+    if changed {
+        app.save_prefs();
+    }
 }
 
 #[cfg(test)]

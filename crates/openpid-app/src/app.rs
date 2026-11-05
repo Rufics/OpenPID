@@ -1,5 +1,6 @@
 //! Application state and the top-level frame.
 
+use crate::prefs::{Prefs, Theme};
 use crate::views;
 use crate::worker::{Done, Job, JobKey, Kind, Output, Slot, Worker};
 use eframe::egui;
@@ -18,10 +19,11 @@ pub enum Tab {
     TimeHeatmap,
     Sliders,
     Diagnostics,
+    Settings,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 7] = [
+    pub const ALL: [Tab; 8] = [
         Tab::LogViewer,
         Tab::Step,
         Tab::Spectrum,
@@ -29,6 +31,7 @@ impl Tab {
         Tab::TimeHeatmap,
         Tab::Sliders,
         Tab::Diagnostics,
+        Tab::Settings,
     ];
 
     pub fn from_name(name: &str) -> Option<Tab> {
@@ -40,6 +43,7 @@ impl Tab {
             "time" => Tab::TimeHeatmap,
             "sliders" => Tab::Sliders,
             "diagnostics" => Tab::Diagnostics,
+            "settings" => Tab::Settings,
             _ => return None,
         })
     }
@@ -53,6 +57,7 @@ impl Tab {
             Tab::TimeHeatmap => "Freq × time",
             Tab::Sliders => "PID sliders",
             Tab::Diagnostics => "Diagnostics",
+            Tab::Settings => "Settings",
         }
     }
 }
@@ -139,6 +144,12 @@ pub struct App {
     pub viewer: views::ViewerState,
     pub spectrum: views::SpectrumState,
     pub slider_state: views::SliderState,
+    /// Persisted preferences (Settings tab).
+    pub prefs: Prefs,
+    /// Where `prefs` are saved; `None` = no config directory, keep them for the session.
+    pub prefs_path: Option<PathBuf>,
+    /// Theme the egui visuals currently follow.
+    theme_applied: Option<Theme>,
 }
 
 impl std::fmt::Debug for App {
@@ -157,7 +168,18 @@ impl App {
         open_on_start: Vec<PathBuf>,
         tab: Option<Tab>,
     ) -> Self {
-        ctx.set_visuals(egui::Visuals::dark());
+        Self::with_prefs_path(ctx, open_on_start, tab, Prefs::default_path())
+    }
+
+    /// `with_context` with the preferences file given explicitly (`None` = do
+    /// not persist).
+    pub fn with_prefs_path(
+        ctx: &egui::Context,
+        open_on_start: Vec<PathBuf>,
+        tab: Option<Tab>,
+        prefs_path: Option<PathBuf>,
+    ) -> Self {
+        let prefs = prefs_path.as_deref().map(Prefs::load).unwrap_or_default();
         let ctx = ctx.clone();
         let worker = Worker::spawn(move || ctx.request_repaint());
         let mut app = App {
@@ -166,17 +188,35 @@ impl App {
             cache: HashMap::new(),
             tab: tab.unwrap_or(Tab::LogViewer),
             tools: Tools::default(),
-            touch_mode: false,
+            touch_mode: prefs.touch_mode,
             touch_applied: false,
             status: "Open a blackbox log (File → Open, or drop it here)".into(),
             viewer: views::ViewerState::default(),
             spectrum: views::SpectrumState::default(),
             slider_state: views::SliderState::default(),
+            prefs,
+            prefs_path,
+            theme_applied: None,
         };
         for (i, p) in open_on_start.into_iter().take(2).enumerate() {
             app.open(if i == 0 { Slot::A } else { Slot::B }, p);
         }
         app
+    }
+
+    /// Writes the preferences to `prefs_path`; a failure goes to the status bar.
+    pub fn save_prefs(&mut self) {
+        let Some(path) = &self.prefs_path else { return };
+        if let Err(e) = self.prefs.save(path) {
+            self.status = format!("cannot save {}: {e}", path.display());
+        }
+    }
+
+    fn apply_theme(&mut self, ctx: &egui::Context) {
+        if self.theme_applied != Some(self.prefs.theme) {
+            self.theme_applied = Some(self.prefs.theme);
+            ctx.set_visuals(self.prefs.visuals());
+        }
     }
 
     pub fn open(&mut self, slot: Slot, path: PathBuf) {
@@ -368,6 +408,7 @@ impl App {
         if !self.touch_mode && ctx.input(egui::InputState::any_touches) {
             self.touch_mode = true;
         }
+        self.apply_theme(&ctx);
         self.apply_touch_mode(&ctx);
         self.drain_worker();
         self.handle_drops(&ctx);
@@ -381,6 +422,7 @@ impl App {
             Tab::TimeHeatmap => views::time_heatmap(self, ui),
             Tab::Sliders => views::sliders(self, ui),
             Tab::Diagnostics => views::diagnostics(self, ui),
+            Tab::Settings => views::settings(self, ui),
         });
     }
 }

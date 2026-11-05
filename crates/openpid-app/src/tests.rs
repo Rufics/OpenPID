@@ -36,7 +36,12 @@ const LOG_4_5: &str = concat!(
 type H = Harness<'static, Option<App>>;
 
 fn harness(files: Vec<PathBuf>, tab: Option<Tab>) -> H {
-    let mut init = Some((files, tab));
+    harness_with_prefs(files, tab, None)
+}
+
+/// A harness whose app persists its preferences to `prefs_path` (`None` = in memory).
+fn harness_with_prefs(files: Vec<PathBuf>, tab: Option<Tab>, prefs_path: Option<PathBuf>) -> H {
+    let mut init = Some((files, tab, prefs_path));
     Harness::builder()
         .with_size(egui::Vec2::new(1280.0, 800.0))
         .with_accessibility_check(false)
@@ -45,8 +50,8 @@ fn harness(files: Vec<PathBuf>, tab: Option<Tab>) -> H {
         .build_ui_state(
             move |ui, state: &mut Option<App>| {
                 let app = state.get_or_insert_with(|| {
-                    let (files, tab) = init.take().expect("built once");
-                    App::with_context(ui.ctx(), files, tab)
+                    let (files, tab, prefs_path) = init.take().expect("built once");
+                    App::with_prefs_path(ui.ctx(), files, tab, prefs_path)
                 });
                 app.frame(ui);
             },
@@ -128,6 +133,7 @@ fn tab_names_and_titles() {
         ("time", Tab::TimeHeatmap),
         ("sliders", Tab::Sliders),
         ("diagnostics", Tab::Diagnostics),
+        ("settings", Tab::Settings),
     ] {
         assert_eq!(Tab::from_name(name), Some(tab));
     }
@@ -142,6 +148,11 @@ fn empty_slots_show_hints_on_every_tab() {
     assert!(has_label_containing(&h, "Open a blackbox log"));
     for tab in Tab::ALL {
         select_tab(&mut h, tab);
+        if tab == Tab::Settings {
+            // the only tab without slots
+            assert!(has_label_containing(&h, "Theme"), "{tab:?}");
+            continue;
+        }
         assert!(h.query_by_label("Slot A: empty").is_some(), "{tab:?}");
         assert!(h.query_by_label("Slot B: empty").is_some(), "{tab:?}");
         assert!(app(&h).cache.is_empty(), "nothing to analyse without a log");
@@ -805,4 +816,102 @@ fn job_keys_identify_params_and_epoch() {
     }
     assert_eq!(Slot::A.name(), "A");
     assert_eq!(Slot::B.name(), "B");
+}
+
+#[test]
+fn settings_tab_persists_preferences() {
+    use crate::prefs::{AccUnit, Prefs, RateUnit, Theme};
+    use crate::views::display_unit;
+    use openpid_core::Unit;
+
+    let dir = std::env::temp_dir().join(format!("openpid-settings-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("prefs.json");
+    // previous run left touch mode on: it is applied at start
+    Prefs {
+        touch_mode: true,
+        ..Prefs::default()
+    }
+    .save(&path)
+    .unwrap();
+
+    let mut h = harness_with_prefs(vec![], Some(Tab::Settings), Some(path.clone()));
+    assert!(app(&h).touch_mode, "touch mode restored from the file");
+    assert!(h.ctx.global_style().visuals.dark_mode, "dark by default");
+    assert!(has_label_containing(&h, "Saved in"));
+
+    h.get_by_label("Light").click();
+    h.step();
+    h.step();
+    assert_eq!(app(&h).prefs.theme, Theme::Light);
+    assert!(
+        !h.ctx.global_style().visuals.dark_mode,
+        "theme applied immediately"
+    );
+    assert_eq!(Prefs::load(&path).theme, Theme::Light, "saved on change");
+
+    h.get_by_label("rad/s").click();
+    h.step();
+    h.get_by_label("m/s²").click();
+    h.step();
+    let saved = Prefs::load(&path);
+    assert_eq!(saved.rate_unit, RateUnit::RadPerS);
+    assert_eq!(saved.acc_unit, AccUnit::MPerS2);
+    let (k, sym) = display_unit(&Unit::DegreesPerSecond, &app(&h).prefs);
+    assert!((k - std::f64::consts::PI / 180.0).abs() < 1e-12);
+    assert_eq!(sym, "rad/s");
+    let (k, sym) = display_unit(&Unit::Gs, &app(&h).prefs);
+    assert!((k - 9.806_65).abs() < 1e-9);
+    assert_eq!(sym, "m/s²");
+    assert_eq!(
+        display_unit(&Unit::Percent, &app(&h).prefs),
+        (1.0, "%".to_string()),
+        "other units pass through"
+    );
+
+    h.get_by_label("Touch mode (larger controls, touch gestures)")
+        .click();
+    h.step();
+    assert!(
+        !app(&h).touch_mode,
+        "the settings checkbox drives the live mode"
+    );
+    assert!(!Prefs::load(&path).touch_mode);
+
+    h.get_by_label("Reset to defaults").click();
+    h.step();
+    h.step();
+    assert_eq!(app(&h).prefs, Prefs::default());
+    assert_eq!(Prefs::load(&path), Prefs::default());
+    assert!(h.ctx.global_style().visuals.dark_mode, "theme reverted");
+
+    // a fresh app reads the file back
+    let h2 = harness_with_prefs(vec![], Some(Tab::Settings), Some(path.clone()));
+    assert_eq!(app(&h2).prefs, Prefs::default());
+    drop(h2);
+    drop(h);
+
+    // no config directory: nothing is written, the hint says so
+    let h3 = harness_with_prefs(vec![], Some(Tab::Settings), None);
+    assert!(has_label_containing(&h3, "No configuration directory"));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn log_viewer_uses_display_units() {
+    let dir = std::env::temp_dir().join(format!("openpid-units-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("prefs.json");
+    crate::prefs::Prefs {
+        rate_unit: crate::prefs::RateUnit::RadPerS,
+        ..Default::default()
+    }
+    .save(&path)
+    .unwrap();
+    let mut h = harness_with_prefs(vec![LOG_4_2.into()], Some(Tab::LogViewer), Some(path));
+    run_until(&mut h, no_slot_loading);
+    h.step();
+    assert!(app(&h).loaded(Slot::A).is_some());
+    assert_eq!(app(&h).prefs.rate_unit, crate::prefs::RateUnit::RadPerS);
+    let _ = std::fs::remove_dir_all(dir);
 }
