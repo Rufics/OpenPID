@@ -185,6 +185,8 @@ pub struct App {
     pub slider_state: views::SliderState,
     /// RPM / notch overlay on the freq × throttle heatmap.
     pub overlay: views::OverlayState,
+    /// Playback state of the freq × time tab.
+    pub player: views::PlayerState,
     /// Persisted preferences (Settings tab).
     pub prefs: Prefs,
     /// Where `prefs` are saved; `None` = no config directory, keep them for the session.
@@ -243,6 +245,7 @@ impl App {
             spectrum: views::SpectrumState::default(),
             slider_state: views::SliderState::default(),
             overlay: views::OverlayState::default(),
+            player: views::PlayerState::default(),
             prefs,
             prefs_path,
             theme_applied: None,
