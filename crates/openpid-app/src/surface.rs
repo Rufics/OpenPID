@@ -7,8 +7,8 @@ use crate::app::App;
 use crate::colormap::MUTED;
 use crate::i18n::tr;
 use crate::views::{
-    OverlayState, SlotResult, heatmap_controls, motor_color, overlay_controls, overlay_harmonics,
-    panel_width, show_error, slot_color, slot_headers,
+    BAR_W, OverlayState, SlotResult, colour_bar, heatmap_controls, linked_scales, motor_color,
+    overlay_controls, overlay_harmonics, panel_width, show_error, slot_color, slot_headers,
 };
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, Pos2, RichText, Sense, Stroke, Ui, Vec2};
@@ -102,6 +102,17 @@ pub fn surface(app: &mut App, ui: &mut Ui) {
         .collect();
     overlay_controls(app, ui, &results);
     let overlay = app.overlay.clone();
+    let grids: Vec<(Slot, &Grid2D)> = results
+        .iter()
+        .filter_map(|(s, r)| match r {
+            Some(Ok(o)) => match o.as_ref() {
+                Output::Throttle(t) => Some((*s, &t.grid)),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    let scales = linked_scales(app, &grids, SCALE_FLOOR_HZ);
     let w = panel_width(ui, slots.len());
     let h = ui.available_height();
     app.surface.hover = None;
@@ -125,8 +136,21 @@ pub fn surface(app: &mut App, ui: &mut Ui) {
                                         ))
                                         .color(slot_color(slot)),
                                     );
-                                    let size = Vec2::new(w - 8.0, (h - 24.0).max(50.0));
-                                    draw_surface(app, ui, slot, t, max, &overlay, size, i == 0);
+                                    let scale = scales.get(&slot).copied().unwrap_or(max);
+                                    let size = Vec2::new(w - 8.0 - BAR_W, (h - 24.0).max(50.0));
+                                    ui.horizontal(|ui| {
+                                        draw_surface(
+                                            app,
+                                            ui,
+                                            slot,
+                                            t,
+                                            scale,
+                                            &overlay,
+                                            size,
+                                            i == 0,
+                                        );
+                                        colour_bar(ui, scale, &t.unit, size.y);
+                                    });
                                 }
                             }
                             Some(Err(e)) => show_error(ui, slot, &e),

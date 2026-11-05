@@ -1593,6 +1593,70 @@ fn advice_tab_lists_proposals_evidence_and_cli() {
     assert_eq!(project.recommend.overshoot_max_pct, 90.0);
 }
 
+// ------------------------------------------------------------------ colour scale
+
+#[test]
+fn heatmaps_show_a_colour_scale_with_linked_maxima_and_a_hover_value() {
+    let mut h = harness(
+        vec![LOG_4_2.into(), LOG_2025.into()],
+        Some(Tab::ThrottleHeatmap),
+    );
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    // linked: both panels share the larger automatic maximum
+    let linked = app(&h).colour_scales.clone();
+    assert_eq!(linked.len(), 2, "{linked:?}");
+    assert!(
+        linked[0].1 > 0.0 && (linked[0].1 - linked[1].1).abs() < 1e-12,
+        "{linked:?}"
+    );
+    assert!(has_label_containing(&h, "colour scale 0 to"));
+    // unlinked: each its own, the larger one equals the shared value
+    app_mut(&mut h).tools.heatmap_link = false;
+    h.run_steps(2);
+    let own = app(&h).colour_scales.clone();
+    assert!((own[0].1 - own[1].1).abs() > 1e-9, "{own:?}");
+    assert!((own.iter().map(|s| s.1).fold(0.0, f64::max) - linked[0].1).abs() < 1e-12);
+    // an explicit colour max wins everywhere
+    app_mut(&mut h).tools.heatmap_max = 5.0;
+    h.run_steps(2);
+    assert!(app(&h).colour_scales.iter().all(|s| s.1 == 5.0));
+    assert!(has_label_containing(&h, "colour scale 0 to 5.00 deg/s"));
+    // the cell under the pointer is read out and matches the grid
+    let frame = app(&h).heatmap_frames[&Slot::A];
+    pointer_move(&mut h, frame.center());
+    h.step();
+    let (slot, x, y, z) = app(&h).heatmap_hover.expect("a cell under the pointer");
+    assert_eq!(slot, Slot::A);
+    assert!((0.0..=100.0).contains(&x) && y >= 0.0, "{x} {y}");
+    let result = app(&h).current_result(Slot::A).expect("heatmap computed");
+    let crate::worker::Output::Throttle(t) = result.as_ref() else {
+        panic!("throttle output")
+    };
+    assert_eq!(openpid_analysis::surface::value_at(&t.grid, x, y), Some(z));
+    assert!(has_label_containing(&h, "Hz:"));
+    pointer_move(&mut h, egui::pos2(2.0, 2.0));
+    h.step();
+    assert!(app(&h).heatmap_hover.is_none());
+    // the same scale and read-out on freq × time and the surface
+    select_tab(&mut h, Tab::TimeHeatmap);
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    assert!(app(&h).colour_scales.iter().all(|s| s.1 == 5.0));
+    let frame = app(&h).heatmap_frames[&Slot::A];
+    pointer_move(&mut h, frame.center());
+    h.step();
+    assert!(app(&h).heatmap_hover.is_some());
+    assert!(has_label_containing(&h, " s, "));
+    select_tab(&mut h, Tab::Surface);
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    assert_eq!(app(&h).colour_scales.len(), 2);
+    assert!(has_label_containing(&h, "colour scale 0 to 5.00 deg/s"));
+    // the project keeps the link setting
+    assert!(!app(&h).project(Path::new("p.openpid.json")).heatmap_link);
+}
+
 // ------------------------------------------------------------------ export
 
 #[test]

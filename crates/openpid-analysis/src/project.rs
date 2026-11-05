@@ -85,6 +85,8 @@ pub struct Project {
     pub psd_db: bool,
     /// Heatmap colour maximum (0 = automatic).
     pub heatmap_max: f64,
+    /// One colour scale for every slot (the largest automatic maximum).
+    pub heatmap_link: bool,
     /// Throttle bins with fewer segments are greyed out.
     pub min_segments: usize,
     /// Channels shown in the log viewer.
@@ -114,6 +116,7 @@ impl Default for Project {
             heatmap_channel: gyro.clone(),
             psd_db: true,
             heatmap_max: 0.0,
+            heatmap_link: true,
             min_segments: 3,
             viewer_channels: vec![
                 gyro,
