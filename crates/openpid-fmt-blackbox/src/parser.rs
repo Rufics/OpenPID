@@ -1037,7 +1037,9 @@ H motorOutput:158,2047\n";
             "attempts stop once nothing decodes: {}",
             stats.corrupt_total()
         );
+    }
 
+    #[test]
     fn rotorflight_state_events_keep_the_stream() {
         let mut data = HDR.as_bytes().to_vec();
         intra(&mut data, 0, 1000, [1, 2, 3], [1200, 1300]);
