@@ -41,8 +41,8 @@ OpenPID — кросплатформенний (macOS / Windows / Linux) інс�
 | Test signal generator | — | ✓ | 2 | Синтетичні сигнали для перевірки фільтрів/алгоритмів |
 | Motor / prop noise tool | — | ✓ | 2 | Спектри по моторах, гармоніки |
 | Dynamic spectrum player | — | ✓ | 2 | Анімоване відтворення STFT у часі |
-| Рекомендації / autotune | — | — | 3 | Власне розширення, trait `Recommender` |
-| Експорт (CSV/JSON/PNG, CLI diff) | част. | част. | 1 | |
+| Рекомендації / autotune | — | — | 3 | Власне розширення: `Recommend` (правила з доказами), вкладка Advice, експорт у Betaflight CLI |
+| Експорт (CSV/JSON/PNG, CLI diff) | част. | част. | 1 | CSV/JSON/PNG з GUI і CLI; `openpid diff` і `--cli` — фаза 3 |
 | Headless CLI | — | — | 0 | Для CI, скриптів і golden‑тестів |
 
 ---
@@ -433,8 +433,8 @@ Dev‑only: `proptest`, `criterion`, `insta` (snapshot); `cargo-fuzz` не ви�
 |------|-------|---------------------|
 | 0 — Фундамент ✅ | workspace, `core` модель і trait‑и, `fmt-blackbox` (BF/Emu/RF), `fmt-csv`, `cli info/decode`, конформанс‑ і robustness‑тести, CI | Конформанс з незалежним декодером `blackbox-log` на всіх тестових логах; CSV‑конформанс з `blackbox_decode` вмикається, щойно з'являться CSV‑фікстури |
 | 1 — Паритет з PTB (free) ✅ | `dsp` базис, step, PSD, heatmaps, GUI з 7 вкладками, A/B, touch, PID slider tool (Betaflight simplified tuning, звірено на логах 4.5 і 2025.12). Аудит 2026‑11‑05 — перенесено у backlog (milestone v0.4, якщо не вказано інше): проєкти (#31), експорт PNG/CSV (#32), звірка дефолтів з PTB (#33), touch‑жести §7.2 (#35), тема/локалізація (#34), вкладка Settings і збережені Prefs (#53), маркери частот у спектрі (#51), перетягування меж епохи на графіку (#52), лічильник сегментів на heatmap (#54), Y‑offset/latency step response (#50), property‑тести деконволюції (#55, v0.3), CSV‑фікстури `blackbox_decode` з фази 0 (#49, v0.2) | Користувач відтворює свій звичний PTB‑воркфлоу повністю в OpenPID |
-| 2 — Паритет з Pro | фільтри/sim, notch/RPM overlay 2D/3D, RPM estimator, генератор, motor‑noise, spectrum player; формати ArduPilot → INAV → KISS… | Усі рядки таблиці §2 = «так» |
-| 3 — Розширення | `Recommender`, CLI diff, (опц.) MSP | Перша рекомендація, яку користувач реально застосовує |
+| 2 — Паритет з Pro ✅ | фільтри/sim (ADR‑0012), notch/RPM overlay 2D і 3D‑поверхня, RPM estimator, генератор (`openpid gen`), motor‑noise, spectrum player, бенчмарки (#36), фаззинг (ADR‑0013), touch‑жести, локалізація UA/EN, user guide; формати ArduPilot (ADR‑0010) та INAV — зроблено, KISS/Fettec/QuickSilver чекають на зразки логів (#18) | Усі рядки таблиці §2 = «так» (крім форматів без зразків) |
+| 3 — Розширення ✅ | `Recommender` з трьома правилами й доказами, вкладка Advice, `openpid run recommend --cli`, `openpid diff`, експортер Betaflight CLI; MSP — відкладено (ADR‑0014) | Перша рекомендація, яку користувач реально застосовує: текст `set …` з вкладки Advice |
 
 ---
 
