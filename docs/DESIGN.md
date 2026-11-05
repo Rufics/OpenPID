@@ -399,7 +399,7 @@ CLI використовує ті самі реєстри, що й GUI, і є о
 | `wgpu`, `winit` | транзитивно через eframe | те саме |
 | `rustfft` | FFT | власний FFT можливий, але rustfft — еталонно перевірений, чистий Rust, SIMD; ризик помилок у власному вищий, ніж користь |
 | `serde` + `serde_json` | проєкти, golden‑тести, експорт | де‑факто стандарт, чистий Rust |
-| `memmap2` | zero‑copy великих логів | тонка обгортка над syscall |
+| ~~`memmap2`~~ | zero‑copy великих логів | не знадобився: логи читаються в пам'ять цілком (аудит 2026‑11‑05, вилучено з workspace) |
 | `rfd` | нативні діалоги файлів | платформні API |
 | `thiserror` | типи помилок | лише derive‑макрос; можна й без нього |
 | `clap` (тільки cli) | парсинг аргументів | опційно; можна замінити ручним парсером |
@@ -426,7 +426,7 @@ Dev‑only: `proptest`, `criterion`, `cargo-fuzz`, `insta` (snapshot). Усе і
 | Фаза | Зміст | Критерій готовності |
 |------|-------|---------------------|
 | 0 — Фундамент ✅ | workspace, `core` модель і trait‑и, `fmt-blackbox` (BF/Emu/RF), `fmt-csv`, `cli info/decode`, конформанс‑ і robustness‑тести, CI | Конформанс з незалежним декодером `blackbox-log` на всіх тестових логах; CSV‑конформанс з `blackbox_decode` вмикається, щойно з'являться CSV‑фікстури |
-| 1 — Паритет з PTB (free) ✅ | `dsp` базис, step, PSD, heatmaps, GUI з 7 вкладками, A/B, touch, PID slider tool (Betaflight simplified tuning, звірено на логах 4.5 і 2025.12). Перенесено у фазу 2: проєкти (.openpid.json), експорт PNG/CSV, звірка дефолтів з PTB | Користувач відтворює свій звичний PTB‑воркфлоу повністю в OpenPID |
+| 1 — Паритет з PTB (free) ✅ | `dsp` базис, step, PSD, heatmaps, GUI з 7 вкладками, A/B, touch, PID slider tool (Betaflight simplified tuning, звірено на логах 4.5 і 2025.12). Аудит 2026‑11‑05 — перенесено у backlog (milestone v0.4, якщо не вказано інше): проєкти (#31), експорт PNG/CSV (#32), звірка дефолтів з PTB (#33), touch‑жести §7.2 (#35), тема/локалізація (#34), вкладка Settings і збережені Prefs (#53), маркери частот у спектрі (#51), перетягування меж епохи на графіку (#52), лічильник сегментів на heatmap (#54), Y‑offset/latency step response (#50), property‑тести деконволюції (#55, v0.3), CSV‑фікстури `blackbox_decode` з фази 0 (#49, v0.2) | Користувач відтворює свій звичний PTB‑воркфлоу повністю в OpenPID |
 | 2 — Паритет з Pro | фільтри/sim, notch/RPM overlay 2D/3D, RPM estimator, генератор, motor‑noise, spectrum player; формати ArduPilot → INAV → KISS… | Усі рядки таблиці §2 = «так» |
 | 3 — Розширення | `Recommender`, CLI diff, (опц.) MSP | Перша рекомендація, яку користувач реально застосовує |
 
