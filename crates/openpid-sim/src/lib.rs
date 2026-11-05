@@ -10,6 +10,11 @@
 //! firmware code is copied; everything is implemented from the formulas.
 
 pub mod filter;
+pub mod model;
 
 pub use filter::{Biquad, Chain, Filter, Pt1, Ptn, Stage, notch_q, pt_cutoff_correction};
+pub use model::{
+    ChainKind, ChainModel, Drive, DynLowpass, DynNotchModel, LowpassModel, RpmNotchModel,
+    track_peaks,
+};
 pub use openpid_dsp::Complex;

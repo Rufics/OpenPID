@@ -1778,7 +1778,9 @@ dependencies = [
 name = "openpid-sim"
 version = "0.1.0"
 dependencies = [
+ "openpid-core",
  "openpid-dsp",
+ "openpid-fmt-blackbox",
 ]
 
 [[package]]
