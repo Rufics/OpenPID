@@ -1,0 +1,14 @@
+[package]
+name = "openpid-sim"
+description = "Firmware filter models for OpenPID: PT1/PT2/PT3, biquad lowpass and notch, filter chains"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+openpid-dsp = { workspace = true }
+
+[lints]
+workspace = true
