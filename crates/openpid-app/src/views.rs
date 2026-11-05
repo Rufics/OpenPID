@@ -248,7 +248,8 @@ fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
                 let n = loaded.sessions.len();
                 if n > 1 {
                     let before = loaded.session;
-                    egui::ComboBox::from_id_salt(("session", slot.name()))
+                    let l = ui.label("session");
+                    let combo = egui::ComboBox::from_id_salt(("session", slot.name()))
                         .selected_text(format!("session {}", loaded.session))
                         .show_ui(ui, |ui| {
                             for (i, s) in loaded.sessions.iter().enumerate() {
@@ -259,6 +260,7 @@ fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
                                 );
                             }
                         });
+                    combo.response.labelled_by(l.id);
                     if loaded.session != before {
                         loaded.epoch = None;
                         changed = true;
@@ -340,7 +342,8 @@ fn channel_picker(
     current: &mut ChannelId,
 ) -> bool {
     let mut changed = false;
-    egui::ComboBox::from_id_salt(id)
+    let l = ui.label("channel");
+    let combo = egui::ComboBox::from_id_salt(id)
         .selected_text(current.key())
         .width(220.0)
         .show_ui(ui, |ui| {
@@ -359,6 +362,7 @@ fn channel_picker(
                 }
             }
         });
+    combo.response.labelled_by(l.id);
     changed
 }
 
@@ -408,11 +412,13 @@ fn viewer_channel_picker(app: &mut App, ui: &mut Ui, session: Option<&FlightSess
     ui.horizontal_wrapped(|ui| {
         ui.label("Channels:");
         let filter = &mut app.viewer.channel_filter;
+        let l = ui.label("filter");
         ui.add(
             egui::TextEdit::singleline(filter)
                 .hint_text("filter…")
                 .desired_width(120.0),
-        );
+        )
+        .labelled_by(l.id);
         let Some(s) = session else { return };
         let mut keys: Vec<ChannelId> = s.channels.iter().map(|c| c.id.clone()).collect();
         keys.sort_by_key(ChannelId::key);
@@ -629,41 +635,46 @@ pub fn step(app: &mut App, ui: &mut Ui) {
         axis_selector(ui, &mut app.tools.axis);
         app.tools.step.axis = app.tools.axis;
         ui.separator();
-        ui.label("window");
+        let l = ui.label("window");
         ui.add(
             egui::DragValue::new(&mut app.tools.step.window_s)
                 .speed(0.1)
                 .range(0.5..=10.0)
                 .suffix(" s"),
-        );
-        ui.label("cutoff");
+        )
+        .labelled_by(l.id);
+        let l = ui.label("cutoff");
         ui.add(
             egui::DragValue::new(&mut app.tools.step.cutoff_hz)
                 .speed(1.0)
                 .range(5.0..=200.0)
                 .suffix(" Hz"),
-        );
-        ui.label("min input");
+        )
+        .labelled_by(l.id);
+        let l = ui.label("min input");
         ui.add(
             egui::DragValue::new(&mut app.tools.step.min_input)
                 .speed(5.0)
                 .range(0.0..=1000.0)
                 .suffix(" °/s"),
-        );
-        ui.label("high input");
+        )
+        .labelled_by(l.id);
+        let l = ui.label("high input");
         ui.add(
             egui::DragValue::new(&mut app.tools.step.high_input)
                 .speed(10.0)
                 .range(50.0..=2000.0)
                 .suffix(" °/s"),
-        );
-        ui.label("smooth");
+        )
+        .labelled_by(l.id);
+        let l = ui.label("smooth");
         ui.add(
             egui::DragValue::new(&mut app.tools.step.smooth_ms)
                 .speed(1.0)
                 .range(0.0..=60.0)
                 .suffix(" ms"),
-        );
+        )
+        .labelled_by(l.id);
         ui.checkbox(&mut app.tools.step.y_offset, "Y-offset")
             .on_hover_text("normalise every window on its settled tail before averaging");
     });
@@ -762,7 +773,6 @@ pub fn spectrum(app: &mut App, ui: &mut Ui) {
     ui.separator();
     let session_a = app.loaded(Slot::A).and_then(|l| l.current().cloned());
     ui.horizontal_wrapped(|ui| {
-        ui.label("Channel");
         channel_picker(
             ui,
             "psd_channel",
@@ -775,13 +785,14 @@ pub fn spectrum(app: &mut App, ui: &mut Ui) {
                 stage: GyroStage::Filtered,
             };
         }
-        ui.label("segment");
+        let l = ui.label("segment");
         ui.add(
             egui::DragValue::new(&mut app.tools.psd.segment_s)
                 .speed(0.01)
                 .range(0.02..=2.0)
                 .suffix(" s"),
-        );
+        )
+        .labelled_by(l.id);
         ui.label("max");
         let mut max = app.tools.psd.max_hz.unwrap_or(0.0);
         if ui
@@ -797,15 +808,17 @@ pub fn spectrum(app: &mut App, ui: &mut Ui) {
         }
         ui.checkbox(&mut app.tools.psd_db, "dB");
         ui.separator();
-        ui.label("peaks");
-        ui.add(egui::DragValue::new(&mut app.spectrum.auto_peaks).range(0..=10));
-        ui.label("prominence");
+        let l = ui.label("peaks");
+        ui.add(egui::DragValue::new(&mut app.spectrum.auto_peaks).range(0..=10))
+            .labelled_by(l.id);
+        let l = ui.label("prominence");
         ui.add(
             egui::DragValue::new(&mut app.spectrum.min_prominence_db)
                 .speed(0.5)
                 .range(0.0..=60.0)
                 .suffix(" dB"),
-        );
+        )
+        .labelled_by(l.id);
         if !app.spectrum.markers.is_empty() && ui.button("Clear markers").clicked() {
             app.spectrum.markers.clear();
         }
@@ -962,7 +975,6 @@ fn marker_readout(markers: &[f64], peaks: &[(Slot, Vec<Peak>)]) -> Option<String
 fn heatmap_controls(app: &mut App, ui: &mut Ui) {
     let session_a = app.loaded(Slot::A).and_then(|l| l.current().cloned());
     ui.horizontal_wrapped(|ui| {
-        ui.label("Channel");
         channel_picker(
             ui,
             "hm_channel",
@@ -975,12 +987,13 @@ fn heatmap_controls(app: &mut App, ui: &mut Ui) {
                 stage: GyroStage::Filtered,
             };
         }
-        ui.label("colour max (0 = auto)");
+        let l = ui.label("colour max (0 = auto)");
         ui.add(
             egui::DragValue::new(&mut app.tools.heatmap_max)
                 .speed(0.5)
                 .range(0.0..=10000.0),
-        );
+        )
+        .labelled_by(l.id);
     });
 }
 
@@ -1194,28 +1207,31 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
     ui.separator();
     heatmap_controls(app, ui);
     ui.horizontal_wrapped(|ui| {
-        ui.label("segment");
+        let l = ui.label("segment");
         ui.add(
             egui::DragValue::new(&mut app.tools.throttle.segment_s)
                 .speed(0.01)
                 .range(0.05..=1.0)
                 .suffix(" s"),
-        );
-        ui.label("throttle window ±");
+        )
+        .labelled_by(l.id);
+        let l = ui.label("throttle window ±");
         ui.add(
             egui::DragValue::new(&mut app.tools.throttle.half_window)
                 .speed(0.5)
                 .range(0.0..=25.0)
                 .suffix(" %"),
-        );
-        ui.label("max");
+        )
+        .labelled_by(l.id);
+        let l = ui.label("max");
         ui.add(
             egui::DragValue::new(&mut app.tools.throttle.max_hz)
                 .speed(10.0)
                 .range(50.0..=8000.0)
                 .suffix(" Hz"),
-        );
-        ui.label("min segments");
+        )
+        .labelled_by(l.id);
+        let l = ui.label("min segments");
         ui.add(
             egui::DragValue::new(&mut app.tools.min_segments)
                 .speed(1.0)
@@ -1223,7 +1239,8 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
         )
         .on_hover_text(
             "throttle bins with fewer segments are greyed out: they are unsampled, not quiet",
-        );
+        )
+        .labelled_by(l.id);
     });
     app.tools.throttle.channel = app.tools.heatmap_channel.clone();
     let params = app.tools.throttle.clone();
@@ -1256,8 +1273,9 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
             for (m, on) in ov.motors.iter_mut().enumerate() {
                 ui.checkbox(on, format!("M{}", m + 1));
             }
-            ui.label("harmonics");
+            let l = ui.label("harmonics");
             ui.add(egui::DragValue::new(&mut ov.harmonics).range(0..=8))
+                .labelled_by(l.id)
                 .on_hover_text("0 = as many as the RPM filter removes");
             ui.checkbox(&mut ov.notches, "notches");
         });
@@ -1337,13 +1355,14 @@ pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
     ui.separator();
     heatmap_controls(app, ui);
     ui.horizontal_wrapped(|ui| {
-        ui.label("segment");
+        let l = ui.label("segment");
         ui.add(
             egui::DragValue::new(&mut app.tools.stft.segment_s)
                 .speed(0.01)
                 .range(0.02..=1.0)
                 .suffix(" s"),
-        );
+        )
+        .labelled_by(l.id);
         let mut max = app.tools.stft.max_hz.unwrap_or(0.0);
         ui.label("max");
         if ui
@@ -1501,7 +1520,7 @@ fn slider_grid(app: &mut App, ui: &mut Ui, defs: &[openpid_core::SliderDef]) {
                     .values
                     .entry(d.key.clone())
                     .or_insert(d.value);
-                ui.label(&d.label);
+                let l = ui.label(&d.label);
                 let step = if d.max - d.min <= 2.0 { 1.0 } else { 5.0 };
                 let mut slider = egui::Slider::new(v, d.min..=d.max)
                     .step_by(step)
@@ -1509,7 +1528,8 @@ fn slider_grid(app: &mut App, ui: &mut Ui, defs: &[openpid_core::SliderDef]) {
                 if touch {
                     slider = slider.trailing_fill(true);
                 }
-                ui.add_sized([360.0, if touch { 36.0 } else { 20.0 }], slider);
+                ui.add_sized([360.0, if touch { 36.0 } else { 20.0 }], slider)
+                    .labelled_by(l.id);
                 let changed = (*v - d.value).abs() > f64::EPSILON;
                 ui.label(
                     RichText::new(format!(
@@ -1752,7 +1772,7 @@ fn whatif_value(
     integer: bool,
 ) {
     let colour = if value.is_some() { ACCENT } else { MUTED };
-    ui.label(RichText::new(label).color(colour));
+    let l = ui.label(RichText::new(label).color(colour));
     let mut v = value.unwrap_or(log_value);
     let mut w = egui::DragValue::new(&mut v)
         .speed(speed)
@@ -1763,6 +1783,7 @@ fn whatif_value(
     }
     if ui
         .add(w)
+        .labelled_by(l.id)
         .on_hover_text(format!("log: {log_value}"))
         .changed()
     {
@@ -1778,7 +1799,8 @@ fn whatif_kind(
     log_kind: Option<&LowpassKind>,
 ) {
     let current: Option<LowpassKind> = value.clone().or_else(|| log_kind.cloned());
-    egui::ComboBox::from_id_salt(id)
+    let l = ui.label("type");
+    let combo = egui::ComboBox::from_id_salt(id)
         .selected_text(current.as_ref().map_or_else(|| "—".to_string(), kind_name))
         .width(80.0)
         .show_ui(ui, |ui| {
@@ -1791,6 +1813,7 @@ fn whatif_kind(
                 }
             }
         });
+    combo.response.labelled_by(l.id);
 }
 
 /// Topology, static cutoff and dynamic range of a low-pass as flown (zeros when absent).
@@ -1980,13 +2003,14 @@ pub fn filter_sim(app: &mut App, ui: &mut Ui) {
         axis_selector(ui, &mut app.tools.axis);
         app.tools.filter_sim.axis = app.tools.axis;
         ui.separator();
-        ui.label("segment");
+        let l = ui.label("segment");
         ui.add(
             egui::DragValue::new(&mut app.tools.filter_sim.segment_s)
                 .speed(0.01)
                 .range(0.02..=2.0)
                 .suffix(" s"),
-        );
+        )
+        .labelled_by(l.id);
         ui.label("max");
         let mut max = app.tools.filter_sim.max_hz.unwrap_or(0.0);
         if ui
