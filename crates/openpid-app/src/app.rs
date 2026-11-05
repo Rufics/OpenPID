@@ -1,6 +1,7 @@
 //! Application state and the top-level frame.
 
 use crate::prefs::{Prefs, Theme};
+use crate::surface;
 use crate::views;
 use crate::worker::{Done, Job, JobKey, Kind, Output, Slot, Worker};
 use eframe::egui;
@@ -20,6 +21,8 @@ pub enum Tab {
     Spectrum,
     ThrottleHeatmap,
     TimeHeatmap,
+    /// Freq × throttle × amplitude as an orbiting 3D surface.
+    Surface,
     FilterSim,
     MotorNoise,
     Sliders,
@@ -28,12 +31,13 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub const ALL: [Tab; 10] = [
+    pub const ALL: [Tab; 11] = [
         Tab::LogViewer,
         Tab::Step,
         Tab::Spectrum,
         Tab::ThrottleHeatmap,
         Tab::TimeHeatmap,
+        Tab::Surface,
         Tab::FilterSim,
         Tab::MotorNoise,
         Tab::Sliders,
@@ -48,6 +52,7 @@ impl Tab {
             "spectrum" => Tab::Spectrum,
             "throttle" => Tab::ThrottleHeatmap,
             "time" => Tab::TimeHeatmap,
+            "surface" => Tab::Surface,
             "filter" => Tab::FilterSim,
             "motors" => Tab::MotorNoise,
             "sliders" => Tab::Sliders,
@@ -65,6 +70,7 @@ impl Tab {
             Tab::Spectrum => "spectrum",
             Tab::ThrottleHeatmap => "throttle",
             Tab::TimeHeatmap => "time",
+            Tab::Surface => "surface",
             Tab::FilterSim => "filter",
             Tab::MotorNoise => "motors",
             Tab::Sliders => "sliders",
@@ -80,6 +86,7 @@ impl Tab {
             Tab::Spectrum => "Spectrum",
             Tab::ThrottleHeatmap => "Freq × throttle",
             Tab::TimeHeatmap => "Freq × time",
+            Tab::Surface => "Surface 3D",
             Tab::FilterSim => "Filter Sim",
             Tab::MotorNoise => "Motor noise",
             Tab::Sliders => "PID sliders",
@@ -185,6 +192,8 @@ pub struct App {
     pub slider_state: views::SliderState,
     /// RPM / notch overlay on the freq × throttle heatmap.
     pub overlay: views::OverlayState,
+    /// Camera and hover state of the 3D surface tab.
+    pub surface: surface::SurfaceState,
     /// Persisted preferences (Settings tab).
     pub prefs: Prefs,
     /// Where `prefs` are saved; `None` = no config directory, keep them for the session.
@@ -243,6 +252,7 @@ impl App {
             spectrum: views::SpectrumState::default(),
             slider_state: views::SliderState::default(),
             overlay: views::OverlayState::default(),
+            surface: surface::SurfaceState::default(),
             prefs,
             prefs_path,
             theme_applied: None,
@@ -655,6 +665,7 @@ impl App {
             Tab::Spectrum => views::spectrum(self, ui),
             Tab::ThrottleHeatmap => views::throttle_heatmap(self, ui),
             Tab::TimeHeatmap => views::time_heatmap(self, ui),
+            Tab::Surface => surface::surface(self, ui),
             Tab::FilterSim => views::filter_sim(self, ui),
             Tab::MotorNoise => views::motor_noise(self, ui),
             Tab::Sliders => views::sliders(self, ui),

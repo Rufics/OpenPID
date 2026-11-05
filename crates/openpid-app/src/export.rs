@@ -60,7 +60,7 @@ impl App {
         Some(match self.tab {
             Tab::Step => Kind::Step(self.tools.step.clone()),
             Tab::Spectrum => Kind::Psd(self.tools.psd.clone()),
-            Tab::ThrottleHeatmap => Kind::Throttle(self.tools.throttle.clone()),
+            Tab::ThrottleHeatmap | Tab::Surface => Kind::Throttle(self.tools.throttle.clone()),
             Tab::TimeHeatmap => Kind::Stft(self.tools.stft.clone()),
             Tab::FilterSim => Kind::FilterSim(self.tools.filter_sim.clone()),
             Tab::MotorNoise => Kind::MotorNoise(self.tools.motor_noise.clone()),

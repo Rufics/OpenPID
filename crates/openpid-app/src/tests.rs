@@ -141,6 +141,7 @@ fn tab_names_and_titles() {
         ("spectrum", Tab::Spectrum),
         ("throttle", Tab::ThrottleHeatmap),
         ("time", Tab::TimeHeatmap),
+        ("surface", Tab::Surface),
         ("filter", Tab::FilterSim),
         ("motors", Tab::MotorNoise),
         ("sliders", Tab::Sliders),
@@ -1195,6 +1196,96 @@ fn rpm_overlay_on_the_throttle_heatmap_has_per_motor_toggles() {
     let mut h2 = harness(vec![LOG_4_2.into()], Some(Tab::ThrottleHeatmap));
     run_until(&mut h2, idle);
     assert!(h2.query_by_label("RPM overlay").is_none());
+}
+
+// ------------------------------------------------------------------ 3D surface
+
+#[test]
+fn surface_tab_orbits_zooms_pans_and_reads_out() {
+    let mut h = harness(vec![LOG_4_5_1.into()], Some(Tab::Surface));
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    let s = app(&h).surface.clone();
+    assert!(s.fitted && s.cells > 1000, "{s:?}");
+    let frame = s.frame.expect("surface drawn");
+    assert!(s.camera.zoom > 100.0, "fitted to the panel: {s:?}");
+    // the same result and overlay controls as the heatmap
+    assert_eq!(app(&h).cache.len(), 1);
+    assert!(h.query_by_label("RPM overlay").is_some());
+    // the node under the pointer is read out
+    let c = frame.center();
+    pointer_move(&mut h, c);
+    h.step();
+    let (thr, hz, amp) = app(&h).surface.hover.expect("a node under the pointer");
+    assert!((0.0..=100.0).contains(&thr) && hz >= 0.0 && amp >= 0.0);
+    // drag: orbit (yaw with x, pitch with y)
+    let before = app(&h).surface.camera;
+    pointer_button(&mut h, c, true);
+    pointer_move(&mut h, c + egui::vec2(40.0, -20.0));
+    pointer_move(&mut h, c + egui::vec2(80.0, -30.0));
+    pointer_button(&mut h, c + egui::vec2(80.0, -30.0), false);
+    let after = app(&h).surface.camera;
+    assert!(after.yaw > before.yaw, "{before:?} → {after:?}");
+    assert!(after.pitch < before.pitch, "{before:?} → {after:?}");
+    assert_eq!(app(&h).surface.pan, egui::Vec2::ZERO);
+    // pinch / ctrl-wheel: zoom
+    h.input_mut().events.push(egui::Event::Zoom(1.5));
+    h.step();
+    let zoomed = app(&h).surface.camera.zoom;
+    assert!((zoomed / after.zoom - 1.5).abs() < 1e-3, "{zoomed}");
+    // wheel: zoom too
+    h.input_mut().events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, 50.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run_steps(2);
+    assert!(app(&h).surface.camera.zoom > zoomed, "wheel zooms in");
+    // right-drag: pan
+    let p = c + egui::vec2(80.0, -30.0);
+    for pressed in [true, false] {
+        if pressed {
+            h.input_mut().events.push(egui::Event::PointerButton {
+                pos: p,
+                button: egui::PointerButton::Secondary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.step();
+            pointer_move(&mut h, p + egui::vec2(-30.0, 25.0));
+            pointer_move(&mut h, p + egui::vec2(-60.0, 50.0));
+        } else {
+            h.input_mut().events.push(egui::Event::PointerButton {
+                pos: p + egui::vec2(-60.0, 50.0),
+                button: egui::PointerButton::Secondary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.step();
+        }
+    }
+    let pan = app(&h).surface.pan;
+    assert!(pan.x < -20.0 && pan.y > 20.0, "{pan:?}");
+    // shading off, reset view
+    h.get_by_role_and_label(Role::CheckBox, "shading").click();
+    h.step();
+    assert!(!app(&h).surface.shade);
+    h.get_by_label("Reset view").click();
+    h.step();
+    let s = app(&h).surface.clone();
+    assert_eq!(s.pan, egui::Vec2::ZERO);
+    let default_yaw = openpid_analysis::surface::Camera::default().yaw;
+    assert!((s.camera.yaw - default_yaw).abs() < 1e-5, "{s:?}");
+    assert!(!s.shade, "reset keeps the shading choice");
+    h.run_steps(2);
+    assert!(app(&h).surface.fitted, "refitted after the reset");
+    // the B slot gets its own panel; the hover read-out follows the first
+    drop_files(&mut h, &[LOG_4_2]);
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    assert!(has_label_containing(&h, "B: gyro"));
 }
 
 // ------------------------------------------------------------------ export
