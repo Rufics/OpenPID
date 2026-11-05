@@ -13,9 +13,10 @@ use crate::filter::{Biquad, Chain, Filter, Pt1, Ptn, Stage};
 use openpid_core::FirmwareVersion;
 use openpid_core::settings::{FilterChain, Lowpass, LowpassKind, Notch, Settings};
 use openpid_dsp::{Complex, Fft, Window, next_smooth, spectrum::amplitude_spectrum};
+use serde::{Deserialize, Serialize};
 
 /// Which chain of the controller.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChainKind {
     /// Gyro filtering (what `gyro.filtered` went through).
     Gyro,
@@ -24,7 +25,7 @@ pub enum ChainKind {
 }
 
 /// Throttle-driven cutoff of a low-pass (Betaflight `*_lpf1_dyn_hz`).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DynLowpass {
     /// Cutoff at zero throttle, Hz.
     pub min_hz: f64,
@@ -46,7 +47,7 @@ impl DynLowpass {
 }
 
 /// One low-pass stage of the model.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LowpassModel {
     /// Topology (`Other` falls back to PT1).
     pub kind: LowpassKind,
@@ -57,7 +58,7 @@ pub struct LowpassModel {
 }
 
 /// RPM notches following the motors (Betaflight 4.1+; fade and weights 4.3+).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RpmNotchModel {
     /// Harmonics per motor.
     pub harmonics: u32,
@@ -74,7 +75,7 @@ pub struct RpmNotchModel {
 }
 
 /// Dynamic notches following the strongest spectral peaks.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DynNotchModel {
     /// Notches per axis.
     pub count: u32,
@@ -87,7 +88,7 @@ pub struct DynNotchModel {
 }
 
 /// A whole chain as configured, at sample rate `fs`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChainModel {
     /// Sample rate the model runs at (the log's).
     pub fs: f64,

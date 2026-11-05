@@ -1,7 +1,7 @@
 //! The tabs. Every view reads analysis outputs from the app cache and draws
 //! with `egui_plot`; nothing here computes.
 
-use crate::app::{App, SlotState};
+use crate::app::{App, Loaded, SlotState};
 use crate::colormap::{ACCENT, MUTED, SLOT_A, SLOT_B};
 use crate::prefs::{AccUnit, Prefs, RateUnit, Theme};
 use crate::worker::{Kind, Output, Slot};
@@ -10,12 +10,14 @@ use egui_plot::{
     Bar, BarChart, HLine, Heatmap, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, Text,
     VLine,
 };
-use openpid_analysis::Epoch;
+use openpid_analysis::{Epoch, FilterOverrides};
 use openpid_core::analysis::Grid2D;
+use openpid_core::settings::LowpassKind;
 use openpid_core::settings::{PerAxis, PidGains};
 use openpid_core::units::Unit;
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use openpid_dsp::Peak;
+use openpid_sim::{ChainModel, LowpassModel};
 use std::sync::Arc;
 
 /// Per-tab UI state that is not an analysis parameter.
@@ -1550,6 +1552,463 @@ pub fn settings(app: &mut App, ui: &mut Ui) {
     if changed {
         app.save_prefs();
     }
+}
+
+// ---------------------------------------------------------------------------
+
+/// Low-pass topology names for the what-if editor.
+const LOWPASS_KINDS: [(LowpassKind, &str); 4] = [
+    (LowpassKind::Pt1, "PT1"),
+    (LowpassKind::Biquad, "biquad"),
+    (LowpassKind::Pt2, "PT2"),
+    (LowpassKind::Pt3, "PT3"),
+];
+
+fn kind_name(k: &LowpassKind) -> String {
+    LOWPASS_KINDS
+        .iter()
+        .find(|(kind, _)| kind == k)
+        .map_or_else(|| format!("{k:?}"), |(_, n)| (*n).to_string())
+}
+
+/// A what-if number: shows the log's value until the user edits it, then the
+/// override (label turns accent-coloured).
+#[allow(clippy::too_many_arguments, reason = "one widget, seven knobs")]
+fn whatif_value(
+    ui: &mut Ui,
+    label: &str,
+    value: &mut Option<f64>,
+    log_value: f64,
+    speed: f64,
+    range: std::ops::RangeInclusive<f64>,
+    suffix: &str,
+    integer: bool,
+) {
+    let colour = if value.is_some() { ACCENT } else { MUTED };
+    ui.label(RichText::new(label).color(colour));
+    let mut v = value.unwrap_or(log_value);
+    let mut w = egui::DragValue::new(&mut v)
+        .speed(speed)
+        .range(range)
+        .suffix(suffix);
+    if integer {
+        w = w.max_decimals(0);
+    }
+    if ui
+        .add(w)
+        .on_hover_text(format!("log: {log_value}"))
+        .changed()
+    {
+        *value = Some(if integer { v.round() } else { v });
+    }
+}
+
+/// A what-if low-pass topology.
+fn whatif_kind(
+    ui: &mut Ui,
+    id: &str,
+    value: &mut Option<LowpassKind>,
+    log_kind: Option<&LowpassKind>,
+) {
+    let current: Option<LowpassKind> = value.clone().or_else(|| log_kind.cloned());
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(current.as_ref().map_or_else(|| "—".to_string(), kind_name))
+        .width(80.0)
+        .show_ui(ui, |ui| {
+            for (kind, name) in &LOWPASS_KINDS {
+                if ui
+                    .selectable_label(current.as_ref() == Some(kind), *name)
+                    .clicked()
+                {
+                    *value = Some(kind.clone());
+                }
+            }
+        });
+}
+
+/// Topology, static cutoff and dynamic range of a low-pass as flown (zeros when absent).
+fn lowpass_seed(l: Option<&LowpassModel>) -> (Option<LowpassKind>, f64, f64, f64) {
+    match l {
+        Some(l) => (
+            Some(l.kind.clone()),
+            l.cutoff_hz,
+            l.dynamic.as_ref().map_or(0.0, |d| d.min_hz),
+            l.dynamic.as_ref().map_or(0.0, |d| d.max_hz),
+        ),
+        None => (None, 0.0, 0.0, 0.0),
+    }
+}
+
+/// The what-if editor, seeded with the chain as flown (`seed`) when a result exists.
+fn whatif_editor(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>) {
+    let (k1, hz1, dmin, dmax) = lowpass_seed(seed.and_then(|m| m.lowpass1.as_ref()));
+    let (k2, hz2, _, _) = lowpass_seed(seed.and_then(|m| m.lowpass2.as_ref()));
+    let (k1, k2) = (k1.as_ref(), k2.as_ref());
+    let rpm = seed.and_then(|m| m.rpm_notch.as_ref());
+    let dn = seed.and_then(|m| m.dyn_notch.as_ref());
+    let notch = seed.and_then(|m| m.notches.first());
+    ui.horizontal_wrapped(|ui| {
+        ui.label("LPF1");
+        whatif_kind(ui, "fsim_lpf1_kind", &mut o.lpf1_type, k1);
+        whatif_value(
+            ui,
+            "cutoff",
+            &mut o.lpf1_hz,
+            hz1,
+            5.0,
+            0.0..=1000.0,
+            " Hz",
+            false,
+        );
+        let mut dyn_min = o.lpf1_dyn_hz.map(|d| d.0);
+        let mut dyn_max = o.lpf1_dyn_hz.map(|d| d.1);
+        whatif_value(
+            ui,
+            "dyn min",
+            &mut dyn_min,
+            dmin,
+            5.0,
+            0.0..=1000.0,
+            " Hz",
+            false,
+        );
+        whatif_value(
+            ui,
+            "dyn max",
+            &mut dyn_max,
+            dmax,
+            5.0,
+            0.0..=1000.0,
+            " Hz",
+            false,
+        );
+        if dyn_min.is_some() || dyn_max.is_some() {
+            o.lpf1_dyn_hz = Some((dyn_min.unwrap_or(dmin), dyn_max.unwrap_or(dmax)));
+        }
+        ui.separator();
+        ui.label("LPF2");
+        whatif_kind(ui, "fsim_lpf2_kind", &mut o.lpf2_type, k2);
+        whatif_value(
+            ui,
+            "cutoff",
+            &mut o.lpf2_hz,
+            hz2,
+            5.0,
+            0.0..=1000.0,
+            " Hz",
+            false,
+        );
+    });
+    ui.horizontal_wrapped(|ui| {
+        ui.label("RPM notch");
+        let mut harmonics = o.rpm_harmonics.map(f64::from);
+        whatif_value(
+            ui,
+            "harmonics",
+            &mut harmonics,
+            rpm.map_or(0.0, |r| f64::from(r.harmonics)),
+            1.0,
+            0.0..=10.0,
+            "",
+            true,
+        );
+        o.rpm_harmonics = harmonics.map(|h| h as u32);
+        whatif_value(
+            ui,
+            "Q",
+            &mut o.rpm_q,
+            rpm.map_or(5.0, |r| r.q),
+            0.1,
+            0.1..=20.0,
+            "",
+            false,
+        );
+        whatif_value(
+            ui,
+            "min",
+            &mut o.rpm_min_hz,
+            rpm.map_or(100.0, |r| r.min_hz),
+            5.0,
+            0.0..=500.0,
+            " Hz",
+            false,
+        );
+        ui.separator();
+        ui.label("Dyn notch");
+        let mut count = o.dyn_count.map(f64::from);
+        whatif_value(
+            ui,
+            "count",
+            &mut count,
+            dn.map_or(0.0, |d| f64::from(d.count)),
+            1.0,
+            0.0..=8.0,
+            "",
+            true,
+        );
+        o.dyn_count = count.map(|c| c as u32);
+        whatif_value(
+            ui,
+            "Q",
+            &mut o.dyn_q,
+            dn.map_or(3.0, |d| d.q),
+            0.1,
+            0.1..=20.0,
+            "",
+            false,
+        );
+        whatif_value(
+            ui,
+            "min",
+            &mut o.dyn_min_hz,
+            dn.map_or(150.0, |d| d.min_hz),
+            5.0,
+            0.0..=1000.0,
+            " Hz",
+            false,
+        );
+        whatif_value(
+            ui,
+            "max",
+            &mut o.dyn_max_hz,
+            dn.map_or(600.0, |d| d.max_hz),
+            5.0,
+            0.0..=1000.0,
+            " Hz",
+            false,
+        );
+        ui.separator();
+        ui.label("Notch");
+        whatif_value(
+            ui,
+            "centre",
+            &mut o.notch_hz,
+            notch.map_or(0.0, |n| n.center_hz),
+            5.0,
+            0.0..=1000.0,
+            " Hz",
+            false,
+        );
+        whatif_value(
+            ui,
+            "cutoff",
+            &mut o.notch_cutoff_hz,
+            notch.map_or(0.0, |n| n.cutoff_hz),
+            5.0,
+            0.0..=1000.0,
+            " Hz",
+            false,
+        );
+    });
+}
+
+/// Filter Sim: the unfiltered gyro through the modelled chain, validated
+/// against the logged filtered gyro, and through the what-if chain.
+pub fn filter_sim(app: &mut App, ui: &mut Ui) {
+    for slot in [Slot::A, Slot::B] {
+        slot_header(app, ui, slot);
+    }
+    ui.separator();
+    ui.horizontal_wrapped(|ui| {
+        axis_selector(ui, &mut app.tools.axis);
+        app.tools.filter_sim.axis = app.tools.axis;
+        ui.separator();
+        ui.label("segment");
+        ui.add(
+            egui::DragValue::new(&mut app.tools.filter_sim.segment_s)
+                .speed(0.01)
+                .range(0.02..=2.0)
+                .suffix(" s"),
+        );
+        ui.label("max");
+        let mut max = app.tools.filter_sim.max_hz.unwrap_or(0.0);
+        if ui
+            .add(
+                egui::DragValue::new(&mut max)
+                    .speed(10.0)
+                    .range(0.0..=8000.0)
+                    .suffix(" Hz"),
+            )
+            .changed()
+        {
+            app.tools.filter_sim.max_hz = if max > 0.0 { Some(max) } else { None };
+        }
+        if !app.tools.filter_sim.overrides.is_empty() && ui.button("Reset to log").clicked() {
+            app.tools.filter_sim.overrides = FilterOverrides::default();
+        }
+    });
+    let axis = app.tools.axis;
+    let params = app.tools.filter_sim.clone();
+    let mut outputs: Vec<(Slot, Arc<Output>)> = Vec::new();
+    for slot in [Slot::A, Slot::B] {
+        let has_raw = app.loaded(slot).and_then(Loaded::current).is_some_and(|s| {
+            s.channel(&ChannelId::Gyro {
+                axis,
+                stage: GyroStage::Raw,
+            })
+            .is_some()
+        });
+        if app.loaded(slot).is_some() && !has_raw {
+            ui.label(
+                RichText::new(format!(
+                    "{}: no unfiltered gyro in this log (Betaflight: log gyroUnfilt or set debug_mode GYRO_SCALED; ArduPilot: enable the batch sampler)",
+                    slot.name()
+                ))
+                .color(MUTED),
+            );
+            continue;
+        }
+        if !has_raw {
+            continue;
+        }
+        match app.result(slot, Kind::FilterSim(params.clone())) {
+            Some(Ok(o)) => outputs.push((slot, o)),
+            Some(Err(e)) => show_error(ui, slot, &e),
+            None => {
+                ui.spinner();
+            }
+        }
+    }
+    let seed: Option<ChainModel> = outputs.iter().find_map(|(_, o)| match o.as_ref() {
+        Output::FilterSim(f) => Some(f.model.clone()),
+        _ => None,
+    });
+    whatif_editor(ui, &mut app.tools.filter_sim.overrides, seed.as_ref());
+    for (slot, o) in &outputs {
+        let Output::FilterSim(f) = o.as_ref() else {
+            continue;
+        };
+        ui.label(
+            RichText::new(format!("{}: {}", slot.name(), f.description.join(" · ")))
+                .color(slot_color(*slot)),
+        );
+        let fit = match &f.fit {
+            Some(fit) => format!(
+                "fit: residual {:.0} % of the filtered RMS (unfiltered {:.0} %), delay {:+.1} ms",
+                fit.residual_rel * 100.0,
+                fit.unfiltered_rel * 100.0,
+                fit.delay_ms
+            ),
+            None => "no gyro.filtered in the log to validate against".to_string(),
+        };
+        ui.label(
+            RichText::new(format!(
+                "{}: {fit}; throttle {}, {} motor(s) with rpm",
+                slot.name(),
+                if f.throttle_driven {
+                    "drives LPF1"
+                } else {
+                    "not logged"
+                },
+                f.motors
+            ))
+            .color(MUTED),
+        );
+    }
+    let h = ui.available_height();
+    let whatif = !params.overrides.is_empty();
+    Plot::new("fsim-psd")
+        .legend(Legend::default())
+        .x_axis_label("frequency (Hz)")
+        .y_axis_label("dB")
+        .height(h * 0.55)
+        .show(ui, |pu| {
+            for (slot, o) in &outputs {
+                let Output::FilterSim(f) = o.as_ref() else {
+                    continue;
+                };
+                let line = |name: String, ys: &[f64]| {
+                    let pts: Vec<[f64; 2]> = f.freq.iter().zip(ys).map(|(x, y)| [*x, *y]).collect();
+                    Line::new(name, PlotPoints::from(pts))
+                };
+                pu.line(
+                    line(format!("{} raw", slot.name()), &f.psd_raw_db)
+                        .color(slot_color(*slot).gamma_multiply(0.45))
+                        .width(1.0),
+                );
+                if let Some(l) = &f.psd_logged_db {
+                    pu.line(
+                        line(format!("{} logged filtered", slot.name()), l)
+                            .color(slot_color(*slot))
+                            .width(1.5),
+                    );
+                }
+                if whatif {
+                    pu.line(
+                        line(format!("{} sim as flown", slot.name()), &f.psd_as_flown_db)
+                            .color(slot_color(*slot))
+                            .style(LineStyle::dashed_loose())
+                            .width(1.0),
+                    );
+                }
+                pu.line(
+                    line(
+                        format!(
+                            "{} sim{}",
+                            slot.name(),
+                            if whatif { " what-if" } else { "" }
+                        ),
+                        &f.psd_sim_db,
+                    )
+                    .color(if *slot == Slot::A {
+                        ACCENT
+                    } else {
+                        Color32::LIGHT_GREEN
+                    })
+                    .width(1.5),
+                );
+            }
+        });
+    let px = ui.available_width() as usize;
+    Plot::new("fsim-time")
+        .legend(Legend::default())
+        .x_axis_label("time (s)")
+        .y_axis_label("deg/s")
+        .height(h * 0.45 - 8.0)
+        .show(ui, |pu| {
+            for (slot, o) in &outputs {
+                let Output::FilterSim(f) = o.as_ref() else {
+                    continue;
+                };
+                let series: Vec<(String, &[f64], Color32, f32)> = [
+                    Some((
+                        format!("{} raw", slot.name()),
+                        f.raw.as_slice(),
+                        slot_color(*slot).gamma_multiply(0.45),
+                        1.0,
+                    )),
+                    f.logged.as_deref().map(|l| {
+                        (
+                            format!("{} logged filtered", slot.name()),
+                            l,
+                            slot_color(*slot),
+                            1.2,
+                        )
+                    }),
+                    Some((
+                        format!("{} sim", slot.name()),
+                        f.sim.as_slice(),
+                        if *slot == Slot::A {
+                            ACCENT
+                        } else {
+                            Color32::LIGHT_GREEN
+                        },
+                        1.2,
+                    )),
+                ]
+                .into_iter()
+                .flatten()
+                .collect();
+                for (name, ys, colour, width) in series {
+                    let pts = decimate(&f.time_s, ys, |_| true, px.max(100) * 2);
+                    pu.line(
+                        Line::new(name, PlotPoints::from(pts))
+                            .color(colour)
+                            .width(width),
+                    );
+                }
+            }
+        });
 }
 
 #[cfg(test)]

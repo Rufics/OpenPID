@@ -17,6 +17,7 @@ openpid-fmt-blackbox = { workspace = true }
 openpid-fmt-csv = { workspace = true }
 openpid-fmt-ardupilot = { workspace = true }
 openpid-analysis = { workspace = true }
+openpid-sim = { workspace = true }
 openpid-dsp = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

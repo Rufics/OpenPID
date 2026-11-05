@@ -30,6 +30,11 @@ const LOG_4_5: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../tests/logs/betaflight-4.5.0-gps-rescue.bbl"
 );
+/// Logs `gyroUnfilt`, motor rpm and throttle: the Filter Sim input.
+const LOG_2025: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/logs/betaflight-2025.12.2-btfl_027.bbl"
+);
 
 /// The app is built lazily inside the ui closure so its worker wakes the
 /// harness's own context.
@@ -131,6 +136,7 @@ fn tab_names_and_titles() {
         ("spectrum", Tab::Spectrum),
         ("throttle", Tab::ThrottleHeatmap),
         ("time", Tab::TimeHeatmap),
+        ("filter", Tab::FilterSim),
         ("sliders", Tab::Sliders),
         ("diagnostics", Tab::Diagnostics),
         ("settings", Tab::Settings),
@@ -947,4 +953,77 @@ fn log_viewer_uses_display_units() {
     assert!(app(&h).loaded(Slot::A).is_some());
     assert_eq!(app(&h).prefs.rate_unit, crate::prefs::RateUnit::RadPerS);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+// ------------------------------------------------------------------ filter sim
+
+#[test]
+fn filter_sim_tab_validates_the_model_and_applies_what_if_changes() {
+    let mut h = harness(vec![LOG_2025.into()], Some(Tab::FilterSim));
+    run_until(&mut h, idle);
+    assert_eq!(app(&h).cache.len(), 1);
+    assert!(has_label_containing(&h, "fit: residual"));
+    assert!(has_label_containing(&h, "RPM notch: 3 harmonics"));
+    assert!(has_label_containing(&h, "drives LPF1"));
+    assert!(
+        h.query_by_label("Reset to log").is_none(),
+        "nothing to reset yet"
+    );
+    let fit = app(&h)
+        .cache
+        .values()
+        .find_map(|c| match c {
+            Cached::Ready(o) => match o.as_ref() {
+                crate::worker::Output::FilterSim(f) => f.fit,
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("filter sim ran");
+    assert!(fit.residual_rel < 0.25 && fit.residual_rel < fit.unfiltered_rel / 2.0);
+    // a what-if cutoff is a new job and changes the description and the spectrum
+    app_mut(&mut h)
+        .tools
+        .filter_sim
+        .overrides
+        .set("lpf1_hz", 90.0)
+        .unwrap();
+    h.step();
+    run_until(&mut h, idle);
+    assert_eq!(app(&h).cache.len(), 2);
+    assert!(has_label_containing(&h, "lowpass 1: PT1 90 Hz"));
+    let changed = app(&h)
+        .cache
+        .values()
+        .find_map(|c| match c {
+            Cached::Ready(o) => match o.as_ref() {
+                crate::worker::Output::FilterSim(f) if f.whatif != f.model => Some(f),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("what-if result");
+    let hi = changed.freq.partition_point(|f| *f < 300.0);
+    assert!(
+        changed.psd_sim_db[hi..].iter().sum::<f64>()
+            < changed.psd_as_flown_db[hi..].iter().sum::<f64>(),
+        "a 90 Hz low-pass removes more above 300 Hz than the chain as flown"
+    );
+    h.get_by_label("Reset to log").click();
+    h.step();
+    assert!(app(&h).tools.filter_sim.overrides.is_empty());
+    run_until(&mut h, idle);
+    assert_eq!(
+        app(&h).cache.len(),
+        2,
+        "the as-flown result is still cached"
+    );
+    // the editor shows the log's values and turns a field into an override on edit
+    assert!(has_label_containing(&h, "harmonics"));
+    // a log without unfiltered gyro gets a hint and no job
+    let mut h2 = harness(vec![LOG_4_2.into()], Some(Tab::FilterSim));
+    run_until(&mut h2, no_slot_loading);
+    h2.step();
+    assert!(has_label_containing(&h2, "no unfiltered gyro"));
+    assert!(app(&h2).cache.is_empty());
 }

@@ -4,7 +4,9 @@ use crate::prefs::{Prefs, Theme};
 use crate::views;
 use crate::worker::{Done, Job, JobKey, Kind, Output, Slot, Worker};
 use eframe::egui;
-use openpid_analysis::{Epoch, PsdParams, StepParams, StftParams, ThrottleHeatmapParams};
+use openpid_analysis::{
+    Epoch, FilterSimParams, PsdParams, StepParams, StftParams, ThrottleHeatmapParams,
+};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -17,18 +19,20 @@ pub enum Tab {
     Spectrum,
     ThrottleHeatmap,
     TimeHeatmap,
+    FilterSim,
     Sliders,
     Diagnostics,
     Settings,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 8] = [
+    pub const ALL: [Tab; 9] = [
         Tab::LogViewer,
         Tab::Step,
         Tab::Spectrum,
         Tab::ThrottleHeatmap,
         Tab::TimeHeatmap,
+        Tab::FilterSim,
         Tab::Sliders,
         Tab::Diagnostics,
         Tab::Settings,
@@ -41,6 +45,7 @@ impl Tab {
             "spectrum" => Tab::Spectrum,
             "throttle" => Tab::ThrottleHeatmap,
             "time" => Tab::TimeHeatmap,
+            "filter" => Tab::FilterSim,
             "sliders" => Tab::Sliders,
             "diagnostics" => Tab::Diagnostics,
             "settings" => Tab::Settings,
@@ -55,6 +60,7 @@ impl Tab {
             Tab::Spectrum => "Spectrum",
             Tab::ThrottleHeatmap => "Freq × throttle",
             Tab::TimeHeatmap => "Freq × time",
+            Tab::FilterSim => "Filter Sim",
             Tab::Sliders => "PID sliders",
             Tab::Diagnostics => "Diagnostics",
             Tab::Settings => "Settings",
@@ -100,6 +106,8 @@ pub struct Tools {
     pub psd: PsdParams,
     pub throttle: ThrottleHeatmapParams,
     pub stft: StftParams,
+    /// Filter Sim axis, spectra and what-if overrides.
+    pub filter_sim: FilterSimParams,
     pub spectrum_channel: ChannelId,
     pub heatmap_channel: ChannelId,
     pub psd_db: bool,
@@ -121,6 +129,7 @@ impl Default for Tools {
             psd: PsdParams::default(),
             throttle: ThrottleHeatmapParams::default(),
             stft: StftParams::default(),
+            filter_sim: FilterSimParams::default(),
             spectrum_channel: gyro.clone(),
             heatmap_channel: gyro.clone(),
             psd_db: true,
@@ -423,6 +432,7 @@ impl App {
             Tab::Spectrum => views::spectrum(self, ui),
             Tab::ThrottleHeatmap => views::throttle_heatmap(self, ui),
             Tab::TimeHeatmap => views::time_heatmap(self, ui),
+            Tab::FilterSim => views::filter_sim(self, ui),
             Tab::Sliders => views::sliders(self, ui),
             Tab::Diagnostics => views::diagnostics(self, ui),
             Tab::Settings => views::settings(self, ui),
