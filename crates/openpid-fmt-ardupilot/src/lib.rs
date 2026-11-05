@@ -18,7 +18,7 @@ pub mod reader;
 mod session;
 
 pub use profile::{ArdupilotProfile, Vehicle};
-pub use reader::{FormatDef, Message, RawLog, Value, read};
+pub use reader::{FormatDef, Message, RawLog, Value, log_starts, read};
 
 use openpid_core::session::SourceInfo;
 use openpid_core::{Confidence, FormatError, LogFile, LogFormat, OpenOptions};
@@ -54,12 +54,45 @@ impl LogFormat for ArdupilotFormat {
     }
 
     fn open(&self, data: &[u8], options: &OpenOptions) -> Result<LogFile, FormatError> {
-        let raw = read(data)?;
-        let session = session::build(&raw, data.len() as u64, options, self.profile)?;
-        let sessions = match &options.sessions {
-            Some(wanted) if !wanted.contains(&0) => Vec::new(),
-            _ => vec![session],
-        };
+        // one session per log header: a logger restart (or two concatenated
+        // files) re-emits the FMT block, starting with FMT's own definition
+        let mut starts = log_starts(data);
+        if starts.first() != Some(&0) {
+            starts.insert(0, 0);
+        }
+        let mut sessions = Vec::new();
+        let mut first_error = None;
+        for (index, &start) in starts.iter().enumerate() {
+            if options
+                .sessions
+                .as_ref()
+                .is_some_and(|wanted| !wanted.contains(&index))
+            {
+                continue;
+            }
+            let end = starts.get(index + 1).copied().unwrap_or(data.len());
+            let segment = &data[start..end];
+            match read(segment)
+                .and_then(|raw| session::build(&raw, segment.len() as u64, options, self.profile))
+            {
+                Ok(mut session) => {
+                    session.index = index;
+                    session.offset_bytes = start as u64;
+                    sessions.push(session);
+                }
+                Err(e) => {
+                    // a segment without rate-loop data (a header-only restart)
+                    // is skipped; the error surfaces only if no segment decodes
+                    first_error.get_or_insert(e);
+                }
+            }
+        }
+        if sessions.is_empty()
+            && let Some(e) = first_error
+            && options.sessions.is_none()
+        {
+            return Err(e);
+        }
         Ok(LogFile {
             source: SourceInfo {
                 path: None,

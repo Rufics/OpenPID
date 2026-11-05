@@ -236,6 +236,30 @@ pub fn looks_like_dataflash(head: &[u8]) -> bool {
     head.len() >= 3 && head[0] == HEAD1 && head[1] == HEAD2 && head[2] == FMT_TYPE
 }
 
+/// Byte offsets at which a new log starts inside `data`: every `FMT` packet
+/// that defines `FMT` itself (type 128, length 89, name `FMT`), which is how
+/// the firmware opens a log. The first is 0 for a well-formed file; a
+/// logger restart or two concatenated logs give more.
+pub fn log_starts(data: &[u8]) -> Vec<usize> {
+    let mut starts = Vec::new();
+    let mut i = 0usize;
+    while i + FMT_LEN <= data.len() {
+        if data[i] == HEAD1
+            && data[i + 1] == HEAD2
+            && data[i + 2] == FMT_TYPE
+            && data[i + 3] == FMT_TYPE
+            && usize::from(data[i + 4]) == FMT_LEN
+            && &data[i + 5..i + 8] == b"FMT"
+        {
+            starts.push(i);
+            i += FMT_LEN;
+        } else {
+            i += 1;
+        }
+    }
+    starts
+}
+
 /// Decode every packet of the file.
 pub fn read(data: &[u8]) -> Result<RawLog, FormatError> {
     let mut log = RawLog::default();
