@@ -738,6 +738,112 @@ fn touch_mode_checkbox_and_touch_events_scale_the_ui() {
     assert!(app(&h).touch_mode, "a touch switches touch mode on");
     h.run_steps(2);
     assert_eq!(h.ctx.zoom_factor(), 1.25);
+    assert_eq!(
+        h.ctx.global_style().spacing.interact_size.y,
+        44.0,
+        "44 pt touch targets"
+    );
+}
+
+/// One finger down or moving at `pos`.
+fn touch(h: &mut H, id: u64, phase: egui::TouchPhase, pos: egui::Pos2) {
+    h.input_mut().events.push(egui::Event::Touch {
+        device_id: egui::TouchDeviceId(0),
+        id: egui::TouchId(id),
+        phase,
+        pos,
+        force: None,
+    });
+}
+
+#[test]
+fn horizontal_pinch_zooms_time_only_and_a_long_press_places_the_cursor() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::LogViewer));
+    run_until(&mut h, no_slot_loading);
+    h.run_steps(2);
+    let frame = app(&h).viewer.plot_frame.expect("plot drawn");
+    let c = frame.center();
+    let x_before = app(&h).viewer.x_bounds.unwrap();
+    let y_before = app(&h).viewer.y_bounds.unwrap();
+    // two fingers 100 px apart, then 300 px apart: a horizontal pinch
+    pointer_move(&mut h, c);
+    touch(
+        &mut h,
+        1,
+        egui::TouchPhase::Start,
+        egui::pos2(c.x - 50.0, c.y),
+    );
+    touch(
+        &mut h,
+        2,
+        egui::TouchPhase::Start,
+        egui::pos2(c.x + 50.0, c.y),
+    );
+    h.step();
+    touch(
+        &mut h,
+        1,
+        egui::TouchPhase::Move,
+        egui::pos2(c.x - 150.0, c.y),
+    );
+    touch(
+        &mut h,
+        2,
+        egui::TouchPhase::Move,
+        egui::pos2(c.x + 150.0, c.y),
+    );
+    h.step();
+    h.step();
+    let x_after = app(&h).viewer.x_bounds.unwrap();
+    let y_after = app(&h).viewer.y_bounds.unwrap();
+    let span = |b: (f64, f64)| b.1 - b.0;
+    assert!(
+        span(x_after) < 0.5 * span(x_before),
+        "time axis zoomed in: {x_before:?} → {x_after:?}"
+    );
+    assert!(
+        (span(y_after) - span(y_before)).abs() < 1e-6 * span(y_before).max(1.0),
+        "amplitude axis untouched: {y_before:?} → {y_after:?}"
+    );
+    touch(
+        &mut h,
+        1,
+        egui::TouchPhase::End,
+        egui::pos2(c.x - 150.0, c.y),
+    );
+    touch(
+        &mut h,
+        2,
+        egui::TouchPhase::End,
+        egui::pos2(c.x + 150.0, c.y),
+    );
+    h.step();
+    // a finger held still on the plot places the cursor there
+    assert_eq!(app(&h).viewer.cursor_s, None);
+    // (touch mode is on now; the harness has no touch-to-pointer translation,
+    // so the resting finger is a pointer press that does not move)
+    // touch mode rescaled the layout: take the plot's current frame
+    let c2 = app(&h).viewer.plot_frame.expect("plot drawn").center();
+    let p = egui::pos2(c2.x + 20.0, c2.y);
+    pointer_move(&mut h, p);
+    pointer_button(&mut h, p, true);
+    for _ in 0..12 {
+        h.step();
+        if app(&h).viewer.cursor_s.is_some() {
+            break;
+        }
+    }
+    let cursor = app(&h)
+        .viewer
+        .cursor_s
+        .expect("long press placed the cursor");
+    let expected = app(&h).viewer.x_bounds.unwrap();
+    assert!(
+        cursor > expected.0 && cursor < expected.1,
+        "cursor {cursor} inside {expected:?}"
+    );
+    pointer_button(&mut h, p, false);
+    h.step();
 }
 
 // ------------------------------------------------------------------ worker
