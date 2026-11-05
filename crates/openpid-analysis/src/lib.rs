@@ -6,6 +6,7 @@
 pub mod filter_sim;
 pub mod prepare;
 pub mod psd;
+pub mod render;
 pub mod step;
 pub mod stft;
 pub mod throttle;

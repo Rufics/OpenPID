@@ -53,6 +53,21 @@ impl Tab {
         })
     }
 
+    /// Short name used on the command line and in exported file names.
+    pub fn name(self) -> &'static str {
+        match self {
+            Tab::LogViewer => "log",
+            Tab::Step => "step",
+            Tab::Spectrum => "spectrum",
+            Tab::ThrottleHeatmap => "throttle",
+            Tab::TimeHeatmap => "time",
+            Tab::FilterSim => "filter",
+            Tab::Sliders => "sliders",
+            Tab::Diagnostics => "diagnostics",
+            Tab::Settings => "settings",
+        }
+    }
+
     pub fn title(self) -> &'static str {
         match self {
             Tab::LogViewer => "Log viewer",
@@ -164,6 +179,10 @@ pub struct App {
     pub prefs_path: Option<PathBuf>,
     /// Theme the egui visuals currently follow.
     theme_applied: Option<Theme>,
+    /// Screen rectangle of the tab area, for the PNG export.
+    pub central_rect: egui::Rect,
+    /// Outcome of the last PNG export, filled by the screenshot callback.
+    pub export_message: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl std::fmt::Debug for App {
@@ -212,6 +231,8 @@ impl App {
             prefs,
             prefs_path,
             theme_applied: None,
+            central_rect: egui::Rect::NOTHING,
+            export_message: Arc::new(std::sync::Mutex::new(None)),
         };
         for (i, p) in open_on_start.into_iter().take(2).enumerate() {
             app.open(if i == 0 { Slot::A } else { Slot::B }, p);
@@ -394,7 +415,48 @@ impl App {
                 }
                 ui.separator();
                 ui.checkbox(&mut self.touch_mode, "Touch mode");
+                ui.separator();
+                self.export_menu(ui);
             });
+        });
+    }
+
+    /// "Export" menu: the tab area as PNG, a slot's result as JSON.
+    fn export_menu(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        ui.menu_button("Export", |ui| {
+            if ui.button("Plot as PNG…").clicked() {
+                ui.close();
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("PNG image", &["png"])
+                    .set_file_name(self.export_file_name(Slot::A, "png"))
+                    .save_file()
+                {
+                    self.export_png(&ctx, path);
+                }
+            }
+            for slot in [Slot::A, Slot::B] {
+                let ready = self.current_result(slot).is_some();
+                if ui
+                    .add_enabled(
+                        ready,
+                        egui::Button::new(format!("{} result as JSON…", slot.name())),
+                    )
+                    .clicked()
+                {
+                    ui.close();
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("JSON", &["json"])
+                        .set_file_name(self.export_file_name(slot, "json"))
+                        .save_file()
+                    {
+                        self.status = match self.export_json(slot, &path) {
+                            Ok(()) => format!("wrote {}", path.display()),
+                            Err(e) => format!("export failed: {e}"),
+                        };
+                    }
+                }
+            }
         });
     }
 
@@ -429,7 +491,10 @@ impl App {
         self.handle_drops(&ctx);
         self.top_bar(ui);
         self.status_bar(ui);
-        egui::CentralPanel::default().show(ui, |ui| match self.tab {
+        if let Some(msg) = self.export_message.lock().ok().and_then(|mut m| m.take()) {
+            self.status = msg;
+        }
+        let central = egui::CentralPanel::default().show(ui, |ui| match self.tab {
             Tab::LogViewer => views::log_viewer(self, ui),
             Tab::Step => views::step(self, ui),
             Tab::Spectrum => views::spectrum(self, ui),
@@ -440,5 +505,6 @@ impl App {
             Tab::Diagnostics => views::diagnostics(self, ui),
             Tab::Settings => views::settings(self, ui),
         });
+        self.central_rect = central.response.rect;
     }
 }

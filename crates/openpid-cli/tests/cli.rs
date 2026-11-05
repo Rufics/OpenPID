@@ -291,3 +291,27 @@ fn gen_command_writes_a_session_openpid_can_analyse() {
     std::fs::remove_file(&csv).ok();
     std::fs::remove_file(&spec_path).ok();
 }
+
+#[test]
+fn png_of_a_heatmap() {
+    let l = log("betaflight-4.2.0.BFL");
+    let f = l.to_str().unwrap();
+    let png = temp("thr.png");
+    let (ok, out, err) = run(&["run", "thr-heatmap", f, "--png", png.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    assert!(out.contains("\"grid\""), "JSON still printed");
+    let bytes = std::fs::read(&png).unwrap();
+    assert_eq!(
+        &bytes[..8],
+        &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]
+    );
+    assert!(
+        bytes.len() > 4 * 101 * 100,
+        "101 throttle bins × frequency rows"
+    );
+    let (ok, _, err) = run(&["run", "stft", f, "--png", png.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    let (ok, _, err) = run(&["run", "psd", f, "--png", png.to_str().unwrap()]);
+    assert!(!ok && err.contains("--png is for"), "{err}");
+    std::fs::remove_file(&png).ok();
+}

@@ -1077,3 +1077,86 @@ fn rpm_overlay_on_the_throttle_heatmap_has_per_motor_toggles() {
     run_until(&mut h2, idle);
     assert!(h2.query_by_label("RPM overlay").is_none());
 }
+
+// ------------------------------------------------------------------ export
+
+#[test]
+fn json_export_equals_the_cli_serialisation_and_names_the_file() {
+    use openpid_analysis::{Analysis, AnalysisCtx, StepAnalysis};
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Step));
+    run_until(&mut h, idle);
+    assert_eq!(
+        app(&h).export_file_name(Slot::A, "json"),
+        "betaflight-4.2.0-step-all.json"
+    );
+    assert_eq!(
+        app(&h).export_file_name(Slot::B, "png"),
+        "openpid-step-all.png"
+    );
+    let dir = std::env::temp_dir().join(format!("openpid-export-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("step.json");
+    app(&h).export_json(Slot::A, &path).unwrap();
+    let written = std::fs::read_to_string(&path).unwrap();
+    let session = app(&h).loaded(Slot::A).unwrap().current().unwrap().clone();
+    let ctx = AnalysisCtx {
+        session: &session,
+        epoch: None,
+    };
+    let cli = serde_json::to_string_pretty(&StepAnalysis.run(&ctx, &app(&h).tools.step).unwrap())
+        .unwrap();
+    assert_eq!(written, cli, "byte-identical to `openpid run step`");
+    assert!(
+        app(&h)
+            .export_json(Slot::B, &path)
+            .unwrap_err()
+            .contains("nothing to export"),
+        "empty slot"
+    );
+    app_mut(&mut h).loaded_mut(Slot::A).unwrap().epoch = Some(Epoch {
+        start_s: 1.0,
+        end_s: 2.5,
+    });
+    assert_eq!(
+        app(&h).export_file_name(Slot::A, "json"),
+        "betaflight-4.2.0-step-1.0-2.5.json"
+    );
+    select_tab(&mut h, Tab::LogViewer);
+    assert!(app(&h).current_kind().is_none());
+    assert!(app(&h).export_json(Slot::A, &path).is_err());
+    // the Export menu is on the top bar
+    assert!(h.query_by_label("Export").is_some());
+    // a cropped PNG of a synthetic frame
+    let image = egui::ColorImage::filled([4, 3], egui::Color32::from_rgb(10, 20, 30));
+    let png = dir.join("plot.png");
+    crate::export::write_png(
+        &image,
+        Some(egui::Rect::from_min_max(
+            egui::pos2(1.0, 1.0),
+            egui::pos2(3.0, 3.0),
+        )),
+        1.0,
+        &png,
+    )
+    .unwrap();
+    let bytes = std::fs::read(&png).unwrap();
+    assert_eq!(
+        &bytes[..8],
+        &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]
+    );
+    assert_eq!(&bytes[16..24], &[0, 0, 0, 2, 0, 0, 0, 2], "2 × 2 pixels");
+    assert!(
+        crate::export::write_png(
+            &image,
+            Some(egui::Rect::from_min_max(
+                egui::pos2(10.0, 10.0),
+                egui::pos2(12.0, 12.0)
+            )),
+            1.0,
+            &png
+        )
+        .unwrap_err()
+        .contains("empty")
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

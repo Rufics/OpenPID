@@ -5,6 +5,7 @@
 
 mod app;
 mod colormap;
+mod export;
 mod prefs;
 #[cfg(test)]
 mod tests;

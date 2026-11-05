@@ -15,7 +15,7 @@ USAGE:
     openpid info <file> [--json] [--raw] [--session N]
     openpid decode <file> [--session N] [--out <path>] [--scaled]
     openpid run <analysis> <file> [--session N] [--epoch A..B] [--axis roll|pitch|yaw]
-                [--channel KEY] [--out <path>]
+                [--channel KEY] [--out <path>] [--png <path>]
     openpid sliders <file> [--session N] [--set KEY=VALUE,...] [--json]
     openpid gen [<spec.json>] [--out synthetic.csv] | gen --example
     openpid --help | --version
@@ -59,6 +59,7 @@ OPTIONS:
     --example     gen: print the default spec instead of generating
     --raw         Skip firmware-profile scaling and derived channels
     --out <path>  Write to a file instead of stdout
+    --png <path>  thr-heatmap / stft: also write the grid as a PNG image (viridis)
 ";
 
 #[derive(Debug, Default)]
@@ -76,6 +77,7 @@ struct Args {
     raw: bool,
     scaled: bool,
     out: Option<PathBuf>,
+    png: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -96,6 +98,7 @@ fn parse_args() -> Result<Args, String> {
                 args.session = Some(v.parse().map_err(|_| format!("bad session index: {v}"))?);
             }
             "--out" => args.out = Some(PathBuf::from(it.next().ok_or("--out needs a path")?)),
+            "--png" => args.png = Some(PathBuf::from(it.next().ok_or("--png needs a path")?)),
             "--epoch" => {
                 let v = it.next().ok_or("--epoch needs A..B")?;
                 let (a, b) = v.split_once("..").ok_or("--epoch needs the form A..B")?;
@@ -424,6 +427,7 @@ fn cmd_run(args: &Args) -> Result<(), String> {
             stage: openpid_core::GyroStage::Filtered,
         },
     };
+    let mut grid: Option<openpid_core::analysis::Grid2D> = None;
     let json = match analysis {
         "step" => {
             let p = openpid_analysis::StepParams {
@@ -452,22 +456,22 @@ fn cmd_run(args: &Args) -> Result<(), String> {
                 channel,
                 ..Default::default()
             };
-            serde_json::to_string_pretty(
-                &openpid_analysis::ThrottleHeatmap
-                    .run(&ctx, &p)
-                    .map_err(|e| e.to_string())?,
-            )
+            let out = openpid_analysis::ThrottleHeatmap
+                .run(&ctx, &p)
+                .map_err(|e| e.to_string())?;
+            grid = Some(out.grid.clone());
+            serde_json::to_string_pretty(&out)
         }
         "stft" => {
             let p = openpid_analysis::StftParams {
                 channel,
                 ..Default::default()
             };
-            serde_json::to_string_pretty(
-                &openpid_analysis::StftAnalysis
-                    .run(&ctx, &p)
-                    .map_err(|e| e.to_string())?,
-            )
+            let out = openpid_analysis::StftAnalysis
+                .run(&ctx, &p)
+                .map_err(|e| e.to_string())?;
+            grid = Some(out.grid.clone());
+            serde_json::to_string_pretty(&out)
         }
         "filter-sim" => {
             let mut p = openpid_analysis::FilterSimParams {
@@ -486,6 +490,14 @@ fn cmd_run(args: &Args) -> Result<(), String> {
         other => return Err(format!("unknown analysis {other}\n\n{USAGE}")),
     }
     .map_err(|e| e.to_string())?;
+    if let Some(png) = &args.png {
+        let g = grid
+            .as_ref()
+            .ok_or_else(|| format!("--png is for thr-heatmap and stft, not {analysis}"))?;
+        let (w, h, rgba) = openpid_analysis::render::grid_rgba(g, 0.0, 20.0);
+        std::fs::write(png, openpid_analysis::render::png_rgba(w, h, &rgba))
+            .map_err(|e| format!("cannot write {}: {e}", png.display()))?;
+    }
     if let Some(p) = &args.out {
         std::fs::write(p, json).map_err(|e| format!("cannot write {}: {e}", p.display()))
     } else {
