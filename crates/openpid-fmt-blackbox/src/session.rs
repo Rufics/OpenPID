@@ -71,6 +71,10 @@ fn convert_event(e: EventData) -> EventKind {
         EventData::Disarm { reason } => EventKind::Disarm { reason },
         EventData::FlightMode { flags, last_flags } => EventKind::FlightMode { flags, last_flags },
         EventData::LogEnd => EventKind::LogEnd,
+        EventData::Other { name, data } => EventKind::Other {
+            name: name.to_string(),
+            data,
+        },
     }
 }
 

@@ -396,10 +396,11 @@ pub fn settings(h: &RawHeaders) -> Settings {
             log_hz,
         },
         motor: MotorConfig {
+            // Rotorflight 4.3 prints a pointer here (0x2000_xxxx): keep only plausible counts
             poles: h
                 .get_f64("motor_poles")
                 .map(|p| p as u32)
-                .filter(|p| *p > 0),
+                .filter(|p| (2..=64).contains(p)),
             protocol: h.get_f64("motor_pwm_protocol").map(protocol_name),
             output_low: Some(low),
             output_high: Some(high),
