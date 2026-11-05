@@ -1288,6 +1288,111 @@ fn surface_tab_orbits_zooms_pans_and_reads_out() {
     assert!(has_label_containing(&h, "B: gyro"));
 }
 
+// ------------------------------------------------------------------ spectrum player
+
+#[test]
+fn time_heatmap_player_plays_scrubs_and_syncs_the_cursor() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::TimeHeatmap));
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    let (x0, x1) = {
+        let p = app(&h).player.clone();
+        assert!(!p.playing);
+        assert!(p.pos_s.is_some(), "starts at the first column");
+        let frame = p.plot_frame.expect("heatmap drawn");
+        assert!(frame.width() > 100.0);
+        let columns = app(&h).viewer.cursor_s;
+        assert_eq!(columns, p.pos_s, "cursor follows the player");
+        (p.pos_s.unwrap(), p.x_bounds.unwrap().1)
+    };
+    assert!(has_label_containing(&h, "column 1 of"));
+    assert!(has_label_containing(&h, "A spectrum at"));
+    // play: 4 steps of 0.25 s advance one second at 1×
+    h.get_by_label("▶ Play").click();
+    h.step();
+    assert!(app(&h).player.playing);
+    h.run_steps(5);
+    let pos = app(&h).player.pos_s.unwrap();
+    assert!(
+        (pos - x0 - 1.25).abs() < 0.3,
+        "{pos} after 1.25 s from {x0}"
+    );
+    assert_eq!(app(&h).viewer.cursor_s, Some(pos), "cursor in step");
+    assert!(app(&h).player.column.unwrap() > 0);
+    // faster
+    app_mut(&mut h).player.speed = 4.0;
+    h.run_steps(4);
+    let fast = app(&h).player.pos_s.unwrap();
+    assert!(fast - pos > 3.0, "{pos} → {fast} at 4×");
+    // pause holds the position
+    h.get_by_label("⏸ Pause").click();
+    h.step();
+    assert!(!app(&h).player.playing);
+    let held = app(&h).player.pos_s;
+    assert!(held.unwrap() >= fast);
+    h.run_steps(3);
+    assert_eq!(app(&h).player.pos_s, held);
+    // one column either way
+    let col = app(&h).player.column.unwrap();
+    h.get_by_label("step ▶").click();
+    h.run_steps(2);
+    assert_eq!(app(&h).player.column, Some(col + 1));
+    h.get_by_label("◀ step").click();
+    h.run_steps(2);
+    assert_eq!(app(&h).player.column, Some(col));
+    // the log-viewer cursor moved: the player follows it
+    let mid = f64::midpoint(x0, x1);
+    app_mut(&mut h).viewer.cursor_s = Some(mid);
+    h.run_steps(2);
+    let followed = app(&h).player.pos_s.unwrap();
+    assert!((followed - mid).abs() < 0.011, "{followed} vs {mid}");
+    assert_eq!(app(&h).viewer.cursor_s, Some(followed));
+    // clicking the heatmap scrubs
+    let frame = app(&h).player.plot_frame.unwrap();
+    let (b0, b1) = app(&h).player.x_bounds.unwrap();
+    let want = b0 + (b1 - b0) * 0.25;
+    let at = egui::pos2(frame.min.x + frame.width() * 0.25, frame.center().y);
+    pointer_move(&mut h, at);
+    pointer_button(&mut h, at, true);
+    pointer_button(&mut h, at, false);
+    h.run_steps(2);
+    let p = app(&h).player.pos_s.unwrap();
+    assert!((p - want).abs() < (b1 - b0) * 0.02, "{p} vs {want}");
+    assert_eq!(app(&h).viewer.cursor_s, Some(p));
+    // to start, then play past the end loops
+    h.get_by_label("⏮ To start").click();
+    h.run_steps(2);
+    assert_eq!(app(&h).player.pos_s, Some(x0));
+    app_mut(&mut h).player.pos_s = Some(x1 - 0.1);
+    app_mut(&mut h).player.speed = 1.0;
+    h.get_by_label("▶ Play").click();
+    h.run_steps(3);
+    assert!(app(&h).player.pos_s.unwrap() < x0 + 1.0, "looped");
+    // touch: a drag over the heatmap scrubs instead of panning
+    h.get_by_label("⏸ Pause").click();
+    h.step();
+    app_mut(&mut h).touch_mode = true;
+    h.run_steps(4); // the touch zoom factor applies a frame later; the layout settles after
+    let frame = app(&h).player.plot_frame.unwrap();
+    let (b0, b1) = app(&h).player.x_bounds.unwrap();
+    let from = egui::pos2(frame.min.x + frame.width() * 0.5, frame.center().y);
+    let to = egui::pos2(frame.min.x + frame.width() * 0.7, frame.center().y);
+    pointer_move(&mut h, from);
+    pointer_button(&mut h, from, true);
+    pointer_move(&mut h, egui::pos2(from.x + 20.0, from.y));
+    pointer_move(&mut h, to);
+    let dragged = app(&h).player.pos_s.unwrap();
+    pointer_button(&mut h, to, false);
+    assert!(
+        (dragged - (b0 + (b1 - b0) * 0.7)).abs() < (b1 - b0) * 0.05,
+        "{dragged}"
+    );
+    // without a log there is no player
+    let mut h2 = harness(Vec::new(), Some(Tab::TimeHeatmap));
+    h2.step();
+    assert!(h2.query_by_label("▶ Play").is_none());
+}
+
 // ------------------------------------------------------------------ export
 
 #[test]
