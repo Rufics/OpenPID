@@ -13,6 +13,10 @@ use std::collections::BTreeMap;
 
 /// Longest frame body (without the letter) the firmware can write.
 pub const MAX_FRAME_LEN: usize = 256;
+/// Bytes without a single accepted frame after which the rest of the file is
+/// treated as not being blackbox data at all (stale sectors on the card, another
+/// file's remains) instead of one failed frame attempt per byte.
+pub const GIVE_UP_BYTES: usize = 16 * 1024;
 const MAX_ITERATION_JUMP: u32 = 500 * 10;
 const MAX_TIME_JUMP_US: i64 = 10 * 1_000_000;
 
@@ -110,6 +114,9 @@ pub struct ParseStats {
     pub intentionally_absent_iterations: u64,
     /// Bytes of frame data in the log.
     pub total_bytes: u64,
+    /// Bytes left unread once the parser gave up (see [`GIVE_UP_BYTES`]);
+    /// not included in `skipped_bytes`.
+    pub trailing_bytes: u64,
 }
 
 impl ParseStats {
@@ -175,6 +182,9 @@ pub struct Parser<'a> {
     stream_valid: bool,
     last_iteration: Option<u32>,
     last_time: Option<i64>,
+    /// Observed microseconds per loop iteration, learnt from accepted frames;
+    /// used to reject junk that happens to parse as an intra frame after a sync loss.
+    us_per_iteration: Option<f64>,
     rollover_us: i64,
     last_skipped: u32,
 
@@ -187,6 +197,8 @@ pub struct Parser<'a> {
     /// Counters so far.
     pub stats: ParseStats,
     done: bool,
+    /// Reader position just after the last accepted frame.
+    last_accept_pos: usize,
 }
 
 fn is_frame_letter(b: u8) -> bool {
@@ -245,6 +257,7 @@ impl<'a> Parser<'a> {
             stream_valid: false,
             last_iteration: None,
             last_time: None,
+            us_per_iteration: None,
             rollover_us: 0,
             last_skipped: 0,
             slow_buf: vec![0; headers.def(b'S').map_or(0, FrameDef::len)],
@@ -254,6 +267,7 @@ impl<'a> Parser<'a> {
             home_valid: false,
             stats,
             done: false,
+            last_accept_pos: 0,
         }
     }
 
@@ -274,6 +288,12 @@ impl<'a> Parser<'a> {
                 return None;
             }
             let start = self.reader.pos();
+            if start - self.last_accept_pos > GIVE_UP_BYTES {
+                // nothing decodable for a long stretch: the log ended here
+                self.stats.trailing_bytes = (self.reader.len() - start) as u64;
+                self.done = true;
+                return None;
+            }
             let letter = self.reader.read_u8()?;
             if !is_frame_letter(letter) {
                 self.stats.skipped_bytes += 1;
@@ -302,6 +322,10 @@ impl<'a> Parser<'a> {
                     let st = self.stats.frame(letter);
                     st.valid += 1;
                     st.bytes += size as u64 + 1;
+                    // only time-validated main frames prove the stream is still alive
+                    if matches!(acc, Accepted::Main { .. }) {
+                        self.last_accept_pos = self.reader.pos();
+                    }
                     break acc;
                 }
                 None => {
@@ -554,14 +578,42 @@ impl<'a> Parser<'a> {
     }
 
     fn validate_main(&self, iteration: u32, time_us: i64) -> bool {
-        match (self.last_iteration, self.last_time) {
-            (Some(li), Some(lt)) => {
-                iteration >= li
-                    && iteration < li.saturating_add(MAX_ITERATION_JUMP)
-                    && time_us >= lt
-                    && time_us < lt + MAX_TIME_JUMP_US
-            }
-            _ => true,
+        let (Some(li), Some(lt)) = (self.last_iteration, self.last_time) else {
+            return true;
+        };
+        let window = iteration >= li
+            && iteration < li.saturating_add(MAX_ITERATION_JUMP)
+            && time_us >= lt
+            && time_us < lt + MAX_TIME_JUMP_US;
+        if self.stream_valid || !window {
+            return window;
+        }
+        // Resynchronising after a loss: iteration and time must have advanced
+        // together, as they do in the firmware, within a factor of four of the
+        // rate seen so far. Junk that parses as a frame rarely satisfies this.
+        let Some(upi) = self.us_per_iteration else {
+            return true;
+        };
+        let d_iter = f64::from(iteration - li);
+        let d_t = (time_us - lt) as f64;
+        if d_iter < 1.0 {
+            return false;
+        }
+        let ratio = d_t / (d_iter * upi);
+        (0.25..=4.0).contains(&ratio)
+    }
+
+    /// Learn the loop period from two accepted frames of the same valid stream.
+    fn learn_rate(&mut self, iteration: u32, time_us: i64) {
+        if let (Some(li), Some(lt)) = (self.last_iteration, self.last_time)
+            && iteration > li
+            && time_us > lt
+        {
+            let upi = (time_us - lt) as f64 / f64::from(iteration - li);
+            self.us_per_iteration = Some(match self.us_per_iteration {
+                Some(prev) => 0.9 * prev + 0.1 * upi,
+                None => upi,
+            });
         }
     }
 
@@ -612,6 +664,7 @@ impl<'a> Parser<'a> {
                         if !self.stream_valid {
                             return None;
                         }
+                        self.learn_rate(iteration, t);
                         self.last_iteration = Some(iteration);
                         self.last_time = Some(t);
                         self.stats.intentionally_absent_iterations += u64::from(self.last_skipped);
@@ -876,6 +929,54 @@ H motorOutput:158,2047\n";
         assert_eq!(frames, vec![f0.to_vec(), f1.to_vec(), f2.to_vec()]);
         assert!(stats.corrupt_total() >= 1);
         assert!(stats.skipped_bytes >= 1);
+    }
+
+    #[test]
+    fn gives_up_on_trailing_garbage() {
+        let mut data = HDR.as_bytes().to_vec();
+        intra(&mut data, 0, 1000, [1, 2, 3], [1200, 1300]);
+        let f0 = [0i64, 1000, 1, 2, 3, 1200, 1300];
+        inter(&mut data, 1250, [4, 5, 6], [1210, 1310], &f0, &f0);
+        let f1 = [2i64, 1250, 4, 5, 6, 1210, 1310];
+        inter(&mut data, 1500, [4, 5, 6], [1210, 1310], &f1, &f0);
+        let f2 = [4i64, 1500, 4, 5, 6, 1210, 1310];
+        inter(&mut data, 1750, [4, 5, 6], [1210, 1310], &f2, &f1);
+        let good_len = data.len();
+        // 40 KiB of pseudo-random bytes with a frame letter every ~12 bytes, like stale
+        // data from another file (the last good frame is lost too: no frame follows it)
+        let mut x: u32 = 0x1234_5678;
+        for _ in 0..40 * 1024 {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            data.push(if x.is_multiple_of(12) {
+                b"IPSGHE"[(x as usize / 12) % 6]
+            } else {
+                (x >> 8) as u8
+            });
+        }
+        let (frames, _, stats) = collect(&data);
+        assert_eq!(
+            &frames[..3],
+            &[f0.to_vec(), f1.to_vec(), f2.to_vec()],
+            "the good frames survive"
+        );
+        assert!(
+            frames.len() <= 5,
+            "junk rarely passes as a frame: {}",
+            frames.len()
+        );
+        assert!(stats.trailing_bytes > 20 * 1024, "{}", stats.trailing_bytes);
+        assert!(
+            stats.trailing_bytes as usize + stats.skipped_bytes as usize + good_len
+                <= data.len() + 1,
+            "trailing and skipped bytes do not overlap"
+        );
+        assert!(
+            stats.corrupt_total() < 6 * 1024,
+            "attempts stop once nothing decodes: {}",
+            stats.corrupt_total()
+        );
     }
 
     #[test]

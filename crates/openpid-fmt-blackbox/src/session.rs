@@ -213,6 +213,13 @@ pub fn build_session(
             .notes
             .push("no firmware profile matched; channels are raw".into());
     }
+    if log.stats.trailing_bytes > 0 {
+        diagnostics.notes.push(format!(
+            "{} trailing bytes after the last valid frame are not blackbox data (stale card \
+             sectors or another file's remains); decoding stopped there",
+            log.stats.trailing_bytes
+        ));
+    }
 
     let mut aux = vec![log.slow.clone()];
     aux.extend(log.gps.iter().cloned());
