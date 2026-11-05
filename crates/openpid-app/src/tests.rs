@@ -406,6 +406,113 @@ fn cursor_buttons_set_the_epoch() {
     assert!(app(&h).loaded(Slot::A).unwrap().epoch.is_none());
 }
 
+/// Screen x of time `t` on the last drawn log-viewer plot.
+fn plot_x(h: &H, t: f64) -> f32 {
+    let v = &app(h).viewer;
+    let frame = v.plot_frame.expect("plot drawn");
+    let (x0, x1) = v.x_bounds.expect("bounds known");
+    frame.min.x + ((t - x0) / (x1 - x0)) as f32 * frame.width()
+}
+
+fn pointer_move(h: &mut H, pos: egui::Pos2) {
+    h.input_mut().events.push(egui::Event::PointerMoved(pos));
+    h.step();
+}
+
+fn pointer_button(h: &mut H, pos: egui::Pos2, pressed: bool) {
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+}
+
+#[test]
+fn epoch_bounds_can_be_dragged_on_the_plot() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::LogViewer));
+    run_until(&mut h, no_slot_loading);
+    let duration = app(&h)
+        .loaded(Slot::A)
+        .unwrap()
+        .current()
+        .unwrap()
+        .timebase
+        .duration_s();
+    let (start, end) = (duration * 0.2, duration * 0.6);
+    app_mut(&mut h).loaded_mut(Slot::A).unwrap().epoch = Some(Epoch {
+        start_s: start,
+        end_s: end,
+    });
+    h.run_steps(2);
+    let frame = app(&h).viewer.plot_frame.expect("plot drawn");
+    let y = frame.center().y;
+    let bounds_before = app(&h).viewer.x_bounds.unwrap();
+    // grab the start bound and drag it to 40 % of the log
+    let target = duration * 0.4;
+    let x_start = plot_x(&h, start);
+    let x_target = plot_x(&h, target);
+    pointer_move(&mut h, egui::pos2(x_start, y));
+    assert_eq!(
+        app(&h).viewer.hover_handle,
+        Some((Slot::A, true)),
+        "hovering the start bound"
+    );
+    pointer_button(&mut h, egui::pos2(x_start, y), true);
+    pointer_move(&mut h, egui::pos2(x_start + 12.0, y)); // past egui's drag threshold
+    assert_eq!(app(&h).viewer.drag_handle, Some((Slot::A, true)));
+    pointer_move(&mut h, egui::pos2(x_target, y));
+    pointer_button(&mut h, egui::pos2(x_target, y), false);
+    h.step();
+    let e = app(&h).loaded(Slot::A).unwrap().epoch.unwrap();
+    let px_s = (bounds_before.1 - bounds_before.0) / f64::from(frame.width());
+    assert!(
+        (e.start_s - target).abs() <= 2.0 * px_s,
+        "start {} vs {target}",
+        e.start_s
+    );
+    assert_eq!(e.end_s, end, "the other bound is untouched");
+    assert_eq!(app(&h).viewer.drag_handle, None);
+    assert_eq!(
+        app(&h).viewer.x_bounds,
+        Some(bounds_before),
+        "the plot did not pan"
+    );
+    // dragging the start past the end collapses onto the end, never inverts
+    let x_now = plot_x(&h, e.start_s);
+    pointer_move(&mut h, egui::pos2(x_now, y));
+    pointer_button(&mut h, egui::pos2(x_now, y), true);
+    pointer_move(&mut h, egui::pos2(x_now + 12.0, y));
+    let x_far = plot_x(&h, duration * 0.9);
+    pointer_move(&mut h, egui::pos2(x_far, y));
+    pointer_button(&mut h, egui::pos2(x_far, y), false);
+    h.step();
+    let e = app(&h).loaded(Slot::A).unwrap().epoch.unwrap();
+    assert!(
+        e.start_s <= e.end_s && (e.start_s - end).abs() <= 2.0 * px_s,
+        "{e:?}"
+    );
+    // a drag that starts away from any bound pans the plot instead
+    let x_mid = plot_x(&h, duration * 0.75);
+    pointer_move(&mut h, egui::pos2(x_mid, y));
+    assert_eq!(app(&h).viewer.hover_handle, None);
+    pointer_button(&mut h, egui::pos2(x_mid, y), true);
+    pointer_move(&mut h, egui::pos2(x_mid - 40.0, y));
+    pointer_button(&mut h, egui::pos2(x_mid - 40.0, y), false);
+    h.step();
+    assert_eq!(
+        app(&h).loaded(Slot::A).unwrap().epoch.unwrap(),
+        e,
+        "epoch unchanged by a pan"
+    );
+    assert_ne!(
+        app(&h).viewer.x_bounds,
+        Some(bounds_before),
+        "the plot panned"
+    );
+}
+
 #[test]
 fn channel_filter_and_toggles_edit_the_channel_list() {
     let mut h = harness(vec![LOG_4_2.into()], Some(Tab::LogViewer));

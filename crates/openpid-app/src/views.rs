@@ -20,6 +20,92 @@ pub struct ViewerState {
     /// Time (s) of the last click/tap on the log viewer plot.
     pub cursor_s: Option<f64>,
     pub channel_filter: String,
+    /// Epoch handle (slot, `true` = start) under the pointer last frame.
+    pub hover_handle: Option<(Slot, bool)>,
+    /// Epoch handle being dragged.
+    pub drag_handle: Option<(Slot, bool)>,
+    /// Screen rectangle of the plot area last frame (for touch targets and tests).
+    pub plot_frame: Option<egui::Rect>,
+    /// Plot x range (seconds) last frame.
+    pub x_bounds: Option<(f64, f64)>,
+}
+
+/// Pixel distance within which an epoch bound can be grabbed.
+fn grab_radius(touch: bool) -> f32 {
+    if touch { 22.0 } else { 8.0 }
+}
+
+/// Moves one epoch bound to `t` (clamped to the log), keeping start <= end.
+fn set_epoch_bound(app: &mut App, slot: Slot, start: bool, t: f64) {
+    let Some(l) = app.loaded_mut(slot) else {
+        return;
+    };
+    let duration = l.current().map_or(t, |s| s.timebase.duration_s());
+    let t = t.clamp(0.0, duration.max(0.0));
+    let e = l.epoch.unwrap_or(Epoch {
+        start_s: 0.0,
+        end_s: duration,
+    });
+    l.epoch = Some(if start {
+        Epoch {
+            start_s: t.min(e.end_s),
+            end_s: e.end_s,
+        }
+    } else {
+        Epoch {
+            start_s: e.start_s,
+            end_s: t.max(e.start_s),
+        }
+    });
+}
+
+/// Shaded epoch regions and their draggable bounds; returns the handle under the pointer.
+fn draw_epochs(pu: &mut egui_plot::PlotUi<'_>, app: &App, grab_px: f32) -> Option<(Slot, bool)> {
+    let bounds = pu.plot_bounds();
+    let (y0, y1) = (bounds.min()[1], bounds.max()[1]);
+    let hover_pos = pu.response().hover_pos();
+    let transform = *pu.transform();
+    let mut hovered = None;
+    for slot in [Slot::A, Slot::B] {
+        let Some(e) = app.loaded(slot).and_then(|l| l.epoch) else {
+            continue;
+        };
+        let fill = slot_color(slot).gamma_multiply(0.12);
+        pu.polygon(
+            egui_plot::Polygon::new(
+                format!("{} epoch", slot.name()),
+                PlotPoints::from(vec![
+                    [e.start_s, y0],
+                    [e.end_s, y0],
+                    [e.end_s, y1],
+                    [e.start_s, y1],
+                ]),
+            )
+            .fill_color(fill)
+            .stroke(egui::Stroke::NONE),
+        );
+        for (is_start, t) in [(true, e.start_s), (false, e.end_s)] {
+            let near = hover_pos
+                .is_some_and(|p| (transform.position_from_point_x(t) - p.x).abs() <= grab_px);
+            let active = near || app.viewer.drag_handle == Some((slot, is_start));
+            if near {
+                hovered = Some((slot, is_start));
+            }
+            pu.vline(
+                VLine::new(
+                    format!(
+                        "{} epoch {}",
+                        slot.name(),
+                        if is_start { "start" } else { "end" }
+                    ),
+                    t,
+                )
+                .color(slot_color(slot))
+                .width(if active { 4.0 } else { 2.0 }),
+            );
+        }
+    }
+    hovered
 }
 
 fn slot_color(slot: Slot) -> Color32 {
@@ -401,18 +487,6 @@ fn viewer_plot_slot(
             .width(1.2),
         );
     }
-    if let Some(e) = l.epoch {
-        pu.vline(
-            VLine::new(format!("{} epoch start", slot.name()), e.start_s)
-                .color(slot_color(slot))
-                .width(2.0),
-        );
-        pu.vline(
-            VLine::new(format!("{} epoch end", slot.name()), e.end_s)
-                .color(slot_color(slot))
-                .width(2.0),
-        );
-    }
 }
 
 pub fn log_viewer(app: &mut App, ui: &mut Ui) {
@@ -432,26 +506,65 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
     if app.loaded(Slot::B).is_some() {
         n_lines *= 2.0;
     }
+    // a drag that starts on an epoch bound moves the bound, not the plot
+    let prev_hover = app.viewer.hover_handle;
+    let handle_interaction = prev_hover.is_some() || app.viewer.drag_handle.is_some();
+    let mut hovered = None;
+    let mut drag_to: Option<(Slot, bool, f64)> = None;
+    let mut drag_started = false;
+    let mut drag_stopped = false;
+    let mut frame = None;
+    let mut x_bounds = None;
     Plot::new("log_viewer")
         .legend(Legend::default())
         .x_axis_label("time (s)")
         .height(plot_h)
         .allow_boxed_zoom(!touch)
+        .allow_drag(!handle_interaction)
         .show(ui, |pu| {
             let px = pu.response().rect.width().max(100.0) as usize;
             for slot in [Slot::A, Slot::B] {
                 viewer_plot_slot(pu, app, slot, &channels, n_lines, px);
             }
+            hovered = draw_epochs(pu, app, grab_radius(touch));
             if let Some(t) = cursor {
                 pu.vline(VLine::new("cursor", t).color(ACCENT).width(1.5));
             }
-            if pu.response().clicked()
+            let resp = pu.response();
+            drag_started = resp.drag_started();
+            drag_stopped = resp.drag_stopped();
+            // hover_pos() is unreliable mid-drag; interact_pointer_pos() follows the drag
+            if let Some(handle) = app.viewer.drag_handle
+                && resp.dragged()
+                && let Some(p) = resp.interact_pointer_pos()
+            {
+                let t = pu.transform().value_from_position(p).x;
+                drag_to = Some((handle.0, handle.1, t));
+            }
+            if resp.clicked()
+                && app.viewer.drag_handle.is_none()
                 && let Some(p) = pu.pointer_coordinate()
             {
                 cursor = Some(p.x);
             }
+            let b = pu.plot_bounds();
+            x_bounds = Some((b.min()[0], b.max()[0]));
+            frame = Some(*pu.transform().frame());
         });
     app.viewer.cursor_s = cursor;
+    app.viewer.hover_handle = hovered;
+    app.viewer.plot_frame = frame;
+    app.viewer.x_bounds = x_bounds;
+    // the drag is recognised a few pixels after the press: use the handle hovered at the press
+    if drag_started && let Some(h) = prev_hover.or(hovered) {
+        app.viewer.drag_handle = Some(h);
+    }
+    if let Some((slot, start, t)) = drag_to {
+        set_epoch_bound(app, slot, start, t);
+    }
+    if drag_stopped {
+        app.viewer.drag_handle = None;
+    }
 }
 
 pub fn step(app: &mut App, ui: &mut Ui) {
