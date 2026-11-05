@@ -474,7 +474,8 @@ impl App {
         let touch = self.touch_mode;
         ctx.set_zoom_factor(if touch { 1.25 } else { 1.0 });
         ctx.all_styles_mut(|s| {
-            s.spacing.interact_size.y = if touch { 40.0 } else { 20.0 };
+            // 44 pt is the usual minimum touch target
+            s.spacing.interact_size.y = if touch { 44.0 } else { 20.0 };
             s.spacing.button_padding = if touch {
                 egui::vec2(12.0, 8.0)
             } else {
