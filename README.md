@@ -59,6 +59,7 @@ cargo run --release -p openpid-app                # або ./target/release/open
 ```sh
 cargo test --workspace            # unit, golden, конформанс, стійкість до пошкоджень
 OPENPID_UPDATE_GOLDEN=1 cargo test -p openpid-fmt-blackbox --test fixtures   # оновити golden‑файли після свідомої зміни
+OPENPID_FUZZ_SECONDS=600 cargo test -p openpid-fmt-blackbox --release --test fuzz -- --ignored fuzz_long   # мутаційний фаззинг декодера (ADR‑0013)
 python3 -I tools/reference/make_fixtures.py   # перегенерувати фікстури NumPy/SciPy (потрібні numpy, scipy)
 ```
 
@@ -69,7 +70,7 @@ python3 -I tools/reference/make_fixtures.py   # перегенерувати ф�
 
 - Стиль коду — адаптований Google Rust Style Guide: [`docs/STYLE.md`](docs/STYLE.md); більшість правил перевіряє clippy (`missing_docs`, `unwrap_used`, `wildcard_imports`, `pedantic`, …) з `-D warnings`.
 - Робочий процес, Conventional Commits, релізи: [`CONTRIBUTING.md`](CONTRIBUTING.md) і [`docs/RELEASING.md`](docs/RELEASING.md). `master` захищена ruleset‑ом (`.github/rulesets/master.json`): лише PR зі squash, зелені перевірки, схвалення code owner.
-- CI (`.github/workflows/ci.yml`): fmt, clippy, rustdoc, typos, тести на Linux/macOS/Windows, покриття ≥ 90 % рядків усього workspace (job `coverage`; GUI тестується headless через `egui_kittest`), cargo‑deny, артефакти бінарників для трьох ОС, SonarCloud (коли є `SONAR_TOKEN`), перевірка повідомлень комітів і заголовка PR; кеш `Swatinem/rust-cache`. Правило проєкту: CI ніколи не лишається червоним (`CLAUDE.md`).
+- CI (`.github/workflows/ci.yml`): fmt, clippy, rustdoc, typos, тести на Linux/macOS/Windows, покриття ≥ 90 % рядків усього workspace (job `coverage`; GUI тестується headless через `egui_kittest`), cargo‑deny, артефакти бінарників для трьох ОС, SonarCloud (коли є `SONAR_TOKEN`), перевірка повідомлень комітів і заголовка PR; кеш `Swatinem/rust-cache`. Щотижня `fuzz.yml` ганяє мутаційний фаззер декодера з бюджетом 20 хв. Правило проєкту: CI ніколи не лишається червоним (`CLAUDE.md`).
 - Релізи: release‑plz будує CHANGELOG і версії з Conventional Commits, тег `vX.Y.Z` запускає збірку бінарників у GitHub Release.
 
 ## Документи
