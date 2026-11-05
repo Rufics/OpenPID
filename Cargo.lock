@@ -1729,6 +1729,7 @@ dependencies = [
  "openpid-fmt-ardupilot",
  "openpid-fmt-blackbox",
  "openpid-fmt-csv",
+ "openpid-sim",
  "serde_json",
 ]
 
@@ -1784,6 +1785,7 @@ dependencies = [
  "openpid-dsp",
  "openpid-fmt-blackbox",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

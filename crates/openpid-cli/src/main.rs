@@ -17,6 +17,7 @@ USAGE:
     openpid run <analysis> <file> [--session N] [--epoch A..B] [--axis roll|pitch|yaw]
                 [--channel KEY] [--out <path>]
     openpid sliders <file> [--session N] [--set KEY=VALUE,...] [--json]
+    openpid gen [<spec.json>] [--out synthetic.csv] | gen --example
     openpid --help | --version
 
 COMMANDS:
@@ -39,6 +40,12 @@ COMMANDS:
              log flew with and the gains they produce; --set moves sliders and prints
              the resulting gains plus the CLI commands to apply them.
 
+    gen      Write a synthetic session with known ground truth (stick steps or a
+             chirp, a first-order plant with delay, motor harmonics tied to the
+             throttle, white/pink noise, a PT1 'firmware' filter, jitter, dropouts)
+             as a scaled CSV that `openpid` opens like any log. Without a spec the
+             defaults are used; --example prints the default spec as JSON to edit.
+
 OPTIONS:
     --session N   Restrict to session index N (0-based)
     --set K=V,…   Slider values, e.g. --set simplified_master_multiplier=110,simplified_d_gain=90;
@@ -49,6 +56,7 @@ OPTIONS:
     --epoch A..B  Analyse only seconds A to B of the session
     --axis AXIS   roll, pitch or yaw
     --json        Machine-readable output
+    --example     gen: print the default spec instead of generating
     --raw         Skip firmware-profile scaling and derived channels
     --out <path>  Write to a file instead of stdout
 ";
@@ -64,6 +72,7 @@ struct Args {
     channel: Option<String>,
     session: Option<usize>,
     json: bool,
+    example: bool,
     raw: bool,
     scaled: bool,
     out: Option<PathBuf>,
@@ -79,6 +88,7 @@ fn parse_args() -> Result<Args, String> {
     while let Some(a) = it.next() {
         match a.as_str() {
             "--json" => args.json = true,
+            "--example" => args.example = true,
             "--raw" => args.raw = true,
             "--scaled" => args.scaled = true,
             "--session" => {
@@ -333,6 +343,45 @@ fn cmd_decode(args: &Args) -> Result<(), String> {
     sink.flush().map_err(|e| e.to_string())
 }
 
+fn cmd_gen(args: &Args) -> Result<(), String> {
+    use openpid_sim::SignalSpec;
+    if args.example {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&SignalSpec::default()).map_err(|e| e.to_string())?
+        );
+        return Ok(());
+    }
+    let spec: SignalSpec = match &args.file {
+        Some(p) => {
+            let text = std::fs::read_to_string(p)
+                .map_err(|e| format!("cannot read {}: {e}", p.display()))?;
+            serde_json::from_str(&text).map_err(|e| format!("{}: bad spec: {e}", p.display()))?
+        }
+        None => SignalSpec::default(),
+    };
+    if spec.is_empty() {
+        return Err("the spec produces no samples (fs × duration_s < 1)".into());
+    }
+    let session = spec.build();
+    let log = LogFile {
+        source: openpid_core::session::SourceInfo {
+            path: None,
+            size_bytes: 0,
+            format_id: "synthetic".into(),
+        },
+        sessions: vec![session],
+    };
+    let mut sink: Box<dyn Write> = match &args.out {
+        Some(p) => Box::new(std::io::BufWriter::new(
+            std::fs::File::create(p).map_err(|e| format!("cannot create {}: {e}", p.display()))?,
+        )),
+        None => Box::new(std::io::BufWriter::new(std::io::stdout().lock())),
+    };
+    write_scaled_csv(&log, 0, &mut sink)?;
+    sink.flush().map_err(|e| e.to_string())
+}
+
 fn parse_axis(s: Option<&str>) -> Result<openpid_core::Axis, String> {
     match s.unwrap_or("roll") {
         "roll" => Ok(openpid_core::Axis::Roll),
@@ -552,6 +601,7 @@ fn main() -> ExitCode {
         "decode" => cmd_decode(&args),
         "run" => cmd_run(&args),
         "sliders" => cmd_sliders(&args),
+        "gen" => cmd_gen(&args),
         "--help" | "-h" | "help" => {
             print!("{USAGE}");
             Ok(())

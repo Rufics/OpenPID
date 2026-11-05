@@ -71,6 +71,31 @@ impl Unit {
     }
 }
 
+impl Unit {
+    /// The unit whose [`Unit::symbol`] is `symbol`; anything else is `Custom`.
+    pub fn from_symbol(symbol: &str) -> Unit {
+        match symbol.trim() {
+            "raw" => Unit::Raw,
+            "" => Unit::Unitless,
+            "us" => Unit::Microseconds,
+            "s" => Unit::Seconds,
+            "deg/s" => Unit::DegreesPerSecond,
+            "deg" => Unit::Degrees,
+            "%" => Unit::Percent,
+            "rpm" => Unit::Rpm,
+            "V" => Unit::Volts,
+            "A" => Unit::Amperes,
+            "mAh" => Unit::MilliampHours,
+            "m" => Unit::Meters,
+            "cm" => Unit::Centimeters,
+            "m/s" => Unit::MetersPerSecond,
+            "g" => Unit::Gs,
+            "flags" => Unit::Flags,
+            other => Unit::Custom(other.to_string()),
+        }
+    }
+}
+
 impl fmt::Display for Unit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.symbol())

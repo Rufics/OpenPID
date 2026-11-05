@@ -11,6 +11,7 @@
 
 pub mod filter;
 pub mod model;
+pub mod signal;
 
 pub use filter::{Biquad, Chain, Filter, Pt1, Ptn, Stage, notch_q, pt_cutoff_correction};
 pub use model::{
@@ -18,3 +19,6 @@ pub use model::{
     track_peaks,
 };
 pub use openpid_dsp::Complex;
+pub use signal::{
+    Dropout, MotorNoise, Noise, Plant, SetpointProfile, SignalSpec, ThrottleProfile, Tone,
+};

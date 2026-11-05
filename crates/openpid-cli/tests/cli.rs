@@ -243,3 +243,51 @@ fn filter_sim_command() {
     let (ok, _, err) = run(&["run", "filter-sim", plain.to_str().unwrap()]);
     assert!(!ok && err.contains("missing channel"), "{err}");
 }
+
+#[test]
+fn gen_command_writes_a_session_openpid_can_analyse() {
+    let (ok, out, err) = run(&["gen", "--example"]);
+    assert!(ok, "{err}");
+    let spec: serde_json::Value = serde_json::from_str(&out).expect("json spec");
+    assert_eq!(spec["fs"], 1000.0);
+    assert_eq!(spec["setpoint"]["kind"], "steps");
+    let csv = temp("synthetic.csv");
+    let (ok, _, err) = run(&["gen", "--out", csv.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    let (ok, out, err) = run(&["info", csv.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("gyro.filtered.roll") && out.contains("motor_rpm.3"),
+        "{out}"
+    );
+    let (ok, out, err) = run(&["run", "step", csv.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert!(v["metrics"]["delay_ms"].is_number());
+    // a CSV carries no settings, so Filter Sim finds no chain: the fit equals
+    // the unfiltered residual and the description says so
+    let (ok, out, err) = run(&["run", "filter-sim", csv.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert_eq!(v["description"], serde_json::json!(["no filters"]));
+    assert_eq!(v["fit"]["residual_rel"], v["fit"]["unfiltered_rel"]);
+    // an edited spec
+    let spec_path = temp("spec.json");
+    std::fs::write(
+        &spec_path,
+        r#"{"duration_s": 2, "motors": 2, "setpoint": {"kind": "sine", "hz": 3, "amplitude": 50}}"#,
+    )
+    .unwrap();
+    let (ok, out, err) = run(&["gen", spec_path.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    assert_eq!(out.lines().count(), 2001, "header + 2 s at 1 kHz");
+    assert!(!out.lines().next().unwrap().contains("motor_rpm.2"));
+    std::fs::write(&spec_path, "{\"duration_s\": 0}").unwrap();
+    let (ok, _, err) = run(&["gen", spec_path.to_str().unwrap()]);
+    assert!(!ok && err.contains("no samples"), "{err}");
+    std::fs::write(&spec_path, "{nope").unwrap();
+    let (ok, _, err) = run(&["gen", spec_path.to_str().unwrap()]);
+    assert!(!ok && err.contains("bad spec"), "{err}");
+    std::fs::remove_file(&csv).ok();
+    std::fs::remove_file(&spec_path).ok();
+}
