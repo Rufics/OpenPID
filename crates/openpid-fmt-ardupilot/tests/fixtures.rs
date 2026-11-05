@@ -330,3 +330,115 @@ fn rows_match_the_reference_decoder() {
         }
     }
 }
+
+#[test]
+fn quadplane_batch_sampler_gives_raw_gyro() {
+    use openpid_fmt_ardupilot::batch::{BatchKind, batches};
+    let raw = read(&data(QUADPLANE)).unwrap();
+    let (all, orphans) = batches(&raw);
+    assert_eq!(all.len(), 11, "ISBH:11");
+    assert_eq!(orphans, 0);
+    assert!(all.iter().all(|b| b.samples.len() == 1024));
+    // the fixture is cut at 1 MiB: 339 ISBD packets of 11 × 32, the last batch is short
+    assert!(all[..10].iter().all(|b| b.missing() == 0));
+    assert_eq!(all[10].missing(), (11 * 32 - 339) * 32);
+    assert!(all.iter().all(|b| (3270.0..3280.0).contains(&b.rate_hz)));
+    // ISBH N=0: type 1 (gyro), instance 0, mul 938; its first ISBD row is x=2, y=-1, z=1
+    let first = &all[0];
+    assert_eq!(first.kind, BatchKind::Gyro);
+    assert_eq!(first.instance, 0);
+    let s0 = first.samples[0].unwrap();
+    assert!((s0[0] - 2.0 / 938.0).abs() < 1e-12);
+    assert!((s0[1] + 1.0 / 938.0).abs() < 1e-12);
+    assert!((s0[2] - 1.0 / 938.0).abs() < 1e-12);
+    // INS_LOG_BAT_OPT 4 = pre and post filter, alternating; the post-filter
+    // copy is logged with instance + IMU count (3) and is visibly smoother
+    let hf = |b: &openpid_fmt_ardupilot::batch::Batch| {
+        let v: Vec<f64> = b.samples.iter().map(|s| s.unwrap()[0]).collect();
+        v.windows(3)
+            .map(|w| (w[0] - 2.0 * w[1] + w[2]).abs())
+            .sum::<f64>()
+            / v.len() as f64
+    };
+    let pre = &all[0];
+    let post = &all[2];
+    assert_eq!((post.kind, post.instance), (BatchKind::Gyro, 3));
+    assert!(
+        hf(post) < hf(pre) * 0.5,
+        "post {} vs pre {}",
+        hf(post),
+        hf(pre)
+    );
+
+    let s = open(QUADPLANE);
+    let raw_roll = s
+        .channel(&ChannelId::Gyro {
+            axis: Axis::Roll,
+            stage: GyroStage::Raw,
+        })
+        .expect("gyro.raw.roll from the batch sampler");
+    assert_eq!(raw_roll.unit, openpid_core::Unit::DegreesPerSecond);
+    // batches N=4 and N=8 (0.31 s each) fall inside the 8.5 s timebase; N=0 is before it
+    let valid = raw_roll.data.valid_count();
+    assert!((150..=230).contains(&valid), "valid raw samples: {valid}");
+    for axis in [Axis::Pitch, Axis::Yaw] {
+        assert!(
+            s.channel(&ChannelId::Gyro {
+                axis,
+                stage: GyroStage::Raw
+            })
+            .is_some()
+        );
+    }
+    assert!(
+        s.channel(&ChannelId::Custom("acc.raw.roll".into()))
+            .is_some()
+    );
+    assert!(
+        s.channel(&ChannelId::Custom("isb[0].gyro.post.roll".into()))
+            .is_some()
+    );
+    assert!(
+        s.channel(&ChannelId::Custom("isb[0].acc.post.roll".into()))
+            .is_some()
+    );
+    // the unfiltered gyro carries more high-frequency content than IMU.GyrX
+    // (after INS_GYRO_FILTER 40 Hz) over the same samples
+    let filtered = s
+        .channel(&ChannelId::Gyro {
+            axis: Axis::Roll,
+            stage: GyroStage::Filtered,
+        })
+        .unwrap();
+    let idx: Vec<usize> = (0..s.len())
+        .filter(|&i| raw_roll.data.is_valid(i))
+        .collect();
+    let hf_of = |c: &openpid_core::Channel| {
+        idx.windows(3)
+            .filter(|w| w[2] - w[0] == 2)
+            .map(|w| {
+                let v = c.data.values();
+                (v[w[0]] - 2.0 * v[w[1]] + v[w[2]]).abs()
+            })
+            .sum::<f64>()
+            / idx.len() as f64
+    };
+    assert!(
+        hf_of(raw_roll) > hf_of(filtered) * 1.5,
+        "raw {} vs filtered {}",
+        hf_of(raw_roll),
+        hf_of(filtered)
+    );
+    assert!(
+        s.diagnostics
+            .notes
+            .iter()
+            .any(|n| n.starts_with("batch sampler: 11 batches at 3276 Hz")),
+        "{:?}",
+        s.diagnostics.notes
+    );
+    assert!(
+        !s.diagnostics.notes.iter().any(|n| n.contains("ISBH:")),
+        "ISBH/ISBD are consumed, not listed as skipped"
+    );
+}

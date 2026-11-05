@@ -12,6 +12,7 @@
 //! vehicles get the gyro and the generic channels. Documentation of the
 //! mapping: `docs/ARDUPILOT.md`.
 
+pub mod batch;
 mod profile;
 pub mod reader;
 mod session;

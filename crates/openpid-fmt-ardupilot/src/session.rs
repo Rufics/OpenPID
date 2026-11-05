@@ -7,14 +7,15 @@
 //! sample-and-held onto it: at each timebase sample a channel carries the last
 //! value logged at or before that time, and is invalid before its first one.
 
+use crate::batch::{Batch, BatchKind, batches, resample_onto};
 use crate::profile::{ArdupilotProfile, Vehicle};
 use crate::reader::{FormatDef, Message, RawLog, Value};
 use openpid_core::session::{
     Channel, ChannelSet, Diagnostics, Event, EventKind, FrameStats, Origin, Timebase,
 };
 use openpid_core::{
-    ChannelId, FirmwareInfo, FirmwareProfile, FirmwareVendor, FirmwareVersion, FlightSession,
-    FormatError, OpenOptions, RawHeaders, Series, Unit,
+    Axis, ChannelId, FirmwareInfo, FirmwareProfile, FirmwareVendor, FirmwareVersion, FlightSession,
+    FormatError, GyroStage, OpenOptions, RawHeaders, Series, Unit,
 };
 use std::collections::BTreeMap;
 
@@ -399,6 +400,99 @@ fn export_channels(
     (channels, unmapped)
 }
 
+/// What the batch sampler contributed, for the diagnostics notes.
+#[derive(Debug, Default)]
+struct BatchSummary {
+    batches: usize,
+    rate_hz: f64,
+    orphans: usize,
+    missing: usize,
+    /// Channel key → valid samples on the timebase.
+    coverage: Vec<(String, usize)>,
+    /// Samples in the timebase, for the coverage percentage.
+    timebase_len: usize,
+}
+
+/// Batch-sampler bursts as channels on the timebase: the pre-filter gyro of
+/// the timebase IMU becomes `gyro.raw.*`, its pre-filter accelerometer
+/// `custom:acc.raw.*`, and every other (instance, pre/post) pair a custom
+/// `isb[i].{gyro,acc}.{pre,post}.*` channel. Batches of one sensor and
+/// instance are averaged onto the timebase with a box one period wide
+/// (see [`resample_onto`]).
+fn batch_channels(
+    raw: &RawLog,
+    times: &[i64],
+    imu_count: usize,
+    channels: &mut ChannelSet,
+) -> BatchSummary {
+    let (all, orphans) = batches(raw);
+    let mut summary = BatchSummary {
+        batches: all.len(),
+        rate_hz: all.first().map_or(0.0, |b| b.rate_hz),
+        orphans,
+        missing: all.iter().map(Batch::missing).sum(),
+        coverage: Vec::new(),
+        timebase_len: times.len(),
+    };
+    if all.is_empty() || times.len() < 2 {
+        return summary;
+    }
+    let half_us = (times[times.len() - 1] - times[0]) as f64 / (times.len() - 1) as f64 / 2.0;
+    let mut groups: BTreeMap<(BatchKind, u8), Vec<&Batch>> = BTreeMap::new();
+    for b in &all {
+        groups.entry((b.kind, b.instance)).or_default().push(b);
+    }
+    let imu_count = imu_count.max(1) as u8;
+    for ((kind, instance), mut group) in groups {
+        group.sort_by_key(|b| b.t0_us);
+        let post = instance >= imu_count;
+        let imu = if post { instance - imu_count } else { instance };
+        let (sensor, unit, scale) = match kind {
+            BatchKind::Gyro => ("gyro", Unit::DegreesPerSecond, crate::profile::RAD_TO_DEG),
+            BatchKind::Accel => ("acc", Unit::Gs, 1.0 / crate::profile::G),
+        };
+        for (axis_i, axis) in [Axis::Roll, Axis::Pitch, Axis::Yaw].into_iter().enumerate() {
+            let id = match (kind, imu == 0 && !post) {
+                (BatchKind::Gyro, true) => ChannelId::Gyro {
+                    axis,
+                    stage: GyroStage::Raw,
+                },
+                (BatchKind::Accel, true) => ChannelId::Custom(format!("acc.raw.{}", axis.name())),
+                _ => ChannelId::Custom(format!(
+                    "isb[{imu}].{sensor}.{}.{}",
+                    if post { "post" } else { "pre" },
+                    axis.name()
+                )),
+            };
+            if channels.contains(&id) {
+                continue;
+            }
+            let data = Series::from_options(
+                resample_onto(times, &group, axis_i, half_us)
+                    .into_iter()
+                    .map(|v| v.map(|x| x * scale)),
+            );
+            let valid = data.valid_count();
+            summary.coverage.push((id.key(), valid));
+            let xyz = ["x", "y", "z"][axis_i];
+            channels.insert(Channel {
+                id,
+                name: format!(
+                    "ISBD[{instance}].{xyz} ({sensor} {}, {} batches)",
+                    if post { "post-filter" } else { "pre-filter" },
+                    group.len()
+                ),
+                unit: unit.clone(),
+                data,
+                origin: Origin::Logged {
+                    field: format!("ISBD.{xyz}"),
+                },
+            });
+        }
+    }
+    summary
+}
+
 /// Time and sample-number channels of the timebase itself.
 fn timebase_channels(channels: &mut ChannelSet, primary_name: &str, times: &[i64]) {
     channels.insert(Channel {
@@ -450,6 +544,7 @@ fn notes(
     primary_name: &str,
     rate_hz: f64,
     dropped: usize,
+    batch: &BatchSummary,
 ) -> Vec<String> {
     let exported: Vec<&str> = EXPORTED
         .iter()
@@ -463,7 +558,7 @@ fn notes(
         .filter(|d| {
             !matches!(
                 d.name.as_str(),
-                "FMT" | "FMTU" | "UNIT" | "MULT" | "PARM" | "MSG" | "VER"
+                "FMT" | "FMTU" | "UNIT" | "MULT" | "PARM" | "MSG" | "VER" | "ISBH" | "ISBD"
             )
         })
         .map(|d| format!("{}:{}", d.name, frames[&d.name].valid))
@@ -475,6 +570,27 @@ fn notes(
     if dropped > 0 {
         notes.push(format!(
             "{dropped} {primary_name} rows with non-increasing time dropped"
+        ));
+    }
+    if batch.batches > 0 {
+        let coverage: Vec<String> = batch
+            .coverage
+            .iter()
+            .filter(|(k, _)| k.rsplit('.').next() == Some("roll"))
+            .map(|(k, n)| {
+                format!(
+                    "{k} {:.0} %",
+                    100.0 * *n as f64 / batch.timebase_len.max(1) as f64
+                )
+            })
+            .collect();
+        notes.push(format!(
+            "batch sampler: {} batches at {:.0} Hz, box-averaged onto the timebase ({} missing samples, {} orphan ISBD); coverage {}",
+            batch.batches,
+            batch.rate_hz,
+            batch.missing,
+            batch.orphans,
+            coverage.join(", ")
         ));
     }
     if !skipped.is_empty() {
@@ -501,6 +617,7 @@ pub(crate) fn build(
 
     let (mut channels, unmapped) =
         export_channels(raw, &times, &firmware, &h, profile, use_profile);
+    let batch = batch_channels(raw, &times, instances(raw, "IMU").len(), &mut channels);
     timebase_channels(&mut channels, primary_name, &times);
     if use_profile {
         derive_throttle(&mut channels);
@@ -522,6 +639,7 @@ pub(crate) fn build(
             primary_name,
             timebase.sample_rate_hz(),
             dropped,
+            &batch,
         ),
         frames,
         corrupt_frames: 0,

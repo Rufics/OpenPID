@@ -13,8 +13,8 @@ use openpid_core::{
     GyroStage, PidTerm, RawHeaders, Settings, Unit,
 };
 
-const RAD_TO_DEG: f64 = 180.0 / std::f64::consts::PI;
-const G: f64 = 9.806_65;
+pub(crate) const RAD_TO_DEG: f64 = 180.0 / std::f64::consts::PI;
+pub(crate) const G: f64 = 9.806_65;
 
 /// Vehicle family, from the firmware string (`ArduCopter`, `APM:Plane`, ...).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -78,8 +78,11 @@ impl Series {
     /// Panics if `i` is out of range.
     pub fn set_invalid(&mut self, i: usize) {
         assert!(i < self.values.len(), "index out of range");
-        if self.invalid.is_empty() {
-            self.invalid = vec![0u64; self.values.len().div_ceil(64)];
+        // the bit set follows the values: it is created on the first invalid
+        // sample and grows when the series has been extended since
+        let words = self.values.len().div_ceil(64);
+        if self.invalid.len() < words {
+            self.invalid.resize(words, 0);
         }
         let word = &mut self.invalid[i / 64];
         let bit = 1u64 << (i % 64);
@@ -140,6 +143,18 @@ impl Series {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_samples_can_come_after_the_bit_set_was_created() {
+        // the first None creates the bit set at length 1; later Nones past
+        // the first word must grow it instead of indexing out of bounds
+        let s = Series::from_options((0..200).map(|i| (i % 3 != 0).then_some(f64::from(i))));
+        assert_eq!(s.len(), 200);
+        assert_eq!(s.invalid_count(), 67);
+        assert!(!s.is_valid(0) && !s.is_valid(129) && !s.is_valid(198));
+        assert!(s.is_valid(1) && s.is_valid(199));
+        assert_eq!(s.get(199), Some(199.0));
+    }
 
     #[test]
     fn mask_roundtrip() {
