@@ -4,7 +4,8 @@
 
 use openpid_analysis::{
     Analysis, AnalysisCtx, FilterSimAnalysis, FilterSimParams, PsdAnalysis, PsdParams,
-    StepAnalysis, StepParams, ThrottleHeatmap, ThrottleHeatmapParams,
+    RpmEstimateParams, RpmEstimator, StepAnalysis, StepParams, ThrottleHeatmap,
+    ThrottleHeatmapParams,
 };
 use openpid_core::{Axis, ChannelId, GyroStage};
 use openpid_sim::{MotorNoise, Noise, Plant, SetpointProfile, SignalSpec, ThrottleProfile, Tone};
@@ -177,4 +178,45 @@ fn filter_sim_reproduces_the_synthetic_filter_exactly() {
     assert!(fit.delay_ms.abs() < 1.5, "delay {}", fit.delay_ms);
     assert_eq!(out.description, vec!["lowpass 1: PT1 100 Hz".to_string()]);
     assert_eq!(out.motors, 4);
+}
+
+#[test]
+fn rpm_estimate_follows_the_synthetic_motors() {
+    let spec = SignalSpec {
+        duration_s: 15.0,
+        throttle: ThrottleProfile::Sine {
+            mean: 50.0,
+            amplitude: 30.0,
+            hz: 0.2,
+        },
+        setpoint: SetpointProfile::Silence,
+        noise: Noise {
+            white: 1.0,
+            motor: Some(MotorNoise {
+                harmonics: vec![3.0, 1.5, 0.5],
+                spread: 0.04,
+                ..MotorNoise::default()
+            }),
+            ..Noise::default()
+        },
+        filter_hz: 0.0,
+        ..SignalSpec::default()
+    };
+    let s = spec.build();
+    let ctx = AnalysisCtx {
+        session: &s,
+        epoch: None,
+    };
+    let out = RpmEstimator
+        .run(&ctx, &RpmEstimateParams::default())
+        .unwrap();
+    let err = out.median_error.unwrap();
+    assert!(err < 0.03, "median error {err}");
+    assert!(out.confidence.iter().sum::<f64>() / out.frames as f64 > 0.5);
+    // the estimate moves with the throttle sine
+    let (lo, hi) = out
+        .rpm
+        .iter()
+        .fold((f64::MAX, f64::MIN), |(lo, hi), r| (lo.min(*r), hi.max(*r)));
+    assert!(hi > lo * 1.5, "range {lo}..{hi}");
 }

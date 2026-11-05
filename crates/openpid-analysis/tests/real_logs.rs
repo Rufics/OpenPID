@@ -2,8 +2,9 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 use openpid_analysis::{
-    Analysis, AnalysisCtx, AnalysisError, Epoch, PsdAnalysis, PsdParams, StepAnalysis, StepParams,
-    StftAnalysis, StftParams, ThrottleHeatmap, ThrottleHeatmapParams,
+    Analysis, AnalysisCtx, AnalysisError, Epoch, PsdAnalysis, PsdParams, RpmEstimateParams,
+    RpmEstimator, StepAnalysis, StepParams, StftAnalysis, StftParams, ThrottleHeatmap,
+    ThrottleHeatmapParams,
 };
 use openpid_core::{Axis, ChannelId, GyroStage, LogFormat, OpenOptions};
 use openpid_fmt_blackbox::BlackboxFormat;
@@ -263,4 +264,58 @@ fn rpm_overlay_follows_the_motor_ridge() {
         hits * 2 > total,
         "fundamental on the ridge in {hits} of {total} bins"
     );
+}
+
+#[test]
+fn rpm_estimate_tracks_the_logged_motor_speed() {
+    for (name, max_median) in [
+        ("betaflight-4.5.1-two-sessions.bbl", 0.05),
+        ("betaflight-2025.12.2-btfl_027.bbl", 0.05),
+    ] {
+        let log = load(name);
+        let s = log.sessions.iter().max_by_key(|s| s.len()).unwrap();
+        let ctx = AnalysisCtx {
+            session: s,
+            epoch: None,
+        };
+        let out = RpmEstimator
+            .run(&ctx, &RpmEstimateParams::default())
+            .unwrap();
+        assert_eq!(out.rpm.len(), out.frames);
+        assert_eq!(out.confidence.len(), out.frames);
+        let err = out.median_error.expect("eRPM logged");
+        eprintln!(
+            "{name}: {} frames, median error {:.1} %",
+            out.frames,
+            err * 100.0
+        );
+        assert!(err < max_median, "{name}: median error {err}");
+        assert!(out.confidence.iter().all(|c| (0.0..=1.0).contains(c)));
+        let mean_conf = out.confidence.iter().sum::<f64>() / out.frames as f64;
+        assert!(mean_conf > 0.3, "{name}: confidence {mean_conf}");
+        let fundamentals: usize = out.harmonic.iter().map(|h| usize::from(*h == 1)).sum();
+        assert!(fundamentals * 2 > out.frames, "mostly the fundamental");
+        // the filtered gyro is refused, the parameters are checked
+        let filtered = RpmEstimator.run(
+            &ctx,
+            &RpmEstimateParams {
+                channel: ChannelId::Gyro {
+                    axis: Axis::Roll,
+                    stage: GyroStage::Filtered,
+                },
+                ..Default::default()
+            },
+        );
+        assert!(matches!(filtered, Err(AnalysisError::InvalidParams(_))));
+        assert!(matches!(
+            RpmEstimator.run(
+                &ctx,
+                &RpmEstimateParams {
+                    rpm_max: 100.0,
+                    ..Default::default()
+                }
+            ),
+            Err(AnalysisError::InvalidParams(_))
+        ));
+    }
 }
