@@ -3,6 +3,7 @@
 
 use crate::app::{App, Loaded, SlotState};
 use crate::colormap::{ACCENT, MUTED, SLOT_A, SLOT_B};
+use crate::i18n::{Lang, tr};
 use crate::prefs::{AccUnit, Prefs, RateUnit, Theme};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
@@ -218,12 +219,21 @@ pub fn decimate(
 pub(crate) fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
     match app.slots.get(&slot) {
         Some(SlotState::Empty) | None => {
-            ui.label(RichText::new(format!("Slot {}: empty", slot.name())).color(MUTED));
+            ui.label(
+                RichText::new(format!("{} {}: {}", tr("Slot"), slot.name(), tr("empty")))
+                    .color(MUTED),
+            );
             false
         }
         Some(SlotState::Loading(p)) => {
             ui.spinner();
-            ui.label(format!("Slot {}: loading {}", slot.name(), p.display()));
+            ui.label(format!(
+                "{} {}: {} {}",
+                tr("Slot"),
+                slot.name(),
+                tr("loading"),
+                p.display()
+            ));
             false
         }
         Some(SlotState::Failed(p, e)) => {
@@ -238,7 +248,7 @@ pub(crate) fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
             let loaded = app.loaded_mut(slot).expect("ready");
             ui.horizontal_wrapped(|ui| {
                 ui.label(
-                    RichText::new(format!("Slot {}", slot.name()))
+                    RichText::new(format!("{} {}", tr("Slot"), slot.name()))
                         .color(slot_color(slot))
                         .strong(),
                 );
@@ -252,7 +262,7 @@ pub(crate) fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
                 let n = loaded.sessions.len();
                 if n > 1 {
                     let before = loaded.session;
-                    let l = ui.label("session");
+                    let l = ui.label(tr("session"));
                     let combo = egui::ComboBox::from_id_salt(("session", slot.name()))
                         .selected_text(format!("session {}", loaded.session))
                         .show_ui(ui, |ui| {
@@ -297,7 +307,7 @@ pub(crate) fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
                     start_s: 0.0,
                     end_s: duration,
                 });
-                ui.label("epoch");
+                ui.label(tr("epoch"));
                 let a = ui.add(
                     egui::DragValue::new(&mut e.start_s)
                         .speed(0.1)
@@ -331,7 +341,7 @@ pub(crate) fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
 fn axis_selector(ui: &mut Ui, axis: &mut Axis) -> bool {
     let before = *axis;
     ui.horizontal(|ui| {
-        ui.label("Axis");
+        ui.label(tr("Axis"));
         for a in Axis::ALL {
             ui.selectable_value(axis, a, a.name());
         }
@@ -346,7 +356,7 @@ fn channel_picker(
     current: &mut ChannelId,
 ) -> bool {
     let mut changed = false;
-    let l = ui.label("channel");
+    let l = ui.label(tr("channel"));
     let combo = egui::ComboBox::from_id_salt(id)
         .selected_text(current.key())
         .width(220.0)
@@ -414,12 +424,12 @@ fn grid_heatmap(name: &str, g: &Grid2D, max: f64, min_y_for_scale: f64) -> Optio
 /// Channel toggles for the log viewer (slot A's channel list, filtered).
 fn viewer_channel_picker(app: &mut App, ui: &mut Ui, session: Option<&FlightSession>) {
     ui.horizontal_wrapped(|ui| {
-        ui.label("Channels:");
+        ui.label(tr("Channels:"));
         let filter = &mut app.viewer.channel_filter;
-        let l = ui.label("filter");
+        let l = ui.label(tr("filter"));
         ui.add(
             egui::TextEdit::singleline(filter)
-                .hint_text("filter…")
+                .hint_text(tr("filter…"))
                 .desired_width(120.0),
         )
         .labelled_by(l.id);
@@ -471,9 +481,9 @@ fn viewer_cursor_controls(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         let Some(t) = app.viewer.cursor_s else {
             ui.label(
-                RichText::new(
+                RichText::new(tr(
                     "Click or tap the plot to place the cursor, then set the epoch from it.",
-                )
+                ))
                 .color(MUTED),
             );
             return;
@@ -676,7 +686,7 @@ pub fn step(app: &mut App, ui: &mut Ui) {
         axis_selector(ui, &mut app.tools.axis);
         app.tools.step.axis = app.tools.axis;
         ui.separator();
-        let l = ui.label("window");
+        let l = ui.label(tr("window"));
         ui.add(
             egui::DragValue::new(&mut app.tools.step.window_s)
                 .speed(0.1)
@@ -684,7 +694,7 @@ pub fn step(app: &mut App, ui: &mut Ui) {
                 .suffix(" s"),
         )
         .labelled_by(l.id);
-        let l = ui.label("cutoff");
+        let l = ui.label(tr("cutoff"));
         ui.add(
             egui::DragValue::new(&mut app.tools.step.cutoff_hz)
                 .speed(1.0)
@@ -692,7 +702,7 @@ pub fn step(app: &mut App, ui: &mut Ui) {
                 .suffix(" Hz"),
         )
         .labelled_by(l.id);
-        let l = ui.label("min input");
+        let l = ui.label(tr("min input"));
         ui.add(
             egui::DragValue::new(&mut app.tools.step.min_input)
                 .speed(5.0)
@@ -700,7 +710,7 @@ pub fn step(app: &mut App, ui: &mut Ui) {
                 .suffix(" °/s"),
         )
         .labelled_by(l.id);
-        let l = ui.label("high input");
+        let l = ui.label(tr("high input"));
         ui.add(
             egui::DragValue::new(&mut app.tools.step.high_input)
                 .speed(10.0)
@@ -708,7 +718,7 @@ pub fn step(app: &mut App, ui: &mut Ui) {
                 .suffix(" °/s"),
         )
         .labelled_by(l.id);
-        let l = ui.label("smooth");
+        let l = ui.label(tr("smooth"));
         ui.add(
             egui::DragValue::new(&mut app.tools.step.smooth_ms)
                 .speed(1.0)
@@ -716,8 +726,10 @@ pub fn step(app: &mut App, ui: &mut Ui) {
                 .suffix(" ms"),
         )
         .labelled_by(l.id);
-        ui.checkbox(&mut app.tools.step.y_offset, "Y-offset")
-            .on_hover_text("normalise every window on its settled tail before averaging");
+        ui.checkbox(&mut app.tools.step.y_offset, tr("Y-offset"))
+            .on_hover_text(tr(
+                "normalise every window on its settled tail before averaging",
+            ));
     });
     let params = app.tools.step.clone();
     let mut outputs: Vec<(Slot, Arc<Output>)> = Vec::new();
@@ -826,7 +838,7 @@ pub fn spectrum(app: &mut App, ui: &mut Ui) {
                 stage: GyroStage::Filtered,
             };
         }
-        let l = ui.label("segment");
+        let l = ui.label(tr("segment"));
         ui.add(
             egui::DragValue::new(&mut app.tools.psd.segment_s)
                 .speed(0.01)
@@ -834,7 +846,7 @@ pub fn spectrum(app: &mut App, ui: &mut Ui) {
                 .suffix(" s"),
         )
         .labelled_by(l.id);
-        ui.label("max");
+        ui.label(tr("max"));
         let mut max = app.tools.psd.max_hz.unwrap_or(0.0);
         if ui
             .add(
@@ -849,10 +861,10 @@ pub fn spectrum(app: &mut App, ui: &mut Ui) {
         }
         ui.checkbox(&mut app.tools.psd_db, "dB");
         ui.separator();
-        let l = ui.label("peaks");
+        let l = ui.label(tr("peaks"));
         ui.add(egui::DragValue::new(&mut app.spectrum.auto_peaks).range(0..=10))
             .labelled_by(l.id);
-        let l = ui.label("prominence");
+        let l = ui.label(tr("prominence"));
         ui.add(
             egui::DragValue::new(&mut app.spectrum.min_prominence_db)
                 .speed(0.5)
@@ -860,7 +872,7 @@ pub fn spectrum(app: &mut App, ui: &mut Ui) {
                 .suffix(" dB"),
         )
         .labelled_by(l.id);
-        if !app.spectrum.markers.is_empty() && ui.button("Clear markers").clicked() {
+        if !app.spectrum.markers.is_empty() && ui.button(tr("Clear markers")).clicked() {
             app.spectrum.markers.clear();
         }
     });
@@ -1028,7 +1040,7 @@ pub(crate) fn heatmap_controls(app: &mut App, ui: &mut Ui) {
                 stage: GyroStage::Filtered,
             };
         }
-        let l = ui.label("colour max (0 = auto)");
+        let l = ui.label(tr("colour max (0 = auto)"));
         ui.add(
             egui::DragValue::new(&mut app.tools.heatmap_max)
                 .speed(0.5)
@@ -1148,15 +1160,15 @@ pub(crate) fn overlay_controls(app: &mut App, ui: &mut Ui, results: &[SlotResult
         let ov = &mut app.overlay;
         ov.motors.resize(n, true);
         ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut ov.show, "RPM overlay");
+            ui.checkbox(&mut ov.show, tr("RPM overlay"));
             for (m, on) in ov.motors.iter_mut().enumerate() {
                 ui.checkbox(on, format!("M{}", m + 1));
             }
-            let l = ui.label("harmonics");
+            let l = ui.label(tr("harmonics"));
             ui.add(egui::DragValue::new(&mut ov.harmonics).range(0..=8))
                 .labelled_by(l.id)
-                .on_hover_text("0 = as many as the RPM filter removes");
-            ui.checkbox(&mut ov.notches, "notches");
+                .on_hover_text(tr("0 = as many as the RPM filter removes"));
+            ui.checkbox(&mut ov.notches, tr("notches"));
         });
     }
 }
@@ -1379,7 +1391,7 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
     ui.separator();
     heatmap_controls(app, ui);
     ui.horizontal_wrapped(|ui| {
-        let l = ui.label("segment");
+        let l = ui.label(tr("segment"));
         ui.add(
             egui::DragValue::new(&mut app.tools.throttle.segment_s)
                 .speed(0.01)
@@ -1387,7 +1399,7 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
                 .suffix(" s"),
         )
         .labelled_by(l.id);
-        let l = ui.label("throttle window ±");
+        let l = ui.label(tr("throttle window ±"));
         ui.add(
             egui::DragValue::new(&mut app.tools.throttle.half_window)
                 .speed(0.5)
@@ -1395,7 +1407,7 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
                 .suffix(" %"),
         )
         .labelled_by(l.id);
-        let l = ui.label("max");
+        let l = ui.label(tr("max"));
         ui.add(
             egui::DragValue::new(&mut app.tools.throttle.max_hz)
                 .speed(10.0)
@@ -1403,15 +1415,15 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
                 .suffix(" Hz"),
         )
         .labelled_by(l.id);
-        let l = ui.label("min segments");
+        let l = ui.label(tr("min segments"));
         ui.add(
             egui::DragValue::new(&mut app.tools.min_segments)
                 .speed(1.0)
                 .range(1..=1000),
         )
-        .on_hover_text(
+        .on_hover_text(tr(
             "throttle bins with fewer segments are greyed out: they are unsampled, not quiet",
-        )
+        ))
         .labelled_by(l.id);
     });
     app.tools.throttle.channel = app.tools.heatmap_channel.clone();
@@ -1502,7 +1514,7 @@ pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
     ui.separator();
     heatmap_controls(app, ui);
     ui.horizontal_wrapped(|ui| {
-        let l = ui.label("segment");
+        let l = ui.label(tr("segment"));
         ui.add(
             egui::DragValue::new(&mut app.tools.stft.segment_s)
                 .speed(0.01)
@@ -1511,7 +1523,7 @@ pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
         )
         .labelled_by(l.id);
         let mut max = app.tools.stft.max_hz.unwrap_or(0.0);
-        ui.label("max");
+        ui.label(tr("max"));
         if ui
             .add(
                 egui::DragValue::new(&mut max)
@@ -1574,10 +1586,10 @@ pub fn diagnostics(app: &mut App, ui: &mut Ui) {
             egui::Grid::new(("diag", slot.name()))
                 .striped(true)
                 .show(ui, |ui| {
-                    ui.label("profile");
+                    ui.label(tr("profile"));
                     ui.label(&s.profile_id);
                     ui.end_row();
-                    ui.label("samples");
+                    ui.label(tr("samples"));
                     ui.label(format!(
                         "{} over {:.2} s, median dt {} µs, {} gaps",
                         s.len(),
@@ -1586,7 +1598,7 @@ pub fn diagnostics(app: &mut App, ui: &mut Ui) {
                         s.timebase.gaps.len()
                     ));
                     ui.end_row();
-                    ui.label("frames");
+                    ui.label(tr("frames"));
                     ui.label(
                         s.diagnostics
                             .frames
@@ -1596,7 +1608,7 @@ pub fn diagnostics(app: &mut App, ui: &mut Ui) {
                             .join("  "),
                     );
                     ui.end_row();
-                    ui.label("corrupt / desync / skipped bytes");
+                    ui.label(tr("corrupt / desync / skipped bytes"));
                     ui.label(format!(
                         "{} / {} / {}",
                         s.diagnostics.corrupt_frames,
@@ -1621,12 +1633,12 @@ pub fn diagnostics(app: &mut App, ui: &mut Ui) {
                         ui.end_row();
                     }
                     if !s.diagnostics.unmapped_fields.is_empty() {
-                        ui.label("unmapped fields");
+                        ui.label(tr("unmapped fields"));
                         ui.label(s.diagnostics.unmapped_fields.join(", "));
                         ui.end_row();
                     }
                     for n in &s.diagnostics.notes {
-                        ui.label("note");
+                        ui.label(tr("note"));
                         ui.label(n);
                         ui.end_row();
                     }
@@ -1718,9 +1730,9 @@ fn slider_gain_table(
         .striped(true)
         .spacing([24.0, 4.0])
         .show(ui, |ui| {
-            ui.label(RichText::new("axis").strong());
-            ui.label(RichText::new("from sliders").strong());
-            ui.label(RichText::new("logged").strong());
+            ui.label(RichText::new(tr("axis")).strong());
+            ui.label(RichText::new(tr("from sliders")).strong());
+            ui.label(RichText::new(tr("logged")).strong());
             ui.end_row();
             for (name, now, was) in [
                 ("roll", result.pid.roll, logged.map(|l| l.roll)),
@@ -1772,8 +1784,10 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
         .and_then(|l| l.current().cloned().map(|s| (l.session, s)))
     else {
         ui.label(
-            RichText::new("Load a Betaflight 4.3+ log into slot A to use the PID sliders.")
-                .color(MUTED),
+            RichText::new(tr(
+                "Load a Betaflight 4.3+ log into slot A to use the PID sliders.",
+            ))
+            .color(MUTED),
         );
         return;
     };
@@ -1795,10 +1809,10 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label(RichText::new(model.id()).strong());
         ui.label(&session.firmware.revision);
-        if ui.button("Reset to log").clicked() {
+        if ui.button(tr("Reset to log")).clicked() {
             app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.value)).collect();
         }
-        if ui.button("Firmware defaults").clicked() {
+        if ui.button(tr("Firmware defaults")).clicked() {
             app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.default)).collect();
         }
     });
@@ -1811,7 +1825,7 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
         ui.label(filters);
     }
     ui.separator();
-    ui.label("Betaflight CLI to apply (select all, copy):");
+    ui.label(tr("Betaflight CLI to apply (select all, copy):"));
     let mut cli = result.cli.join("\n");
     ui.add(
         egui::TextEdit::multiline(&mut cli)
@@ -1827,20 +1841,28 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
 /// Settings tab: theme, touch mode and display units, saved on every change.
 pub fn settings(app: &mut App, ui: &mut Ui) {
     let mut changed = false;
-    ui.heading("Appearance");
+    ui.heading(tr("Appearance"));
     ui.horizontal(|ui| {
-        ui.label("Theme");
+        ui.label(tr("Theme"));
         changed |= ui
-            .radio_value(&mut app.prefs.theme, Theme::Dark, "Dark")
+            .radio_value(&mut app.prefs.theme, Theme::Dark, tr("Dark"))
             .changed();
         changed |= ui
-            .radio_value(&mut app.prefs.theme, Theme::Light, "Light")
+            .radio_value(&mut app.prefs.theme, Theme::Light, tr("Light"))
             .changed();
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("Language"));
+        for lang in Lang::ALL {
+            changed |= ui
+                .radio_value(&mut app.prefs.lang, lang, lang.native_name())
+                .changed();
+        }
     });
     if ui
         .checkbox(
             &mut app.prefs.touch_mode,
-            "Touch mode (larger controls, touch gestures)",
+            tr("Touch mode (larger controls, touch gestures)"),
         )
         .changed()
     {
@@ -1848,9 +1870,9 @@ pub fn settings(app: &mut App, ui: &mut Ui) {
         changed = true;
     }
     ui.add_space(8.0);
-    ui.heading("Units");
+    ui.heading(tr("Units"));
     ui.horizontal(|ui| {
-        ui.label("Angular rate");
+        ui.label(tr("Angular rate"));
         changed |= ui
             .radio_value(&mut app.prefs.rate_unit, RateUnit::DegPerS, "deg/s")
             .changed();
@@ -1859,7 +1881,7 @@ pub fn settings(app: &mut App, ui: &mut Ui) {
             .changed();
     });
     ui.horizontal(|ui| {
-        ui.label("Acceleration");
+        ui.label(tr("Acceleration"));
         changed |= ui
             .radio_value(&mut app.prefs.acc_unit, AccUnit::G, "g")
             .changed();
@@ -1868,10 +1890,13 @@ pub fn settings(app: &mut App, ui: &mut Ui) {
             .changed();
     });
     ui.label(
-        RichText::new("Units apply to the log viewer traces; analyses stay in deg/s.").color(MUTED),
+        RichText::new(tr(
+            "Units apply to the log viewer traces; analyses stay in deg/s.",
+        ))
+        .color(MUTED),
     );
     ui.add_space(8.0);
-    if ui.button("Reset to defaults").clicked() {
+    if ui.button(tr("Reset to defaults")).clicked() {
         app.prefs = Prefs::default();
         app.touch_mode = app.prefs.touch_mode;
         changed = true;
@@ -1880,8 +1905,10 @@ pub fn settings(app: &mut App, ui: &mut Ui) {
     match &app.prefs_path {
         Some(p) => ui.label(RichText::new(format!("Saved in {}", p.display())).color(MUTED)),
         None => ui.label(
-            RichText::new("No configuration directory: settings last until the app closes.")
-                .color(MUTED),
+            RichText::new(tr(
+                "No configuration directory: settings last until the app closes.",
+            ))
+            .color(MUTED),
         ),
     };
     if changed {
@@ -1947,7 +1974,7 @@ fn whatif_kind(
     log_kind: Option<&LowpassKind>,
 ) {
     let current: Option<LowpassKind> = value.clone().or_else(|| log_kind.cloned());
-    let l = ui.label("type");
+    let l = ui.label(tr("type"));
     let combo = egui::ComboBox::from_id_salt(id)
         .selected_text(current.as_ref().map_or_else(|| "—".to_string(), kind_name))
         .width(80.0)
@@ -2151,7 +2178,7 @@ pub fn filter_sim(app: &mut App, ui: &mut Ui) {
         axis_selector(ui, &mut app.tools.axis);
         app.tools.filter_sim.axis = app.tools.axis;
         ui.separator();
-        let l = ui.label("segment");
+        let l = ui.label(tr("segment"));
         ui.add(
             egui::DragValue::new(&mut app.tools.filter_sim.segment_s)
                 .speed(0.01)
@@ -2159,7 +2186,7 @@ pub fn filter_sim(app: &mut App, ui: &mut Ui) {
                 .suffix(" s"),
         )
         .labelled_by(l.id);
-        ui.label("max");
+        ui.label(tr("max"));
         let mut max = app.tools.filter_sim.max_hz.unwrap_or(0.0);
         if ui
             .add(
@@ -2172,7 +2199,7 @@ pub fn filter_sim(app: &mut App, ui: &mut Ui) {
         {
             app.tools.filter_sim.max_hz = if max > 0.0 { Some(max) } else { None };
         }
-        if !app.tools.filter_sim.overrides.is_empty() && ui.button("Reset to log").clicked() {
+        if !app.tools.filter_sim.overrides.is_empty() && ui.button(tr("Reset to log")).clicked() {
             app.tools.filter_sim.overrides = FilterOverrides::default();
         }
     });
@@ -2367,7 +2394,7 @@ pub fn motor_noise(app: &mut App, ui: &mut Ui) {
             };
         }
         ui.separator();
-        let l = ui.label("segment");
+        let l = ui.label(tr("segment"));
         ui.add(
             egui::DragValue::new(&mut app.tools.motor_noise.segment_s)
                 .speed(0.01)
@@ -2375,7 +2402,7 @@ pub fn motor_noise(app: &mut App, ui: &mut Ui) {
                 .suffix(" s"),
         )
         .labelled_by(l.id);
-        let l = ui.label("harmonics");
+        let l = ui.label(tr("harmonics"));
         ui.add(egui::DragValue::new(&mut app.tools.motor_noise.harmonics).range(1..=8))
             .labelled_by(l.id);
     });
@@ -2436,12 +2463,12 @@ pub fn motor_noise(app: &mut App, ui: &mut Ui) {
                 egui::Grid::new(("motor-noise", slot.name()))
                     .striped(true)
                     .show(ui, |ui| {
-                        ui.label(RichText::new("motor").strong());
-                        ui.label(RichText::new("rpm").strong());
+                        ui.label(RichText::new(tr("motor")).strong());
+                        ui.label(RichText::new(tr("rpm")).strong());
                         for k in 1..=params.harmonics {
                             ui.label(RichText::new(format!("×{k} amp (ratio)")).strong());
                         }
-                        ui.label(RichText::new("total").strong());
+                        ui.label(RichText::new(tr("total")).strong());
                         ui.end_row();
                         for motor in &m.motors {
                             let loud = m.loudest == Some(motor.idx) && m.motors.len() > 1;

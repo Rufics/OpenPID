@@ -5,6 +5,7 @@
 
 use crate::app::App;
 use crate::colormap::MUTED;
+use crate::i18n::tr;
 use crate::views::{
     OverlayState, SlotResult, heatmap_controls, motor_color, overlay_controls, overlay_harmonics,
     show_error, slot_color, slot_header,
@@ -76,20 +77,19 @@ pub fn surface(app: &mut App, ui: &mut Ui) {
     ui.separator();
     heatmap_controls(app, ui);
     ui.horizontal_wrapped(|ui| {
-        let l = ui.label("height");
+        let l = ui.label(tr("height"));
         ui.add(
             egui::Slider::new(&mut app.surface.camera.height, 0.05..=1.0)
                 .show_value(false),
         )
         .labelled_by(l.id)
-        .on_hover_text("height of the colour maximum");
-        ui.checkbox(&mut app.surface.shade, "shading");
-        if ui.button("Reset view").clicked() {
+        .on_hover_text(tr("height of the colour maximum"));
+        ui.checkbox(&mut app.surface.shade, tr("shading"));
+        if ui.button(tr("Reset view")).clicked() {
             app.surface.reset();
         }
         ui.label(
-            RichText::new(
-                "drag: orbit · wheel / pinch: zoom · shift-drag, right-drag or two fingers: pan · double-click: reset",
+            RichText::new(tr("drag: orbit · wheel / pinch: zoom · shift-drag, right-drag or two fingers: pan · double-click: reset"),
             )
             .color(MUTED),
         );

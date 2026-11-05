@@ -197,8 +197,9 @@ PSD Велча обраного каналу (DESIGN §6.3). **Channel** — б�
 - **Diagnostics**: прошивка, профіль, частоти, кадри (валідні/пошкоджені/
   resync), прогалини, нерозпізнані поля, усі заголовки логу (для ArduPilot — усі
   `PARM`), нотатки декодера (batch sampler, хвіст іншого файлу тощо).
-- **Settings**: тема (dark/light), touch‑режим на старті, одиниці deg/s↔rad/s і
-  g↔m/s². Зберігається у `prefs.json` каталогу конфігурації (`~/.config/openpid`,
+- **Settings**: тема (dark/light), **мова інтерфейсу** (English / Українська —
+  перемикається миттєво, одиниці й числа не змінюються), touch‑режим на старті,
+  одиниці deg/s↔rad/s і g↔m/s². Зберігається у `prefs.json` каталогу конфігурації (`~/.config/openpid`,
   `~/Library/Application Support/openpid`, `%APPDATA%\openpid`; `OPENPID_CONFIG_DIR`
   перевизначає).
 

@@ -1288,6 +1288,53 @@ fn surface_tab_orbits_zooms_pans_and_reads_out() {
     assert!(has_label_containing(&h, "B: gyro"));
 }
 
+// ------------------------------------------------------------------ language
+
+#[test]
+fn language_switch_translates_labels_and_persists() {
+    let dir = std::env::temp_dir().join(format!("openpid-lang-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("prefs.json");
+    let mut h = harness_with_prefs(
+        vec![LOG_4_2.into()],
+        Some(Tab::Settings),
+        Some(path.clone()),
+    );
+    run_until(&mut h, no_slot_loading);
+    assert!(h.query_by_label("Settings").is_some());
+    assert!(h.query_by_label("Appearance").is_some());
+    assert!(h.query_by_label("Налаштування").is_none());
+    h.get_by_label("Українська").click();
+    h.run_steps(2);
+    assert_eq!(app(&h).prefs.lang, crate::i18n::Lang::Ua);
+    // tab titles, headings, labels, buttons and tooltips all follow
+    assert!(h.query_by_label("Налаштування").is_some());
+    assert!(h.query_by_label("Вигляд").is_some());
+    assert!(h.query_by_label("Сенсорний режим").is_some());
+    assert!(h.query_by_label("Скинути до типових").is_some());
+    assert!(h.query_by_label("Settings").is_none());
+    h.get_by_label("Перегляд логу").click();
+    h.step();
+    assert_eq!(app(&h).tab, Tab::LogViewer);
+    assert!(has_label_containing(&h, "Слот A"));
+    assert!(h.query_by_label("Слот B: порожній").is_some());
+    assert!(has_label_containing(&h, "Канали"));
+    // dynamic read-outs keep their units and numbers
+    assert!(has_label_containing(&h, " s"));
+    // the choice is saved and restored
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(saved.contains("\"lang\": \"ua\""), "{saved}");
+    drop(h);
+    let mut h2 = harness_with_prefs(vec![], Some(Tab::Settings), Some(path.clone()));
+    h2.step();
+    assert!(h2.query_by_label("Налаштування").is_some());
+    h2.get_by_label("English").click();
+    h2.run_steps(2);
+    assert!(h2.query_by_label("Settings").is_some());
+    assert_eq!(app(&h2).prefs.lang, crate::i18n::Lang::En);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // ------------------------------------------------------------------ export
 
 #[test]
