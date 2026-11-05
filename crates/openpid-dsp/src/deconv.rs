@@ -170,4 +170,165 @@ mod tests {
         let mid = regularisation(p.cutoff_hz, &p);
         assert!(mid > p.reg_low && mid < p.reg_high);
     }
+
+    /// Deterministic pseudo-random values in [-1, 1).
+    fn noise(n: usize, seed: u64) -> Vec<f64> {
+        let mut s = seed;
+        (0..n)
+            .map(|_| {
+                s = s
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                ((s >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0
+            })
+            .collect()
+    }
+
+    /// `H = Y·conj(X) / (|X|² + λ)` is linear in the output for a fixed input
+    /// and regularisation: `h(x, a·y₁ + b·y₂) = a·h(x, y₁) + b·h(x, y₂)`.
+    #[test]
+    fn linear_in_the_output_for_a_fixed_input() {
+        let fft = Fft::new();
+        let fs = 1000.0;
+        let n = 2000;
+        let x = noise(n, 1);
+        let y1 = noise(n, 2);
+        let y2 = noise(n, 3);
+        let (a, b) = (2.5, -0.75);
+        let mix: Vec<f64> = y1.iter().zip(&y2).map(|(p, q)| a * p + b * q).collect();
+        for p in [
+            DeconvParams::default(),
+            DeconvParams {
+                cutoff_hz: 400.0,
+                window: Window::Rectangular,
+                ..Default::default()
+            },
+        ] {
+            let h1 = impulse_response(&fft, &x, &y1, fs, 100, &p).unwrap();
+            let h2 = impulse_response(&fft, &x, &y2, fs, 100, &p).unwrap();
+            let hm = impulse_response(&fft, &x, &mix, fs, 100, &p).unwrap();
+            let scale = h1.iter().map(|v| v.abs()).fold(0.0, f64::max).max(1e-12);
+            for k in 0..100 {
+                let expected = a * h1[k] + b * h2[k];
+                assert!(
+                    (hm[k] - expected).abs() < 1e-9 * scale,
+                    "tap {k}: {} vs {expected}",
+                    hm[k]
+                );
+            }
+        }
+    }
+
+    /// Slow exponential taps: a plant whose energy sits well below the
+    /// deconvolution cutoff, so the regularisation does not bias it.
+    fn slow_fir() -> Vec<f64> {
+        (0..40).map(|k| 0.1 * 0.9f64.powi(k)).collect()
+    }
+
+    fn convolve(x: &[f64], taps: &[f64]) -> Vec<f64> {
+        (0..x.len())
+            .map(|i| {
+                taps.iter()
+                    .enumerate()
+                    .filter(|(k, _)| i >= *k)
+                    .map(|(k, t)| t * x[i - k])
+                    .sum()
+            })
+            .collect()
+    }
+
+    /// A low-pass FIR plant driven by white noise is recovered tap by tap,
+    /// and the step response is the running sum of the taps.
+    #[test]
+    fn recovers_a_fir_plant_and_its_step_is_the_cumulative_sum() {
+        let fft = Fft::new();
+        let fs = 1000.0;
+        let taps = slow_fir();
+        let x = noise(8000, 7);
+        let y = convolve(&x, &taps);
+        let p = DeconvParams {
+            cutoff_hz: 350.0,
+            reg_low: 1e-6,
+            ..Default::default()
+        };
+        let h = impulse_response(&fft, &x, &y, fs, 60, &p).unwrap();
+        // the regularisation blanks the band above the cutoff, which costs the
+        // taps a little of their high-frequency content (≈ 15 % of tap 0 here);
+        // inside the trusted band the estimate matches the plant's response
+        let pad = 1024;
+        let spectrum = |v: &[f64]| {
+            let mut buf = vec![0.0; pad];
+            buf[..v.len()].copy_from_slice(v);
+            fft.rfft(&buf)
+        };
+        let (est, truth) = (spectrum(&h), spectrum(&taps));
+        let trusted = ((0.75 * p.cutoff_hz) / (fs / pad as f64)) as usize;
+        for k in 0..=trusted {
+            assert!(
+                (est[k] - truth[k]).norm() < 0.03 * truth[0].norm(),
+                "bin {k}: {} vs {}",
+                est[k],
+                truth[k]
+            );
+        }
+        for (k, t) in taps.iter().enumerate() {
+            assert!((h[k] - t).abs() < 0.02, "tap {k}: {} vs {t}", h[k]);
+        }
+        assert!(
+            h[40..].iter().all(|v| v.abs() < 0.01),
+            "nothing after the last tap"
+        );
+        let step = step_from_impulse(&h);
+        let mut acc = 0.0;
+        for (k, v) in step.iter().enumerate() {
+            acc += h[k];
+            assert!((v - acc).abs() < 1e-12, "running sum at {k}");
+        }
+        let total: f64 = taps.iter().sum();
+        assert!(
+            (step[59] - total).abs() < 0.03,
+            "settles at the DC gain {total}: {}",
+            step[59]
+        );
+        assert_eq!(step_from_impulse(&[1.0, 2.0, 3.0]), vec![1.0, 3.0, 6.0]);
+        assert!(step_from_impulse(&[]).is_empty());
+    }
+
+    /// The periodic Hann taper is symmetric about the record centre
+    /// (`w[i] == w[n − i]`, `w[0] == 0`), and tapering or not gives the same
+    /// DC gain for a plant inside the cutoff.
+    #[test]
+    fn hann_taper_is_symmetric_and_does_not_change_the_dc_gain() {
+        for n in [16usize, 257, 1000] {
+            let w = Window::Hann.values(n);
+            assert_eq!(w[0], 0.0);
+            for i in 1..n {
+                assert!((w[i] - w[n - i]).abs() < 1e-12, "n {n}, i {i}");
+            }
+            assert!(w.iter().all(|v| (0.0..=1.0 + 1e-12).contains(v)));
+        }
+        let fft = Fft::new();
+        let fs = 1000.0;
+        let taps = slow_fir();
+        let x = noise(8000, 11);
+        let y = convolve(&x, &taps);
+        let total: f64 = taps.iter().sum();
+        let mut gains = Vec::new();
+        for window in [Window::Hann, Window::Rectangular, Window::Hamming] {
+            let p = DeconvParams {
+                cutoff_hz: 350.0,
+                reg_low: 1e-6,
+                window,
+                ..Default::default()
+            };
+            let h = impulse_response(&fft, &x, &y, fs, 60, &p).unwrap();
+            let g = step_from_impulse(&h)[59];
+            assert!((g - total).abs() < 0.03, "{window:?}: {g} vs {total}");
+            gains.push(g);
+        }
+        assert!(
+            (gains[0] - gains[1]).abs() < 0.02,
+            "Hann vs rectangular: {gains:?}"
+        );
+    }
 }
