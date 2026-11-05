@@ -315,3 +315,23 @@ fn png_of_a_heatmap() {
     assert!(!ok && err.contains("--png is for"), "{err}");
     std::fs::remove_file(&png).ok();
 }
+
+#[test]
+fn rpm_command() {
+    let l = log("betaflight-4.5.1-two-sessions.bbl");
+    let f = l.to_str().unwrap();
+    let (ok, out, err) = run(&["run", "rpm", f, "--session", "1"]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert!(
+        v["median_error"].as_f64().unwrap() < 0.05,
+        "{}",
+        v["median_error"]
+    );
+    assert_eq!(
+        v["rpm"].as_array().unwrap().len(),
+        v["frames"].as_u64().unwrap() as usize
+    );
+    let (ok, _, err) = run(&["run", "rpm", f, "--channel", "gyro.filtered.roll"]);
+    assert!(!ok && err.contains("gyro.raw"), "{err}");
+}
