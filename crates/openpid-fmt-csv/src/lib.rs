@@ -2,8 +2,10 @@
 //!
 //! Column headers may carry a unit suffix, e.g. `time (us)` or `vbatLatest (V)`.
 //! Columns without a suffix are treated as raw firmware integers and mapped
-//! through the Cleanflight-family profiles; suffixed columns are kept as
-//! already-scaled `Custom` channels.
+//! through the Cleanflight-family profiles; suffixed columns are already
+//! scaled: a canonical key (`gyro.filtered.roll (deg/s)`, as written by
+//! `openpid decode --scaled`) keeps its channel identity, anything else is a
+//! `Custom` channel.
 
 use openpid_core::session::Diagnostics;
 use openpid_core::{
@@ -169,11 +171,19 @@ impl LogFormat for CsvFormat {
                         )
                     }
                 }
-                (Some(u), _) => (
-                    ChannelId::Custom(col.name.clone()),
-                    Unit::Custom(u.clone()),
-                    Series::from_options(cells),
-                ),
+                // `gyro.filtered.roll (deg/s)`: a canonical key with its unit
+                // (what `openpid decode --scaled` and `openpid gen` write) keeps
+                // its identity; any other suffixed column stays custom
+                (Some(u), _) => match ChannelId::parse(&col.name) {
+                    Some(id) if !matches!(id, ChannelId::Custom(_)) => {
+                        (id, Unit::from_symbol(u), Series::from_options(cells))
+                    }
+                    _ => (
+                        ChannelId::Custom(col.name.clone()),
+                        Unit::Custom(u.clone()),
+                        Series::from_options(cells),
+                    ),
+                },
                 (None, None) => (
                     ChannelId::Custom(col.name.clone()),
                     Unit::Raw,
