@@ -1,9 +1,9 @@
 //! Background thread: file loading and analyses never block the UI.
 
 use openpid_analysis::{
-    Analysis, AnalysisCtx, Epoch, PsdAnalysis, PsdOutput, PsdParams, StepAnalysis, StepOutput,
-    StepParams, StftAnalysis, StftOutput, StftParams, ThrottleHeatmap, ThrottleHeatmapOutput,
-    ThrottleHeatmapParams,
+    Analysis, AnalysisCtx, Epoch, FilterSimAnalysis, FilterSimOutput, FilterSimParams, PsdAnalysis,
+    PsdOutput, PsdParams, StepAnalysis, StepOutput, StepParams, StftAnalysis, StftOutput,
+    StftParams, ThrottleHeatmap, ThrottleHeatmapOutput, ThrottleHeatmapParams,
 };
 use openpid_core::{FlightSession, FormatRegistry, LogFile, OpenOptions};
 use std::hash::{Hash, Hasher};
@@ -32,6 +32,7 @@ pub enum Kind {
     Psd(PsdParams),
     Throttle(ThrottleHeatmapParams),
     Stft(StftParams),
+    FilterSim(FilterSimParams),
 }
 
 impl Kind {
@@ -41,6 +42,7 @@ impl Kind {
             Kind::Psd(_) => "psd",
             Kind::Throttle(_) => "thr",
             Kind::Stft(_) => "stft",
+            Kind::FilterSim(_) => "fsim",
         }
     }
 }
@@ -51,6 +53,8 @@ pub enum Output {
     Psd(PsdOutput),
     Throttle(ThrottleHeatmapOutput),
     Stft(StftOutput),
+    /// Boxed: it carries four time series and four spectra.
+    FilterSim(Box<FilterSimOutput>),
 }
 
 /// Identity of one analysis request; equal keys give equal results.
@@ -71,6 +75,7 @@ impl JobKey {
             Kind::Psd(p) => p.hash(&mut h),
             Kind::Throttle(p) => p.hash(&mut h),
             Kind::Stft(p) => p.hash(&mut h),
+            Kind::FilterSim(p) => p.hash(&mut h),
         }
         JobKey {
             slot,
@@ -82,6 +87,10 @@ impl JobKey {
     }
 }
 
+#[allow(
+    clippy::large_enum_variant,
+    reason = "one job value per request; the parameters travel by value"
+)]
 pub enum Job {
     Load {
         slot: Slot,
@@ -143,6 +152,9 @@ fn analyze(session: &FlightSession, kind: &Kind, epoch: Option<Epoch>) -> Result
         Kind::Psd(p) => PsdAnalysis.run(&ctx, p).map(Output::Psd),
         Kind::Throttle(p) => ThrottleHeatmap.run(&ctx, p).map(Output::Throttle),
         Kind::Stft(p) => StftAnalysis.run(&ctx, p).map(Output::Stft),
+        Kind::FilterSim(p) => FilterSimAnalysis
+            .run(&ctx, p)
+            .map(|o| Output::FilterSim(Box::new(o))),
     }
     .map_err(|e| e.to_string())
 }

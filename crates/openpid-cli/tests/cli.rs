@@ -198,3 +198,48 @@ fn sliders_command() {
     let (ok, _, err) = run(&["sliders", f, "--set", "bogus=1"]);
     assert!(!ok && err.contains("unknown slider"));
 }
+
+#[test]
+fn filter_sim_command() {
+    let l = log("betaflight-2025.12.2-btfl_027.bbl");
+    let f = l.to_str().unwrap();
+    let (ok, out, err) = run(&["run", "filter-sim", f, "--axis", "roll"]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    let fit = &v["fit"];
+    assert!(fit["residual_rel"].as_f64().unwrap() < 0.25, "{fit}");
+    assert!(v["description"].as_array().unwrap().len() >= 3);
+    assert_eq!(
+        v["model"], v["whatif"],
+        "no overrides: the what-if chain is the log's"
+    );
+    let (ok, out, err) = run(&[
+        "run",
+        "filter-sim",
+        f,
+        "--set",
+        "lpf1_hz=100,lpf1_type=1,dyn_count=0",
+    ]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    let desc: Vec<String> = v["description"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d.as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        desc.iter().any(|d| d == "lowpass 1: biquad 100 Hz"),
+        "{desc:?}"
+    );
+    assert!(
+        !desc.iter().any(|d| d.starts_with("dynamic notch")),
+        "{desc:?}"
+    );
+    assert_ne!(v["model"], v["whatif"]);
+    let (ok, _, err) = run(&["run", "filter-sim", f, "--set", "nope=1"]);
+    assert!(!ok && err.contains("unknown filter key"), "{err}");
+    let plain = log("betaflight-4.2.0.BFL");
+    let (ok, _, err) = run(&["run", "filter-sim", plain.to_str().unwrap()]);
+    assert!(!ok && err.contains("missing channel"), "{err}");
+}

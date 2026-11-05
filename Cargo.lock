@@ -1695,6 +1695,7 @@ dependencies = [
  "openpid-core",
  "openpid-dsp",
  "openpid-fmt-blackbox",
+ "openpid-sim",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -1713,6 +1714,7 @@ dependencies = [
  "openpid-fmt-ardupilot",
  "openpid-fmt-blackbox",
  "openpid-fmt-csv",
+ "openpid-sim",
  "rfd",
  "serde",
  "serde_json",
@@ -1781,6 +1783,7 @@ dependencies = [
  "openpid-core",
  "openpid-dsp",
  "openpid-fmt-blackbox",
+ "serde",
 ]
 
 [[package]]

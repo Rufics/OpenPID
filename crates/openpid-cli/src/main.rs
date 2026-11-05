@@ -30,6 +30,8 @@ COMMANDS:
              psd             Welch power spectral density of --channel
              thr-heatmap     frequency x throttle heatmap of --channel
              stft            frequency x time heatmap of --channel
+             filter-sim      unfiltered gyro through the modelled filter chain (needs
+                             gyro.raw.<axis>; --set lpf1_hz=…,lpf1_type=… for what-if)
              Channel keys look like gyro.filtered.roll, gyro.raw.pitch, pid.d.roll,
              motor.0, debug.2 (see `openpid info`). Default: gyro.filtered.<axis>.
 
@@ -39,7 +41,11 @@ COMMANDS:
 
 OPTIONS:
     --session N   Restrict to session index N (0-based)
-    --set K=V,…   Slider values, e.g. --set simplified_master_multiplier=110,simplified_d_gain=90
+    --set K=V,…   Slider values, e.g. --set simplified_master_multiplier=110,simplified_d_gain=90;
+                  for filter-sim the what-if filter keys: lpf1_hz, lpf1_type (0 PT1, 1 biquad,
+                  2 PT2, 3 PT3), lpf1_dyn_min_hz, lpf1_dyn_max_hz, lpf2_hz, lpf2_type,
+                  rpm_harmonics, rpm_q, rpm_min_hz, dyn_count, dyn_q, dyn_min_hz, dyn_max_hz,
+                  notch_hz, notch_cutoff_hz (0 switches a stage off)
     --epoch A..B  Analyse only seconds A to B of the session
     --axis AXIS   roll, pitch or yaw
     --json        Machine-readable output
@@ -410,6 +416,20 @@ fn cmd_run(args: &Args) -> Result<(), String> {
             };
             serde_json::to_string_pretty(
                 &openpid_analysis::StftAnalysis
+                    .run(&ctx, &p)
+                    .map_err(|e| e.to_string())?,
+            )
+        }
+        "filter-sim" => {
+            let mut p = openpid_analysis::FilterSimParams {
+                axis,
+                ..Default::default()
+            };
+            for (k, v) in &args.set {
+                p.overrides.set(k, *v)?;
+            }
+            serde_json::to_string_pretty(
+                &openpid_analysis::FilterSimAnalysis
                     .run(&ctx, &p)
                     .map_err(|e| e.to_string())?,
             )
