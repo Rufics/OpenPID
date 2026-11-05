@@ -104,6 +104,8 @@ pub struct Tools {
     pub heatmap_channel: ChannelId,
     pub psd_db: bool,
     pub heatmap_max: f64,
+    /// Throttle bins with fewer segments than this are greyed out on the freq × throttle heatmap.
+    pub min_segments: usize,
     pub viewer_channels: Vec<ChannelId>,
 }
 
@@ -123,6 +125,7 @@ impl Default for Tools {
             heatmap_channel: gyro.clone(),
             psd_db: true,
             heatmap_max: 0.0,
+            min_segments: 3,
             viewer_channels: vec![
                 gyro,
                 ChannelId::Setpoint { axis: Axis::Roll },
