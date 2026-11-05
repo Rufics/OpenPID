@@ -8,6 +8,7 @@ pub mod motor_noise;
 pub mod prepare;
 pub mod project;
 pub mod psd;
+pub mod recommend;
 pub mod render;
 pub mod rpm;
 pub mod step;
@@ -27,6 +28,7 @@ pub use openpid_core::analysis::{
 pub use prepare::{Prepared, prepare};
 pub use project::{Project, ProjectSlot};
 pub use psd::{PsdAnalysis, PsdOutput, PsdParams};
+pub use recommend::{Finding, Recommend, RecommendOutput, RecommendParams};
 pub use rpm::{RpmEstimateOutput, RpmEstimateParams, RpmEstimator};
 pub use step::{StepAnalysis, StepMetrics, StepOutput, StepParams};
 pub use stft::{StftAnalysis, StftOutput, StftParams};

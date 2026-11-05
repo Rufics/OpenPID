@@ -85,6 +85,11 @@ pub struct Plant {
     pub tau_ms: f64,
     /// Transport delay, ms.
     pub delay_ms: f64,
+    /// Damping ratio of a second-order plant (`ω_n = 1 / τ`); `None` keeps
+    /// the first-order lag. Below 1 the step response overshoots
+    /// (`exp(-π ζ / sqrt(1 - ζ²))`: 25 % at ζ = 0.4), which exercises the
+    /// tuning rules.
+    pub damping: Option<f64>,
 }
 
 impl Default for Plant {
@@ -93,6 +98,7 @@ impl Default for Plant {
             gain: 1.0,
             tau_ms: 15.0,
             delay_ms: 5.0,
+            damping: None,
         }
     }
 }
@@ -364,13 +370,27 @@ impl SignalSpec {
             1.0
         };
         let mut clean = vec![0.0; n];
+        let mut velocity = 0.0;
+        let wn = if self.plant.tau_ms > 0.0 {
+            1000.0 / self.plant.tau_ms
+        } else {
+            0.0
+        };
         for i in 1..n {
             let u = if i >= delay {
                 self.plant.gain * setpoint[i - delay]
             } else {
                 0.0
             };
-            clean[i] = clean[i - 1] + a * (u - clean[i - 1]);
+            match self.plant.damping {
+                // second order, semi-implicit Euler: stable for ω_n / fs ≪ 1
+                Some(zeta) if wn > 0.0 => {
+                    let dt = 1.0 / fs;
+                    velocity += dt * (wn * wn * (u - clean[i - 1]) - 2.0 * zeta * wn * velocity);
+                    clean[i] = clean[i - 1] + dt * velocity;
+                }
+                _ => clean[i] = clean[i - 1] + a * (u - clean[i - 1]),
+            }
         }
         // noise: white, pink, tones, motor harmonics
         let mut pink = Pink { b: [0.0; 3] };

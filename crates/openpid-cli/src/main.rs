@@ -38,6 +38,10 @@ COMMANDS:
                              gyro.raw.<axis>; validated against motor_rpm when logged)
              filter-sim      unfiltered gyro through the modelled filter chain (needs
                              gyro.raw.<axis>; --set lpf1_hz=…,lpf1_type=… for what-if)
+             recommend       rule-based tuning proposals with their evidence (overshoot →
+                             more D, an uncovered spectrum peak → a notch, headroom above
+                             the gyro LPF → a higher cutoff); --cli prints them as
+                             Betaflight CLI `set …` commands instead of JSON
              Channel keys look like gyro.filtered.roll, gyro.raw.pitch, pid.d.roll,
              motor.0, debug.2 (see `openpid info`). Default: gyro.filtered.<axis>.
 
@@ -66,7 +70,7 @@ OPTIONS:
     --axis AXIS   roll, pitch or yaw
     --json        Machine-readable output
     --session-b M diff: session index in the second file (default: --session)
-    --cli         diff: Betaflight CLI commands instead of the table
+    --cli         diff / run recommend: Betaflight CLI commands instead of the table / JSON
     --example     gen: print the default spec instead of generating
     --raw         Skip firmware-profile scaling and derived channels
     --out <path>  Write to a file instead of stdout
@@ -547,6 +551,36 @@ fn cmd_run(args: &Args) -> Result<(), String> {
                     .run(&ctx, &p)
                     .map_err(|e| e.to_string())?,
             )
+        }
+        "recommend" => {
+            let out = openpid_analysis::Recommend
+                .run(&ctx, &openpid_analysis::RecommendParams::default())
+                .map_err(|e| e.to_string())?;
+            if args.cli {
+                use openpid_core::Exporter as _;
+                use std::fmt::Write as _;
+                let mut text = String::from("# evidence\n");
+                for f in &out.findings {
+                    let _ = writeln!(
+                        text,
+                        "# [{}{}] {}",
+                        f.rule,
+                        f.axis.map_or(String::new(), |a| format!(" {}", a.name())),
+                        f.text
+                    );
+                }
+                if out.proposals.is_empty() {
+                    text.push_str("# nothing to change: every rule is satisfied\n");
+                }
+                text.push_str(
+                    &openpid_fmt_blackbox::BetaflightCli
+                        .export(s, &out.proposals)
+                        .map_err(|e| e.to_string())?,
+                );
+                Ok(text)
+            } else {
+                serde_json::to_string_pretty(&out)
+            }
         }
         "rpm" => {
             let p = openpid_analysis::RpmEstimateParams {

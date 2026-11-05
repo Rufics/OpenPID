@@ -18,6 +18,7 @@ fn step_response_recovers_the_plant() {
             gain: 0.9,
             tau_ms: 15.0,
             delay_ms: 8.0,
+            damping: None,
         },
         noise: Noise {
             white: 0.2,
