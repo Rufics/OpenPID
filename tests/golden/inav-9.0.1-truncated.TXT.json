@@ -52,15 +52,6 @@
         "valid": 16753
       },
       {
-        "key": "custom:AirSpeed",
-        "max": 51.0,
-        "mean": 50.973975,
-        "min": 49.0,
-        "name": "AirSpeed",
-        "unit": "raw",
-        "valid": 16753
-      },
-      {
         "key": "custom:BaroAlt",
         "max": 121.0,
         "mean": 109.704113,
@@ -70,7 +61,7 @@
         "valid": 16753
       },
       {
-        "key": "custom:accVib",
+        "key": "custom:acc_vibration",
         "max": 711.0,
         "mean": 413.86092,
         "min": 7.0,
@@ -79,34 +70,43 @@
         "valid": 16753
       },
       {
-        "key": "custom:attitude[0]",
-        "max": -17.0,
-        "mean": -20.137647,
-        "min": -26.0,
-        "name": "attitude[0]",
-        "unit": "raw",
+        "key": "custom:airspeed",
+        "max": 51.0,
+        "mean": 50.973975,
+        "min": 49.0,
+        "name": "AirSpeed",
+        "unit": "cm/s",
         "valid": 16753
       },
       {
-        "key": "custom:attitude[1]",
-        "max": 151.0,
-        "mean": 149.35713,
-        "min": 147.0,
+        "key": "custom:attitude.pitch",
+        "max": 15.1,
+        "mean": 14.935713,
+        "min": 14.7,
         "name": "attitude[1]",
-        "unit": "raw",
+        "unit": "deg",
         "valid": 16753
       },
       {
-        "key": "custom:attitude[2]",
-        "max": 2775.0,
-        "mean": 2748.391631,
-        "min": 2721.0,
+        "key": "custom:attitude.roll",
+        "max": -1.7,
+        "mean": -2.013765,
+        "min": -2.6,
+        "name": "attitude[0]",
+        "unit": "deg",
+        "valid": 16753
+      },
+      {
+        "key": "custom:attitude.yaw",
+        "max": 277.5,
+        "mean": 274.839163,
+        "min": 272.1,
         "name": "attitude[2]",
-        "unit": "raw",
+        "unit": "deg",
         "valid": 16753
       },
       {
-        "key": "custom:fwAltD",
+        "key": "custom:fw_alt.d",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -115,7 +115,7 @@
         "valid": 16753
       },
       {
-        "key": "custom:fwAltI",
+        "key": "custom:fw_alt.i",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -124,7 +124,7 @@
         "valid": 16753
       },
       {
-        "key": "custom:fwAltOut",
+        "key": "custom:fw_alt.out",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -133,7 +133,7 @@
         "valid": 16753
       },
       {
-        "key": "custom:fwAltP",
+        "key": "custom:fw_alt.p",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -142,7 +142,7 @@
         "valid": 16753
       },
       {
-        "key": "custom:fwPosD",
+        "key": "custom:fw_pos.d",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -151,7 +151,7 @@
         "valid": 16753
       },
       {
-        "key": "custom:fwPosI",
+        "key": "custom:fw_pos.i",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -160,7 +160,7 @@
         "valid": 16753
       },
       {
-        "key": "custom:fwPosOut",
+        "key": "custom:fw_pos.out",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -169,7 +169,7 @@
         "valid": 16753
       },
       {
-        "key": "custom:fwPosP",
+        "key": "custom:fw_pos.p",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -178,79 +178,79 @@
         "valid": 16753
       },
       {
-        "key": "custom:navEPH",
+        "key": "custom:nav.eph",
         "max": 27.0,
         "mean": 27.0,
         "min": 27.0,
         "name": "navEPH",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 16753
       },
       {
-        "key": "custom:navEPV",
+        "key": "custom:nav.epv",
         "max": 47.0,
         "mean": 41.186056,
         "min": 38.0,
         "name": "navEPV",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 16753
       },
       {
-        "key": "custom:navFlags",
+        "key": "custom:nav.flags",
         "max": 5.0,
         "mean": 5.0,
         "min": 5.0,
         "name": "navFlags",
-        "unit": "raw",
+        "unit": "flags",
         "valid": 16753
       },
       {
-        "key": "custom:navPos[0]",
+        "key": "custom:nav.pos.x",
         "max": 63.0,
         "mean": 51.968304,
         "min": 25.0,
         "name": "navPos[0]",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 16753
       },
       {
-        "key": "custom:navPos[1]",
+        "key": "custom:nav.pos.y",
         "max": 133.0,
         "mean": 103.285919,
         "min": 87.0,
         "name": "navPos[1]",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 16753
       },
       {
-        "key": "custom:navPos[2]",
+        "key": "custom:nav.pos.z",
         "max": 0.0,
         "mean": -33.685668,
         "min": -57.0,
         "name": "navPos[2]",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 16753
       },
       {
-        "key": "custom:navState",
+        "key": "custom:nav.state",
         "max": 26.0,
         "mean": 26.0,
         "min": 26.0,
         "name": "navState",
-        "unit": "raw",
+        "unit": "flags",
         "valid": 16753
       },
       {
-        "key": "custom:navSurf",
+        "key": "custom:nav.surface",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navSurf",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 16753
       },
       {
-        "key": "custom:navTgtHdg",
+        "key": "custom:nav.target_heading",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
@@ -259,147 +259,147 @@
         "valid": 16753
       },
       {
-        "key": "custom:navTgtPos[0]",
+        "key": "custom:nav.target_pos.x",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navTgtPos[0]",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 16753
       },
       {
-        "key": "custom:navTgtPos[1]",
+        "key": "custom:nav.target_pos.y",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navTgtPos[1]",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 16753
       },
       {
-        "key": "custom:navTgtPos[2]",
+        "key": "custom:nav.target_pos.z",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navTgtPos[2]",
-        "unit": "raw",
+        "unit": "cm",
         "valid": 16753
       },
       {
-        "key": "custom:navTgtVel[0]",
+        "key": "custom:nav.target_vel.x",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navTgtVel[0]",
-        "unit": "raw",
+        "unit": "cm/s",
         "valid": 16753
       },
       {
-        "key": "custom:navTgtVel[1]",
+        "key": "custom:nav.target_vel.y",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navTgtVel[1]",
-        "unit": "raw",
+        "unit": "cm/s",
         "valid": 16753
       },
       {
-        "key": "custom:navTgtVel[2]",
+        "key": "custom:nav.target_vel.z",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "navTgtVel[2]",
-        "unit": "raw",
+        "unit": "cm/s",
         "valid": 16753
       },
       {
-        "key": "custom:navVel[0]",
+        "key": "custom:nav.vel.x",
         "max": 4.0,
         "mean": 0.162299,
         "min": -2.0,
         "name": "navVel[0]",
-        "unit": "raw",
+        "unit": "cm/s",
         "valid": 16753
       },
       {
-        "key": "custom:navVel[1]",
+        "key": "custom:nav.vel.y",
         "max": 2.0,
         "mean": -0.145466,
         "min": -3.0,
         "name": "navVel[1]",
-        "unit": "raw",
+        "unit": "cm/s",
         "valid": 16753
       },
       {
-        "key": "custom:navVel[2]",
+        "key": "custom:nav.vel.z",
         "max": 0.0,
         "mean": -5.885991,
         "min": -9.0,
         "name": "navVel[2]",
-        "unit": "raw",
+        "unit": "cm/s",
         "valid": 16753
       },
       {
-        "key": "custom:rcData[0]",
+        "key": "custom:rc_raw.0",
         "max": 1500.0,
         "mean": 1500.0,
         "min": 1500.0,
         "name": "rcData[0]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 16753
       },
       {
-        "key": "custom:rcData[1]",
+        "key": "custom:rc_raw.1",
         "max": 1500.0,
         "mean": 1500.0,
         "min": 1500.0,
         "name": "rcData[1]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 16753
       },
       {
-        "key": "custom:rcData[2]",
+        "key": "custom:rc_raw.2",
         "max": 1500.0,
         "mean": 1499.1312,
         "min": 1447.0,
         "name": "rcData[2]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 16753
       },
       {
-        "key": "custom:rcData[3]",
+        "key": "custom:rc_raw.3",
         "max": 2012.0,
         "mean": 1720.713365,
         "min": 990.0,
         "name": "rcData[3]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 16753
       },
       {
-        "key": "custom:servo[0]",
+        "key": "custom:servo.0",
         "max": 1426.0,
         "mean": 1369.261923,
         "min": 1342.0,
         "name": "servo[0]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 16753
       },
       {
-        "key": "custom:servo[1]",
+        "key": "custom:servo.1",
         "max": 1500.0,
         "mean": 1500.0,
         "min": 1500.0,
         "name": "servo[1]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 16753
       },
       {
-        "key": "custom:servo[2]",
+        "key": "custom:servo.2",
         "max": 1649.0,
         "mean": 1620.916433,
         "min": 1565.0,
         "name": "servo[2]",
-        "unit": "raw",
+        "unit": "us",
         "valid": 16753
       },
       {
@@ -729,45 +729,6 @@
     "sample_rate_hz": 992.063492,
     "samples": 16753,
     "skipped_bytes": 23,
-    "unmapped_fields": [
-      "fwAltP",
-      "fwAltI",
-      "fwAltD",
-      "fwAltOut",
-      "fwPosP",
-      "fwPosI",
-      "fwPosD",
-      "fwPosOut",
-      "rcData[0]",
-      "rcData[1]",
-      "rcData[2]",
-      "rcData[3]",
-      "AirSpeed",
-      "accVib",
-      "attitude[0]",
-      "attitude[1]",
-      "attitude[2]",
-      "servo[0]",
-      "servo[1]",
-      "servo[2]",
-      "navState",
-      "navFlags",
-      "navEPH",
-      "navEPV",
-      "navPos[0]",
-      "navPos[1]",
-      "navPos[2]",
-      "navVel[0]",
-      "navVel[1]",
-      "navVel[2]",
-      "navTgtVel[0]",
-      "navTgtVel[1]",
-      "navTgtVel[2]",
-      "navTgtPos[0]",
-      "navTgtPos[1]",
-      "navTgtPos[2]",
-      "navTgtHdg",
-      "navSurf"
-    ]
+    "unmapped_fields": []
   }
 ]
