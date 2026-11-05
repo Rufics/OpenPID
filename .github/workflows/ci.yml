@@ -177,6 +177,8 @@ jobs:
         include:
           - { os: ubuntu-24.04, name: linux,   artifact: openpid-linux-x86_64 }
           - { os: macos-15,     name: macos,   artifact: openpid-macos-arm64 }
+          # Intel Macs still fly; this leg also keeps a macOS artifact when the arm64 pool is short (#44)
+          - { os: macos-15-intel, name: macos-intel, artifact: openpid-macos-x86_64 }
           - { os: windows-2025, name: windows, artifact: openpid-windows-x86_64 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
