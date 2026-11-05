@@ -13,7 +13,7 @@ use crate::worker::{Done, Job, JobKey, Kind, Slot, Worker};
 use eframe::egui::{self, accesskit::Role};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use openpid_analysis::{Epoch, StepParams};
+use openpid_analysis::{Epoch, FitnessLevel, StepParams};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -1012,7 +1012,10 @@ fn worker_loads_and_analyses_off_thread() {
         slot: Slot::A,
         path: LOG_4_2.into(),
     });
-    let Done::Loaded { slot, path, result } = wait_for(&w) else {
+    let Done::Loaded {
+        slot, path, result, ..
+    } = wait_for(&w)
+    else {
         panic!("expected a load result");
     };
     assert_eq!(slot, Slot::A);
@@ -1277,6 +1280,61 @@ fn filter_sim_tab_validates_the_model_and_applies_what_if_changes() {
     h2.step();
     assert!(has_label_containing(&h2, "no unfiltered gyro"));
     assert!(app(&h2).cache.is_empty());
+}
+
+// ------------------------------------------------------------------ log fitness
+
+#[test]
+fn log_check_badges_and_card_follow_the_session() {
+    // 4.2.0: raw gyro logged, no eRPM, plenty of stick moves, 17 s (a short-log warning)
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Diagnostics));
+    run_until(&mut h, no_slot_loading);
+    let f = app(&h)
+        .loaded(Slot::A)
+        .and_then(|l| l.fitness())
+        .expect("fitness is computed on load")
+        .clone();
+    assert_eq!(f.overall, FitnessLevel::Warn);
+    assert_eq!(f.level("duration"), FitnessLevel::Warn);
+    assert_eq!(f.level("raw_gyro"), FitnessLevel::Ok);
+    assert_eq!(f.level("erpm"), FitnessLevel::Warn);
+    assert!(
+        has_label_containing(&h, "raw [ok]"),
+        "badge in the slot header"
+    );
+    assert!(has_label_containing(&h, "rpm [!]"));
+    assert!(has_label_containing(&h, "sticks [ok]"));
+    assert!(
+        has_label_containing(&h, "Log check [!]"),
+        "card on Diagnostics"
+    );
+    assert!(
+        has_label_containing(&h, "dshot_telemetry"),
+        "the fix for the missing eRPM is shown"
+    );
+    assert!(h.query_all_by_label("Copy").next().is_some());
+    // the badges are in the header, so they show on every tab with slots
+    select_tab(&mut h, Tab::Step);
+    assert!(has_label_containing(&h, "rpm [!]"));
+    assert!(
+        !has_label_containing(&h, "Log check"),
+        "the card is Diagnostics-only"
+    );
+
+    // 4.5.1: the longest session is fine, session 0 is a short stub
+    let mut h = harness(vec![LOG_4_5_1.into()], Some(Tab::Diagnostics));
+    run_until(&mut h, no_slot_loading);
+    assert!(has_label_containing(&h, "rpm [ok]"));
+    let l = app(&h).loaded(Slot::A).unwrap();
+    assert_eq!(l.fitness.len(), l.sessions.len(), "one check per session");
+    assert_eq!(l.fitness[0].overall, FitnessLevel::Fail);
+    assert_eq!(l.fitness[0].level("duration"), FitnessLevel::Fail);
+    h.get_by_role_and_label(Role::ComboBox, "session").click();
+    h.run_steps(2);
+    h.get_by_label_contains("session 0 (").click();
+    h.run_steps(2);
+    assert_eq!(app(&h).loaded(Slot::A).unwrap().session, 0);
+    assert!(has_label_containing(&h, "Log check [x]"));
 }
 
 // ------------------------------------------------------------------ rpm overlay

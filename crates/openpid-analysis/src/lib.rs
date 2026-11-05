@@ -4,6 +4,7 @@
 //! that any front-end can render.
 
 pub mod filter_sim;
+pub mod fitness;
 pub mod motor_noise;
 pub mod prepare;
 pub mod project;
@@ -19,6 +20,7 @@ pub mod throttle;
 pub use filter_sim::{
     FilterFit, FilterOverrides, FilterSimAnalysis, FilterSimOutput, FilterSimParams,
 };
+pub use fitness::{Check, Fitness, Level as FitnessLevel, check_session};
 pub use motor_noise::{
     HarmonicNoise, MotorNoise, MotorNoiseAnalysis, MotorNoiseOutput, MotorNoiseParams,
 };

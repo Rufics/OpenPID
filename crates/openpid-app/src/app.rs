@@ -7,8 +7,8 @@ use crate::views;
 use crate::worker::{Done, Job, JobKey, Kind, Output, Slot, Worker};
 use eframe::egui;
 use openpid_analysis::{
-    Epoch, FilterSimParams, MotorNoiseParams, Project, ProjectSlot, PsdParams, RecommendParams,
-    StepParams, StftParams, ThrottleHeatmapParams,
+    Epoch, FilterSimParams, Fitness, MotorNoiseParams, Project, ProjectSlot, PsdParams,
+    RecommendParams, StepParams, StftParams, ThrottleHeatmapParams,
 };
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use std::collections::HashMap;
@@ -110,11 +110,18 @@ pub struct Loaded {
     pub sessions: Vec<Arc<FlightSession>>,
     pub session: usize,
     pub epoch: Option<Epoch>,
+    /// Fitness of every session, computed once when the file was loaded.
+    pub fitness: Vec<Fitness>,
 }
 
 impl Loaded {
     pub fn current(&self) -> Option<&Arc<FlightSession>> {
         self.sessions.get(self.session)
+    }
+
+    /// Fitness of the selected session.
+    pub fn fitness(&self) -> Option<&Fitness> {
+        self.fitness.get(self.session)
     }
 }
 
@@ -600,7 +607,12 @@ impl App {
     fn drain_worker(&mut self) {
         for done in self.worker.poll() {
             match done {
-                Done::Loaded { slot, path, result } => match result {
+                Done::Loaded {
+                    slot,
+                    path,
+                    result,
+                    fitness,
+                } => match result {
                     Ok(file) => {
                         let sessions: Vec<Arc<FlightSession>> =
                             file.sessions.iter().cloned().map(Arc::new).collect();
@@ -627,6 +639,7 @@ impl App {
                                 sessions,
                                 session,
                                 epoch,
+                                fitness,
                             }),
                         );
                     }

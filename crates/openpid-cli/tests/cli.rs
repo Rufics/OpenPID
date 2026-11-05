@@ -52,6 +52,10 @@ fn info_text_and_json() {
     assert!(ok, "{out}");
     assert!(out.contains("session 0") && out.contains("session 1"));
     assert!(out.contains("Betaflight 4.2.11") && out.contains("gyro.filtered.roll"));
+    assert!(
+        out.contains("fitness  : [") && out.contains("[!]  rate"),
+        "{out}"
+    );
     let (ok, out, _) = run(&["info", l.to_str().unwrap(), "--json", "--session", "1"]);
     assert!(ok);
     let v: serde_json::Value = serde_json::from_str(&out).expect("json");
@@ -59,6 +63,15 @@ fn info_text_and_json() {
     assert_eq!(arr.len(), 1);
     assert_eq!(arr[0]["index"], 1);
     assert!(arr[0]["samples"].as_u64().unwrap() > 20_000);
+    let fit = &arr[0]["fitness"];
+    assert!(fit["overall"].is_string(), "{fit}");
+    assert!(
+        fit["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["id"] == "raw_gyro")
+    );
     let (ok, out, _) = run(&["info", l.to_str().unwrap(), "--raw"]);
     assert!(ok && out.contains("[profile raw]"));
     let (ok, _, err) = run(&["info", l.to_str().unwrap(), "--session", "x"]);

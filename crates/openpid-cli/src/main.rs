@@ -199,10 +199,21 @@ fn cmd_info(args: &Args) -> Result<(), String> {
     };
     let (_, log) = open(path, &options)?;
     let summaries: Vec<SessionSummary> = log.sessions.iter().map(SessionSummary::of).collect();
+    let fitness: Vec<openpid_analysis::Fitness> = log
+        .sessions
+        .iter()
+        .map(openpid_analysis::check_session)
+        .collect();
     if args.json {
+        let mut v = serde_json::to_value(&summaries).map_err(|e| e.to_string())?;
+        if let serde_json::Value::Array(items) = &mut v {
+            for (item, f) in items.iter_mut().zip(&fitness) {
+                item["fitness"] = serde_json::to_value(f).map_err(|e| e.to_string())?;
+            }
+        }
         println!(
             "{}",
-            serde_json::to_string_pretty(&summaries).map_err(|e| e.to_string())?
+            serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?
         );
         return Ok(());
     }
@@ -259,7 +270,28 @@ fn cmd_info(args: &Args) -> Result<(), String> {
             );
         }
         if let Some(lp) = &s.settings.gyro_filters.lowpass1 {
-            println!("  gyro lpf1: {:?} {} Hz", lp.kind, lp.cutoff_hz);
+            println!(
+                "  gyro lpf1: {} {} Hz",
+                lp.kind
+                    .as_ref()
+                    .map_or("?".to_string(), |k| format!("{k:?}")),
+                lp.cutoff_hz
+            );
+        }
+        if let Some(f) = fitness.get(sum.index) {
+            println!("  fitness  : {} overall", f.overall.marker());
+            for c in &f.checks {
+                let fix = c
+                    .fix
+                    .as_deref()
+                    .map_or(String::new(), |x| format!("  -> {x}"));
+                println!(
+                    "    {:<4} {:<9}{}{fix}",
+                    c.level.marker(),
+                    c.title,
+                    c.detail
+                );
+            }
         }
         println!("  channels : {}", sum.channels.len());
         for c in &sum.channels {
