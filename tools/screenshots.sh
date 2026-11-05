@@ -36,3 +36,13 @@ for tab in log step spectrum throttle time surface filter motors sliders diagnos
   wait $APP 2>/dev/null || true
   echo "$OUT/$tab.png"
 done
+
+# the log viewer once more in Ukrainian (Settings → Language), for the README
+printf '{"lang":"ua"}' > "$OPENPID_CONFIG_DIR/prefs.json"
+"$BIN" "$LOG" --tab log >/dev/null 2>&1 &
+APP=$!
+sleep "$WAIT"
+import -display "$DISPLAY" -window root "$OUT/log-ua.png"
+kill $APP 2>/dev/null || true
+wait $APP 2>/dev/null || true
+echo "$OUT/log-ua.png"

@@ -6,6 +6,7 @@
 mod app;
 mod colormap;
 mod export;
+mod i18n;
 mod prefs;
 mod surface;
 #[cfg(test)]

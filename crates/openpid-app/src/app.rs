@@ -1,5 +1,6 @@
 //! Application state and the top-level frame.
 
+use crate::i18n::tr;
 use crate::prefs::{Prefs, Theme};
 use crate::surface;
 use crate::views;
@@ -81,17 +82,17 @@ impl Tab {
 
     pub fn title(self) -> &'static str {
         match self {
-            Tab::LogViewer => "Log viewer",
-            Tab::Step => "Step response",
-            Tab::Spectrum => "Spectrum",
-            Tab::ThrottleHeatmap => "Freq × throttle",
-            Tab::TimeHeatmap => "Freq × time",
-            Tab::Surface => "Surface 3D",
-            Tab::FilterSim => "Filter Sim",
-            Tab::MotorNoise => "Motor noise",
-            Tab::Sliders => "PID sliders",
-            Tab::Diagnostics => "Diagnostics",
-            Tab::Settings => "Settings",
+            Tab::LogViewer => tr("Log viewer"),
+            Tab::Step => tr("Step response"),
+            Tab::Spectrum => tr("Spectrum"),
+            Tab::ThrottleHeatmap => tr("Freq × throttle"),
+            Tab::TimeHeatmap => tr("Freq × time"),
+            Tab::Surface => tr("Surface 3D"),
+            Tab::FilterSim => tr("Filter Sim"),
+            Tab::MotorNoise => tr("Motor noise"),
+            Tab::Sliders => tr("PID sliders"),
+            Tab::Diagnostics => tr("Diagnostics"),
+            Tab::Settings => tr("Settings"),
         }
     }
 }
@@ -534,7 +535,9 @@ impl App {
                 ui.heading("OpenPID");
                 ui.separator();
                 for slot in [Slot::A, Slot::B] {
-                    if ui.button(format!("Open {}…", slot.name())).clicked()
+                    if ui
+                        .button(format!("{} {}…", tr("Open"), slot.name()))
+                        .clicked()
                         && let Some(p) = rfd::FileDialog::new()
                             .add_filter(
                                 "Flight logs",
@@ -553,7 +556,7 @@ impl App {
                     ui.selectable_value(&mut self.tab, tab, tab.title());
                 }
                 ui.separator();
-                ui.checkbox(&mut self.touch_mode, "Touch mode");
+                ui.checkbox(&mut self.touch_mode, tr("Touch mode"));
                 ui.separator();
                 self.project_menu(ui);
                 self.export_menu(ui);
@@ -563,8 +566,8 @@ impl App {
 
     /// "Project" menu: open or save a `.openpid.json`.
     fn project_menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button("Project", |ui| {
-            if ui.button("Open…").clicked() {
+        ui.menu_button(tr("Project"), |ui| {
+            if ui.button(tr("Open…")).clicked() {
                 ui.close();
                 if let Some(p) = rfd::FileDialog::new()
                     .add_filter("OpenPID project", &["json"])
@@ -573,7 +576,7 @@ impl App {
                     self.open_project(p);
                 }
             }
-            if ui.button("Save as…").clicked() {
+            if ui.button(tr("Save as…")).clicked() {
                 ui.close();
                 if let Some(p) = rfd::FileDialog::new()
                     .add_filter("OpenPID project", &["json"])
@@ -592,8 +595,8 @@ impl App {
     /// "Export" menu: the tab area as PNG, a slot's result as JSON.
     fn export_menu(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        ui.menu_button("Export", |ui| {
-            if ui.button("Plot as PNG…").clicked() {
+        ui.menu_button(tr("Export"), |ui| {
+            if ui.button(tr("Plot as PNG…")).clicked() {
                 ui.close();
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("PNG image", &["png"])
@@ -649,6 +652,7 @@ impl App {
 impl App {
     /// One frame of the whole UI: input handling, worker results, panels and the active tab.
     pub fn frame(&mut self, ui: &mut egui::Ui) {
+        crate::i18n::set(self.prefs.lang);
         let ctx = ui.ctx().clone();
         if !self.touch_mode && ctx.input(egui::InputState::any_touches) {
             self.touch_mode = true;

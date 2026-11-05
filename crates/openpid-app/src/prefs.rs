@@ -1,4 +1,4 @@
-//! User preferences that survive restarts: theme, touch mode, display units.
+//! User preferences that survive restarts: theme, language, touch mode, display units.
 //!
 //! Stored as JSON in the platform configuration directory
 //! (`$XDG_CONFIG_HOME/openpid` or `~/.config/openpid` on Linux,
@@ -7,6 +7,7 @@
 //! ignored and missing ones take their defaults, so older and newer versions
 //! can share the file.
 
+use crate::i18n::Lang;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -69,6 +70,8 @@ impl AccUnit {
 pub struct Prefs {
     /// Colour theme.
     pub theme: Theme,
+    /// Interface language.
+    pub lang: Lang,
     /// Start in touch mode (larger controls, touch gestures).
     pub touch_mode: bool,
     /// Angular-rate unit in the log viewer.
@@ -150,6 +153,7 @@ mod tests {
         );
         let p = Prefs {
             theme: Theme::Light,
+            lang: Lang::Ua,
             touch_mode: true,
             rate_unit: RateUnit::RadPerS,
             acc_unit: AccUnit::MPerS2,
