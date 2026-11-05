@@ -20,4 +20,4 @@ pub use prepare::{Prepared, prepare};
 pub use psd::{PsdAnalysis, PsdOutput, PsdParams};
 pub use step::{StepAnalysis, StepMetrics, StepOutput, StepParams};
 pub use stft::{StftAnalysis, StftOutput, StftParams};
-pub use throttle::{ThrottleHeatmap, ThrottleHeatmapOutput, ThrottleHeatmapParams};
+pub use throttle::{RpmOverlay, ThrottleHeatmap, ThrottleHeatmapOutput, ThrottleHeatmapParams};

@@ -30,6 +30,11 @@ const LOG_4_5: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../tests/logs/betaflight-4.5.0-gps-rescue.bbl"
 );
+/// Two sessions; the longer one logs eRPM of four motors and debug `GYRO_SCALED`.
+const LOG_4_5_1: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/logs/betaflight-4.5.1-two-sessions.bbl"
+);
 /// Logs `gyroUnfilt`, motor rpm and throttle: the Filter Sim input.
 const LOG_2025: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -296,7 +301,8 @@ fn every_tab_runs_its_analysis_on_a_real_log() {
     let kinds: std::collections::BTreeSet<&str> = app(&h).cache.keys().map(|k| k.kind).collect();
     assert_eq!(
         kinds.into_iter().collect::<Vec<_>>(),
-        ["psd", "step", "stft", "thr"]
+        ["fsim", "psd", "step", "stft", "thr"],
+        "debug_mode GYRO_SCALED gives the 4.2.0 log a raw gyro, so Filter Sim runs too"
     );
     select_tab(&mut h, Tab::Diagnostics);
     assert!(has_label_containing(&h, "profile"));
@@ -1021,9 +1027,54 @@ fn filter_sim_tab_validates_the_model_and_applies_what_if_changes() {
     // the editor shows the log's values and turns a field into an override on edit
     assert!(has_label_containing(&h, "harmonics"));
     // a log without unfiltered gyro gets a hint and no job
-    let mut h2 = harness(vec![LOG_4_2.into()], Some(Tab::FilterSim));
+    let mut h2 = harness(vec![LOG_TWO.into()], Some(Tab::FilterSim));
     run_until(&mut h2, no_slot_loading);
     h2.step();
     assert!(has_label_containing(&h2, "no unfiltered gyro"));
     assert!(app(&h2).cache.is_empty());
+}
+
+// ------------------------------------------------------------------ rpm overlay
+
+#[test]
+fn rpm_overlay_on_the_throttle_heatmap_has_per_motor_toggles() {
+    let mut h = harness(vec![LOG_4_5_1.into()], Some(Tab::ThrottleHeatmap));
+    run_until(&mut h, idle);
+    let overlay = app(&h)
+        .cache
+        .values()
+        .find_map(|c| match c {
+            Cached::Ready(o) => match o.as_ref() {
+                crate::worker::Output::Throttle(t) => t.overlay.clone(),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("the 4.5.1 log has motor rpm");
+    assert_eq!(overlay.motors.len(), 4);
+    assert_eq!(overlay.harmonics, 3, "rpm_filter_harmonics 3");
+    assert!(overlay.motors[0].iter().flatten().any(|r| *r > 1000.0));
+    assert!(overlay.dyn_notch_hz.is_some());
+    h.step();
+    assert!(app(&h).overlay.show);
+    assert_eq!(app(&h).overlay.motors, vec![true; 4]);
+    h.get_by_role_and_label(Role::CheckBox, "M2").click();
+    h.step();
+    assert_eq!(app(&h).overlay.motors, vec![true, false, true, true]);
+    h.get_by_role_and_label(Role::CheckBox, "RPM overlay")
+        .click();
+    h.step();
+    assert!(!app(&h).overlay.show);
+    h.get_by_role_and_label(Role::CheckBox, "notches").click();
+    h.step();
+    assert!(!app(&h).overlay.notches);
+    assert_eq!(
+        app(&h).cache.len(),
+        1,
+        "the overlay is drawn from the cached result"
+    );
+    // a log without rpm has no overlay controls
+    let mut h2 = harness(vec![LOG_4_2.into()], Some(Tab::ThrottleHeatmap));
+    run_until(&mut h2, idle);
+    assert!(h2.query_by_label("RPM overlay").is_none());
 }

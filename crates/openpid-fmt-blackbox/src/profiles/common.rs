@@ -7,8 +7,8 @@ use openpid_core::settings::{
     PidGains, RpmNotch,
 };
 use openpid_core::{
-    Axis, BatteryField, Channel, ChannelId, FieldMapping, FirmwareInfo, FlightSession, GyroStage,
-    Origin, PidTerm, RawHeaders, Series, Settings, Unit,
+    Axis, BatteryField, Channel, ChannelId, FieldMapping, FirmwareInfo, FirmwareVendor,
+    FirmwareVersion, FlightSession, GyroStage, Origin, PidTerm, RawHeaders, Series, Settings, Unit,
 };
 
 /// `gyroADC[2]` -> (`gyroADC`, Some(2)).
@@ -442,14 +442,58 @@ fn derived(
     }
 }
 
-/// Derived channels every Cleanflight-family log can have: throttle percent,
-/// PID error, PID sum and mechanical motor RPM.
+/// Betaflight 4.0–4.5 `debug_mode` code of `GYRO_SCALED`: `debug[0..3]` carry the
+/// scaled gyro before the software filters, in deg/s.
+const DEBUG_GYRO_SCALED: u32 = 6;
+
+/// `gyro.raw.*` from `debug[0..3]` when the log flew with `debug_mode GYRO_SCALED`
+/// and did not log `gyroUnfilt` itself.
+fn derive_gyro_raw_from_debug(s: &mut FlightSession) {
+    let is_betaflight = s.firmware.vendor == FirmwareVendor::Betaflight
+        && s.firmware.version.is_some_and(|v| {
+            v >= FirmwareVersion::new(4, 0, 0) && v < FirmwareVersion::new(4, 6, 0)
+        });
+    let scaled = s
+        .settings
+        .debug_mode
+        .as_ref()
+        .is_some_and(|d| d.code == DEBUG_GYRO_SCALED);
+    if !is_betaflight || !scaled {
+        return;
+    }
+    for axis in Axis::ALL {
+        let raw = ChannelId::Gyro {
+            axis,
+            stage: GyroStage::Raw,
+        };
+        let dbg = ChannelId::Debug {
+            idx: axis.index() as u8,
+        };
+        if s.channels.contains(&raw) {
+            continue;
+        }
+        let Some(c) = s.channels.get(&dbg) else {
+            continue;
+        };
+        let data = c.data.clone();
+        s.channels.insert(derived(
+            raw,
+            &format!("debug[{}] (gyro scaled)", axis.index()),
+            Unit::DegreesPerSecond,
+            data,
+            vec![dbg],
+            "debug_mode GYRO_SCALED: gyro before the software filters",
+        ));
+    }
+}
+
 /// Derived channels every Cleanflight-family log can have: throttle percent,
 /// PID error, PID sum and mechanical motor RPM.
 ///
 /// # Panics
 /// Never: every channel it reads was checked to exist just before.
 pub fn derive(s: &mut FlightSession) {
+    derive_gyro_raw_from_debug(s);
     let sp3 = ChannelId::Custom("setpoint[3]".into());
     if let Some(c) = s.channels.get(&sp3) {
         let data = c.data.clone();

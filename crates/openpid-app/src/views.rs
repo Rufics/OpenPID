@@ -10,7 +10,7 @@ use egui_plot::{
     Bar, BarChart, HLine, Heatmap, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, Text,
     VLine,
 };
-use openpid_analysis::{Epoch, FilterOverrides};
+use openpid_analysis::{Epoch, FilterOverrides, RpmOverlay};
 use openpid_core::analysis::Grid2D;
 use openpid_core::settings::LowpassKind;
 use openpid_core::settings::{PerAxis, PidGains};
@@ -987,6 +987,138 @@ fn heatmap_controls(app: &mut App, ui: &mut Ui) {
 /// Height of the segments-per-bin bar under the freq × throttle heatmap.
 const COUNT_BAR_HEIGHT: f32 = 56.0;
 
+/// A slot's analysis result: `None` while it is still computing.
+type SlotResult = (Slot, Option<Result<Arc<Output>, String>>);
+
+/// What of the RPM / notch overlay is drawn on the freq × throttle heatmap.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OverlayState {
+    /// Draw the motor harmonics at all.
+    pub show: bool,
+    /// Per motor (index order); a motor past the end is shown.
+    pub motors: Vec<bool>,
+    /// Harmonics to draw; 0 = as many as the firmware's RPM filter removes.
+    pub harmonics: u32,
+    /// Draw the static notches, the dynamic-notch band and the RPM filter minimum.
+    pub notches: bool,
+}
+
+impl Default for OverlayState {
+    fn default() -> Self {
+        OverlayState {
+            show: true,
+            motors: Vec::new(),
+            harmonics: 0,
+            notches: true,
+        }
+    }
+}
+
+fn motor_color(m: usize) -> Color32 {
+    let hue = (m as f32 * 0.23 + 0.08) % 1.0;
+    egui::ecolor::Hsva::new(hue, 0.85, 1.0, 1.0).into()
+}
+
+/// The motor harmonics and notch bands of `o` over a heatmap whose frequency axis ends at `y_max`.
+fn draw_rpm_overlay(
+    pu: &mut egui_plot::PlotUi<'_>,
+    o: &RpmOverlay,
+    x: &[f64],
+    y_max: f64,
+    ov: &OverlayState,
+) {
+    if ov.show {
+        let harmonics = if ov.harmonics == 0 {
+            o.harmonics
+        } else {
+            ov.harmonics
+        };
+        for (m, bins) in o.motors.iter().enumerate() {
+            if !ov.motors.get(m).copied().unwrap_or(true) {
+                continue;
+            }
+            for k in 1..=harmonics {
+                // one line per run of consecutive bins with a motor speed
+                let mut run: Vec<[f64; 2]> = Vec::new();
+                let mut runs: Vec<Vec<[f64; 2]>> = Vec::new();
+                for (xi, rpm) in x.iter().zip(bins) {
+                    match rpm.map(|r| r / 60.0 * f64::from(k)).filter(|f| *f <= y_max) {
+                        Some(f) => run.push([*xi, f]),
+                        None if !run.is_empty() => runs.push(std::mem::take(&mut run)),
+                        None => {}
+                    }
+                }
+                if !run.is_empty() {
+                    runs.push(run);
+                }
+                for pts in runs {
+                    let mut line = Line::new(format!("M{} ×{k}", m + 1), PlotPoints::from(pts))
+                        .color(motor_color(m))
+                        .width(if k == 1 { 1.8 } else { 1.0 });
+                    if k > 1 {
+                        line = line.style(LineStyle::dashed_dense());
+                    }
+                    pu.line(line);
+                }
+            }
+        }
+    }
+    if ov.notches {
+        let (x0, x1) = (
+            x.first().copied().unwrap_or(0.0),
+            x.last().copied().unwrap_or(100.0),
+        );
+        let band =
+            |pu: &mut egui_plot::PlotUi<'_>, name: String, lo: f64, hi: f64, colour: Color32| {
+                let (lo, hi) = (lo.max(0.0), hi.min(y_max));
+                if hi <= lo {
+                    return;
+                }
+                pu.polygon(
+                    egui_plot::Polygon::new(
+                        name,
+                        PlotPoints::from(vec![[x0, lo], [x1, lo], [x1, hi], [x0, hi]]),
+                    )
+                    .fill_color(colour)
+                    .stroke(egui::Stroke::NONE),
+                );
+            };
+        for (i, (centre, cutoff)) in o.notches.iter().enumerate() {
+            let half = (centre - cutoff).abs();
+            band(
+                pu,
+                format!("notch {} band", i + 1),
+                centre - half,
+                centre + half,
+                Color32::from_rgba_unmultiplied(255, 255, 255, 40),
+            );
+            pu.hline(
+                HLine::new(format!("notch {} {}", i + 1, hz(*centre)), *centre)
+                    .color(Color32::WHITE)
+                    .style(LineStyle::dashed_loose())
+                    .width(1.0),
+            );
+        }
+        if let Some((lo, hi)) = o.dyn_notch_hz {
+            band(
+                pu,
+                "dyn notch band".into(),
+                lo,
+                hi,
+                ACCENT.gamma_multiply(0.12),
+            );
+        }
+        if let Some(min) = o.rpm_min_hz {
+            pu.hline(
+                HLine::new(format!("RPM filter min {}", hz(min)), min)
+                    .color(MUTED)
+                    .style(LineStyle::dotted_dense())
+                    .width(1.0),
+            );
+        }
+    }
+}
+
 /// Grey columns over the throttle bins with fewer than `min_segments`
 /// segments, so an unsampled bin does not read as a quiet one.
 fn sparse_bins(
@@ -1101,13 +1233,43 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
         .into_iter()
         .filter(|s| app.loaded(*s).is_some())
         .collect();
+    let results: Vec<SlotResult> = slots
+        .iter()
+        .map(|slot| (*slot, app.result(*slot, Kind::Throttle(params.clone()))))
+        .collect();
+    // overlay controls, once the motor count is known
+    let motors = results
+        .iter()
+        .filter_map(|(_, r)| match r {
+            Some(Ok(o)) => match o.as_ref() {
+                Output::Throttle(t) => t.overlay.as_ref().map(|ov| ov.motors.len()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .max();
+    if let Some(n) = motors {
+        let ov = &mut app.overlay;
+        ov.motors.resize(n, true);
+        ui.horizontal_wrapped(|ui| {
+            ui.checkbox(&mut ov.show, "RPM overlay");
+            for (m, on) in ov.motors.iter_mut().enumerate() {
+                ui.checkbox(on, format!("M{}", m + 1));
+            }
+            ui.label("harmonics");
+            ui.add(egui::DragValue::new(&mut ov.harmonics).range(0..=8))
+                .on_hover_text("0 = as many as the RPM filter removes");
+            ui.checkbox(&mut ov.notches, "notches");
+        });
+    }
+    let overlay = app.overlay.clone();
     let w = ui.available_width() / slots.len().max(1) as f32;
     let h = ui.available_height();
     ui.horizontal(|ui| {
-        for slot in slots {
+        for (slot, result) in results {
             ui.vertical(|ui| {
                 ui.set_width(w - 8.0);
-                match app.result(slot, Kind::Throttle(params.clone())) {
+                match result {
                     Some(Ok(o)) => {
                         if let Output::Throttle(t) = o.as_ref() {
                             ui.label(
@@ -1121,7 +1283,9 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
                                 .color(slot_color(slot)),
                             );
                             let link = ui.scope_id().with(("thr-link", slot.name()));
+                            let y_max = t.grid.y.last().copied().unwrap_or(0.0);
                             Plot::new(("thr", slot.name()))
+                                .legend(Legend::default())
                                 .y_axis_label("frequency (Hz)")
                                 .link_axis(link, [true, false])
                                 .height(h - 24.0 - COUNT_BAR_HEIGHT - 24.0)
@@ -1132,6 +1296,9 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
                                     }
                                     for poly in sparse_bins(&t.grid, &t.counts, min_segments) {
                                         pu.polygon(poly);
+                                    }
+                                    if let Some(o) = &t.overlay {
+                                        draw_rpm_overlay(pu, o, &t.grid.x, y_max, &overlay);
                                     }
                                     marker_hlines(pu, &markers);
                                 });

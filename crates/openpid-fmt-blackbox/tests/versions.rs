@@ -154,3 +154,46 @@ fn one_log_per_betaflight_release_line() {
         );
     }
 }
+
+#[test]
+fn debug_gyro_scaled_becomes_gyro_raw() {
+    use openpid_core::session::Origin;
+    use openpid_core::{Axis, ChannelId, GyroStage, Unit};
+    // (log, raw gyro present, derived from debug[0..2])
+    for (name, present, derived) in [
+        ("betaflight-4.2.0.BFL", true, true), // debug_mode 6, no gyroUnfilt field
+        ("betaflight-4.5.1-two-sessions.bbl", true, false), // gyroUnfilt logged
+        ("betaflight-2025.12.2-btfl_027.bbl", true, false),
+        ("betaflight-4.2.11-two-logs.bbl", false, false), // debug_mode 0
+    ] {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/logs")
+            .join(name);
+        let log = BlackboxFormat::new()
+            .open(&std::fs::read(&path).unwrap(), &OpenOptions::default())
+            .unwrap();
+        for s in &log.sessions {
+            let raw = s.channel(&ChannelId::Gyro {
+                axis: Axis::Roll,
+                stage: GyroStage::Raw,
+            });
+            assert_eq!(raw.is_some(), present, "{name} session {}", s.index);
+            let is_derived = raw.is_some_and(|c| matches!(c.origin, Origin::Derived { .. }));
+            assert_eq!(is_derived, derived, "{name} session {}", s.index);
+            if derived {
+                let c = raw.unwrap();
+                assert_eq!(c.unit, Unit::DegreesPerSecond);
+                assert!(c.name.starts_with("debug[0]"));
+                for axis in [Axis::Pitch, Axis::Yaw] {
+                    assert!(
+                        s.channel(&ChannelId::Gyro {
+                            axis,
+                            stage: GyroStage::Raw
+                        })
+                        .is_some()
+                    );
+                }
+            }
+        }
+    }
+}

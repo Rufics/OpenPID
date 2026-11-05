@@ -160,6 +160,33 @@
         "valid": 16774
       },
       {
+        "key": "gyro.raw.pitch",
+        "max": 215.0,
+        "mean": -0.351198,
+        "min": -124.0,
+        "name": "debug[1] (gyro scaled)",
+        "unit": "deg/s",
+        "valid": 16774
+      },
+      {
+        "key": "gyro.raw.roll",
+        "max": 44.0,
+        "mean": 0.150292,
+        "min": -33.0,
+        "name": "debug[0] (gyro scaled)",
+        "unit": "deg/s",
+        "valid": 16774
+      },
+      {
+        "key": "gyro.raw.yaw",
+        "max": 32.0,
+        "mean": -2.830333,
+        "min": -53.0,
+        "name": "debug[2] (gyro scaled)",
+        "unit": "deg/s",
+        "valid": 16774
+      },
+      {
         "key": "loop_iteration",
         "max": 134184.0,
         "mean": 67092.0,

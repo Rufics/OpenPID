@@ -159,11 +159,8 @@ fn errors_are_explicit() {
         session: s,
         epoch: None,
     };
-    // a channel this log does not have
-    let missing = ChannelId::Gyro {
-        axis: Axis::Roll,
-        stage: GyroStage::Raw,
-    };
+    // a channel this log does not have (debug_mode GYRO_SCALED gives it a raw gyro)
+    let missing = ChannelId::Debug { idx: 7 };
     assert!(matches!(
         PsdAnalysis.run(
             &ctx,
@@ -197,4 +194,73 @@ fn errors_are_explicit() {
         ),
         Err(AnalysisError::InvalidParams(_))
     ));
+}
+
+#[test]
+fn rpm_overlay_follows_the_motor_ridge() {
+    let log = load("betaflight-4.5.1-two-sessions.bbl");
+    let s = log.sessions.iter().max_by_key(|s| s.len()).unwrap();
+    let ctx = AnalysisCtx {
+        session: s,
+        epoch: None,
+    };
+    let out = ThrottleHeatmap
+        .run(
+            &ctx,
+            &ThrottleHeatmapParams {
+                channel: ChannelId::Gyro {
+                    axis: Axis::Roll,
+                    stage: GyroStage::Raw,
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let ov = out.overlay.as_ref().expect("eRPM logged");
+    assert_eq!(ov.motors.len(), 4);
+    assert_eq!(ov.harmonics, 3);
+    assert_eq!(ov.rpm_min_hz, Some(100.0));
+    assert!(ov.dyn_notch_hz.is_some_and(|(lo, hi)| lo < hi));
+    assert!(ov.harmonic_hz(0, 2, 30).is_none_or(|f| f > 0.0));
+    assert_eq!(ov.harmonic_hz(9, 1, 0), None);
+    // in every throttle bin with a motor speed, the fundamental of each
+    // motor sits on a ridge of the unfiltered gyro spectrum: the amplitude
+    // there beats the median of its ±120 Hz surroundings in most bins
+    let g = &out.grid;
+    let dy = g.y[1] - g.y[0];
+    let mut hits = 0usize;
+    let mut total = 0usize;
+    for (m, bins) in ov.motors.iter().enumerate() {
+        for (ix, rpm) in bins.iter().enumerate() {
+            let Some(rpm) = rpm else { continue };
+            if out.counts[ix] < 2 {
+                continue;
+            }
+            let f1 = rpm / 60.0;
+            let iy = (f1 / dy).round() as usize;
+            if iy + 2 >= g.y.len() || iy < 2 {
+                continue;
+            }
+            let at = (iy - 1..=iy + 1).map(|k| g.get(ix, k)).fold(0.0, f64::max);
+            let mut around: Vec<f64> =
+                g.y.iter()
+                    .enumerate()
+                    .filter(|(_, f)| (*f - f1).abs() <= 120.0 && (*f - f1).abs() > 15.0)
+                    .map(|(k, _)| g.get(ix, k))
+                    .collect();
+            around.sort_by(f64::total_cmp);
+            let median = around[around.len() / 2];
+            total += 1;
+            if at > 1.2 * median {
+                hits += 1;
+            }
+            let _ = m;
+        }
+    }
+    eprintln!("ridge hits {hits} of {total}");
+    assert!(total > 50, "{total} bins checked");
+    assert!(
+        hits * 2 > total,
+        "fundamental on the ridge in {hits} of {total} bins"
+    );
 }

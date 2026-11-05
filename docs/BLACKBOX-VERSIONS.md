@@ -17,6 +17,7 @@
 | 4.3 | — | `fields_disabled_mask`, `gyro_lpf1_*`/`dterm_lpf1_*` (перейменування `*_lowpass_*`), `ff_weight`, `dyn_notch_count`, `rpm_filter_*` | профіль читає обидва варіанти імен |
 | 4.4 | `BaroAlt` → `baroAlt` | `blackbox_high_resolution` (×10 для gyro, setpoint, rcCommand), `sample_rate` | масштаб ділиться на 10 при `blackbox_high_resolution:1` |
 | 4.5 | `gyroUnfilt[0..2]`, `eRPM[0..7]` | `gyro_lpf1_dyn_expo`, `dterm_lpf1_dyn_expo`, `rc_smoothing_rx_smoothed`, `motor_poles`, `rc_command_scale` (configurator ділить rcCommand на нього) | `gyroUnfilt` → `Gyro{Raw}`, `eRPM` → `Erpm` та похідний `MotorRpm` через `motor_poles` |
+| 4.0–4.5, `debug_mode 6` (`GYRO_SCALED`) | `debug[0..2]` = гіро до програмних фільтрів, deg/s | — | похідний `Gyro{Raw}` з `debug[0..2]`, коли `gyroUnfilt` не логується (фікстури 4.2.0, 4.5.0, 4.5.1) |
 | 2025.12 | `axisS` (wing), `imuQuaternion[0..2]` (int16 ×1/32767), `GPS_velned` | версії виду `2025.12.x`; `d_max` замість `d_min`; `minthrottle` більше не пишеться (лише `motorOutput`); `DeviceUID`, `motor_kv`, `gyro_debug_axis`; у `fields_disabled_mask` з'явився біт ATTITUDE (8), ACC зсунувся | парсер версій підтримує рік.місяць; `FirmwareVersion` порівнюється лексикографічно, тому `2025.12 > 4.5` |
 | 2026.6 | `GPS_time`, `GPS_home_epoch` (G/H‑кадри) | — | лише aux‑таблиці |
 

@@ -157,7 +157,7 @@ fn run_analyses() {
     assert!(!ok && err.contains("unknown axis"));
     let (ok, _, err) = run(&["run", "psd", f, "--channel", "nope.nope"]);
     assert!(!ok && err.contains("unknown channel key"));
-    let (ok, _, err) = run(&["run", "psd", f, "--channel", "gyro.raw.roll"]);
+    let (ok, _, err) = run(&["run", "psd", f, "--channel", "debug.7"]);
     assert!(!ok && err.contains("missing channel"));
     let (ok, _, err) = run(&["run", "step", f, "--epoch", "5"]);
     assert!(!ok && err.contains("A..B"));
@@ -239,7 +239,7 @@ fn filter_sim_command() {
     assert_ne!(v["model"], v["whatif"]);
     let (ok, _, err) = run(&["run", "filter-sim", f, "--set", "nope=1"]);
     assert!(!ok && err.contains("unknown filter key"), "{err}");
-    let plain = log("betaflight-4.2.0.BFL");
+    let plain = log("betaflight-4.2.11-two-logs.bbl");
     let (ok, _, err) = run(&["run", "filter-sim", plain.to_str().unwrap()]);
     assert!(!ok && err.contains("missing channel"), "{err}");
 }
