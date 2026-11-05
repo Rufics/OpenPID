@@ -4,13 +4,15 @@
 //! response; windows with too little stick input are discarded; the rest are
 //! averaged with weights proportional to their input amplitude, separately
 //! for low and high inputs, and summarised into rise time, overshoot and
-//! settling metrics.
+//! settling metrics. The latency of the axis is measured independently of the
+//! deconvolution as the lag of the setpoint ↔ gyro cross-correlation peak.
 
 use crate::prepare::prepare;
 use openpid_core::analysis::{Analysis, AnalysisCtx, AnalysisError, Grid2D, Requirement};
 use openpid_core::{Axis, ChannelId, GyroStage, Unit};
 use openpid_dsp::deconv::{DeconvParams, impulse_response, step_from_impulse};
 use openpid_dsp::smooth::moving_average;
+use openpid_dsp::xcorr::lag_of_max;
 use openpid_dsp::{Fft, Window};
 use serde::{Deserialize, Serialize};
 
@@ -33,6 +35,10 @@ pub struct StepParams {
     pub response_s: f64,
     /// Centred moving-average width in milliseconds applied to the mean (0 = none).
     pub smooth_ms: f64,
+    /// Y-offset correction (PTB): normalise every window's response on its
+    /// settled tail (mean of the last quarter) before averaging, so a gain
+    /// mismatch between setpoint and gyro does not shift the curves off 1.
+    pub y_offset: bool,
     /// Vertical range and bin count of the response histogram.
     pub hist_range: (f64, f64),
     /// Number of amplitude bins in the histogram.
@@ -50,6 +56,7 @@ impl Default for StepParams {
             high_input: 500.0,
             response_s: 0.5,
             smooth_ms: 0.0,
+            y_offset: false,
             hist_range: (-0.5, 2.5),
             hist_bins: 150,
         }
@@ -73,6 +80,7 @@ impl std::hash::Hash for StepParams {
         }
         self.superpos.hash(state);
         self.hist_bins.hash(state);
+        self.y_offset.hash(state);
     }
 }
 
@@ -83,6 +91,12 @@ pub struct StepMetrics {
     pub rise_time_ms: Option<f64>,
     /// Time at which the response first crosses 50 %, ms.
     pub delay_ms: Option<f64>,
+    /// Lag of the setpoint ↔ gyro cross-correlation peak over the epoch, ms,
+    /// measured on the signals themselves, independently of the
+    /// deconvolution. For a white input it is the transport delay of the
+    /// axis; with smooth stick input the peak also carries part of the
+    /// plant's own lag, so read it next to `delay_ms`.
+    pub latency_ms: Option<f64>,
     /// Peak above the final value, percent of the final value.
     pub overshoot_pct: Option<f64>,
     /// Time after which the response stays within ±5 % of the final value, ms.
@@ -137,16 +151,30 @@ fn weighted_mean(rows: &[(f64, Vec<f64>)], len: usize) -> Option<Vec<f64>> {
     Some(out)
 }
 
-/// Rise/delay/overshoot/settling of a normalised step response.
+/// Mean of the settled tail (last quarter) of a step response.
+fn tail_mean(step: &[f64]) -> f64 {
+    let n = step.len();
+    let tail = &step[n - n / 4..];
+    if tail.is_empty() {
+        return 0.0;
+    }
+    tail.iter().sum::<f64>() / tail.len() as f64
+}
+
+/// Longest lag searched for the latency, as a fraction of a second.
+const LATENCY_MAX_LAG_S: f64 = 0.1;
+
+/// Rise/delay/overshoot/settling of a normalised step response. `latency_ms`
+/// is left `None`: it comes from the raw signals, not from the response.
 pub fn metrics(step: &[f64], fs: f64) -> StepMetrics {
     let n = step.len();
     let ms = |i: usize| i as f64 * 1000.0 / fs;
-    let tail = &step[n - n / 4..];
-    let final_value = tail.iter().sum::<f64>() / tail.len() as f64;
+    let final_value = tail_mean(step);
     if n < 4 || final_value.abs() < 1e-9 {
         return StepMetrics {
             rise_time_ms: None,
             delay_ms: None,
+            latency_ms: None,
             overshoot_pct: None,
             settling_ms: None,
             final_value,
@@ -171,6 +199,7 @@ pub fn metrics(step: &[f64], fs: f64) -> StepMetrics {
     StepMetrics {
         rise_time_ms,
         delay_ms: t50.map(ms),
+        latency_ms: None,
         overshoot_pct,
         settling_ms: if settling < n {
             Some(ms(settling))
@@ -260,7 +289,17 @@ impl Analysis for StepAnalysis {
             if peak >= p.min_input && valid_in * 20 >= win * 19 && valid_out * 20 >= win * 19 {
                 let h = impulse_response(&fft, seg_in, seg_out, fs, resp_len, &dp)
                     .map_err(|e| AnalysisError::InvalidParams(e.to_string()))?;
-                rows.push((peak, step_from_impulse(&h)));
+                let mut step = step_from_impulse(&h);
+                if p.y_offset {
+                    let tail = tail_mean(&step);
+                    // a window whose response never settles stays as it is
+                    if tail.abs() > 0.2 {
+                        for v in &mut step {
+                            *v /= tail;
+                        }
+                    }
+                }
+                rows.push((peak, step));
             }
             start += hop;
         }
@@ -288,7 +327,9 @@ impl Analysis for StepAnalysis {
             .cloned()
             .collect();
         let mean = smooth(weighted_mean(&rows, resp_len).expect("rows non-empty"));
-        let metrics = metrics(&mean, fs);
+        let mut metrics = metrics(&mean, fs);
+        let max_lag = ((LATENCY_MAX_LAG_S * fs).round() as usize).max(1);
+        metrics.latency_ms = lag_of_max(&input, &output, max_lag).map(|lag| lag * 1000.0 / fs);
         // histogram of all responses, weighted by input amplitude
         let (ylo, yhi) = p.hist_range;
         let nb = p.hist_bins;
@@ -358,5 +399,8 @@ mod tests {
             .collect();
         let o = metrics(&s2, fs).overshoot_pct.unwrap();
         assert!((o - 25.0).abs() < 5.0, "overshoot {o}");
+        assert_eq!(metrics(&s2, fs).latency_ms, None);
+        assert_eq!(metrics(&[0.0; 8], fs).rise_time_ms, None);
+        assert_eq!(tail_mean(&[]), 0.0);
     }
 }

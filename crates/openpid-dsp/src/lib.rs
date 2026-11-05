@@ -12,6 +12,7 @@ pub mod resample;
 pub mod smooth;
 pub mod spectrum;
 pub mod window;
+pub mod xcorr;
 
 pub use fft::{Complex, Fft};
 pub use peaks::{Peak, find_peaks};
