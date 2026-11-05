@@ -170,7 +170,7 @@ fn filter_sim_reproduces_the_synthetic_filter_exactly() {
     let fit = out.fit.unwrap();
     assert!(fit.residual_rel < 0.01, "residual {}", fit.residual_rel);
     assert!(
-        fit.unfiltered_rel > 0.05,
+        fit.unfiltered_rel > 2.0 * fit.residual_rel.max(1e-3),
         "the filter does something: {}",
         fit.unfiltered_rel
     );

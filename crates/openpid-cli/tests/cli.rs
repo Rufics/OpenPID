@@ -264,14 +264,13 @@ fn gen_command_writes_a_session_openpid_can_analyse() {
     assert!(ok, "{err}");
     let v: serde_json::Value = serde_json::from_str(&out).expect("json");
     assert!(v["metrics"]["delay_ms"].is_number());
+    // a CSV carries no settings, so Filter Sim finds no chain: the fit equals
+    // the unfiltered residual and the description says so
     let (ok, out, err) = run(&["run", "filter-sim", csv.to_str().unwrap()]);
     assert!(ok, "{err}");
     let v: serde_json::Value = serde_json::from_str(&out).expect("json");
-    assert!(
-        v["fit"]["residual_rel"].as_f64().unwrap() < 0.01,
-        "{}",
-        v["fit"]
-    );
+    assert_eq!(v["description"], serde_json::json!(["no filters"]));
+    assert_eq!(v["fit"]["residual_rel"], v["fit"]["unfiltered_rel"]);
     // an edited spec
     let spec_path = temp("spec.json");
     std::fs::write(
