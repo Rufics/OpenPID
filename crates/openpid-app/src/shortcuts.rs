@@ -142,7 +142,7 @@ pub fn text_input_focused(ctx: &egui::Context) -> bool {
         .is_some_and(|id| egui::TextEdit::load_state(ctx, id).is_some())
 }
 
-/// One shortcut for this platform: "Ctrl+O", "⌘O", "?", "Shift+A".
+/// One shortcut for this platform: "Ctrl+O" ("Cmd+O" on macOS), "?", "Shift+A".
 pub fn format(ctx: &egui::Context, keys: KeyboardShortcut) -> String {
     let key = match keys.logical_key {
         Key::Minus => "-",
@@ -153,14 +153,13 @@ pub fn format(ctx: &egui::Context, keys: KeyboardShortcut) -> String {
         Key::Period => ".",
         k => k.name(),
     };
-    let modifiers = ctx.format_modifiers(keys.modifiers);
+    // Names, not symbols: `Context::format_modifiers` needs loaded fonts to
+    // decide on ⌘/⇧ and panics in a bare context (unit tests on macOS).
+    let modifiers = egui::ModifierNames::NAMES.format(&keys.modifiers, ctx.os().is_mac());
     if modifiers.is_empty() {
         key.to_string()
-    } else if modifiers.is_ascii() {
-        format!("{modifiers}+{key}")
     } else {
-        // macOS symbols (⌘⇧) are written without a separator
-        format!("{modifiers}{key}")
+        format!("{modifiers}+{key}")
     }
 }
 
@@ -331,9 +330,10 @@ mod tests {
             assert!(!b.action.label().is_empty());
             assert!(!keys_of(&ctx, b.action).is_empty());
         }
-        assert_eq!(keys_of(&ctx, Action::Help), "? / Ctrl+/ / F1");
+        let cmd = if ctx.os().is_mac() { "Cmd" } else { "Ctrl" };
+        assert_eq!(keys_of(&ctx, Action::Help), format!("? / {cmd}+/ / F1"));
         assert_eq!(keys_of(&ctx, Action::Tab(10)), "-");
-        assert_eq!(keys_of(&ctx, Action::PrevTab), "Ctrl+Shift+Tab");
+        assert_eq!(keys_of(&ctx, Action::PrevTab), format!("{cmd}+Shift+Tab"));
         assert_eq!(keys_of(&ctx, Action::EpochWhole), "Shift+A");
         assert!(hint(&ctx, "Open log…", Action::OpenLog).contains("O)"));
         assert!(is_single_key(KeyboardShortcut::new(
