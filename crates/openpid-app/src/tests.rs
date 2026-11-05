@@ -1311,9 +1311,10 @@ fn number_keys_ctrl_tab_and_the_help_window() {
     h.key_press(Key::Questionmark);
     h.step();
     assert!(app(&h).show_help);
+    let prev = crate::shortcuts::keys_of(&h.ctx, crate::shortcuts::Action::PrevTab);
     assert!(
-        has_label_containing(&h, "Ctrl+Shift+Tab"),
-        "generated from the table"
+        has_label_containing(&h, &prev),
+        "generated from the table: {prev}"
     );
     assert!(has_label_containing(&h, "Tab 2: Step response"));
     h.key_press(Key::Escape);
