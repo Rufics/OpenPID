@@ -50,6 +50,19 @@ impl Tab {
         Tab::Settings,
     ];
 
+    /// The tour anchor of the tab button, for the tabs the tour visits.
+    pub fn anchor(self) -> Option<&'static str> {
+        Some(match self {
+            Tab::LogViewer => "tab-log",
+            Tab::Spectrum => "tab-spectrum",
+            Tab::ThrottleHeatmap => "tab-throttle",
+            Tab::FilterSim => "tab-filter",
+            Tab::Step => "tab-step",
+            Tab::Advice => "tab-advice",
+            _ => return None,
+        })
+    }
+
     pub fn from_name(name: &str) -> Option<Tab> {
         Some(match name {
             "log" => Tab::LogViewer,
@@ -264,6 +277,12 @@ pub struct App {
     pub strip: views::StripState,
     /// What the Step tab drew last frame (band, advice line; tests).
     pub step_view: views::StepViewState,
+    /// The first-run tour.
+    pub tour: crate::tour::Tour,
+    /// Start the tour on the first log of a fresh install (off in most tests).
+    pub auto_tour: bool,
+    /// Rectangles of the widgets the tour points at, registered every frame.
+    pub anchors: HashMap<&'static str, egui::Rect>,
     /// Persisted preferences (Settings tab).
     pub prefs: Prefs,
     /// Where `prefs` are saved; `None` = no config directory, keep them for the session.
@@ -356,6 +375,9 @@ impl App {
             player: views::PlayerState::default(),
             strip: views::StripState::default(),
             step_view: views::StepViewState::default(),
+            tour: crate::tour::Tour::default(),
+            auto_tour: true,
+            anchors: HashMap::new(),
             prefs,
             prefs_path,
             theme_applied: None,
@@ -367,6 +389,15 @@ impl App {
             dialog: None,
             last_action: None,
         };
+        // OPENPID_TOUR_STEP=n starts on tour step n (screenshots, demos)
+        if let Some(step) = std::env::var("OPENPID_TOUR_STEP")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|n| (1..=crate::tour::STEPS.len()).contains(n))
+        {
+            app.start_tour();
+            app.tour.step = step - 1;
+        }
         // a project file on the command line replaces the log list
         if let Some(project) = open_on_start.iter().find(|p| Project::is_project_path(p)) {
             app.open_project(project.clone());
@@ -479,6 +510,73 @@ impl App {
             self.status = format!("at most {} logs can be open at once", Slot::MAX);
         }
         added
+    }
+
+    /// Open the built-in synthetic log (the generator's default flight with
+    /// an underdamped plant, so the step response overshoots and Advice has
+    /// something to say) into the first empty slot. No file is involved.
+    pub fn open_sample(&mut self) {
+        use openpid_sim::signal::{Plant, SignalSpec};
+        let Some(slot) = self.free_slot() else { return };
+        let mut session = SignalSpec {
+            duration_s: 30.0,
+            plant: Plant {
+                damping: Some(0.4),
+                ..Plant::default()
+            },
+            ..SignalSpec::default()
+        }
+        .build();
+        // Betaflight-like gains, so the Advice D rule has something to raise
+        let gains = |p: f64, i: f64, d: f64| openpid_core::settings::PidGains {
+            p,
+            i,
+            d,
+            f: Some(120.0),
+            d_min: None,
+            d_max: None,
+        };
+        session.settings.pid = Some(openpid_core::settings::PerAxis {
+            roll: gains(45.0, 80.0, 40.0),
+            pitch: gains(47.0, 84.0, 46.0),
+            yaw: gains(45.0, 80.0, 0.0),
+        });
+        let fitness = vec![openpid_analysis::check_session(&session)];
+        self.pending.remove(&slot);
+        self.cache.retain(|k, _| k.slot != slot);
+        self.strip.forget(slot);
+        let mut loaded = Loaded {
+            path: PathBuf::from("sample-log (synthetic)"),
+            sessions: vec![Arc::new(session)],
+            session: 0,
+            epoch: None,
+            epoch_auto: false,
+            fitness,
+        };
+        loaded.apply_auto_epoch();
+        self.set_state(slot, SlotState::Ready(loaded));
+        self.status = format!(
+            "slot {}: the sample log (synthetic 30 s flight, roll steps, underdamped plant)",
+            slot.name()
+        );
+        self.maybe_start_tour();
+    }
+
+    /// The first opened log of a fresh install starts the tour once.
+    fn maybe_start_tour(&mut self) {
+        if self.auto_tour && self.prefs.show_tour && !self.prefs.tour_done && !self.tour.active {
+            self.start_tour();
+        }
+    }
+
+    /// Every slot empty (nothing loaded, loading or failed): the start
+    /// screen replaces the tab.
+    pub fn start_screen_wanted(&self) -> bool {
+        self.tab != Tab::Settings
+            && self
+                .slots
+                .iter()
+                .all(|e| matches!(e.state, SlotState::Empty))
     }
 
     /// Where a log to compare goes: the first empty slot after the last
@@ -724,7 +822,10 @@ impl App {
                             loaded.apply_auto_epoch();
                         }
                         self.strip.forget(slot);
+                        self.prefs.push_recent(&loaded.path);
+                        self.save_prefs();
                         self.set_state(slot, SlotState::Ready(loaded));
+                        self.maybe_start_tour();
                     }
                     Err(e) => {
                         self.status = format!("{}: {e}", path.display());
@@ -804,8 +905,12 @@ impl App {
                 }
                 ui.separator();
                 for (i, tab) in Tab::ALL.into_iter().enumerate() {
-                    ui.selectable_value(&mut self.tab, tab, tab.title())
+                    let r = ui
+                        .selectable_value(&mut self.tab, tab, tab.title())
                         .on_hover_text(shortcuts::keys_of(&ctx, Action::Tab(i)));
+                    if let Some(id) = tab.anchor() {
+                        self.anchors.insert(id, r.rect);
+                    }
                 }
                 ui.separator();
                 ui.checkbox(&mut self.touch_mode, tr("Touch mode"))
@@ -832,6 +937,10 @@ impl App {
             {
                 ui.close();
                 self.show_help = true;
+            }
+            if ui.button(tr("Show tour")).clicked() {
+                ui.close();
+                self.start_tour();
             }
         });
     }
@@ -981,13 +1090,16 @@ impl App {
         self.apply_touch_mode(&ctx);
         self.drain_worker();
         self.handle_drops(&ctx);
+        self.tour_keys(&ctx);
         self.handle_shortcuts(&ctx);
+        self.tour_tab();
         self.top_bar(ui);
         self.status_bar(ui);
         if let Some(msg) = self.export_message.lock().ok().and_then(|mut m| m.take()) {
             self.status = msg;
         }
         let central = egui::CentralPanel::default().show(ui, |ui| match self.tab {
+            _ if self.start_screen_wanted() => views::start_screen(self, ui),
             Tab::LogViewer => views::log_viewer(self, ui),
             Tab::Step => views::step(self, ui),
             Tab::Spectrum => views::spectrum(self, ui),
@@ -1003,6 +1115,7 @@ impl App {
         });
         self.central_rect = central.response.rect;
         self.help_window(&ctx);
+        self.tour_overlay(&ctx);
         self.run_dialog(&ctx);
     }
 }

@@ -62,7 +62,10 @@ fn harness_with_prefs(files: Vec<PathBuf>, tab: Option<Tab>, prefs_path: Option<
             move |ui, state: &mut Option<App>| {
                 let app = state.get_or_insert_with(|| {
                     let (files, tab, prefs_path) = init.take().expect("built once");
-                    App::with_prefs_path(ui.ctx(), files, tab, prefs_path)
+                    let mut app = App::with_prefs_path(ui.ctx(), files, tab, prefs_path);
+                    // the first-run tour is tested on its own
+                    app.auto_tour = false;
+                    app
                 });
                 app.frame(ui);
             },
@@ -160,7 +163,7 @@ fn tab_names_and_titles() {
 }
 
 #[test]
-fn empty_slots_show_hints_on_every_tab() {
+fn the_start_screen_replaces_every_tab_until_a_log_is_open() {
     let mut h = harness(Vec::new(), None);
     assert!(has_label_containing(&h, "Open a blackbox log"));
     for tab in Tab::ALL {
@@ -168,15 +171,19 @@ fn empty_slots_show_hints_on_every_tab() {
         if tab == Tab::Settings {
             // the only tab without slots
             assert!(has_label_containing(&h, "Theme"), "{tab:?}");
+            assert!(h.query_by_label("Open sample log").is_none());
             continue;
         }
-        assert!(h.query_by_label("Slot A: empty").is_some(), "{tab:?}");
-        assert!(h.query_by_label("Slot B: empty").is_some(), "{tab:?}");
+        assert!(app(&h).start_screen_wanted(), "{tab:?}");
+        assert!(h.query_by_label("Open sample log").is_some(), "{tab:?}");
+        assert!(h.query_by_label("Start the tour").is_some(), "{tab:?}");
+        assert!(h.query_by_label("Slot A: empty").is_none(), "{tab:?}");
         assert!(app(&h).cache.is_empty(), "nothing to analyse without a log");
-        if tab == Tab::Sliders {
-            assert!(has_label_containing(&h, "Load a Betaflight 4.3+ log"));
-        }
     }
+    assert!(
+        h.query_by_label("Recent files").is_none(),
+        "nothing opened yet"
+    );
 }
 
 #[test]
@@ -362,7 +369,8 @@ fn many_slots_have_colours_visibility_solo_and_stable_letters() {
     }
     h.step();
     assert_eq!(app(&h).slot_ids(), vec![Slot::A]);
-    assert!(h.query_by_label("Slot A: empty").is_some());
+    assert!(app(&h).start_screen_wanted(), "back to the start screen");
+    assert!(h.query_by_label("Open sample log").is_some());
 }
 
 #[test]
@@ -1286,6 +1294,142 @@ fn filter_sim_tab_validates_the_model_and_applies_what_if_changes() {
     h2.step();
     assert!(has_label_containing(&h2, "no unfiltered gyro"));
     assert!(app(&h2).cache.is_empty());
+}
+
+// ------------------------------------------------------------------ first-run tour
+
+#[test]
+fn the_tour_starts_once_on_the_first_log_and_walks_the_tuning_loop() {
+    use crate::prefs::Prefs;
+    use crate::tour::STEPS;
+    let dir = std::env::temp_dir().join(format!("openpid-tour-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("prefs.json");
+    let mut h = harness_with_prefs(Vec::new(), None, Some(path.clone()));
+    app_mut(&mut h).auto_tour = true;
+    // the start screen's sample log opens without a file and starts the tour
+    h.get_by_label("Open sample log").click();
+    h.step();
+    let l = app(&h)
+        .loaded(Slot::A)
+        .expect("the sample is a loaded slot");
+    assert_eq!(l.sessions.len(), 1);
+    assert!(
+        l.epoch.is_some(),
+        "the sample opens on its automatic trim too"
+    );
+    assert!(app(&h).tour.active);
+    assert_eq!(app(&h).tour.step, 0);
+    for (i, step) in STEPS.iter().enumerate() {
+        h.run_steps(2);
+        assert_eq!(app(&h).tour.step, i);
+        assert_eq!(app(&h).tab, step.tab, "step {i} shows its tab");
+        assert!(
+            has_label_containing(&h, &format!("Step {} of 7", i + 1)),
+            "step {i}"
+        );
+        // the tab's analyses, so anchors like the Advice CLI box exist
+        run_until(&mut h, idle);
+        h.run_steps(2);
+        let anchors = &app(&h).anchors;
+        let anchor = anchors
+            .get(step.anchor)
+            .or_else(|| anchors.get(step.fallback))
+            .copied()
+            .unwrap_or_else(|| panic!("step {i}: anchor {} missing", step.anchor));
+        let cutout = app(&h).tour.cutout.expect("cut-out drawn");
+        // a wide widget (the CLI box) is cut at the screen edge
+        let anchor = anchor.intersect(h.ctx.content_rect());
+        assert!(
+            cutout.contains_rect(anchor),
+            "step {i}: {cutout:?} holds {anchor:?}"
+        );
+        if i + 1 < STEPS.len() {
+            h.key_press(Key::ArrowRight);
+            h.step();
+        }
+    }
+    // Done ends the tour and remembers it
+    h.get_by_label("Done").click();
+    h.step();
+    assert!(!app(&h).tour.active);
+    assert!(app(&h).prefs.tour_done);
+    assert!(Prefs::load(&path).tour_done, "saved");
+    // the sample log is underdamped: Advice proposes more D on roll
+    select_tab(&mut h, Tab::Advice);
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    assert!(
+        has_label_containing(&h, "pid.roll.d"),
+        "the sample overshoots"
+    );
+    assert!(
+        Prefs::load(&path).recent.is_empty(),
+        "the sample is not a recent file"
+    );
+    drop(h);
+    // a second app with these prefs opens a real log without the tour
+    let mut h2 = harness_with_prefs(vec![LOG_4_2.into()], None, Some(path.clone()));
+    app_mut(&mut h2).auto_tour = true;
+    run_until(&mut h2, no_slot_loading);
+    assert!(!app(&h2).tour.active, "seen once");
+    let recent = Prefs::load(&path).recent;
+    assert_eq!(recent.len(), 1);
+    assert!(recent[0].path.ends_with("betaflight-4.2.0.BFL"));
+    assert_eq!(recent[0].opened.len(), 10, "YYYY-MM-DD");
+    // Help -> Show tour restarts it; Back, Skip and Esc
+    h2.get_by_label("Help").click();
+    h2.run_steps(2);
+    h2.get_by_label("Show tour").click();
+    h2.run_steps(2);
+    assert!(app(&h2).tour.active);
+    h2.key_press(Key::ArrowRight);
+    h2.step();
+    assert_eq!(app(&h2).tour.step, 1);
+    h2.get_by_label("Back").click();
+    h2.step();
+    assert_eq!(app(&h2).tour.step, 0);
+    // the overlay swallows clicks meant for the UI below
+    h2.get_by_label("Spectrum").click();
+    h2.step();
+    assert_eq!(app(&h2).tab, Tab::LogViewer, "still on the step's tab");
+    h2.get_by_label("Skip").click();
+    h2.step();
+    assert!(!app(&h2).tour.active);
+    h2.get_by_label("Help").click();
+    h2.run_steps(2);
+    h2.get_by_label("Show tour").click();
+    h2.run_steps(2);
+    h2.key_press(Key::Escape);
+    h2.step();
+    assert!(!app(&h2).tour.active, "Esc skips");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn recent_files_open_from_the_start_screen() {
+    use crate::prefs::{Prefs, RecentFile};
+    let dir = std::env::temp_dir().join(format!("openpid-recent-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("prefs.json");
+    Prefs {
+        recent: vec![RecentFile {
+            path: LOG_4_2.into(),
+            opened: "2026-11-06".into(),
+        }],
+        ..Prefs::default()
+    }
+    .save(&path)
+    .unwrap();
+    let mut h = harness_with_prefs(Vec::new(), Some(Tab::Step), Some(path.clone()));
+    assert!(h.query_by_label("Recent files").is_some());
+    h.get_by_label_contains("betaflight-4.2.0.BFL").click();
+    h.step();
+    run_until(&mut h, no_slot_loading);
+    assert!(app(&h).loaded(Slot::A).is_some());
+    assert!(!app(&h).start_screen_wanted());
+    assert!(!app(&h).tour.active, "the harness keeps the tour off");
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 // ------------------------------------------------------------------ step verdicts

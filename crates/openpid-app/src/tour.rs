@@ -174,23 +174,22 @@ impl App {
             .get(step.anchor)
             .or_else(|| self.anchors.get(step.fallback))
             .copied()
-            .unwrap_or_else(|| Rect::from_center_size(screen.center(), egui::vec2(1.0, 1.0)));
+            .unwrap_or_else(|| Rect::from_center_size(screen.center(), egui::vec2(1.0, 1.0)))
+            .intersect(screen);
         let cutout = anchor.expand(CUTOUT_PAD).intersect(screen);
         self.tour.cutout = Some(cutout);
         let touch = self.touch_mode;
         let n = STEPS.len();
         let index = self.tour.step;
         let mut nav: Option<Nav> = None;
-        egui::Area::new(egui::Id::new("tour"))
+        egui::Area::new(egui::Id::unique("tour"))
             .order(egui::Order::Foreground)
             .fixed_pos(screen.min)
             .interactable(true)
             .show(ctx, |ui| {
                 // a full-screen widget swallows the clicks meant for the UI below
                 let (_, resp) = ui.allocate_exact_size(screen.size(), egui::Sense::click());
-                resp.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::Role::Group, true, tr("Tour"))
-                });
+                resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Group, true, tr("Tour")));
                 let painter = ui.painter();
                 let dim = Color32::from_black_alpha(140);
                 // four rectangles around the cut-out
@@ -229,8 +228,10 @@ impl App {
                 // the card: below the anchor when there is room, else above,
                 // clamped to the screen
                 let card_h = if touch { 170.0 } else { 140.0 };
-                let x = (cutout.center().x - CARD_W / 2.0)
-                    .clamp(screen.min.x + 8.0, (screen.max.x - CARD_W - 8.0).max(screen.min.x));
+                let x = (cutout.center().x - CARD_W / 2.0).clamp(
+                    screen.min.x + 8.0,
+                    (screen.max.x - CARD_W - 8.0).max(screen.min.x),
+                );
                 let y = if cutout.max.y + 8.0 + card_h <= screen.max.y {
                     cutout.max.y + 8.0
                 } else {
@@ -257,7 +258,10 @@ impl App {
                                 egui::vec2(64.0, 24.0)
                             };
                             if ui
-                                .add_enabled(index > 0, egui::Button::new(tr("Back")).min_size(size))
+                                .add_enabled(
+                                    index > 0,
+                                    egui::Button::new(tr("Back")).min_size(size),
+                                )
                                 .clicked()
                             {
                                 nav = Some(Nav::Back);
@@ -270,7 +274,10 @@ impl App {
                             if ui.add(egui::Button::new(next).min_size(size)).clicked() {
                                 nav = Some(Nav::Next);
                             }
-                            if ui.add(egui::Button::new(tr("Skip")).min_size(size)).clicked() {
+                            if ui
+                                .add(egui::Button::new(tr("Skip")).min_size(size))
+                                .clicked()
+                            {
                                 nav = Some(Nav::Skip);
                             }
                             ui.label(

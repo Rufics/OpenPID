@@ -93,3 +93,30 @@ first-run state».
 ## Розмір
 
 M (≈ 3 дні): стартовий екран — ½, механіка coach marks — 1½, тексти/тести/док — 1.
+
+## Реалізація (06.11.2026, #104)
+
+- `crates/openpid-app/src/tour.rs`: `STEPS` (7 кроків: вкладка, якір, запасний
+  якір, текст), `Tour { active, step, cutout }`, `App::{start_tour, end_tour,
+  tour_keys, tour_tab, tour_overlay}`. Якорі реєструються щокадру в
+  `App::anchors` (`slot-bar` у `slot_headers`, `epoch-handles` — стрічка першого
+  слота, `tab-*` — кнопки вкладок, `advice-cli` — поле CLI на Advice); оверлей —
+  `egui::Area` у `Order::Foreground` з повноекранним віджетом, який ковтає кліки,
+  чотири затемнені прямокутники навколо вирізу, картка 320 px під/над якорем.
+- Стартовий екран `views::start_screen` замість вкладки, коли всі слоти порожні
+  (`App::start_screen_wanted`); зразковий лог — `App::open_sample`
+  (`SignalSpec` 30 с, `damping 0.4`, Betaflight-подібні PID, без файлу);
+  `Prefs::{tour_done, show_tour, recent}` (до 8, дата `YYYY-MM-DD` без
+  залежностей — `prefs::ymd`); тур стартує з `maybe_start_tour` після першого
+  успішного завантаження (`App::auto_tour` вимикає це в тестах).
+- Help → Show tour; Settings: чекбокс «Show the tour on the first opened log»,
+  «Reset first-run state», «Show tour». Env `OPENPID_TOUR_STEP=n` відкриває
+  застосунок одразу на кроці n (скриншоти/демо).
+- Тести: прохід усіх 7 кроків із перевіркою, що виріз містить якір і що вкладка
+  перемкнулась; Done/Skip/Esc/Back; одноразовість через `prefs.json`; кліки під
+  оверлеєм не проходять; Advice на зразковому лозі пропонує D; recent files
+  відкриваються зі стартового екрана.
+
+Відхилення: кроки 2 і 7 мають запасні якорі (кнопка вкладки), якщо стрічки чи
+поля CLI немає на екрані; широкий віджет (поле CLI) обрізається межею вікна;
+`advice-cli` замість окремого кроку для `tab-advice` — одна картка на Advice.

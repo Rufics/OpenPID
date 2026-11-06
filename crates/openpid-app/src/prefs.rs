@@ -65,7 +65,7 @@ impl AccUnit {
 }
 
 /// Everything the Settings tab edits.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prefs {
     /// Colour theme.
@@ -80,6 +80,75 @@ pub struct Prefs {
     pub acc_unit: AccUnit,
     /// Step-response targets (verdict thresholds; Settings → Targets).
     pub targets: openpid_analysis::StepTargets,
+    /// The first-run tour was seen (or skipped).
+    pub tour_done: bool,
+    /// Start the tour on the first opened log of a fresh install.
+    pub show_tour: bool,
+    /// Recently opened logs, newest first (at most `MAX_RECENT`).
+    pub recent: Vec<RecentFile>,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Prefs {
+            theme: Theme::default(),
+            lang: Lang::default(),
+            touch_mode: false,
+            rate_unit: RateUnit::default(),
+            acc_unit: AccUnit::default(),
+            targets: openpid_analysis::StepTargets::default(),
+            tour_done: false,
+            show_tour: true,
+            recent: Vec::new(),
+        }
+    }
+}
+
+/// How many recent files the start screen lists.
+pub const MAX_RECENT: usize = 8;
+
+/// A recently opened log.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecentFile {
+    pub path: PathBuf,
+    /// Day it was last opened, `YYYY-MM-DD` (UTC).
+    pub opened: String,
+}
+
+/// `YYYY-MM-DD` of a Unix time (days since the epoch, proleptic Gregorian).
+pub fn ymd(unix_secs: u64) -> String {
+    // Howard Hinnant's civil_from_days
+    let days = (unix_secs / 86_400) as i64;
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+impl Prefs {
+    /// Put `path` first in the recent list (dated today), dropping duplicates
+    /// and anything beyond `MAX_RECENT`.
+    pub fn push_recent(&mut self, path: &Path) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        self.recent.retain(|r| r.path != path);
+        self.recent.insert(
+            0,
+            RecentFile {
+                path: path.to_path_buf(),
+                opened: ymd(now),
+            },
+        );
+        self.recent.truncate(MAX_RECENT);
+    }
 }
 
 impl Prefs {
@@ -160,9 +229,33 @@ mod tests {
             rate_unit: RateUnit::RadPerS,
             acc_unit: AccUnit::MPerS2,
             targets: openpid_analysis::TargetPreset::Racing.targets(),
+            tour_done: true,
+            show_tour: false,
+            recent: vec![RecentFile {
+                path: PathBuf::from("/logs/a.bbl"),
+                opened: "2026-11-06".into(),
+            }],
         };
         p.save(&path).unwrap();
         assert_eq!(Prefs::load(&path), p);
+        assert_eq!(ymd(0), "1970-01-01");
+        assert_eq!(ymd(1_793_923_200), "2026-11-06");
+        assert_eq!(ymd(951_782_400), "2000-02-29");
+        let mut q = Prefs::default();
+        assert!(q.show_tour && !q.tour_done);
+        for i in 0..10 {
+            q.push_recent(Path::new(&format!("/l/{i}.bbl")));
+        }
+        q.push_recent(Path::new("/l/3.bbl"));
+        assert_eq!(q.recent.len(), MAX_RECENT);
+        assert_eq!(q.recent[0].path, PathBuf::from("/l/3.bbl"));
+        assert_eq!(
+            q.recent
+                .iter()
+                .filter(|r| r.path.ends_with("3.bbl"))
+                .count(),
+            1
+        );
         std::fs::write(&path, r#"{"theme":"light","future_field":42}"#).unwrap();
         let loaded = Prefs::load(&path);
         assert_eq!(loaded.theme, Theme::Light);
