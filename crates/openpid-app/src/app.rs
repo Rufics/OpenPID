@@ -262,6 +262,8 @@ pub struct App {
     pub player: views::PlayerState,
     /// Timeline strips under the slot rows: drag state, rectangles, envelopes.
     pub strip: views::StripState,
+    /// What the Step tab drew last frame (band, advice line; tests).
+    pub step_view: views::StepViewState,
     /// Persisted preferences (Settings tab).
     pub prefs: Prefs,
     /// Where `prefs` are saved; `None` = no config directory, keep them for the session.
@@ -331,6 +333,8 @@ impl App {
         let prefs = prefs_path.as_deref().map(Prefs::load).unwrap_or_default();
         let ctx = ctx.clone();
         let worker = Worker::spawn(move || ctx.request_repaint());
+        let mut tools = Tools::default();
+        tools.recommend.targets = prefs.targets;
         let mut app = App {
             worker,
             slots: vec![SlotEntry::empty(Slot::A), SlotEntry::empty(Slot::B)],
@@ -340,7 +344,7 @@ impl App {
             heatmap_hover: None,
             heatmap_frames: HashMap::new(),
             tab: tab.unwrap_or(Tab::LogViewer),
-            tools: Tools::default(),
+            tools,
             touch_mode: prefs.touch_mode,
             touch_applied: false,
             status: "Open a blackbox log (File → Open, or drop it here)".into(),
@@ -351,6 +355,7 @@ impl App {
             surface: surface::SurfaceState::default(),
             player: views::PlayerState::default(),
             strip: views::StripState::default(),
+            step_view: views::StepViewState::default(),
             prefs,
             prefs_path,
             theme_applied: None,

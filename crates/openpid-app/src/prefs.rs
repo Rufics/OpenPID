@@ -65,7 +65,7 @@ impl AccUnit {
 }
 
 /// Everything the Settings tab edits.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prefs {
     /// Colour theme.
@@ -78,6 +78,8 @@ pub struct Prefs {
     pub rate_unit: RateUnit,
     /// Acceleration unit in the log viewer.
     pub acc_unit: AccUnit,
+    /// Step-response targets (verdict thresholds; Settings → Targets).
+    pub targets: openpid_analysis::StepTargets,
 }
 
 impl Prefs {
@@ -157,6 +159,7 @@ mod tests {
             touch_mode: true,
             rate_unit: RateUnit::RadPerS,
             acc_unit: AccUnit::MPerS2,
+            targets: openpid_analysis::TargetPreset::Racing.targets(),
         };
         p.save(&path).unwrap();
         assert_eq!(Prefs::load(&path), p);

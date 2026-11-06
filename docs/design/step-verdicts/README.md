@@ -72,3 +72,31 @@ mismatch: enable Y-offset or check setpoint scaling».
 ## Розмір
 
 M (≈ 2 дні).
+
+## Реалізація (06.11.2026, #103)
+
+- `openpid-analysis::targets`: `StepTargets` (+ `Hash`, serde default), пресети
+  `TargetPreset::{Freestyle, Racing, Cinematic}` і `matching()`, `verdicts()` —
+  чиста функція (7 вердиктів у порядку стовпців), `overall()`. Unit-тести на
+  крайніх значеннях, `None` і замалій кількості вікон; перевірка на реальних
+  логах у `tests/real_logs.rs`.
+- `RecommendParams.overshoot_max_pct` замінено на `targets: StepTargets`
+  (правило D спрацьовує вище `overshoot_warn_pct`); старі проєкти читаються
+  (serde default, зайве поле ігнорується).
+- Пороги живуть у `Prefs.targets` (Settings → Targets: пресети, поля, «Custom»,
+  коли жоден пресет не збігається) і в `Project.recommend.targets`; під час
+  роботи — `tools.recommend.targets`. Поле «overshoot limit» на Advice редагує
+  той самий поріг.
+- Step tab: таблиця `egui::Grid` трьох осей × слотів (усі три осі рахуються через
+  кеш), `App.step_view` зберігає вердикти, смугу й рядок Advice для тестів; смуга
+  1 ± tol від `settling_ms_max` до кінця відповіді (`Polygon` з фіксованими
+  координатами — в auto-bounds не впливає), пунктирні `HLine` warn/fail; рядок
+  Advice читає кешований результат recommender-а (запускає його для першого
+  видимого слота).
+- CLI: `run step --json` додає `verdicts` (пороги з `--project`, інакше
+  Freestyle).
+
+Відхилення: `delay` і `latency` інформаційні (зелені без порогу, з приміткою);
+`settling = None` — Warn («never settles»), а не Unknown; у 4.5.1 сесія 1 yaw має
+55 вікон (не 0, як припускав документ) — критерій перевірено на roll (16 вікон →
+Ok за кількістю, overshoot 30.5 % → Fail, final 0.8 → gain mismatch).

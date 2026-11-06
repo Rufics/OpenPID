@@ -15,6 +15,7 @@
 
 use crate::psd::{PsdAnalysis, PsdOutput, PsdParams};
 use crate::step::{StepAnalysis, StepParams};
+use crate::targets::StepTargets;
 use openpid_core::analysis::{Analysis, AnalysisCtx, AnalysisError, Requirement};
 use openpid_core::{Axis, ChannelId, GyroStage, PidTerm, Proposal};
 use serde::{Deserialize, Serialize};
@@ -23,8 +24,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RecommendParams {
-    /// Overshoot (percent of the final value) above which rule 1 fires.
-    pub overshoot_max_pct: f64,
+    /// Step-response targets; rule 1 fires above `overshoot_warn_pct`
+    /// (shared with the Step tab verdicts).
+    pub targets: StepTargets,
     /// How much rule 1 raises D, percent.
     pub d_step_pct: f64,
     /// D-term noise ceiling for rule 1: PSD level at 150–400 Hz relative to
@@ -47,7 +49,7 @@ pub struct RecommendParams {
 impl Default for RecommendParams {
     fn default() -> Self {
         RecommendParams {
-            overshoot_max_pct: 15.0,
+            targets: StepTargets::default(),
             d_step_pct: 10.0,
             dterm_noise_max_db: -15.0,
             peak_min_prominence_db: 8.0,
@@ -62,8 +64,8 @@ impl Default for RecommendParams {
 
 impl std::hash::Hash for RecommendParams {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.targets.hash(state);
         for v in [
-            self.overshoot_max_pct,
             self.d_step_pct,
             self.dterm_noise_max_db,
             self.peak_min_prominence_db,
@@ -200,14 +202,14 @@ impl Recommend {
             );
             return;
         }
-        if overshoot <= p.overshoot_max_pct {
+        if overshoot <= p.targets.overshoot_warn_pct {
             Self::finding(
                 out,
                 RULE,
                 Some(axis),
                 format!(
                     "overshoot {overshoot:.0} % within the {:.0} % limit",
-                    p.overshoot_max_pct
+                    p.targets.overshoot_warn_pct
                 ),
                 false,
             );
@@ -296,7 +298,7 @@ impl Recommend {
             Some(axis),
             format!(
                 "overshoot {overshoot:.0} % (limit {:.0} %){noise}",
-                p.overshoot_max_pct
+                p.targets.overshoot_warn_pct
             ),
             true,
         );
@@ -309,9 +311,12 @@ impl Recommend {
                 rationale: format!(
                     "{} overshoots {overshoot:.0} % (limit {:.0} %){noise}: more D damps it",
                     axis.name(),
-                    p.overshoot_max_pct
+                    p.targets.overshoot_warn_pct
                 ),
-                confidence: confidence(overshoot - p.overshoot_max_pct, p.overshoot_max_pct),
+                confidence: confidence(
+                    overshoot - p.targets.overshoot_warn_pct,
+                    p.targets.overshoot_warn_pct,
+                ),
             },
         );
     }

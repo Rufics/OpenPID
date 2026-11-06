@@ -12,7 +12,10 @@ use egui_plot::{
     Bar, BarChart, HLine, Heatmap, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, Text,
     VLine,
 };
-use openpid_analysis::{Epoch, FilterOverrides, Fitness, FitnessLevel, RpmOverlay};
+use openpid_analysis::{
+    Epoch, FilterOverrides, Fitness, FitnessLevel, RpmOverlay, StepParams, TargetPreset, Verdict,
+    VerdictLevel, verdicts,
+};
 use openpid_core::analysis::Grid2D;
 use openpid_core::settings::LowpassKind;
 use openpid_core::settings::{PerAxis, PidGains};
@@ -1219,36 +1222,123 @@ pub fn step(app: &mut App, ui: &mut Ui) {
             ));
     });
     let params = app.tools.step.clone();
-    let mut outputs: Vec<(Slot, Arc<Output>)> = Vec::new();
+    let targets = app.tools.recommend.targets;
+    // every axis of every visible slot: the table judges all three, the plot
+    // draws the active one
+    let mut rows: Vec<(Axis, SlotResult)> = Vec::new();
     for slot in app.visible_slots() {
-        match app.result(slot, Kind::Step(params.clone())) {
-            Some(Ok(o)) => outputs.push((slot, o)),
-            Some(Err(e)) => show_error(ui, slot, &e),
-            None => {}
+        for axis in Axis::ALL {
+            let p = StepParams {
+                axis,
+                ..params.clone()
+            };
+            rows.push((axis, (slot, app.result(slot, Kind::Step(p)))));
         }
     }
-    ui.horizontal_wrapped(|ui| {
-        for (slot, o) in &outputs {
-            if let Output::Step(s) = o.as_ref() {
-                let m = s.metrics;
-                ui.label(
-                    RichText::new(format!(
-                        "{}: {} / {} windows · rise {} ms · delay (50 %) {} ms · latency (xcorr) {} ms · overshoot {} % · settling {} ms · final {:.2}",
-                        slot.name(),
-                        s.windows_used,
-                        s.windows_total,
-                        m.rise_time_ms.map_or("–".into(), |v| format!("{v:.0}")),
-                        m.delay_ms.map_or("–".into(), |v| format!("{v:.0}")),
-                        m.latency_ms.map_or("–".into(), |v| format!("{v:.1}")),
-                        m.overshoot_pct.map_or("–".into(), |v| format!("{v:.0}")),
-                        m.settling_ms.map_or("–".into(), |v| format!("{v:.0}")),
-                        m.final_value
-                    ))
-                    .color(slot_color(*slot)),
-                );
+    app.step_view.rows.clear();
+    let mut switch_to: Option<Axis> = None;
+    egui::Grid::new("step-verdicts")
+        .striped(true)
+        .show(ui, |ui| {
+            ui.label("");
+            for h in STEP_COLUMNS {
+                ui.label(RichText::new(tr(h)).strong());
+            }
+            ui.end_row();
+            for (axis, (slot, result)) in &rows {
+                let active = *axis == app.tools.axis;
+                let name = format!("{} {}", slot.name(), axis.name());
+                if ui
+                    .selectable_label(
+                        active,
+                        RichText::new(name).color(slot_color(*slot)).strong(),
+                    )
+                    .on_hover_text(tr("click: show this axis on the plot"))
+                    .clicked()
+                {
+                    switch_to = Some(*axis);
+                }
+                match result {
+                    Some(Ok(o)) => {
+                        if let Output::Step(st) = o.as_ref() {
+                            let v = verdicts(&st.metrics, st.windows_used, &targets);
+                            for vd in &v {
+                                ui.label(
+                                    RichText::new(format!("{} {}", vd.value, vd.level.marker()))
+                                        .color(verdict_color(vd.level)),
+                                )
+                                .on_hover_text(&vd.note);
+                            }
+                            app.step_view.rows.push((*slot, *axis, v));
+                        }
+                    }
+                    Some(Err(e)) => {
+                        ui.label(
+                            RichText::new(format!("{}: {e}", slot.name()))
+                                .color(Color32::LIGHT_RED),
+                        );
+                    }
+                    None => {
+                        ui.spinner();
+                    }
+                }
+                ui.end_row();
+            }
+        });
+    if let Some(axis) = switch_to {
+        app.tools.axis = axis;
+        app.tools.step.axis = axis;
+    }
+    let axis = app.tools.axis;
+    // the Advice line: a PID proposal on this axis, when the recommender has one
+    app.step_view.advice = None;
+    if let Some(slot) = app.visible_slots().first().copied() {
+        let rp = app.tools.recommend.clone();
+        if let Some(Ok(o)) = app.result(slot, Kind::Recommend(rp))
+            && let Output::Recommend(r) = o.as_ref()
+        {
+            let prefix = format!("pid.{}.", axis.name());
+            if let Some(p) = r.proposals.iter().find(|p| p.path.starts_with(&prefix)) {
+                let term = p.path.rsplit('.').next().unwrap_or("").to_uppercase();
+                app.step_view.advice = Some(format!(
+                    "{}: {} {} {} {} -> {} ({})",
+                    tr("Advice"),
+                    slot.name(),
+                    axis.name(),
+                    term,
+                    p.from.as_deref().unwrap_or("?"),
+                    p.to,
+                    p.rationale
+                ));
             }
         }
-    });
+    }
+    if let Some(line) = app.step_view.advice.clone() {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(line).color(ACCENT));
+            if ui.button(tr("Go to Advice")).clicked() {
+                app.tab = crate::app::Tab::Advice;
+            }
+        });
+    }
+    let outputs: Vec<(Slot, Arc<Output>)> = rows
+        .into_iter()
+        .filter(|(a, _)| *a == axis)
+        .filter_map(|(_, (s, r))| match r {
+            Some(Ok(o)) => Some((s, o)),
+            _ => None,
+        })
+        .collect();
+    // the target band: 1 ± tol from the settling target to the end of the response
+    let end_ms = params.response_s * 1000.0;
+    let band = (
+        targets.settling_ms_max.min(end_ms),
+        1.0 - targets.final_tol,
+        1.0 + targets.final_tol,
+    );
+    app.step_view.band = Some(band);
+    let warn_line = 1.0 + targets.overshoot_warn_pct / 100.0;
+    let fail_line = 1.0 + targets.overshoot_fail_pct / 100.0;
     let h = ui.available_height();
     Plot::new("step")
         .legend(Legend::default())
@@ -1258,10 +1348,47 @@ pub fn step(app: &mut App, ui: &mut Ui) {
         .include_y(0.0)
         .include_y(1.5)
         .show(ui, |pu| {
+            pu.polygon(
+                egui_plot::Polygon::new(
+                    tr("target band"),
+                    PlotPoints::from(vec![
+                        [band.0, band.1],
+                        [end_ms, band.1],
+                        [end_ms, band.2],
+                        [band.0, band.2],
+                    ]),
+                )
+                .fill_color(Color32::from_rgba_unmultiplied(0, 158, 115, 30))
+                .stroke(egui::Stroke::NONE),
+            );
             pu.hline(
                 HLine::new("1.0", 1.0)
                     .color(MUTED)
                     .style(LineStyle::dashed_dense()),
+            );
+            pu.hline(
+                HLine::new(
+                    format!(
+                        "{} {:.0} %",
+                        tr("overshoot warn"),
+                        targets.overshoot_warn_pct
+                    ),
+                    warn_line,
+                )
+                .color(verdict_color(VerdictLevel::Warn))
+                .style(LineStyle::dashed_loose()),
+            );
+            pu.hline(
+                HLine::new(
+                    format!(
+                        "{} {:.0} %",
+                        tr("overshoot fail"),
+                        targets.overshoot_fail_pct
+                    ),
+                    fail_line,
+                )
+                .color(verdict_color(VerdictLevel::Fail))
+                .style(LineStyle::dashed_loose()),
             );
             for (slot, o) in &outputs {
                 let Output::Step(s) = o.as_ref() else {
@@ -1304,6 +1431,38 @@ pub fn step(app: &mut App, ui: &mut Ui) {
                 }
             }
         });
+}
+
+/// Columns of the Step tab verdict table, in `verdicts()` order.
+const STEP_COLUMNS: [&str; 7] = [
+    "windows",
+    "rise",
+    "delay",
+    "latency",
+    "overshoot",
+    "settling",
+    "final",
+];
+
+/// What the Step tab drew last frame (tests).
+#[derive(Debug, Default)]
+pub struct StepViewState {
+    /// Target band: from (ms), low, high.
+    pub band: Option<(f64, f64, f64)>,
+    /// The Advice line under the table, if the recommender proposed a PID change on the axis.
+    pub advice: Option<String>,
+    /// Verdicts per slot and axis, as in the table.
+    pub rows: Vec<(Slot, Axis, Vec<Verdict>)>,
+}
+
+/// Colour of a verdict level (Okabe–Ito green / yellow / vermilion, grey).
+fn verdict_color(level: VerdictLevel) -> Color32 {
+    match level {
+        VerdictLevel::Ok => Color32::from_rgb(0, 158, 115),
+        VerdictLevel::Warn => Color32::from_rgb(240, 228, 66),
+        VerdictLevel::Fail => Color32::from_rgb(213, 94, 0),
+        VerdictLevel::Unknown => MUTED,
+    }
 }
 
 pub fn spectrum(app: &mut App, ui: &mut Ui) {
@@ -2751,12 +2910,15 @@ pub fn advice(app: &mut App, ui: &mut Ui) {
     ui.horizontal_wrapped(|ui| {
         let l = ui.label(tr("overshoot limit"));
         ui.add(
-            egui::DragValue::new(&mut app.tools.recommend.overshoot_max_pct)
+            egui::DragValue::new(&mut app.tools.recommend.targets.overshoot_warn_pct)
                 .speed(1.0)
                 .range(1.0..=100.0)
                 .suffix(" %"),
         )
-        .labelled_by(l.id);
+        .labelled_by(l.id)
+        .on_hover_text(tr(
+            "the same target as on the Step tab (Settings → Targets)",
+        ));
         let l = ui.label(tr("D step"));
         ui.add(
             egui::DragValue::new(&mut app.tools.recommend.d_step_pct)
@@ -2893,6 +3055,12 @@ fn advice_slot(app: &App, ui: &mut Ui, slot: Slot, r: &openpid_analysis::Recomme
 
 /// Settings tab: theme, touch mode and display units, saved on every change.
 pub fn settings(app: &mut App, ui: &mut Ui) {
+    egui::ScrollArea::vertical()
+        .id_salt("settings")
+        .show(ui, |ui| settings_body(app, ui));
+}
+
+fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut changed = false;
     ui.heading(tr("Appearance"));
     ui.horizontal(|ui| {
@@ -2949,9 +3117,106 @@ pub fn settings(app: &mut App, ui: &mut Ui) {
         .color(MUTED),
     );
     ui.add_space(8.0);
+    let mut targets_changed = false;
+    egui::CollapsingHeader::new(tr("Targets"))
+        .default_open(false)
+        .show(ui, |ui| {
+            ui.label(
+                RichText::new(tr(
+                    "Thresholds behind the step-response verdicts and the Advice overshoot rule.",
+                ))
+                .color(MUTED),
+            );
+            ui.horizontal_wrapped(|ui| {
+                ui.label(tr("Preset"));
+                let current = TargetPreset::matching(&app.tools.recommend.targets);
+                for p in TargetPreset::ALL {
+                    if ui
+                        .selectable_label(current == Some(p), tr(p.name()))
+                        .clicked()
+                    {
+                        app.tools.recommend.targets = p.targets();
+                        targets_changed = true;
+                    }
+                }
+                if current.is_none() {
+                    ui.label(RichText::new(tr("Custom")).color(MUTED));
+                }
+            });
+            egui::Grid::new("targets").show(ui, |ui| {
+                let t = &mut app.tools.recommend.targets;
+                let mut field = |ui: &mut Ui,
+                                 label: &'static str,
+                                 v: &mut f64,
+                                 speed: f64,
+                                 range: std::ops::RangeInclusive<f64>,
+                                 suffix: &str| {
+                    let l = ui.label(tr(label));
+                    let r = ui
+                        .add(
+                            egui::DragValue::new(v)
+                                .speed(speed)
+                                .range(range)
+                                .suffix(suffix),
+                        )
+                        .labelled_by(l.id);
+                    targets_changed |= r.changed();
+                    ui.end_row();
+                };
+                field(
+                    ui,
+                    "overshoot warn",
+                    &mut t.overshoot_warn_pct,
+                    1.0,
+                    1.0..=100.0,
+                    " %",
+                );
+                field(
+                    ui,
+                    "overshoot fail",
+                    &mut t.overshoot_fail_pct,
+                    1.0,
+                    1.0..=200.0,
+                    " %",
+                );
+                field(ui, "rise max", &mut t.rise_ms_max, 1.0, 5.0..=300.0, " ms");
+                field(
+                    ui,
+                    "settling max",
+                    &mut t.settling_ms_max,
+                    1.0,
+                    10.0..=500.0,
+                    " ms",
+                );
+                field(
+                    ui,
+                    "final tolerance",
+                    &mut t.final_tol,
+                    0.01,
+                    0.01..=0.5,
+                    "",
+                );
+                let mut windows = |ui: &mut Ui, label: &'static str, v: &mut usize| {
+                    let l = ui.label(tr(label));
+                    let r = ui
+                        .add(egui::DragValue::new(v).speed(1.0).range(1..=100))
+                        .labelled_by(l.id);
+                    targets_changed |= r.changed();
+                    ui.end_row();
+                };
+                windows(ui, "min windows ok", &mut t.min_windows_ok);
+                windows(ui, "min windows weak", &mut t.min_windows_weak);
+            });
+        });
+    if targets_changed {
+        app.prefs.targets = app.tools.recommend.targets;
+        changed = true;
+    }
+    ui.add_space(8.0);
     if ui.button(tr("Reset to defaults")).clicked() {
         app.prefs = Prefs::default();
         app.touch_mode = app.prefs.touch_mode;
+        app.tools.recommend.targets = app.prefs.targets;
         changed = true;
     }
     ui.add_space(8.0);

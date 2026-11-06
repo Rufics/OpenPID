@@ -70,6 +70,24 @@ cargo run --release -p openpid-app                      # або ./target/releas
 
 ## 3. Step response
 
+Над графіком — **таблиця вердиктів**: рядок на кожну вісь (roll / pitch / yaw)
+кожного слота, стовпці windows · rise · delay · latency · overshoot · settling ·
+final. Клітинка = значення + мітка: зелений `ok`, жовтий `!`, червоний `x`,
+сірий `?` (не виміряно або замало вікон). Наведіть курсор — побачите поріг і
+пояснення. Клік по рядку перемикає вісь на графіку. Усі три осі рахуються
+одразу (кеш), тож перемикання миттєве.
+
+Пороги (**Settings → Targets**, пресети Freestyle / Racing / Cinematic або
+власні): overshoot warn 15 % / fail 30 %, rise ≤ 60 ms, settling ≤ 120 ms,
+final 1 ± 0.10, вікон ≥ 10 (5–9 — «weak», < 5 — «unreliable», решта вердиктів
+стає `?`). Той самий поріг overshoot використовує правило D у Advice. Зміна
+порогів змінює мітки без перерахунку.
+
+На графіку: зелена **цільова смуга** 1 ± tol від settling-порогу до кінця
+відповіді, пунктирні лінії overshoot warn (жовта) і fail (червона). Якщо Advice
+має пропозицію по PID цієї осі, під таблицею з'являється рядок «Advice: A roll
+D 40 -> 44 (…)» з кнопкою **Go to Advice**.
+
 ![Step response](screenshots/step.png)
 
 Відгук на одиничний крок setpoint → gyro за Wiener‑деконволюцією (DESIGN §6.2):
@@ -253,7 +271,8 @@ PSD Велча обраного каналу (DESIGN §6.3). **Channel** — б�
   перевірка робиться для кожної; картка показує обрану.
 - **Settings**: тема (dark/light), **мова інтерфейсу** (English / Українська —
   перемикається миттєво, одиниці й числа не змінюються), touch‑режим на старті,
-  одиниці deg/s↔rad/s і g↔m/s². Зберігається у `prefs.json` каталогу конфігурації (`~/.config/openpid`,
+  одиниці deg/s↔rad/s і g↔m/s², **Targets** — пороги вердиктів step response
+  (пресет або власні, п. 3). Зберігається у `prefs.json` каталогу конфігурації (`~/.config/openpid`,
   `~/Library/Application Support/openpid`, `%APPDATA%\openpid`; `OPENPID_CONFIG_DIR`
   перевизначає).
 
@@ -313,7 +332,7 @@ Betaflight CLI (`openpid-fmt-blackbox::BetaflightCli`, та сама табли�
 |---|---|
 | Log viewer | `openpid info <log>`, `openpid decode <log> --scaled` |
 | Log check | `openpid info <log>` — блок `fitness` (у `--json` — поле `fitness`) |
-| Step response | `openpid run step <log> --axis pitch --epoch 2..12` |
+| Step response | `openpid run step <log> --axis pitch --epoch 2..12` (`--json` містить `verdicts` за порогами проєкту або за замовчуванням) |
 | Spectrum | `openpid run psd <log> --channel gyro.raw.roll` |
 | Freq × throttle | `openpid run thr-heatmap <log> [--png out.png]` |
 | Freq × time | `openpid run stft <log> --channel motor.0` |
