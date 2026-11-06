@@ -20,6 +20,7 @@ use openpid_core::units::Unit;
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use openpid_dsp::Peak;
 use openpid_sim::{ChainModel, LowpassModel};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Per-tab UI state that is not an analysis parameter.
@@ -71,10 +72,28 @@ fn set_epoch_bound(app: &mut App, slot: Slot, start: bool, t: f64) {
     });
 }
 
-/// Shaded epoch regions and their draggable bounds; returns the handle under the pointer.
+/// Shades every slot's epoch on a time plot. Painted over the plot rather
+/// than as a plot polygon: a polygon spanning the visible y range would feed
+/// the auto-bounds and grow them by the margin fraction every frame.
+fn shade_epochs(ui: &Ui, app: &App, transform: &egui_plot::PlotTransform) {
+    let frame = *transform.frame();
+    let painter = ui.painter().with_clip_rect(frame);
+    for slot in app.slot_ids() {
+        let Some(e) = app.loaded(slot).and_then(|l| l.epoch) else {
+            continue;
+        };
+        let x0 = transform.position_from_point_x(e.start_s);
+        let x1 = transform.position_from_point_x(e.end_s);
+        painter.rect_filled(
+            egui::Rect::from_min_max(egui::pos2(x0, frame.top()), egui::pos2(x1, frame.bottom())),
+            0.0,
+            slot_color(slot).gamma_multiply(0.12),
+        );
+    }
+}
+
+/// Draggable epoch bounds of every slot; returns the handle under the pointer.
 fn draw_epochs(pu: &mut egui_plot::PlotUi<'_>, app: &App, grab_px: f32) -> Option<(Slot, bool)> {
-    let bounds = pu.plot_bounds();
-    let (y0, y1) = (bounds.min()[1], bounds.max()[1]);
     let hover_pos = pu.response().hover_pos();
     let transform = *pu.transform();
     let mut hovered = None;
@@ -82,20 +101,6 @@ fn draw_epochs(pu: &mut egui_plot::PlotUi<'_>, app: &App, grab_px: f32) -> Optio
         let Some(e) = app.loaded(slot).and_then(|l| l.epoch) else {
             continue;
         };
-        let fill = slot_color(slot).gamma_multiply(0.12);
-        pu.polygon(
-            egui_plot::Polygon::new(
-                format!("{} epoch", slot.name()),
-                PlotPoints::from(vec![
-                    [e.start_s, y0],
-                    [e.end_s, y0],
-                    [e.end_s, y1],
-                    [e.start_s, y1],
-                ]),
-            )
-            .fill_color(fill)
-            .stroke(egui::Stroke::NONE),
-        );
         for (is_start, t) in [(true, e.start_s), (false, e.end_s)] {
             let near = hover_pos
                 .is_some_and(|p| (transform.position_from_point_x(t) - p.x).abs() <= grab_px);
@@ -475,7 +480,7 @@ pub(crate) fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
                         });
                     combo.response.labelled_by(l.id);
                     if loaded.session != before {
-                        loaded.epoch = None;
+                        loaded.apply_auto_epoch();
                         changed = true;
                     }
                 }
@@ -503,42 +508,6 @@ pub(crate) fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
                         );
                     }
                 }
-                // epoch editor
-                let duration = loaded.current().map_or(0.0, |s| s.timebase.duration_s());
-                let mut e = loaded.epoch.unwrap_or(Epoch {
-                    start_s: 0.0,
-                    end_s: duration,
-                });
-                ui.label(tr("epoch"));
-                let a = ui.add(
-                    egui::DragValue::new(&mut e.start_s)
-                        .speed(0.1)
-                        .range(0.0..=duration)
-                        .suffix(" s"),
-                );
-                ui.label("…");
-                let b = ui.add(
-                    egui::DragValue::new(&mut e.end_s)
-                        .speed(0.1)
-                        .range(0.0..=duration)
-                        .suffix(" s"),
-                );
-                if a.changed() || b.changed() {
-                    loaded.epoch = Some(Epoch {
-                        start_s: e.start_s.min(e.end_s),
-                        end_s: e.end_s.max(e.start_s),
-                    });
-                    changed = true;
-                }
-                if loaded.epoch.is_some()
-                    && ui
-                        .small_button(tr("whole log"))
-                        .on_hover_text(shortcuts::keys_of(ui.ctx(), Action::EpochWhole))
-                        .clicked()
-                {
-                    loaded.epoch = None;
-                    changed = true;
-                }
             });
             match action {
                 Some(SlotAction::Visible(v)) => app.set_visible(slot, v),
@@ -546,9 +515,320 @@ pub(crate) fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
                 Some(SlotAction::Close) => app.close_slot(slot),
                 None => {}
             }
+            changed |= timeline_strip(app, ui, slot);
             changed
         }
     }
+}
+
+/// What a drag on a timeline strip moves.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum StripDrag {
+    Start,
+    End,
+    /// The whole window; the pointer was this far (s) from its start.
+    Move {
+        grab_offset_s: f64,
+    },
+}
+
+/// State of the timeline strips (docs/design/analysis-window, R2).
+#[derive(Debug, Default)]
+pub struct StripState {
+    /// The handle or window being dragged, if any.
+    pub drag: Option<(Slot, StripDrag)>,
+    /// Screen rectangle of every strip last frame (tests, hit tests).
+    pub rects: HashMap<Slot, egui::Rect>,
+    /// Throttle (or gyro) min/max envelope per pixel column, by slot,
+    /// session and width.
+    envelopes: HashMap<(Slot, usize, u32), Envelope>,
+}
+
+/// Min/max per pixel column, 0..=1.
+type Envelope = Arc<Vec<[f32; 2]>>;
+
+impl StripState {
+    /// Drop everything cached for a slot (closed or reloaded).
+    pub fn forget(&mut self, slot: Slot) {
+        self.rects.remove(&slot);
+        self.envelopes.retain(|k, _| k.0 != slot);
+        if self.drag.is_some_and(|(s, _)| s == slot) {
+            self.drag = None;
+        }
+    }
+
+    /// Min/max of the throttle (percent of its range) or, without throttle,
+    /// of |gyro.filtered.roll|, for `columns` pixel columns; values in 0..=1.
+    fn envelope(
+        &mut self,
+        slot: Slot,
+        session_index: usize,
+        session: &FlightSession,
+        columns: u32,
+    ) -> Envelope {
+        let key = (slot, session_index, columns);
+        if let Some(e) = self.envelopes.get(&key) {
+            return e.clone();
+        }
+        let values: Vec<f64> = match session.channel(&ChannelId::Throttle) {
+            Some(c) => c.data.values().iter().map(|v| v / 100.0).collect(),
+            None => session
+                .channel(&ChannelId::Gyro {
+                    axis: Axis::Roll,
+                    stage: GyroStage::Filtered,
+                })
+                .map(|c| {
+                    let v = c.data.values();
+                    let max = v.iter().fold(0.0_f64, |m, x| m.max(x.abs())).max(1e-9);
+                    v.iter().map(|x| x.abs() / max).collect()
+                })
+                .unwrap_or_default(),
+        };
+        let n = values.len();
+        let cols = columns.max(1) as usize;
+        let mut out = vec![[1.0_f32, 0.0_f32]; cols];
+        for (i, v) in values.iter().enumerate() {
+            if !v.is_finite() {
+                continue;
+            }
+            let c = (i * cols / n.max(1)).min(cols - 1);
+            let v = v.clamp(0.0, 1.0) as f32;
+            out[c][0] = out[c][0].min(v);
+            out[c][1] = out[c][1].max(v);
+        }
+        for e in &mut out {
+            if e[0] > e[1] {
+                *e = [0.0, 0.0];
+            }
+        }
+        let e = Arc::new(out);
+        self.envelopes.insert(key, e.clone());
+        e
+    }
+}
+
+/// Height of a timeline strip.
+const STRIP_H: f32 = 36.0;
+
+/// The timeline strip of a slot: the throttle envelope with the epoch window
+/// and its two handles, `start`/`end` fields, Auto and All. Returns whether
+/// the epoch changed.
+fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
+    let touch = app.touch_mode;
+    let Some(loaded) = app.loaded(slot) else {
+        return false;
+    };
+    let Some(session) = loaded.current().cloned() else {
+        return false;
+    };
+    let duration = session.timebase.duration_s();
+    if duration <= 0.0 {
+        return false;
+    }
+    let session_index = loaded.session;
+    let whole = Epoch {
+        start_s: 0.0,
+        end_s: duration,
+    };
+    let mut e = loaded.epoch.unwrap_or(whole);
+    let was_auto = loaded.epoch_auto;
+    // (new epoch, auto) once something changed it
+    let mut update: Option<(Option<Epoch>, bool)> = None;
+    let mut status: Option<String> = None;
+    ui.horizontal(|ui| {
+        let fields_w = if touch { 420.0 } else { 360.0 };
+        let width = (ui.available_width() - fields_w).max(120.0);
+        let (rect, resp) =
+            ui.allocate_exact_size(egui::vec2(width, STRIP_H), egui::Sense::click_and_drag());
+        resp.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::Role::Group,
+                true,
+                format!("{} {}", slot.name(), tr("timeline")),
+            )
+        });
+        let resp = resp.on_hover_text(tr("drag a handle or the window; double-click = whole log"));
+        let painter = ui.painter_at(rect);
+        let visuals = ui.visuals();
+        painter.rect_filled(rect, 2.0, visuals.extreme_bg_color);
+        let cols = rect.width().max(1.0).round() as u32;
+        let env = app.strip.envelope(slot, session_index, &session, cols);
+        let grey = visuals.weak_text_color();
+        for (i, [lo, hi]) in env.iter().enumerate() {
+            let x = rect.left() + i as f32 + 0.5;
+            let y0 = rect.bottom() - lo * rect.height();
+            let y1 = rect.bottom() - hi * rect.height();
+            painter.line_segment(
+                [egui::pos2(x, y0 - 1.0), egui::pos2(x, y1)],
+                egui::Stroke::new(1.0, grey),
+            );
+        }
+        let x_of = |t: f64| rect.left() + (t / duration) as f32 * rect.width();
+        let t_of =
+            |x: f32| (f64::from((x - rect.left()) / rect.width()) * duration).clamp(0.0, duration);
+        let colour = slot_color(slot);
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(x_of(e.start_s), rect.top()),
+                egui::pos2(x_of(e.end_s), rect.bottom()),
+            ),
+            0.0,
+            colour.gamma_multiply(0.25),
+        );
+        let grab = grab_radius(touch);
+        let dragging = app.strip.drag.filter(|(s, _)| *s == slot).map(|(_, d)| d);
+        for (t, which) in [(e.start_s, StripDrag::Start), (e.end_s, StripDrag::End)] {
+            let x = x_of(t);
+            let active = dragging == Some(which)
+                || resp.hover_pos().is_some_and(|p| (p.x - x).abs() <= grab);
+            painter.rect_filled(
+                egui::Rect::from_center_size(
+                    egui::pos2(x, rect.center().y),
+                    egui::vec2(if active { 8.0 } else { 4.0 }, rect.height()),
+                ),
+                1.0,
+                colour,
+            );
+        }
+        // interaction
+        // the drag is recognised a few pixels after the press: test the press origin
+        if resp.drag_started()
+            && let Some(p) = ui
+                .input(|i| i.pointer.press_origin())
+                .or_else(|| resp.interact_pointer_pos())
+        {
+            let d = if (p.x - x_of(e.start_s)).abs() <= grab {
+                Some(StripDrag::Start)
+            } else if (p.x - x_of(e.end_s)).abs() <= grab {
+                Some(StripDrag::End)
+            } else if p.x > x_of(e.start_s) && p.x < x_of(e.end_s) {
+                Some(StripDrag::Move {
+                    grab_offset_s: t_of(p.x) - e.start_s,
+                })
+            } else {
+                None
+            };
+            app.strip.drag = d.map(|d| (slot, d));
+        }
+        if resp.dragged()
+            && let Some((s, d)) = app.strip.drag
+            && s == slot
+            && let Some(p) = resp.interact_pointer_pos()
+        {
+            let t = t_of(p.x);
+            let next = match d {
+                StripDrag::Start => Epoch {
+                    start_s: t.min(e.end_s),
+                    end_s: e.end_s,
+                },
+                StripDrag::End => Epoch {
+                    start_s: e.start_s,
+                    end_s: t.max(e.start_s),
+                },
+                StripDrag::Move { grab_offset_s } => {
+                    let len = e.end_s - e.start_s;
+                    let start = (t - grab_offset_s).clamp(0.0, duration - len);
+                    Epoch {
+                        start_s: start,
+                        end_s: start + len,
+                    }
+                }
+            };
+            if next != e {
+                e = next;
+                update = Some((Some(e), false));
+            }
+        }
+        if resp.drag_stopped() {
+            app.strip.drag = None;
+        }
+        if resp.double_clicked() {
+            update = Some((None, false));
+        }
+        app.strip.rects.insert(slot, rect);
+        // fields
+        let l = ui.label(tr("start"));
+        let a = ui
+            .add(
+                egui::DragValue::new(&mut e.start_s)
+                    .speed(0.1)
+                    .range(0.0..=duration)
+                    .suffix(" s"),
+            )
+            .labelled_by(l.id);
+        let l = ui.label(tr("end"));
+        let b = ui
+            .add(
+                egui::DragValue::new(&mut e.end_s)
+                    .speed(0.1)
+                    .range(0.0..=duration)
+                    .suffix(" s"),
+            )
+            .labelled_by(l.id);
+        if a.changed() || b.changed() {
+            update = Some((
+                Some(Epoch {
+                    start_s: e.start_s.min(e.end_s),
+                    end_s: e.end_s.max(e.start_s),
+                }),
+                false,
+            ));
+        }
+        ui.menu_button(tr("Auto"), |ui| {
+            if ui.button(tr("Trim take-off and landing")).clicked() {
+                ui.close();
+                match openpid_analysis::epoch::auto(&session) {
+                    Some(auto) => update = Some((Some(auto), true)),
+                    None => {
+                        status = Some(format!("{}: {}", slot.name(), tr("log too short to trim")))
+                    }
+                }
+            }
+            if ui.button(tr("Most active 20 s")).clicked() {
+                ui.close();
+                match openpid_analysis::epoch::most_active(
+                    &session,
+                    openpid_analysis::epoch::ACTIVE_WINDOW_S,
+                ) {
+                    Some(active) => update = Some((Some(active), false)),
+                    None => {
+                        status = Some(format!("{}: {}", slot.name(), tr("log shorter than 20 s")))
+                    }
+                }
+            }
+        });
+        if ui
+            .button(tr("All"))
+            .on_hover_text(shortcuts::hint(
+                ui.ctx(),
+                tr("whole log"),
+                Action::EpochWhole,
+            ))
+            .clicked()
+        {
+            update = Some((None, false));
+        }
+        let mut text = format!(
+            "{:.1}–{:.1} s · {:.1} s",
+            e.start_s,
+            e.end_s,
+            e.end_s - e.start_s
+        );
+        if was_auto && update.is_none() {
+            text.push_str(" · auto");
+        }
+        ui.label(RichText::new(text).color(MUTED));
+    });
+    if let Some(s) = status {
+        app.status = s;
+    }
+    let Some((epoch, auto)) = update else {
+        return false;
+    };
+    if let Some(l) = app.loaded_mut(slot) {
+        l.set_epoch(epoch, auto);
+    }
+    true
 }
 
 fn axis_selector(ui: &mut Ui, axis: &mut Axis) -> bool {
@@ -804,7 +1084,7 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
     let mut frame = None;
     let mut x_bounds = None;
     let mut y_bounds = None;
-    Plot::new("log_viewer")
+    let plot = Plot::new("log_viewer")
         .legend(Legend::default())
         .x_axis_label("time (s)")
         .height(plot_h)
@@ -868,6 +1148,7 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
             y_bounds = Some((b.min()[1], b.max()[1]));
             frame = Some(*pu.transform().frame());
         });
+    shade_epochs(ui, app, &plot.transform);
     app.viewer.cursor_s = cursor;
     app.viewer.hover_handle = hovered;
     app.viewer.plot_frame = frame;
@@ -1290,7 +1571,7 @@ pub(crate) fn linked_scales(
     app: &mut App,
     grids: &[(Slot, &Grid2D)],
     min_y: f64,
-) -> std::collections::HashMap<Slot, f64> {
+) -> HashMap<Slot, f64> {
     let max = app.tools.heatmap_max;
     let mut per: Vec<(Slot, f64)> = grids
         .iter()

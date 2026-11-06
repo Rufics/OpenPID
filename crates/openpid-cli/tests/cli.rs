@@ -172,6 +172,24 @@ fn run_analyses() {
     assert!(!ok && err.contains("unknown channel key"));
     let (ok, _, err) = run(&["run", "psd", f, "--channel", "debug.7"]);
     assert!(!ok && err.contains("missing channel"));
+    // automatic windows: the trim and the most active 20 s
+    let (ok, out, err) = run(&["run", "step", f, "--epoch", "auto", "--json"]);
+    assert!(ok, "{err}");
+    assert!(err.contains("epoch 1.80..16.02 s"), "{err}");
+    assert!(out.contains("windows_used"));
+    let (ok, _, err) = run(&["run", "step", f, "--epoch", "active"]);
+    assert!(!ok && err.contains("shorter than 20 s"), "{err}");
+    let short = log("betaflight-4.5.1-two-sessions.bbl");
+    let (ok, _, err) = run(&[
+        "run",
+        "step",
+        short.to_str().unwrap(),
+        "--session",
+        "0",
+        "--epoch",
+        "auto",
+    ]);
+    assert!(!ok && err.contains("less than 5 s in the air"), "{err}");
     let (ok, _, err) = run(&["run", "step", f, "--epoch", "5"]);
     assert!(!ok && err.contains("A..B"));
     let (ok, _, err) = run(&["run", "step"]);

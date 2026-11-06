@@ -66,7 +66,9 @@ OPTIONS:
                   2 PT2, 3 PT3), lpf1_dyn_min_hz, lpf1_dyn_max_hz, lpf2_hz, lpf2_type,
                   rpm_harmonics, rpm_q, rpm_min_hz, dyn_count, dyn_q, dyn_min_hz, dyn_max_hz,
                   notch_hz, notch_cutoff_hz (0 switches a stage off)
-    --epoch A..B  Analyse only seconds A to B of the session
+    --epoch A..B  Analyse only seconds A to B of the session; `auto` trims the
+                  take-off and landing (throttle / motor rpm), `active` takes
+                  the most active 20 s (stick input)
     --axis AXIS   roll, pitch or yaw
     --json        Machine-readable output
     --session-b M diff: session index in the second file (default: --session)
@@ -85,6 +87,8 @@ struct Args {
     analysis: Option<String>,
     file: Option<PathBuf>,
     epoch: Option<(f64, f64)>,
+    /// `auto` or `active` from `--epoch`.
+    epoch_mode: Option<String>,
     set: Vec<(String, f64)>,
     axis: Option<String>,
     channel: Option<String>,
@@ -129,8 +133,14 @@ fn parse_args() -> Result<Args, String> {
                 args.project = Some(PathBuf::from(it.next().ok_or("--project needs a path")?));
             }
             "--epoch" => {
-                let v = it.next().ok_or("--epoch needs A..B")?;
-                let (a, b) = v.split_once("..").ok_or("--epoch needs the form A..B")?;
+                let v = it.next().ok_or("--epoch needs A..B, auto or active")?;
+                if v == "auto" || v == "active" {
+                    args.epoch_mode = Some(v);
+                    continue;
+                }
+                let (a, b) = v
+                    .split_once("..")
+                    .ok_or("--epoch needs the form A..B, auto or active")?;
                 let a: f64 = a
                     .trim()
                     .parse()
@@ -500,13 +510,28 @@ fn cmd_run(args: &Args) -> Result<(), String> {
         .iter()
         .find(|s| s.index == session)
         .ok_or_else(|| format!("no session {session}"))?;
-    let epoch = args
-        .epoch
-        .map(|(a, b)| Epoch {
-            start_s: a,
-            end_s: b,
-        })
-        .or_else(|| project_slot.as_ref().and_then(|(_, _, e)| *e));
+    let epoch = match args.epoch_mode.as_deref() {
+        Some("auto") => Some(
+            openpid_analysis::epoch::auto(s)
+                .ok_or("--epoch auto: no throttle, or less than 5 s in the air")?,
+        ),
+        Some("active") => Some(
+            openpid_analysis::epoch::most_active(s, openpid_analysis::epoch::ACTIVE_WINDOW_S)
+                .ok_or("--epoch active: no setpoint, or the log is shorter than 20 s")?,
+        ),
+        _ => args
+            .epoch
+            .map(|(a, b)| Epoch {
+                start_s: a,
+                end_s: b,
+            })
+            .or_else(|| project_slot.as_ref().and_then(|(_, _, e)| *e)),
+    };
+    if args.epoch_mode.is_some()
+        && let Some(e) = epoch
+    {
+        eprintln!("epoch {:.2}..{:.2} s", e.start_s, e.end_s);
+    }
     let ctx = AnalysisCtx { session: s, epoch };
     let base = project.as_ref().map(|(p, _)| p.clone()).unwrap_or_default();
     let axis = match (&args.axis, &project) {

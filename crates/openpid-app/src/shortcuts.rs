@@ -251,7 +251,7 @@ impl App {
                     if let Some(l) = self.loaded_mut(slot)
                         && l.epoch.is_some()
                     {
-                        l.epoch = None;
+                        l.set_epoch(None, false);
                         self.cache.retain(|k, _| k.slot != slot);
                     }
                 }

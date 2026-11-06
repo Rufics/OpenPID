@@ -3,6 +3,7 @@
 //! session, an optional epoch and typed parameters, and returns plain data
 //! that any front-end can render.
 
+pub mod epoch;
 pub mod filter_sim;
 pub mod fitness;
 pub mod motor_noise;
