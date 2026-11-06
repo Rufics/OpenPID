@@ -1,89 +1,95 @@
-# Чи придатний лог: перевірка після відкриття
+# Is the log fit for use: a check after opening
 
-Зауваження замовника (05.11.2026): пропрацювати й реалізувати концепт «чи
-придатний лог» — користувач має одразу бачити, що цей лог може показати і чого ні.
+The owner's remark (2026-11-05): work out and implement the "is the log fit"
+concept: the user must see at once what this log can show and what it cannot.
 
-## Причина
+## Cause
 
-Про відсутність `gyroUnfilt` чи eRPM користувач дізнається лише на вкладці Filter
-Sim або Motor noise з сірого напису. Про замалу активність стіків — тільки з
-«16 / 150 windows» у Step response. Що `debug_mode` чи частоту логу треба змінити
-*до* наступного польоту, ніхто не каже.
+The user learns that `gyroUnfilt` or eRPM is missing only on the Filter Sim or
+Motor noise tab, from a grey note. That the stick activity is too low, only from
+"16 / 150 windows" in Step response. Nobody says that `debug_mode` or the log
+rate has to change *before* the next flight.
 
-## Варіанти
+## Options
 
-| | Варіант | Плюси | Мінуси | Бали |
+| | Option | Pros | Cons | Score |
 |---|---|---|---|---|
-| R0 | Як є: написи на вкладках | — | пізно і розкидано | 22 |
-| R1 | Банер під шапкою на всіх вкладках, згортається | помітно | займає місце постійно | 38 |
-| R2 | Картка лише у Diagnostics | не заважає | ніхто не ходить у Diagnostics | 30 |
-| R3 | Спливне вікно після відкриття | гарантовано побачать | модальність дратує при кожному лозі | 33 |
-| R4 | Окрема вкладка «Log check» | місце для деталей | ще одна вкладка з 12 | 34 |
-| R5 | **Бейджі у чипі слота** («1 kHz · 40 s · raw ✓ · rpm ✓ · sticks !») з підказками + повна картка у Diagnostics + блок у `openpid info` | завжди видно, не займає місця; деталі за кліком | треба компактні позначки | **49** |
+| R0 | As is: notes on the tabs | — | late and scattered | 22 |
+| R1 | A collapsible banner under the header on every tab | noticeable | takes space permanently | 38 |
+| R2 | A card in Diagnostics only | does not get in the way | nobody visits Diagnostics | 30 |
+| R3 | A pop-up after opening | guaranteed to be seen | a modal on every log is annoying | 33 |
+| R4 | A separate "Log check" tab | room for detail | one more tab among 12 | 34 |
+| R5 | **Badges in the slot chip** ("1 kHz · 40 s · raw ✓ · rpm ✓ · sticks !") with tooltips, plus a full card in Diagnostics and a block in `openpid info` | always visible, takes no space; details on click | needs compact marks | **49** |
 
-Рекомендація: **R5**.
+Recommendation: **R5**.
 
-## Рішення замовника (05.11.2026)
+## The owner's decision (2026-11-05)
 
 R5.
 
-## Вимоги до реалізації
+## Implementation requirements
 
-**Чиста логіка** `openpid-analysis::fitness::check(session: &FlightSession) -> Fitness`:
+**Pure logic** `openpid-analysis::fitness::check(session: &FlightSession) -> Fitness`:
 `Fitness { checks: Vec<Check>, overall: Level }`, `Check { id: &'static str,
-level: Level (Ok | Warn | Fail), title, detail, fix: Option<String> }`. Перевірки
-(пороги — константи з коментарями):
+level: Level (Ok | Warn | Fail), title, detail, fix: Option<String> }`. The
+checks (thresholds are constants with comments):
 
-| id | Ok | Warn | Fail | fix (підказка) |
+| id | Ok | Warn | Fail | fix (the hint) |
 |---|---|---|---|---|
-| `rate` | ≥ 1 kHz | 500–999 Hz | < 500 Hz | «set blackbox_sample_rate = 1/1» |
-| `duration` | ≥ 20 s | 5–20 s | < 5 s | «log a longer flight» |
-| `raw_gyro` | є `gyro.raw.*` | — | немає | «set debug_mode = GYRO_SCALED» (BF < 4.3) / «enable gyroUnfilt field» |
-| `erpm` | є `motor_rpm.*` | немає, але є estimator | — | «set dshot_telemetry = ON, blackbox log motor rpm» |
-| `frames` | corrupt < 0.5 % | 0.5–5 % | > 5 % | «check SD card / flash speed» |
-| `gaps` | 0 | ≤ 3 | > 3 або > 1 s | — |
-| `sticks` | ≥ 10 step-вікон на roll і pitch | 5–9 | < 5 | «fly sharper stick inputs for step response» |
-| `throttle` | ≥ 50 % бінів газу з ≥ 3 сегментами | 25–50 % | < 25 % | «vary throttle through the range» |
-| `debug_mode` | відомий | — | — | інформаційно: що саме в debug[0..7] |
+| `rate` | ≥ 1 kHz | 500–999 Hz | < 500 Hz | "set blackbox_sample_rate = 1/1" |
+| `duration` | ≥ 20 s | 5–20 s | < 5 s | "log a longer flight" |
+| `raw_gyro` | `gyro.raw.*` present | — | missing | "set debug_mode = GYRO_SCALED" (BF < 4.3) / "enable gyroUnfilt field" |
+| `erpm` | `motor_rpm.*` present | missing, but the estimator exists | — | "set dshot_telemetry = ON, blackbox log motor rpm" |
+| `frames` | corrupt < 0.5 % | 0.5–5 % | > 5 % | "check SD card / flash speed" |
+| `gaps` | 0 | ≤ 3 | > 3 or > 1 s | — |
+| `sticks` | ≥ 10 step windows on roll and pitch | 5–9 | < 5 | "fly sharper stick inputs for step response" |
+| `throttle` | ≥ 50 % of the throttle bins with ≥ 3 segments | 25–50 % | < 25 % | "vary throttle through the range" |
+| `debug_mode` | known | — | — | informational: what is in debug[0..7] |
 
-`overall` = найгірший рівень серед `rate`, `duration`, `frames`; решта — лише
-попередження. Кількість step-вікон рахується дешевим проходом (та сама логіка
-відбору вікон, що в `StepAnalysis`, винесена у `step::count_windows`).
+`overall` = the worst level among `rate`, `duration`, `frames`; the rest only
+warn. The step-window count comes from a cheap pass (the same window selection
+as `StepAnalysis`, moved to `step::count_windows`).
 
 **GUI.**
-- Чип слота: після тривалості — бейджі `raw ✓/✗`, `rpm ✓/✗`, `sticks ✓/!/✗` і
-  загальний кружок (зелений/жовтий/червоний); hover — список перевірок із текстом.
-- Diagnostics: картка «Log check» над таблицею: рядок на перевірку (іконка
-  ASCII `[ok] [!] [x]`, назва, пояснення, fix у моноширинному полі з кнопкою Copy).
-- Вкладки, яким бракує даних (Filter Sim, Motor noise), показують той самий `fix`.
+- The slot chip: after the duration, the badges `raw ✓/✗`, `rpm ✓/✗`,
+  `sticks ✓/!/✗` and an overall dot (green/yellow/red); hover lists the checks
+  with their text.
+- Diagnostics: a "Log check" card above the table: a row per check (an ASCII
+  icon `[ok] [!] [x]`, the name, the explanation, the fix in a monospace field
+  with a Copy button).
+- Tabs that lack the data (Filter Sim, Motor noise) show the same `fix`.
 
-**CLI.** `openpid info` друкує блок `fitness:` із тими самими рядками;
-`--json` додає `fitness` до `SessionSummary`.
+**CLI.** `openpid info` prints a `fitness:` block with the same lines; `--json`
+adds `fitness` to `SessionSummary`.
 
-**Поведінка.** Перевірка рахується один раз при відкритті (у worker) і кешується
-в `Loaded.fitness`.
+**Behaviour.** The check runs once on opening (in the worker) and is cached in
+`Loaded.fitness`.
 
-## Критерії приймання
+## Acceptance criteria
 
-- 2025.12: усі перевірки Ok (є raw gyro і eRPM); 4.2.0: `erpm` Warn із fix, `raw_gyro` Ok
-  (GYRO_SCALED); 4.5.1 сесія 0 (3 с): `duration` Fail, `sticks` Fail.
-- Hover на чипі показує список; Diagnostics показує картку; `openpid info` і JSON містять блок.
-- Unit-тести `fitness::check` на трьох фікстурах і на синтетиці; headless-тест бейджів.
+- 2025.12: every check Ok (raw gyro and eRPM present); 4.2.0: `erpm` Warn with
+  a fix, `raw_gyro` Ok (GYRO_SCALED); 4.5.1 session 0 (3 s): `duration` Fail,
+  `sticks` Fail.
+- Hovering the chip shows the list; Diagnostics shows the card; `openpid info`
+  and the JSON carry the block.
+- Unit tests of `fitness::check` on the three fixtures and on synthetic data; a
+  headless test of the badges.
 
-## Розмір
+## Size
 
-S (≈ 1–1½ дня).
+S (≈ 1–1½ days).
 
-## Реалізація (05.11.2026, #100)
+## Implementation (2026-11-05, #100)
 
-- `openpid-analysis::fitness::check_session` + `step::count_windows`; результат
-  у `Loaded.fitness: Vec<Fitness>` (по сесії), рахується у worker при відкритті.
-- GUI: бейджі в рядку слота (`raw [ok]`, `rpm [!]`, `sticks [x]` + загальний маркер,
-  hover — пояснення і fix), картка «Log check» на Diagnostics із кнопкою Copy,
-  Filter Sim і Motor noise показують fix з перевірки `raw_gyro`.
-- CLI: `openpid info` друкує блок `fitness`, `--json` додає `fitness` до сесії.
-- Відхилення від таблиці порогів після звірки з реальними логами:
-  `rate` Ok від **950 Hz** (1 kHz із джитером логує 997 Hz); `throttle` рахує
-  покриття з вікном ±3 % газу, як у heatmap, і Ok від **30 %**, Warn від 10 %
-  (40-секундний freestyle-лог покриває ~30 % діапазону, не 50 %); кружки замінено
-  на ASCII-маркери `[ok] [!] [x]` (шрифт egui не має потрібних гліфів).
+- `openpid-analysis::fitness::check_session` + `step::count_windows`; the result
+  in `Loaded.fitness: Vec<Fitness>` (per session), computed in the worker on opening.
+- GUI: badges in the slot row (`raw [ok]`, `rpm [!]`, `sticks [x]` plus the
+  overall marker, hover shows the explanation and the fix), the "Log check" card
+  on Diagnostics with a Copy button, Filter Sim and Motor noise show the fix of
+  the `raw_gyro` check.
+- CLI: `openpid info` prints the `fitness` block, `--json` adds `fitness` to the session.
+- Deviations from the threshold table after checking against real logs:
+  `rate` Ok from **950 Hz** (1 kHz with jitter logs 997 Hz); `throttle` counts
+  the coverage with a ±3 % throttle window, as the heatmap does, Ok from **30 %**
+  and Warn from 10 % (a 40 s freestyle log covers ~30 % of the range, not 50 %);
+  the dots became the ASCII markers `[ok] [!] [x]` (the egui font lacks the glyphs).

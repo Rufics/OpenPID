@@ -1,27 +1,27 @@
 name: Research / spike
-description: Дослідження, результат якого — рішення або ADR
+description: An investigation whose result is a decision or an ADR
 labels: ["type: research"]
 body:
   - type: textarea
     id: question
     attributes:
-      label: Питання
-      description: Що треба з'ясувати і чому зараз
+      label: Question
+      description: What has to be found out, and why now
     validations:
       required: true
   - type: textarea
     id: options
     attributes:
-      label: Відомі варіанти
+      label: Known options
   - type: textarea
     id: outcome
     attributes:
-      label: Очікуваний результат
-      description: ADR, таблиця порівняння, прототип у гілці
+      label: Expected outcome
+      description: An ADR, a comparison table, a prototype in a branch
     validations:
       required: true
   - type: input
     id: timebox
     attributes:
       label: Timebox
-      placeholder: "наприклад, 1 день"
+      placeholder: "for example, 1 day"

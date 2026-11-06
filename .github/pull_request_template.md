@@ -1,17 +1,17 @@
-## Що змінено
+## What changed
 
 Closes #
 
-<!-- Коротко: що і навіщо. Заголовок PR — у форматі Conventional Commits, напр. `feat(dsp): add Tukey window`. -->
+<!-- Briefly: what and why. The PR title follows Conventional Commits, e.g. `feat(dsp): add Tukey window`. -->
 
-## Як перевірено
+## How it was checked
 
 - [ ] `cargo fmt --all -- --check`
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings`
 - [ ] `cargo test --workspace`
 - [ ] `cargo deny check`
-- [ ] Покриття не впало нижче 90 % (job `coverage`)
+- [ ] Coverage did not drop below 90 % (the `coverage` job)
 
-## Документація
+## Documentation
 
-- [ ] Оновлено `docs/` / README / ADR, якщо змінилася архітектура, залежності або формат
+- [ ] `docs/` / README / ADR updated if the architecture, the dependencies or a format changed

@@ -1,97 +1,100 @@
-# Вікно аналізу для кожного логу (обрізати початок і кінець)
+# An analysis window per log (trim the start and the end)
 
-Зауваження замовника (05.11.2026): як у PIDtoolbox, для кожного запису треба
-вибрати на діаграмі вікно, яке аналізується, замість усіх N секунд — обрізати
-початок і кінець, де немає важливих даних.
+The owner's remark (2026-11-05): as in PIDtoolbox, every recording needs a
+window chosen on the plot that is analysed instead of all N seconds, cutting
+the start and the end where there is nothing of interest.
 
-## Причина
+## Cause
 
-Епоха вже є в моделі (`Loaded.epoch: Option<Epoch>`, один на слот) і керується
-лише з Log viewer: кнопки «A start = cursor» після кліку по графіку або
-перетягування меж (`draw_epochs`). На інших вкладках епоху видно тільки як два
-числа в шапці («0.0 s … 39.596 s»), які не редагуються. Користувач не здогадується,
-що аналіз іде по всьому логу, включно зі зльотом і посадкою.
+The epoch already exists in the model (`Loaded.epoch: Option<Epoch>`, one per
+slot) and is driven only from the Log viewer: the "A start = cursor" buttons
+after a click on the plot, or dragging the bounds (`draw_epochs`). On the other
+tabs the epoch is visible only as two numbers in the header ("0.0 s … 39.596 s")
+that cannot be edited. The user does not realise that the analysis runs over the
+whole log, take-off and landing included.
 
-## Варіанти
+## Options
 
-| | Варіант | Плюси | Мінуси | Бали |
+| | Option | Pros | Cons | Score |
 |---|---|---|---|---|
-| R0 | Як є: курсор + кнопки у Log viewer | працює | невидимо з інших вкладок; два кліки + перемикання вкладки | 28 |
-| R1 | Редаговані поля start/end у шапці слота (як у PTB «start/end sec») | звично для PTB; дешево | без картинки важко вгадати секунди | 40 |
-| R2 | **Стрічка-таймлайн** під шапкою кожного слота на всіх вкладках: мініатюра газу/гіро, діапазон із ручками, видно обрізане | видно завжди; один жест; як у відео-редакторах | ще 36 px на вкладку; треба мініатюру (децимація вже є) | **50** |
-| R3 | Виділення діапазону Shift-перетягуванням на будь-якому графіку з віссю часу | зручно у Freq × time | жест прихований; конфліктує з pan | 37 |
-| R4 | Кнопка «Auto»: обрізати зліт/посадку за газом і RPM; «Most active 20 s» | нуль ручної роботи | потребує стрічки, щоб показати, що обрізано | 44 |
-| R5 | Кілька вікон на лог (сегменти), що аналізуються разом | гнучко | складна модель і UI; окрема тема | 31 |
+| R0 | As is: cursor plus buttons in the Log viewer | works | invisible from the other tabs; two clicks plus a tab switch | 28 |
+| R1 | Editable start/end fields in the slot header (as the PTB "start/end sec") | familiar from PTB; cheap | hard to guess the seconds without a picture | 40 |
+| R2 | **A timeline strip** under every slot header on every tab: a throttle/gyro thumbnail, the range with handles, the trimmed part visible | always visible; one gesture; as in video editors | 36 px more per tab; needs a thumbnail (decimation exists) | **50** |
+| R3 | Range selection by Shift-drag on any plot with a time axis | handy on Freq × time | a hidden gesture; conflicts with pan | 37 |
+| R4 | An "Auto" button: trim take-off and landing by throttle and rpm; "Most active 20 s" | zero manual work | needs the strip to show what was trimmed | 44 |
+| R5 | Several windows per log (segments) analysed together | flexible | a complex model and UI; a separate topic | 31 |
 
-Рекомендація: **R2 + R1 + R4** в одному віджеті; R5 — пізніше, якщо попросять.
+Recommendation: **R2 + R1 + R4** in one widget; R5 later, if asked for.
 
-## Рішення замовника (05.11.2026)
+## The owner's decision (2026-11-05)
 
-R2 з числовими полями (R1) і кнопкою Auto (R4).
+R2 with the numeric fields (R1) and the Auto button (R4).
 
-## Вимоги до реалізації
+## Implementation requirements
 
-**Віджет `timeline_strip(ui, app, slot)`** під рядком слота на кожній вкладці
-(крім Settings), висота 36 px, ширина вкладки:
-- фон — min/max-огинаюча газу (%) по всій сесії (децимація до 2 точок на піксель;
-  `views::decimate` уже є), сірий; якщо газу немає — |gyro.filtered.roll|;
-- поверх — виділений діапазон епохи (колір слота, альфа 60) з двома ручками 8 px
-  (44 pt у touch); перетягування ручки — межа, перетягування всередині — зсув
-  вікна, подвійний клік — увесь лог;
-- праворуч від стрічки: `start` і `end` (DragValue, с, 0.1 с крок), кнопки «Auto»
-  і «All»; підпис «12.0–32.0 s · 20.0 s» (тривалість вікна);
-- стан — той самий `Loaded.epoch`, тож ручки на Log viewer і стрічка завжди
-  узгоджені; зміна епохи інвалідує кеш через `JobKey` (вже так).
+**The widget `timeline_strip(ui, app, slot)`** under the slot row on every tab
+(except Settings), 36 px high, the width of the tab:
+- the background is the min/max envelope of the throttle (%) over the whole
+  session (decimated to 2 points per pixel; `views::decimate` exists), grey;
+  without throttle, |gyro.filtered.roll|;
+- on top, the selected epoch range (the slot colour, alpha 60) with two 8 px
+  handles (44 pt in touch); dragging a handle moves a bound, dragging inside
+  shifts the window, a double-click is the whole log;
+- right of the strip: `start` and `end` (DragValue, s, 0.1 s steps), the
+  "Auto" and "All" buttons; the label "12.0–32.0 s · 20.0 s" (window length);
+- the state is the same `Loaded.epoch`, so the Log viewer handles and the strip
+  always agree; an epoch change invalidates the cache through `JobKey` (already so).
 
-**Auto-trim** (`openpid-analysis::epoch::auto(session) -> Option<Epoch>`, чиста
-функція з тестами):
-1. «У повітрі»: throttle ≥ 5 % і (коли є) `motor_rpm` ≥ 1 000 об/хв протягом ≥ 1 с;
-   перший і останній такі моменти ± 1 с всередину.
-2. Якщо після обрізання < 5 с — повернути `None` і показати «log too short to trim».
-3. «Most active 20 s» (друга кнопка в меню Auto): вікно 20 с з максимальною
-   енергією |setpoint| по roll+pitch; для step response це дає найбільше вікон.
+**Auto-trim** (`openpid-analysis::epoch::auto(session) -> Option<Epoch>`, a pure
+function with tests):
+1. "Airborne": throttle ≥ 5 % and (when present) `motor_rpm` ≥ 1000 rpm for ≥ 1 s;
+   the first and last such moments, ± 1 s inwards.
+2. If less than 5 s remains after trimming, return `None` and show "log too short to trim".
+3. "Most active 20 s" (the second entry of the Auto menu): the 20 s window with
+   the most |setpoint| energy over roll + pitch; for the step response that gives
+   the most windows.
 
-**Проєкт/CLI.** Епоха вже у `ProjectSlot.epoch` і `--epoch A..B`; додати
-`openpid run … --epoch auto`.
+**Project / CLI.** The epoch is already in `ProjectSlot.epoch` and `--epoch A..B`;
+add `openpid run … --epoch auto`.
 
-**Поведінка за замовчуванням.** При відкритті логу епоха = Auto, якщо Auto
-дає результат; інакше весь лог. Шапка показує, що епоха авто («auto» бейдж),
-щоб користувач знав, що лог обрізано.
+**Default behaviour.** On opening a log the epoch is Auto when Auto gives a
+result; otherwise the whole log. The header shows that the epoch is automatic
+(an "auto" badge), so the user knows the log was trimmed.
 
-## Критерії приймання
+## Acceptance criteria
 
-- На кожній вкладці видно стрічку кожного слота; перетягування ручки змінює
-  результати аналізу (кількість вікон step змінюється).
-- Auto на фікстурі 2025.12 відрізає перші ~1 с (зліт) і дає ≥ 30 с; на 4.5.1
-  сесія 0 (3 с) — «too short», епоха лишається повною.
-- Поля start/end приймають значення з клавіатури і обмежуються тривалістю сесії.
-- Headless-тести: перетягування ручки, Auto, All, узгодженість із Log viewer.
-- Unit-тести `epoch::auto` на синтетиці генератора (газ ramp з паузами).
+- Every tab shows every slot's strip; dragging a handle changes the analysis
+  results (the number of step windows changes).
+- Auto on the 2025.12 fixture cuts the first ~1 s (take-off) and leaves ≥ 30 s;
+  on 4.5.1 session 0 (3 s) it says "too short" and the epoch stays whole.
+- The start/end fields accept typed values and are clamped to the session length.
+- Headless tests: handle drag, Auto, All, agreement with the Log viewer.
+- Unit tests of `epoch::auto` on the generator's synthetic data (a throttle ramp with pauses).
 
-## Розмір
+## Size
 
-M (≈ 2–3 дні): стрічка — 1, auto-trim — ½, інтеграція й тести — 1.
+M (≈ 2–3 days): the strip 1, auto-trim ½, integration and tests 1.
 
-## Реалізація (06.11.2026, #102)
+## Implementation (2026-11-06, #102)
 
-- `openpid-analysis::epoch::{auto, most_active}` — чисті функції з unit-тестами на
-  синтетиці (`SignalSpec` з «землею» на початку й у кінці) і з перевіркою на
-  реальних логах: 2025.12 → 1.43–38.6 s із 39.6 s; 4.2.0 → 1.8–16.0 s; 4.5.1
-  сесія 0 (3 с) → `None`.
-- Стрічка `views::timeline_strip` викликається з `slot_header`, тож є на всіх
-  вкладках зі слотами; огинаюча рахується один раз на (слот, сесія, ширина) і
-  кешується в `App::strip`. Ручки й зсув вікна — через `Sense::click_and_drag`
-  з hit-test у точці натискання (`pointer.press_origin`), бо egui визнає drag
-  на кілька пікселів пізніше.
-- Епоха при відкритті = `auto`; `Loaded.epoch_auto` дає бейдж «auto», який
-  зникає після будь-якої ручної зміни. Проєкт (`pending` із сесією) не
-  обрізається — зберігає свою епоху. Зміна сесії теж застосовує Auto.
-- CLI: `--epoch auto | active`; обране вікно друкується в stderr; помилка з
-  поясненням, коли вікна немає.
-- Побічне виправлення: заштриховану епоху на Log viewer тепер малює painter
-  поверх графіка, а не `Polygon` серед елементів — полігон на всю висоту
-  потрапляв в auto-bounds і щокадру розширював вісь Y на margin (5 %).
+- `openpid-analysis::epoch::{auto, most_active}`: pure functions with unit tests
+  on synthetic data (`SignalSpec` with "ground" at the start and the end) and a
+  check on real logs: 2025.12 → 1.43–38.6 s of 39.6 s; 4.2.0 → 1.8–16.0 s;
+  4.5.1 session 0 (3 s) → `None`.
+- The strip `views::timeline_strip` is called from `slot_header`, so it is on
+  every tab with slots; the envelope is computed once per (slot, session, width)
+  and cached in `App::strip`. Handles and the window shift go through
+  `Sense::click_and_drag` with the hit test at the press origin
+  (`pointer.press_origin`), because egui recognises a drag a few pixels later.
+- The epoch on opening is `auto`; `Loaded.epoch_auto` gives the "auto" badge,
+  which disappears after any manual change. A project (`pending` with a session)
+  is not trimmed and keeps its epoch. A session switch applies Auto as well.
+- CLI: `--epoch auto | active`; the chosen window is printed to stderr; an error
+  with an explanation when there is no window.
+- A side fix: the shaded epoch on the Log viewer is now painted over the plot
+  instead of being a `Polygon` among the items; a full-height polygon fed the
+  auto-bounds and grew the Y axis by the margin (5 %) every frame.
 
-Відхилення: «Most active 20 s» не позначається як auto (це явний вибір
-користувача); ручки стрічки 4 px у спокої і 8 px під курсором/при drag, зона
-захоплення 8 px (22 px у touch) — як у Log viewer.
+Deviations: "Most active 20 s" is not marked as auto (it is an explicit user
+choice); the strip handles are 4 px at rest and 8 px under the pointer or while
+dragging, the grab zone is 8 px (22 px in touch), as in the Log viewer.

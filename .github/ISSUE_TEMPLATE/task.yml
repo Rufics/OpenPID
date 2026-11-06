@@ -1,26 +1,26 @@
 name: Task
-description: Робота з плану (feature, tech-debt, тести, CI) у форматі Definition of Ready
+description: Work from the plan (feature, tech debt, tests, CI) in the Definition of Ready format
 labels: ["type: feature"]
 body:
   - type: textarea
     id: context
     attributes:
       label: Context
-      description: Навіщо це потрібно; посилання на docs/DESIGN.md, ADR або issue
+      description: Why it is needed; links to docs/DESIGN.md, an ADR or an issue
     validations:
       required: true
   - type: textarea
     id: scope
     attributes:
       label: Scope
-      description: Що саме робимо і чого не робимо
+      description: What exactly we do, and what we do not
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
       label: Acceptance criteria
-      description: Як перевіримо, що зроблено (тести, цифри, скриншоти)
+      description: How we check it is done (tests, numbers, screenshots)
     validations:
       required: true
   - type: dropdown
@@ -39,4 +39,4 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Definition of Done:** PR із зеленим CI (fmt, clippy, тести на 3 ОС, покриття ≥ 90 %, cargo-deny, Sonar), оновлені docs/ADR за потреби, фікстури лише з MIT-сумісною ліцензією. Після створення додайте мітки `area: …` і `priority: …`, milestone і Size у Project (docs/PROCESS.md).
+        **Definition of Done:** a PR with green CI (fmt, clippy, tests on 3 platforms, coverage ≥ 90 %, cargo-deny, Sonar), docs/ADR updated when needed, fixtures only under an MIT-compatible licence. After creating the issue add the `area: …` and `priority: …` labels, a milestone and the Size in the Project (docs/PROCESS.md).

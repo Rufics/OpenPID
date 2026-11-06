@@ -1,28 +1,28 @@
 name: Bug report
-description: Щось працює не так
+description: Something does not work as it should
 labels: ["bug"]
 body:
   - type: textarea
     id: what
     attributes:
-      label: Що сталося
+      label: What happened
     validations:
       required: true
   - type: textarea
     id: repro
     attributes:
-      label: Як відтворити
-      description: Команда CLI або кроки в GUI. Прикріпіть лог (.BBL/.BFL/.TXT/.bin), якщо можете ним поділитися під MIT-сумісною ліцензією — тоді він стане фікстурою
+      label: How to reproduce
+      description: The CLI command or the steps in the GUI. Attach the log (.BBL/.BFL/.TXT/.bin) if you can share it under an MIT-compatible licence; it then becomes a fixture
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Очікувана поведінка
+      label: Expected behaviour
   - type: input
     id: version
     attributes:
-      label: Версія
-      placeholder: "openpid --version, ОС, прошивка польотного контролера"
+      label: Version
+      placeholder: "openpid --version, OS, flight-controller firmware"
     validations:
       required: true

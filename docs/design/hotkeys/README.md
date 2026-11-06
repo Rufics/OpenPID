@@ -1,114 +1,115 @@
-# Гарячі клавіші
+# Keyboard shortcuts
 
-Зауваження замовника (05.11.2026): додати гарячі клавіші; спочатку пропрацювати
-концепцію, зробити 5+ варіантів і вибрати кращий.
+The owner's remark (2026-11-05): add keyboard shortcuts; work out the concept
+first, make five or more options and pick the best.
 
-## Причина
+## Cause
 
-У застосунку немає жодного обробника клавіатури, крім тексту в полях: вкладки,
-відкриття логів, плеєр, епоха — лише мишею. Для тюнінгу це цикл із десятків
-перемикань вкладок на лог.
+The application has no keyboard handling at all beyond text in fields: tabs,
+opening logs, the player, the epoch are mouse only. For tuning that is a loop of
+dozens of tab switches per log.
 
-## Що кажуть джерела
+## What the sources say
 
-- **Apple HIG / Microsoft Win UX:** стандартні сполучення (Cmd/Ctrl+O, Cmd/Ctrl+S,
-  Cmd/Ctrl+W, F1, Esc) не перевизначати; модифікатор платформи — Cmd на macOS, Ctrl
-  на Windows/Linux.
-- **VS Code / Figma / GitHub:** одноклавішні дії лише поза полями вводу; довідник
-  клавіш за `?` або `Ctrl+/`; палітра команд для рідкісних дій.
-- **NN/g:** підказка клавіші у tooltip кнопки підвищує використання без навчання.
+- **Apple HIG / Microsoft Win UX:** never redefine the standard combinations
+  (Cmd/Ctrl+O, Cmd/Ctrl+S, Cmd/Ctrl+W, F1, Esc); the platform modifier is Cmd
+  on macOS, Ctrl on Windows/Linux.
+- **VS Code / Figma / GitHub:** single-key actions only outside input fields; a
+  key reference under `?` or `Ctrl+/`; a command palette for rare actions.
+- **NN/g:** a key hint in a button's tooltip raises usage without training.
 
-## Варіанти
+## Options
 
-| | Варіант | Плюси | Мінуси | Бали |
+| | Option | Pros | Cons | Score |
 |---|---|---|---|---|
-| V0 | Як є: лише миша | — | повільно | 20 |
-| V1 | **Цифри й стандарт**: `1`…`9`,`0`,`-`,`=` — вкладки по порядку; `Ctrl+O` Open, `Ctrl+Shift+O` другий лог, `Ctrl+S` проєкт, `Ctrl+E` експорт PNG, `F1` довідка/тур, `Esc` скасувати | як у браузерах і Figma; вчиться за хвилину | цифри ≠ назви; з 12 вкладками `-`/`=` незвично | **48** |
-| V2 | Літери-мнемоніки без модифікатора: `L` viewer, `S` step, `P` spectrum, `T` throttle, `F` filter… (Vim/Gmail-стиль) | швидко для досвідчених | конфлікти з полями вводу; незнайомо для більшості; i18n (укр. розкладка) | 36 |
-| V3 | `Ctrl+Tab`/`Ctrl+Shift+Tab` — циклічно по вкладках, `Ctrl+1…9` | звично з браузерів | 12 вкладок — цикл довгий; тільки навігація | 42 |
-| V4 | `Alt+літера` з підкресленнями у назвах (класичний Windows) | самодокументовано | не працює на macOS (Alt = Option, символи); egui не підкреслює | 30 |
-| V5 | Палітра команд `Ctrl+K`: пошук «spectrum», «open», «export…» + мінімум клавіш | масштабується на будь-які дії; не треба пам'ятати | повільніше за одну клавішу для частих дій; окремий віджет | 43 |
-| V6 | Налаштовувана keymap у `prefs.json` | кожен під себе | UI редагування — витрати; конфлікти — відповідальність користувача | 34 |
+| V0 | As is: mouse only | — | slow | 20 |
+| V1 | **Digits and the standard keys**: `1`…`9`,`0`,`-`,`=` the tabs in order; `Ctrl+O` Open, `Ctrl+Shift+O` a second log, `Ctrl+S` project, `Ctrl+E` PNG export, `F1` help/tour, `Esc` cancel | as in browsers and Figma; learnt in a minute | digits ≠ names; with 12 tabs `-`/`=` are unusual | **48** |
+| V2 | Mnemonic letters without a modifier: `L` viewer, `S` step, `P` spectrum, `T` throttle, `F` filter… (Vim/Gmail style) | fast for experts | conflicts with input fields; unfamiliar to most; i18n (the Ukrainian layout) | 36 |
+| V3 | `Ctrl+Tab`/`Ctrl+Shift+Tab` cycle through the tabs, `Ctrl+1…9` | familiar from browsers | 12 tabs is a long cycle; navigation only | 42 |
+| V4 | `Alt+letter` with underlined names (classic Windows) | self-documenting | does not work on macOS (Alt = Option, symbols); egui does not underline | 30 |
+| V5 | A command palette `Ctrl+K`: search "spectrum", "open", "export…" plus a minimum of keys | scales to any action; nothing to remember | slower than one key for frequent actions; a separate widget | 43 |
+| V6 | A configurable keymap in `prefs.json` | everyone's own | an editing UI costs; conflicts are the user's problem | 34 |
 
-Рекомендація: **V1 як основа + `Ctrl+Tab` із V3 + довідник `?`**; V5 (палітра) —
-окремою темою після спринту, коли дій стане більше.
+Recommendation: **V1 as the base + `Ctrl+Tab` from V3 + the `?` reference**;
+V5 (the palette) as a separate topic after the sprint, when there are more actions.
 
-## Рішення замовника (05.11.2026)
+## The owner's decision (2026-11-05)
 
-V1 + V3 + довідник.
+V1 + V3 + the reference.
 
-## Вимоги до реалізації
+## Implementation requirements
 
-**Таблиця клавіш** (`shortcuts.rs`, одна таблиця `[(Shortcut, Action, &'static str)]`;
-`Modifiers::COMMAND` = Cmd на macOS, Ctrl інакше; підписи для довідника й tooltip):
+**The key table** (`shortcuts.rs`, one table `[(Shortcut, Action, &'static str)]`;
+`Modifiers::COMMAND` = Cmd on macOS, Ctrl elsewhere; labels for the reference and tooltips):
 
-| Дія | Клавіша |
+| Action | Key |
 |---|---|
-| Вкладки за порядком | `1`…`9`, `0` (10-та), `-` (11-та), `=` (12-та) |
-| Наступна / попередня вкладка | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
-| Відкрити лог у перший порожній слот | `Cmd/Ctrl+O` |
-| Відкрити у наступний слот (порівняння) | `Cmd/Ctrl+Shift+O` |
-| Закрити активний слот | `Cmd/Ctrl+W` |
-| Проєкт: зберегти / відкрити | `Cmd/Ctrl+S` / `Cmd/Ctrl+Shift+S` |
-| Експорт PNG поточної вкладки | `Cmd/Ctrl+E` |
-| Довідник клавіш | `?` (`Shift+/`) або `Cmd/Ctrl+/` |
-| Тур / довідка | `F1` |
-| Скасувати (тур, діалог, виділення) | `Esc` |
-| Плеєр (Freq × time): play/pause, крок, на початок | `Space`, `,` / `.`, `Home` |
-| Епоха: Auto / весь лог | `A` / `Shift+A` (тільки поза полями вводу) |
+| Tabs in order | `1`…`9`, `0` (10th), `-` (11th), `=` (12th) |
+| Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
+| Open a log into the first empty slot | `Cmd/Ctrl+O` |
+| Open into the next slot (comparison) | `Cmd/Ctrl+Shift+O` |
+| Close the active slot | `Cmd/Ctrl+W` |
+| Project: save / open | `Cmd/Ctrl+S` / `Cmd/Ctrl+Shift+S` |
+| Export the current tab as PNG | `Cmd/Ctrl+E` |
+| Key reference | `?` (`Shift+/`) or `Cmd/Ctrl+/` |
+| Tour / help | `F1` |
+| Cancel (tour, dialog, selection) | `Esc` |
+| Player (Freq × time): play/pause, step, to start | `Space`, `,` / `.`, `Home` |
+| Epoch: Auto / whole log | `A` / `Shift+A` (outside input fields only) |
 | Touch mode | `Cmd/Ctrl+T` |
 
-**Правила.**
-- Одноклавішні дії (`1`…`=`, `?`, `A`, `Space`, `,`, `.`) працюють, лише коли
-  `!ctx.wants_keyboard_input()` (фокус не в текстовому полі/DragValue).
-- Обробка — на початку кадру в `App::frame` через `ctx.input_mut(|i| i.consume_shortcut(&sc))`,
-  щоб віджети не отримували клавішу вдруге.
-- Кожна кнопка з клавішею має tooltip «Open log… (Ctrl+O)» — підпис із таблиці,
-  щоб не розходилось.
-- Довідник: `egui::Window` «Keyboard shortcuts» із двома стовпцями, генерується з
-  таблиці; пункт у меню Help.
-- Локалізація: підписи через `tr`; назви клавіш — не перекладаються.
-- Цифри прив'язані до порядку `Tab::ALL`; при додаванні вкладки порядок не міняти
-  без оновлення user guide.
+**Rules.**
+- Single-key actions (`1`…`=`, `?`, `A`, `Space`, `,`, `.`) work only when
+  `!ctx.wants_keyboard_input()` (the focus is not in a text field / DragValue).
+- Handling at the start of the frame in `App::frame` through
+  `ctx.input_mut(|i| i.consume_shortcut(&sc))`, so widgets never see the key a second time.
+- Every button with a key has the tooltip "Open log… (Ctrl+O)", the label from
+  the table, so they never diverge.
+- The reference: an `egui::Window` "Keyboard shortcuts" with two columns,
+  generated from the table; an entry in the Help menu.
+- Localisation: labels through `tr`; key names are not translated.
+- The digits are bound to the order of `Tab::ALL`; when a tab is added, the
+  order does not change without updating the user guide.
 
-## Критерії приймання
+## Acceptance criteria
 
-- Headless-тести: `2` → Step response; `Ctrl+Tab` з останньої вкладки → перша;
-  `?` відкриває довідник; у фокусі DragValue клавіша `2` вводить цифру, не перемикає
-  вкладку; `Space` на Freq × time запускає плеєр; `Esc` закриває тур.
-- Усі tooltips кнопок із клавішею містять її підпис (тест перебирає таблицю).
-- User guide: розділ «Клавіші» = таблиця вище.
+- Headless tests: `2` → Step response; `Ctrl+Tab` from the last tab → the first;
+  `?` opens the reference; with a DragValue focused, `2` types a digit and does
+  not switch the tab; `Space` on Freq × time starts the player; `Esc` closes the tour.
+- Every tooltip of a button with a key contains its label (a test walks the table).
+- User guide: a "Keys" section = the table above.
 
-## Розмір
+## Size
 
-S (≈ 1 день); довідник — ½ дня всередині.
+S (≈ 1 day); the reference ½ day of it.
 
-## Реалізація (05.11.2026, #101)
+## Implementation (2026-11-05, #101)
 
-- `crates/openpid-app/src/shortcuts.rs`: таблиця `TABLE: &[Binding]` (клавіша →
-  `Action`), `pressed()` читає її на початку `App::frame` через `consume_shortcut`
-  (у порядку таблиці; Shift-варіанти стоять перед звичайними, бо egui ігнорує
-  зайвий Shift), `perform()` виконує дію, `help_window()` генерує вікно
-  «Keyboard shortcuts» з тієї ж таблиці; меню **Help**.
-- Одноклавішні дії пропускаються, коли фокус у текстовому полі
-  (`TextEdit::load_state` для сфокусованого id — так ловиться й `DragValue` у
-  режимі редагування), а не за `wants_keyboard_input()`: та функція істинна й для
-  сфокусованої кнопки після кліку.
-- Усі файлові діалоги (кнопки і клавіші) йдуть через одну чергу `App::dialog`,
-  яку `run_dialog` виконує в кінці кадру; у headless-тестах `dialogs = false` і
-  тести перевіряють, який діалог замовлено.
-- Підписи клавіш: `shortcuts::format` (власні символи для `-`, `=`, `?`, `/`,
-  `,`, `.`, бо `Key::name()` дає «Minus», «Questionmark»); модифікатори — через
-  `Context::format_modifiers`, тож на macOS буде ⌘/⇧.
+- `crates/openpid-app/src/shortcuts.rs`: the table `TABLE: &[Binding]` (key →
+  `Action`); `pressed()` reads it at the start of `App::frame` through
+  `consume_shortcut` (in table order; the Shift variants precede the plain ones
+  because egui ignores an extra Shift); `perform()` performs the action;
+  `help_window()` generates the "Keyboard shortcuts" window from the same table;
+  the **Help** menu.
+- Single-key actions are skipped while a text field has the focus
+  (`TextEdit::load_state` for the focused id, which also catches a `DragValue`
+  in edit mode), rather than by `wants_keyboard_input()`: that function is true
+  for a focused button after a click as well.
+- Every file dialog (buttons and keys) goes through one `App::dialog` queue that
+  `run_dialog` runs at the end of the frame; in headless tests `dialogs = false`
+  and the tests check which dialog was requested.
+- Key labels: `shortcuts::format` (own symbols for `-`, `=`, `?`, `/`, `,`,
+  `.`, because `Key::name()` gives "Minus", "Questionmark"); modifier names by
+  platform (Cmd on macOS, written in Apple's order "Shift+Cmd").
 
-Відхилення від таблиці:
+Deviations from the table:
 
-- `A` (епоха Auto) не прив'язано — auto-trim з'явиться в #102; `Shift+A` = весь лог
-  для всіх слотів є.
-- `F1` відкриває довідник клавіш, доки немає туру (#104); тоді `F1` → тур, `?` →
-  довідник. `Esc` поки закриває лише довідник.
-- `Ctrl+W` закриває останній відкритий слот (поняття «активного» слота немає).
-- `Ctrl+Shift+O` відкриває лог у перший порожній слот після останнього
-  завантаженого (або додає новий); `Ctrl+O` — у перший порожній узагалі.
-- Плеєрні клавіші діють лише на вкладці Freq × time, щоб `Space` не відбирати в
-  кнопок на інших вкладках.
+- `A` (epoch Auto) is not bound; auto-trim arrives with #102; `Shift+A` = the
+  whole log for every slot exists.
+- `F1` opens the key reference until the tour exists (#104); then `F1` → the
+  tour, `?` → the reference. `Esc` closes only the reference for now.
+- `Ctrl+W` closes the last opened slot (there is no notion of an "active" slot).
+- `Ctrl+Shift+O` opens a log into the first empty slot after the last loaded one
+  (or adds a new one); `Ctrl+O` into the first empty slot of all.
+- The player keys act only on the Freq × time tab, so `Space` is not taken away
+  from buttons on the other tabs.
