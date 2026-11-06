@@ -1,23 +1,23 @@
-# ADR-0008: Headless-тести GUI через `egui_kittest`
+# ADR-0008: Headless GUI tests with `egui_kittest`
 
-- Статус: прийнято
-- Дата: 2026-11-04
+- Status: accepted
+- Date: 2026-11-04
 
-## Контекст
+## Context
 
-`openpid-app` (близько чверті коду) не мав тестів, окрім двох unit-тестів на чисті функції, і був виключений з покриття (ADR-0007), бо `eframe` потребує вікна та GPU. Логіка стану (слоти, кеш аналізів, вкладки, drag-and-drop, touch-режим) і сім вкладок перевірялися лише вручну.
+`openpid-app` (about a quarter of the code) had no tests beyond two unit tests of pure functions and was excluded from coverage (ADR-0007), because `eframe` needs a window and a GPU. The state logic (slots, the analysis cache, tabs, drag-and-drop, touch mode) and the seven tabs were checked by hand only.
 
-## Рішення
+## Decision
 
-- Dev-залежність **`egui_kittest`** (офіційний harness egui, MIT OR Apache-2.0, та сама версія, що й `eframe`), **без** feature `snapshot`/`wgpu`/`eframe` (остання вмикає `eframe/accesskit`, що тягне `zbus` з unmaintained-advisories): кадри egui проганяються без вікна, віджети шукаються через дерево AccessKit (`get_by_label`, `click`, `type_text`). Жодного GPU, жодної залежності від дисплея, працює на всіх трьох runner-ах CI.
-- `App` будується через `with_context(&egui::Context, …)` і малюється через `frame(&mut Ui)`; `impl eframe::App` та `run_native` живуть у `main.rs` — єдиному файлі, якому потрібне вікно, і єдиному, виключеному з покриття Sonar. Harness тримає `App` як state і викликає `frame` щокадру; тест читає стан напряму (`harness.state()`).
-- Фоновий worker не мокається: тести крутять кадри, поки слот не завантажиться або кеш не спорожніє від `Pending` (з таймаутом). Так перевіряється реальний шлях «файл → потік → кеш → вкладка».
-- Перевірка доступності harness-а (`with_accessibility_check`) поки вимкнена: `DragValue`/`Slider` без підписів не мають accessible name. Увімкнути її — окреме завдання разом з підписами для screen reader-ів.
-- Лог 4.3+ зі слайдерами в репозиторії немає (ліцензії, див. `tests/logs/README.md`), тому вкладка слайдерів тестується на сесії з `betaflight-4.2.0.BFL`, якій підмінено версію прошивки і додано заголовки `simplified_*`. Модель слайдерів сама по собі перевірена на реальних логах у `openpid-fmt-blackbox`.
-- `openpid-app` входить до покриття CI та Sonar нарівні з іншими crate-ами.
+- The dev-dependency **`egui_kittest`** (the official egui harness, MIT OR Apache-2.0, the same version as `eframe`), **without** the `snapshot`/`wgpu`/`eframe` features (the last one enables `eframe/accesskit`, which pulls `zbus` with unmaintained advisories): egui frames run without a window, widgets are found through the AccessKit tree (`get_by_label`, `click`, `type_text`). No GPU, no display dependency, it runs on all three CI runners.
+- `App` is built with `with_context(&egui::Context, …)` and drawn with `frame(&mut Ui)`; `impl eframe::App` and `run_native` live in `main.rs`, the only file that needs a window and the only one excluded from Sonar coverage. The harness holds the `App` as its state and calls `frame` every frame; a test reads the state directly (`harness.state()`).
+- The background worker is not mocked: tests step frames until the slot has loaded or the cache has no `Pending` entries (with a timeout). That exercises the real path "file → thread → cache → tab".
+- The harness's accessibility check (`with_accessibility_check`) is off for now: `DragValue`/`Slider` without labels have no accessible name. Enabling it is a separate task together with labels for screen readers.
+- There is no 4.3+ log with sliders in the repository (licences, see `tests/logs/README.md`), so the sliders tab is tested on a session of `betaflight-4.2.0.BFL` with a substituted firmware version and added `simplified_*` headers. The slider model itself is checked on real logs in `openpid-fmt-blackbox`.
+- `openpid-app` counts towards the CI and Sonar coverage like every other crate.
 
-## Наслідки
+## Consequences
 
-- CI не має `--exclude openpid-app`; загальний поріг 90 % застосовується до всього workspace.
-- Нові віджети/вкладки мають тест у `crates/openpid-app/src/tests.rs`; підписи віджетів — це контракт для тестів, змінювати їх разом.
-- `rfd` (нативний діалог вибору файлу) у тестах не викликається; відкриття файлів тестується через `App::open` та drag-and-drop події.
+- CI has no `--exclude openpid-app`; the 90 % threshold applies to the whole workspace.
+- New widgets and tabs get a test in `crates/openpid-app/src/tests.rs`; widget labels are a contract for the tests and change together with them.
+- `rfd` (the native file dialog) is never called in tests; opening files is tested through `App::open` and drag-and-drop events.

@@ -1,32 +1,32 @@
-# ADR-0002: GUI на egui/eframe
+# ADR-0002: GUI on egui/eframe
 
-Статус: прийнято (2026-11-04), переглянути після прототипу фази 1
+Status: accepted (2026-11-04), to be reviewed after the phase-1 prototype
 
-## Контекст
-Потрібен один кодовий базис для macOS/Windows/Linux із GPU‑рендерингом графіків великих обсягів (мільйони точок, heatmap‑и) та підтримкою мультитачу. Кандидати: egui 0.37, iced 0.14, slint 1.18, tauri.
+## Context
+One code base for macOS/Windows/Linux with GPU rendering of large plots (millions of points, heatmaps) and multi-touch support. Candidates: egui 0.37, iced 0.14, slint 1.18, tauri.
 
-## Рішення
-`eframe` (backend `wgpu`) + `egui` + `egui_plot`.
+## Decision
+`eframe` (the `wgpu` backend) + `egui` + `egui_plot`.
 
-Причини:
-- Чистий Rust, один бінарник, без веб‑стеку і без власної DSL.
-- Immediate‑mode добре лягає на «параметри змінив → графік перерахувався» без синхронізації станів.
-- Вбудований мультитач (`MultiTouchInfo`: pinch, pan, rotate), високий DPI, drag‑and‑drop файлів.
-- `egui_plot` дає лінійні графіки, маркери, zoom/pan; heatmap рендеримо самі як текстуру.
-- Найбільша спільнота серед Rust‑GUI, часті релізи.
+Reasons:
+- Pure Rust, one binary, no web stack and no own DSL.
+- Immediate mode fits "a parameter changed → the plot is recomputed" without state synchronisation.
+- Built-in multi-touch (`MultiTouchInfo`: pinch, pan, rotate), high DPI, file drag-and-drop.
+- `egui_plot` gives line plots, markers, zoom/pan; the heatmap we render ourselves as a texture.
+- The largest community among Rust GUIs, frequent releases.
 
-Відхилено:
-- `iced` — хороша архітектура, але менше готового для інтерактивних графіків; більше коду на кожен віджет.
-- `slint` — сильна touch/embedded історія, але власна мова розмітки та ліцензійна модель (GPLv3 / royalty‑free з умовами / комерційна) ускладнюють вибір ліцензії проєкту.
-- `tauri` — веб‑фронтенд суперечить ADR‑0001.
+Rejected:
+- `iced`: a good architecture, but less ready-made for interactive plots; more code per widget.
+- `slint`: a strong touch/embedded story, but its own markup language and licence model (GPLv3 / royalty-free with conditions / commercial) complicate the project licence choice.
+- `tauri`: a web front-end contradicts ADR-0001.
 
-## Наслідки
-- GUI‑шар не містить математики: тільки відображення `Series`/`Grid2D` з `openpid-analysis`.
-- Для lines > ~50k точок застосовуємо децимацію min/max на піксель у `openpid-app` (не в dsp).
-- Якщо прототип покаже обмеження (наприклад, 3D‑поверхня для notch overlay 3D), 3D малюємо власним wgpu‑пасом усередині egui‑віджета — без зміни фреймворку.
+## Consequences
+- The GUI layer holds no mathematics: it only displays `Series`/`Grid2D` from `openpid-analysis`.
+- Lines above ~50k points are decimated min/max per pixel in `openpid-app` (not in dsp).
+- If the prototype shows a limit (for example the 3D surface of the notch overlay 3D), 3D is drawn with an own wgpu pass inside an egui widget, without changing the framework.
 
-## Доповнення (після реалізації, 2026-11-04)
-- Бекенд рендерингу — `glow` (OpenGL), а не `wgpu`: менший граф залежностей і час збірки; `wgpu` лишається опцією через feature `eframe/wgpu`, якщо знадобиться власний 3D‑пас (notch overlay 3D у фазі 2).
-- Feature `system_fonts` вимкнено: вона тягне `yeslogic-fontconfig-sys` (нативна libfontconfig на Linux під час збірки), що суперечить ADR‑0001; вбудованих шрифтів egui достатньо.
-- Heatmap‑и малюються вбудованим `egui_plot::Heatmap` (з'явився у 0.38), тож текстури не потрібні.
-- egui 0.37 змінив API: `App::ui(&mut Ui)` замість `update(&Context)`, `Panel::top/bottom` замість `TopBottomPanel`.
+## Addendum (after the implementation, 2026-11-04)
+- The rendering backend is `glow` (OpenGL), not `wgpu`: a smaller dependency graph and build time; `wgpu` stays an option through the `eframe/wgpu` feature if an own 3D pass is ever needed (notch overlay 3D in phase 2).
+- The `system_fonts` feature is off: it pulls `yeslogic-fontconfig-sys` (the native libfontconfig on Linux at build time), against ADR-0001; the fonts built into egui are enough.
+- Heatmaps are drawn with the built-in `egui_plot::Heatmap` (since 0.38), so no textures are needed.
+- egui 0.37 changed its API: `App::ui(&mut Ui)` instead of `update(&Context)`, `Panel::top/bottom` instead of `TopBottomPanel`.

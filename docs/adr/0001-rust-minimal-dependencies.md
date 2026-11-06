@@ -1,17 +1,17 @@
-# ADR-0001: Rust і політика мінімальних залежностей
+# ADR-0001: Rust and the minimal-dependency policy
 
-Статус: прийнято (2026-11-04)
+Status: accepted (2026-11-04)
 
-## Контекст
-Проєкт має бути надійним, аудитованим і кросплатформенним. Кожна зовнішня залежність — ризик (коректність, безпека, ліцензія, збірка на трьох ОС).
+## Context
+The project must be reliable, auditable and cross-platform. Every external dependency is a risk (correctness, security, licence, the build on three platforms).
 
-## Рішення
-- Мова — виключно Rust (stable, edition 2024, MSRV фіксується у `rust-toolchain.toml`).
-- Залежності дозволені лише у трьох категоріях: (1) платформні/GPU/віконні API, (2) алгоритми, де власна реалізація має вищий ризик помилки, ніж перевірений чистий‑Rust crate (FFT), (3) серіалізація/CLI‑інфраструктура.
-- Заборонено: crate‑и з C/C++ (`*-sys`) поза категорією (1); динамічне завантаження плагінів; async‑рантайми (для десктоп‑інструмента достатньо потоків).
-- Будь‑яка нова залежність додається тільки через ADR; `cargo deny` блокує невідомі ліцензії.
-- Фактичний список (фаза 1): `eframe`/`egui`/`egui_plot` (бекенд `glow`, транзитивно `winit`, `glutin`), `rfd` (діалоги файлів), `rustfft`, `serde`/`serde_json`, `thiserror`. Не знадобилися: `memmap2` (читання файлу цілком достатньо), `clap` (ручний парсер аргументів). Dev: `blackbox-log` (еталон), `serde_json`.
+## Decision
+- The language is Rust only (stable, edition 2024, the MSRV pinned in `rust-toolchain.toml`).
+- Dependencies are allowed in three categories only: (1) platform / GPU / window-system APIs, (2) algorithms where an own implementation carries a higher risk of mistakes than a proven pure-Rust crate (FFT), (3) serialisation / CLI infrastructure.
+- Forbidden: crates with C/C++ (`*-sys`) outside category (1); dynamic plugin loading; async runtimes (threads are enough for a desktop tool).
+- Every new dependency is added only through an ADR; `cargo deny` blocks unknown licences.
+- The actual list (phase 1): `eframe`/`egui`/`egui_plot` (the `glow` backend, transitively `winit`, `glutin`), `rfd` (file dialogs), `rustfft`, `serde`/`serde_json`, `thiserror`. Not needed after all: `memmap2` (reading the file whole is enough), `clap` (a hand-written argument parser). Dev: `blackbox-log` (a reference), `serde_json`.
 
-## Наслідки
-- Повільніший старт (власний декодер, власні вікна/Welch/деконволюція), але повний контроль над математикою.
-- Власна реалізація FFT свідомо відхилена: `rustfft` чистий Rust, детермінований, має еталонні тести й SIMD; це збігається з вимогою «надійна математика».
+## Consequences
+- A slower start (own decoder, own windows / Welch / deconvolution), but full control over the mathematics.
+- An own FFT was deliberately rejected: `rustfft` is pure Rust, deterministic, reference-tested and SIMD; that matches the "trustworthy mathematics" requirement.

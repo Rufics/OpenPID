@@ -1,18 +1,18 @@
-# ADR-0005: Еталони для перевірки декодера
+# ADR-0005: Oracles for checking the decoder
 
-Статус: прийнято (2026-11-04)
+Status: accepted (2026-11-04)
 
-## Контекст
-Офіційний `blackbox_decode` (C) не вдалося зібрати в середовищі розробки; потрібні незалежні джерела істини для декодера.
+## Context
+The official `blackbox_decode` (C) could not be built in the development environment; the decoder needs independent sources of truth.
 
-## Рішення
-Три шари перевірки, що не залежать один від одного:
-1. **Специфікація**: unit‑тести кодувань на прикладах із «Blackbox Internals» (UVB, ZigZag, Elias‑delta таблиці) і roundtrip через власні енкодери, що повторюють логіку прошивки.
-2. **Незалежний декодер**: `blackbox-log` 0.4.3 як *dev‑dependency* (не потрапляє в бінарники), порівняння сирих значень кадрів, вирівняних за часовою міткою. Відомі відхилення еталона задокументовані в ADR‑0004 і виключені з порівняння.
-3. **Офіційний інструмент**: тест `csv_conformance` порівнює наш сирий декод із CSV від `blackbox_decode`, коли такі файли покладені поруч із фікстурами (`<лог>.<сесія>.csv`). Генерує їх замовник/CI на машині, де інструмент зібрано.
+## Decision
+Three layers of checks, independent of each other:
+1. **The specification**: unit tests of the encodings on the examples from "Blackbox Internals" (the UVB, ZigZag and Elias-delta tables) and round trips through own encoders that mirror the firmware logic.
+2. **An independent decoder**: `blackbox-log` 0.4.3 as a *dev-dependency* (it never reaches the binaries), comparing the raw frame values aligned by timestamp. The known deviations of the reference are documented in ADR-0004 and excluded from the comparison.
+3. **The official tool**: the `csv_conformance` test compares our raw decode with the `blackbox_decode` CSV when such files sit next to the fixtures (`<log>.<session>.csv`). The owner or CI generates them on a machine where the tool is built.
 
-Golden‑файли (`tests/golden/*.json`) фіксують підсумок кожної фікстури; зміна алгоритму вимагає їх свідомого оновлення.
+The golden files (`tests/golden/*.json`) pin the summary of every fixture; an algorithm change requires their deliberate update.
 
-## Наслідки
-- Dev‑залежності не обмежені ADR‑0001 так само суворо, як runtime‑залежності, але мають бути чистим Rust із сумісною ліцензією.
-- Фаззинг через `cargo fuzz` поки замінено детермінованим robustness‑тестом (випадкові пошкодження фікстур у CI); `cargo fuzz` додається, коли буде доступний у середовищі. *Уточнення 2026‑11‑05:* замість `cargo fuzz` прийнято власний мутаційний фаззер (ADR‑0013).
+## Consequences
+- Dev-dependencies are not bound by ADR-0001 as strictly as runtime dependencies, but they must be pure Rust with a compatible licence.
+- Fuzzing through `cargo fuzz` is replaced for now by a deterministic robustness test (random corruption of the fixtures in CI); `cargo fuzz` is added when it becomes available in the environment. *Update 2026-11-05:* instead of `cargo fuzz`, an own mutation fuzzer was adopted (ADR-0013).

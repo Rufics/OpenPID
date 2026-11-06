@@ -1,44 +1,48 @@
-# ADR-0012: `openpid-sim` — моделі фільтрів прошивки як окремий crate
+# ADR-0012: `openpid-sim`, the firmware filter models as a separate crate
 
-- Статус: прийнято
-- Дата: 2026-11-05
+- Status: accepted
+- Date: 2026-11-05
 
-## Контекст
+## Context
 
-Фаза 2b (DESIGN §6.6) потребує моделі ланцюга фільтрів контролера: Filter Sim
-пропускає `gyro.raw` через модель, зібрану з `Settings`, і порівнює з
-`gyro.filtered` із логу та з «what‑if» налаштуваннями. Ті самі моделі потрібні
-для overlay notch‑смуг на спектрах і, у фазі 3, для рекомендацій. `openpid-dsp`
-навмисно тримає лише чисті числові примітиви (FFT, вікна, спектри) без знання
-про прошивки; змішувати туди дискретні форми конкретних контролерів означало б
-тягнути семантику прошивки в базовий шар.
+Phase 2b (DESIGN §6.6) needs a model of the controller's filter chain: Filter
+Sim runs `gyro.raw` through a model built from `Settings` and compares it with
+the log's `gyro.filtered` and with "what-if" settings. The same models are
+needed for the notch-band overlay on the spectra and, in phase 3, for the
+recommendations. `openpid-dsp` deliberately holds only pure numeric primitives
+(FFT, windows, spectra) without any knowledge of firmwares; mixing the discrete
+forms of specific controllers into it would drag firmware semantics into the
+base layer.
 
-## Рішення
+## Decision
 
-- **Окремий crate `openpid-sim`** без зовнішніх залежностей: лише `openpid-dsp`
-  (спільний тип `Complex`, STFT для трекера dyn notch) і `openpid-core`
-  (`Settings`, з яких збирається модель ланцюга). Жодного нового запису в `deny.toml`.
-- **Два погляди на кожен фільтр**: `update(x) -> y` (машина станів у `f64`, та
-  сама дискретна форма, що й у прошивці) і `response(f) -> Complex`
-  (передавальна функція на одиничному колі). Тести перевіряють, що обидва
-  збігаються: синус, прогнаний через `update`, має амплітуду й фазу `response`.
-- **Формули — з опису, не з коду** (ліцензійна межа, як і для PIDtoolbox):
-  PT1 з коефіцієнтом `dt / (RC + dt)`; PT2/PT3 як каскад PT1 з корекцією
-  зрізу `1 / sqrt(2^(1/n) − 1)`, щоб каскад давав −3 дБ на заданій частоті;
-  biquad за RBJ cookbook (LPF Баттерворта з `Q = 1/√2`, notch із
-  `Q = f_c·f_cut / (f_c² − f_cut²)` — конвенція Betaflight), у формі DF2T.
-- **`Chain`** — упорядкований список стадій із добутком відповідей; **`ChainModel`**
-  (модуль `model`) збирає конкретний ланцюг із `Settings` і додає рухомі частини
-  (газозалежний зріз, RPM‑notch, dyn notch) поверх цих примітивів, а не всередині них.
-  Рухомі частини — наближення (DESIGN §6.6): модель працює на частоті логу, трекер
-  dyn notch — STFT‑пікер замість SDFT прошивки.
+- **A separate crate `openpid-sim`** without external dependencies: only
+  `openpid-dsp` (the shared `Complex` type, the STFT for the dynamic-notch
+  tracker) and `openpid-core` (`Settings`, from which the chain model is built).
+  No new entry in `deny.toml`.
+- **Two views of every filter**: `update(x) -> y` (a state machine in `f64`,
+  the same discrete form as in the firmware) and `response(f) -> Complex` (the
+  transfer function on the unit circle). Tests check that both agree: a sine
+  run through `update` has the amplitude and phase of `response`.
+- **The formulas come from the description, not the code** (the licence line,
+  as with PIDtoolbox): PT1 with the coefficient `dt / (RC + dt)`; PT2/PT3 as a
+  cascade of PT1 with the cutoff correction `1 / sqrt(2^(1/n) − 1)` so the
+  cascade gives −3 dB at the nominal frequency; the biquad from the RBJ
+  cookbook (a Butterworth LPF with `Q = 1/√2`, a notch with
+  `Q = f_c·f_cut / (f_c² − f_cut²)`, the Betaflight convention), in DF2T form.
+- **`Chain`** is an ordered list of stages with the product of their responses;
+  **`ChainModel`** (the `model` module) builds a concrete chain from `Settings`
+  and adds the moving parts (the throttle-dependent cutoff, the RPM notch, the
+  dynamic notch) on top of these primitives, not inside them. The moving parts
+  are approximations (DESIGN §6.6): the model runs at the log rate, the
+  dynamic-notch tracker is an STFT peak picker instead of the firmware's SDFT.
 
-## Наслідки
+## Consequences
 
-- `openpid-analysis` отримає Filter Sim (#23) як звичайний `Analysis`, що
-  залежить від `openpid-sim`; GUI/CLI не знають про формули.
-- Нові типи фільтрів інших прошивок (INAV, ArduPilot `INS_GYRO_FILTER`
-  biquad) додаються як стадії з власними тестами частотної відповіді.
-- Дискретні форми інших прошивок можуть відрізнятися від Betaflight (напр.
-  білінійне перетворення замість `dt/(RC+dt)`); коли це матиме значення для
-  Filter Sim, стадія отримує варіант, а не глобальний перемикач.
+- `openpid-analysis` gets Filter Sim (#23) as an ordinary `Analysis` that
+  depends on `openpid-sim`; the GUI and CLI know nothing about the formulas.
+- New filter types of other firmwares (INAV, the ArduPilot `INS_GYRO_FILTER`
+  biquad) are added as stages with their own frequency-response tests.
+- The discrete forms of other firmwares may differ from Betaflight (for example
+  a bilinear transform instead of `dt/(RC+dt)`); when that matters for Filter
+  Sim, the stage gets a variant, not a global switch.

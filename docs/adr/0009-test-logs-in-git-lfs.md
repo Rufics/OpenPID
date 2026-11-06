@@ -1,21 +1,21 @@
-# ADR-0009: Тестові логи — лише з MIT‑сумісною ліцензією, у Git LFS
+# ADR-0009: Test logs only under an MIT-compatible licence, in Git LFS
 
-- Статус: прийнято
-- Дата: 2026-11-04
+- Status: accepted
+- Date: 2026-11-04
 
-## Контекст
+## Context
 
-Частина тестів (слайдери 4.3+, Rotorflight, нові версії Betaflight) працювала лише з логами, які `tools/fetch-community-logs.sh` завантажував у git‑ігнорований каталог, бо їхні джерела не мали MIT‑сумісної ліцензії. На CI цих файлів не було, тож ці тести тихо пропускалися: покриття `rotorflight.rs` на CI було 9 %, а локально 95 %.
+Some tests (the 4.3+ sliders, Rotorflight, newer Betaflight versions) worked only with logs that `tools/fetch-community-logs.sh` downloaded into a git-ignored directory, because their sources had no MIT-compatible licence. CI had none of those files, so the tests were silently skipped: the coverage of `rotorflight.rs` was 9 % in CI and 95 % locally.
 
-## Рішення
+## Decision
 
-- Скрипт завантаження і каталог `tests/logs/external/` вилучено повністю. Тести читають лише `tests/logs/`.
-- До репозиторію додаються **тільки** логи з MIT‑сумісною ліцензією (MIT, Apache‑2.0, BSD, CC0/CC‑BY). Джерело й ліцензія кожного файлу записані в `tests/logs/README.md`; GPL, non‑commercial і файли без ліцензії не приймаються, навіть якщо їх уже скопіював інший MIT‑проєкт.
-- Логи зберігаються у **Git LFS** (`.gitattributes`: `tests/logs/*.{bbl,bfl,txt}` у будь‑якому регістрі). Історія не переписувалася: старі фікстури переведено в LFS новим комітом.
-- Великі файли обрізаються до перших 1–1,5 МіБ або до межі сесії (`betaflight-4.5.1-two-sessions.bbl` — перші дві повні сесії з восьми): декодеру потрібні заголовки й кілька тисяч кадрів, а не хвилини польоту.
-- CI тягне LFS‑об'єкти лише в job‑ах, що запускають тести (`test` ×3, `coverage`), через `actions/cache` з ключем від списку OID; `build`/`sonar` обходяться без них. Безкоштовна квота GitHub LFS — 1 ГБ трафіку на місяць, тому фікстури навмисно малі (≈9 МБ разом).
+- The download script and the `tests/logs/external/` directory are removed entirely. Tests read `tests/logs/` only.
+- **Only** logs under an MIT-compatible licence (MIT, Apache-2.0, BSD, CC0/CC-BY) are added to the repository. The source and licence of every file are recorded in `tests/logs/README.md`; GPL, non-commercial and unlicensed files are not accepted, even when another MIT project has already copied them.
+- The logs are stored in **Git LFS** (`.gitattributes`: `tests/logs/*.{bbl,bfl,txt}` in any case). History was not rewritten: the old fixtures were moved into LFS by a new commit.
+- Large files are cut to the first 1–1.5 MiB or to a session boundary (`betaflight-4.5.1-two-sessions.bbl` is the first two complete sessions of eight): the decoder needs the headers and a few thousand frames, not minutes of flight.
+- CI pulls the LFS objects only in the jobs that run tests (`test` ×3, `coverage`), through `actions/cache` keyed by the list of OIDs; `build`/`sonar` do without them. The free GitHub LFS quota is 1 GB of traffic per month, so the fixtures are deliberately small (≈ 9 MB in total).
 
-## Наслідки
+## Consequences
 
-- Після клонування: `git lfs install && git lfs pull`. Без цього файли — вказівники, і `versions.rs` впаде з підказкою.
-- Betaflight 4.3, 4.4, 2026.6 та EmuFlight 0.4 досі без фікстур; `docs/BLACKBOX-VERSIONS.md` веде список. Нові логи — лише через PR із заповненою таблицею джерел.
+- After cloning: `git lfs install && git lfs pull`. Without it the files are pointers and `versions.rs` fails with a hint.
+- Betaflight 4.3, 4.4, 2026.6 and EmuFlight 0.4 still have no fixtures; `docs/BLACKBOX-VERSIONS.md` keeps the list. New logs come only through a PR with the source table filled in.
