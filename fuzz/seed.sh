@@ -1,35 +1,46 @@
 #!/usr/bin/env sh
-# Seed corpus for every fuzz target from the committed test logs (Git LFS):
-# the first kilobytes of each log hold the headers and the first frames, which
-# is where the parsing logic lives. Run from the repository root; the corpus
-# directories are not committed (fuzz/.gitignore), libFuzzer grows them.
+# Seed corpus for every fuzz target from the committed test logs (Git LFS).
+# Run from the repository root; the corpus directories are not committed
+# (fuzz/.gitignore), libFuzzer grows them.
+#
+# Blackbox: a 24 KiB segment at each of the first six log starts of every
+# fixture (an SD-card dump holds dozens of logs with different headers) plus a
+# 4 KiB head; the headers and the first frames are where the parsing logic
+# lives, and short inputs keep the fuzzer fast. ArduPilot: the first 64 KiB
+# and 8 KiB of every .bin. CSV: a scaled and a raw export from the CLI.
 set -eu
 cd "$(dirname "$0")/.."
-slice() { # slice <file> <bytes> <out>
-  head -c "$2" "$1" > "$3"
-}
-for t in blackbox_open blackbox_headers; do
-  mkdir -p "fuzz/corpus/$t"
-  for f in tests/logs/*.bbl tests/logs/*.BFL tests/logs/*.TXT; do
-    [ -f "$f" ] || continue
-    n=$(basename "$f")
-    slice "$f" 24576 "fuzz/corpus/$t/$n.24k"
-    slice "$f" 4096 "fuzz/corpus/$t/$n.4k"
-  done
-done
-mkdir -p fuzz/corpus/ardupilot_open
-for f in tests/logs/*.bin; do
-  [ -f "$f" ] || continue
-  n=$(basename "$f")
-  slice "$f" 65536 "fuzz/corpus/ardupilot_open/$n.64k"
-  slice "$f" 8192 "fuzz/corpus/ardupilot_open/$n.8k"
-done
-# the CSV corpus comes from the decoder itself: a scaled export and a raw one
+python3 -I - <<'EOF'
+import glob, os
+MARKER = b"H Product:Blackbox flight data recorder by Nicholas Sherlock"
+for target in ("blackbox_open", "blackbox_headers"):
+    out = os.path.join("fuzz", "corpus", target)
+    os.makedirs(out, exist_ok=True)
+    for path in sorted(glob.glob("tests/logs/*.bbl") + glob.glob("tests/logs/*.BFL") + glob.glob("tests/logs/*.TXT")):
+        data = open(path, "rb").read()
+        name = os.path.basename(path)
+        starts, i = [], data.find(MARKER)
+        while i >= 0 and len(starts) < 6:
+            starts.append(i)
+            i = data.find(MARKER, i + 1)
+        if not starts:
+            starts = [0]
+        for n, s in enumerate(starts):
+            open(os.path.join(out, f"{name}.{n}.24k"), "wb").write(data[s:s + 24 * 1024])
+        open(os.path.join(out, f"{name}.4k"), "wb").write(data[:4096])
+out = os.path.join("fuzz", "corpus", "ardupilot_open")
+os.makedirs(out, exist_ok=True)
+for path in sorted(glob.glob("tests/logs/*.bin")):
+    data = open(path, "rb").read()
+    name = os.path.basename(path)
+    open(os.path.join(out, f"{name}.64k"), "wb").write(data[:64 * 1024])
+    open(os.path.join(out, f"{name}.8k"), "wb").write(data[:8 * 1024])
+EOF
 mkdir -p fuzz/corpus/csv_open
 cargo run --release -q -p openpid-cli -- decode tests/logs/betaflight-4.2.0.BFL --scaled --out fuzz/corpus/csv_open/scaled.csv.full
 cargo run --release -q -p openpid-cli -- decode tests/logs/betaflight-4.2.0.BFL --out fuzz/corpus/csv_open/raw.csv.full
 for f in fuzz/corpus/csv_open/*.full; do
-  slice "$f" 16384 "${f%.full}"
+  head -c 16384 "$f" > "${f%.full}"
   rm "$f"
 done
 echo "corpus:"; for d in fuzz/corpus/*; do echo "  $(basename "$d"): $(ls "$d" | wc -l) files"; done

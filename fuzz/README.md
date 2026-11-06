@@ -24,7 +24,7 @@ rustup toolchain install nightly          # once
 cargo install cargo-fuzz --locked         # once
 git lfs pull                              # the test logs seed the corpus
 sh fuzz/seed.sh                           # fuzz/corpus/<target>/ from tests/logs
-cargo +nightly fuzz run blackbox_open -- -max_total_time=600 -timeout=10 -dict=fuzz/dictionaries/blackbox.dict
+cargo +nightly fuzz run blackbox_open -- -max_total_time=600 -timeout=10 -dict="$PWD/fuzz/dictionaries/blackbox.dict"
 cargo +nightly fuzz list
 ```
 
@@ -32,6 +32,8 @@ The dictionaries under `fuzz/dictionaries/` carry the structural knowledge of
 the formats (frame markers, header keys, message names, interesting numbers),
 so libFuzzer reaches the header and frame logic without guessing bytes:
 `blackbox.dict` for the two Blackbox targets, `ardupilot.dict`, `csv.dict`.
+`cargo fuzz` runs the target from the `fuzz/` directory, so give the
+dictionary an absolute path (or one relative to `fuzz/`).
 
 A crash is written to `fuzz/artifacts/<target>/crash-<hash>`; reproduce it with
 `cargo +nightly fuzz run <target> fuzz/artifacts/<target>/crash-<hash>`, then

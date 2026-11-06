@@ -27,8 +27,8 @@
 # separators and line endings
 ","
 ", "
-"\n"
-"\r\n"
+"\x0a"
+"\x0d\x0a"
 "\""
 " "
 

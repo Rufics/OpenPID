@@ -72,7 +72,7 @@ jobs:
           echo "target ${{ matrix.target }}, budget $BUDGET s, dictionary $DICT" >> "$GITHUB_STEP_SUMMARY"
           cargo +${{ env.NIGHTLY_TOOLCHAIN }} fuzz run ${{ matrix.target }} -- \
             -max_total_time="$BUDGET" -timeout=10 -rss_limit_mb=2048 \
-            -dict="fuzz/dictionaries/$DICT.dict" 2>&1 | tee fuzz.log
+            -dict="$PWD/fuzz/dictionaries/$DICT.dict" 2>&1 | tee fuzz.log
           grep -E '^#[0-9]+ +DONE|^Done ' fuzz.log >> "$GITHUB_STEP_SUMMARY" || true
       - name: Crashing inputs
         if: failure()
