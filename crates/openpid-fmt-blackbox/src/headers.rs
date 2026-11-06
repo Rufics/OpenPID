@@ -361,7 +361,7 @@ I\x00";
         assert!(!h.should_have_frame(255));
     }
 
-    /// Found by the mutation fuzzer (ADR-0013): an interval that does not fit
+    /// Found by fuzzing (ADR-0013): an interval that does not fit
     /// in 32 bits truncated to 0 and `should_have_frame` divided by zero; a
     /// numerator near `u32::MAX` overflowed the modulo arithmetic.
     #[test]

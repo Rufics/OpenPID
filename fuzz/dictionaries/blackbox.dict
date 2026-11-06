@@ -117,3 +117,12 @@
 "1e308"
 ",,"
 ",-1,"
+
+# Rotorflight events: governor / rescue / airborne state (1 byte), custom data
+# (length + bytes) and a NUL-terminated custom string
+"E\x32"
+"E\x33"
+"E\x34"
+"E\x64\x03abc"
+"E\x65custom\x00"
+"E\x65"
