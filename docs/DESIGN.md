@@ -1,60 +1,60 @@
-# OpenPID — дизайн-проєкт
+# OpenPID — design
 
-Статус: v0.4 (2026-11-04) — фази 0 і 1 реалізовані (див. §12); процес розробки та стиль — `CONTRIBUTING.md`, `docs/STYLE.md`, `docs/RELEASING.md`. Мова документа — українська, технічні терміни та ідентифікатори коду — англійською.
+Status: v0.4 (2026-11-04), phases 0 and 1 implemented (see §12); the development process and style are in `CONTRIBUTING.md`, `docs/STYLE.md`, `docs/RELEASING.md`.
 
-OpenPID — кросплатформенний (macOS / Windows / Linux) інструмент на Rust для розбору blackbox-логів політних контролерів, навігації по них та допомоги у налаштуванні PID і фільтрів. Функціональний орієнтир — PIDtoolbox / PIDtoolbox Pro, але весь код (декодер, математика, GUI) пишеться власний.
-
----
-
-## 1. Цілі та принципи
-
-| # | Принцип | Що це означає на практиці |
-|---|---------|---------------------------|
-| P1 | **Тільки Rust, мінімум залежностей** | Залежності лише там, де власна реалізація невиправдано дорога або небезпечна (GPU/віконна система, FFT, серіалізація). Кожна залежність фіксується в ADR з обґрунтуванням. Заборонено транзитивно тягнути C/C++ (крім системних API ОС). |
-| P2 | **Надійна математика** | `f64` у всіх обчисленнях; одиниці вимірювання у типах; явні маски валідності замість «тихих» NaN; кожен алгоритм має еталонні тести проти незалежної реалізації (NumPy/SciPy‑скрипти в `tools/reference`, лише для розробки). |
-| P3 | **Розширюваність без переписування ядра** | Формат логу, прошивка, аналіз, рекомендатор (autotune), експортер — усе підключається через trait‑и та реєстри. Додати новий формат = додати crate, що реалізує `LogFormat`. Ядро (`openpid-core`) не знає про Betaflight. |
-| P4 | **Один рушій, багато фронтендів** | GUI, CLI та тести використовують той самий конвеєр. GUI — лише представлення даних, у ньому немає математики. |
-| P5 | **Чесність до користувача** | Пошкоджені кадри, пропуски, нестабільний sample‑rate, невідомі поля — показуються, а не маскуються. Будь‑який графік має підпис, з яких параметрів він обчислений. |
-| P6 | **Кросплатформенність і сенсорне керування з першого дня** | Один бінарник на платформу, GPU‑рендеринг, мультитач (pinch‑zoom, pan двома пальцями), великі цілі дотику в «touch‑режимі». |
-
-Не‑цілі (на цьому етапі): веб‑версія, мобільні ОС, реальний час з FC через USB (але архітектура цього не блокує — див. §9).
+OpenPID is a cross-platform (macOS / Windows / Linux) Rust tool for decoding flight-controller blackbox logs, navigating them and helping with PID and filter tuning. The functional reference is PIDtoolbox / PIDtoolbox Pro, but every line of code (decoder, mathematics, GUI) is our own.
 
 ---
 
-## 2. Функціональний обсяг
+## 1. Goals and principles
 
-Зіставлення з таблицею можливостей PIDtoolbox / Pro та план фаз.
+| # | Principle | What it means in practice |
+|---|-----------|---------------------------|
+| P1 | **Rust only, minimal dependencies** | Dependencies only where an own implementation is unreasonably expensive or dangerous (GPU / window system, FFT, serialisation). Every dependency is recorded in an ADR with its reasoning. Pulling in C/C++ transitively is forbidden (except the OS system APIs). |
+| P2 | **Trustworthy mathematics** | `f64` in every computation; units in the types; explicit validity masks instead of "silent" NaN; every algorithm has reference tests against an independent implementation (NumPy/SciPy scripts in `tools/reference`, development only). |
+| P3 | **Extensible without rewriting the core** | Log format, firmware, analysis, recommender (autotune), exporter: everything plugs in through traits and registries. Adding a format = adding a crate that implements `LogFormat`. The core (`openpid-core`) knows nothing about Betaflight. |
+| P4 | **One engine, many front-ends** | GUI, CLI and tests use the same pipeline. The GUI only presents data; there is no mathematics in it. |
+| P5 | **Honest with the user** | Corrupt frames, gaps, an unstable sample rate, unknown fields are shown, not hidden. Every plot states which parameters it was computed from. |
+| P6 | **Cross-platform and touch from day one** | One binary per platform, GPU rendering, multi-touch (pinch zoom, two-finger pan), large touch targets in "touch mode". |
 
-| Можливість | PTB | Pro | OpenPID фаза | Примітка |
-|------------|:---:|:---:|:---:|----------|
-| Log viewer (часові графіки, A/B) | ✓ | ✓ | 1 | Два логи A/B поруч, як у PTB |
-| Step response | ✓ | ✓ | 1 | Деконволюція Вінера (див. §6.2) |
+Non-goals (at this stage): a web version, mobile platforms, real time with the FC over USB (the architecture does not block it, see §9).
+
+---
+
+## 2. Functional scope
+
+The mapping to the PIDtoolbox / Pro feature table and the phase plan.
+
+| Feature | PTB | Pro | OpenPID phase | Note |
+|---------|:---:|:---:|:---:|------|
+| Log viewer (time plots, A/B) | ✓ | ✓ | 1 | Two logs A/B side by side, as in PTB |
+| Step response | ✓ | ✓ | 1 | Wiener deconvolution (§6.2) |
 | 2D spectral analyzer (PSD) | ✓ | ✓ | 1 | Welch |
 | Freq × throttle heatmap | ✓ | ✓ | 1 | §6.4 |
 | Freq × time heatmap (STFT) | ✓ | ✓ | 1 | §6.5 |
-| PID slider tool | ✓ | ✓ | 1 | Betaflight‑специфіка, реалізація через `FirmwareProfile` |
-| Multi‑firmware support | ✓ | ✓ | 0→2 | Betaflight/Emuflight/Rotorflight — фаза 0; ArduPilot — зроблено (ADR‑0010, `docs/ARDUPILOT.md`), далі INAV — фаза 2; KISS/Fettec/QuickSilver — за наявності зразків (рішення Q2) |
-| RPM / dyn‑notch overlay 2D | — | ✓ | 2 | Потрібен eRPM (DShot telemetry) + pole count |
-| RPM / dyn‑notch overlay 3D | — | ✓ | 2 | 3D‑поверхня freq×throttle×amp |
-| RPM estimator | — | ✓ | 2 | Оцінка обертів з піків шуму, коли телеметрії немає |
-| Filter sim | — | ✓ | 2 | Прогін `gyroUnfilt` через модель фільтрів прошивки |
-| Test signal generator | — | ✓ | 2 | Синтетичні сигнали для перевірки фільтрів/алгоритмів |
-| Motor / prop noise tool | — | ✓ | 2 | Спектри по моторах, гармоніки |
-| Dynamic spectrum player | — | ✓ | 2 | Анімоване відтворення STFT у часі |
-| Рекомендації / autotune | — | — | 3 | Власне розширення: `Recommend` (правила з доказами), вкладка Advice, експорт у Betaflight CLI |
-| Експорт (CSV/JSON/PNG, CLI diff) | част. | част. | 1 | CSV/JSON/PNG з GUI і CLI; `openpid diff` і `--cli` — фаза 3 |
-| Headless CLI | — | — | 0 | Для CI, скриптів і golden‑тестів |
+| PID slider tool | ✓ | ✓ | 1 | Betaflight-specific, through `FirmwareProfile` |
+| Multi-firmware support | ✓ | ✓ | 0→2 | Betaflight/EmuFlight/Rotorflight: phase 0; ArduPilot done (ADR-0010, `docs/ARDUPILOT.md`), then INAV: phase 2; KISS/Fettec/QuickSilver when samples exist (decision Q2) |
+| RPM / dyn-notch overlay 2D | — | ✓ | 2 | Needs eRPM (DShot telemetry) and the pole count |
+| RPM / dyn-notch overlay 3D | — | ✓ | 2 | A 3D freq × throttle × amp surface |
+| RPM estimator | — | ✓ | 2 | Motor speed from the noise peaks when there is no telemetry |
+| Filter sim | — | ✓ | 2 | `gyroUnfilt` through a model of the firmware filters |
+| Test signal generator | — | ✓ | 2 | Synthetic signals to check filters and algorithms |
+| Motor / prop noise tool | — | ✓ | 2 | Spectra per motor, harmonics |
+| Dynamic spectrum player | — | ✓ | 2 | Animated playback of the STFT over time |
+| Recommendations / autotune | — | — | 3 | Our own extension: `Recommend` (rules with evidence), the Advice tab, export to the Betaflight CLI |
+| Export (CSV/JSON/PNG, CLI diff) | partly | partly | 1 | CSV/JSON/PNG from the GUI and CLI; `openpid diff` and `--cli` are phase 3 |
+| Headless CLI | — | — | 0 | For CI, scripts and golden tests |
 
 ---
 
-## 3. Архітектура верхнього рівня
+## 3. Top-level architecture
 
 ```
                  ┌──────────────────────────────────────────────┐
                  │               openpid-app (GUI)              │
                  │  egui/eframe · views · touch · state/cache   │
                  └───────────────┬──────────────────────────────┘
-                                 │ тільки типи з core/analysis
+                                 │ only types from core/analysis
 ┌──────────────┐   ┌─────────────┴────────────┐   ┌──────────────────┐
 │ openpid-cli  │──▶│     openpid-analysis     │◀──│  openpid-sim     │
 │ (headless)   │   │ step · spectral · heat · │   │ filter sim · gen │
@@ -75,8 +75,8 @@ OpenPID — кросплатформенний (macOS / Windows / Linux) інс�
                                  │ impl LogFormat / FirmwareProfile
       ┌──────────────┬───────────┴──────────┬──────────────────┐
       │ fmt-blackbox │ fmt-blackbox-csv     │ fmt-ardupilot …  │
-      │ (BF/Emu/RF/  │ (вихід blackbox_     │ (фаза 2)         │
-      │  INAV binary)│  decode, для тестів) │                  │
+      │ (BF/Emu/RF/  │ (blackbox_decode     │ (phase 2)        │
+      │  INAV binary)│  output, for tests)  │                  │
       └──────────────┴──────────────────────┴──────────────────┘
 ```
 
@@ -86,370 +86,370 @@ Cargo workspace:
 openpid/
 ├─ Cargo.toml                 # workspace, [workspace.dependencies], lints
 ├─ crates/
-│  ├─ openpid-core/           # доменна модель, trait‑и, реєстри, помилки
-│  ├─ openpid-dsp/            # чиста математика, без I/O
-│  ├─ openpid-analysis/       # аналізи поверх core+dsp
-│  ├─ openpid-sim/            # симуляція фільтрів, генератор сигналів
-│  ├─ openpid-fmt-blackbox/   # власний декодер бінарного Blackbox
-│  ├─ openpid-fmt-csv/        # CSV від blackbox_decode (тести/сумісність)
-│  ├─ openpid-cli/            # бінарник `openpid`
-│  └─ openpid-app/            # бінарник `openpid-gui`
+│  ├─ openpid-core/           # domain model, traits, registries, errors
+│  ├─ openpid-dsp/            # pure mathematics, no I/O
+│  ├─ openpid-analysis/       # analyses on top of core + dsp
+│  ├─ openpid-sim/            # filter simulation, signal generator
+│  ├─ openpid-fmt-blackbox/   # own binary Blackbox decoder
+│  ├─ openpid-fmt-csv/        # CSV from blackbox_decode (tests / compatibility)
+│  ├─ openpid-cli/            # the `openpid` binary
+│  └─ openpid-app/            # the `openpid-gui` binary
 ├─ tests/
-│  ├─ logs/                   # еталонні логи (малі, різні прошивки)
-│  └─ golden/                 # очікувані результати аналізів (JSON)
+│  ├─ logs/                   # reference logs (small, several firmwares)
+│  └─ golden/                 # expected analysis results (JSON)
 ├─ tools/
-│  └─ reference/              # Python‑скрипти генерації еталонів (dev‑only)
+│  └─ reference/              # Python scripts that generate the references (dev only)
 └─ docs/
    ├─ DESIGN.md
    └─ adr/
 ```
 
-Правила залежностей між crate‑ами (перевіряються в CI через `cargo deny`/власний скрипт):
+Dependency rules between the crates (checked in CI through `cargo deny` and an own script):
 
-- `core` не залежить ні від чого в workspace.
-- `dsp` залежить лише від `core` (для типів одиниць) і `rustfft`.
-- `fmt-*` залежать лише від `core`.
+- `core` depends on nothing in the workspace.
+- `dsp` depends only on `core` (for the unit types) and `rustfft`.
+- `fmt-*` depend only on `core`.
 - `analysis`, `sim` → `core`, `dsp`.
-- `app`, `cli` → усе вище; **ніхто не залежить від `app`**.
+- `app`, `cli` → everything above; **nothing depends on `app`**.
 
 ---
 
-## 4. Доменна модель (`openpid-core`)
+## 4. Domain model (`openpid-core`)
 
-### 4.1 Канонічне представлення логу
+### 4.1 The canonical log representation
 
 ```rust
-/// Один файл може містити кілька польотів (сесій) — як .BBL з кількома логами.
+/// One file may hold several flights (sessions), like a .BBL with several logs.
 pub struct LogFile {
-    pub source: SourceInfo,            // шлях, розмір, хеш
+    pub source: SourceInfo,            // path, size, hash
     pub sessions: Vec<FlightSession>,
 }
 
 pub struct FlightSession {
     pub id: SessionId,
-    pub firmware: FirmwareInfo,        // vendor, version, target, дата
-    pub settings: Settings,            // типізовані налаштування (PID, фільтри, rates…)
-    pub raw_headers: Vec<(String, String)>, // усі заголовки «як є»
-    pub timebase: Timebase,            // номінальний крок, фактичний, jitter, пропуски
-    pub channels: ChannelSet,          // усі ряди даних
-    pub events: Vec<Event>,            // E‑кадри: arm/disarm, inflight adjust, logging resume…
-    pub diagnostics: Diagnostics,      // кількість пошкоджених кадрів, resync, невідомі поля
+    pub firmware: FirmwareInfo,        // vendor, version, target, date
+    pub settings: Settings,            // typed settings (PID, filters, rates, …)
+    pub raw_headers: Vec<(String, String)>, // every header as is
+    pub timebase: Timebase,            // nominal step, actual step, jitter, gaps
+    pub channels: ChannelSet,          // every data series
+    pub events: Vec<Event>,            // E frames: arm/disarm, inflight adjust, logging resume, …
+    pub diagnostics: Diagnostics,      // corrupt frames, resyncs, unknown fields
 }
 ```
 
-**Канал** — єдиний ряд з однією одиницею вимірювання:
+A **channel** is one series with one unit:
 
 ```rust
 pub struct Channel {
     pub id: ChannelId,
     pub unit: Unit,                    // DegPerSec, Percent, Us, Raw, Rpm, Volt, …
-    pub data: Series,                  // f64 + маска валідності + індекс часу
+    pub data: Series,                  // f64 + validity mask + time index
     pub origin: Origin,                // Logged | Derived { from: Vec<ChannelId>, by: &'static str }
 }
 
-/// Семантичний ідентифікатор, незалежний від прошивки.
+/// A semantic identifier, independent of the firmware.
 pub enum ChannelId {
     Time,
     LoopIteration,
     Gyro { axis: Axis, stage: GyroStage },     // Raw | Scaled | Filtered
     Setpoint { axis: Axis },
     PidTerm { axis: Axis, term: PidTerm },     // P | I | D | F | S(um)
-    PidError { axis: Axis },                   // похідний
+    PidError { axis: Axis },                   // derived
     RcCommand { ch: u8 },
-    Throttle,                                   // похідний, 0..100 %
+    Throttle,                                   // derived, 0..100 %
     Motor { idx: u8 },
     Erpm { idx: u8 },
-    Debug { idx: u8 },                          // сирий debug[n]
+    Debug { idx: u8 },                          // raw debug[n]
     Battery(BatteryField),
-    Custom(Arc<str>),                           // усе, що формат не зміг зіставити
+    Custom(Arc<str>),                           // everything the format could not map
 }
 ```
 
-Ключова ідея: **`fmt-*` crate зіставляє поля конкретної прошивки з `ChannelId`**, а всі аналізи працюють лише з `ChannelId`. Наприклад, у Betaflight 4.x `gyroUnfilt[0]` → `Gyro{Roll, Raw}`, а в старих версіях ті самі дані лежать у `debug[0..2]` при `debug_mode=GYRO_SCALED` — це знання живе у `FirmwareProfile`, не в аналізах.
+The key idea: **a `fmt-*` crate maps the fields of a specific firmware to `ChannelId`**, and every analysis works with `ChannelId` only. For example, in Betaflight 4.x `gyroUnfilt[0]` → `Gyro{Roll, Raw}`, while in older versions the same data sits in `debug[0..2]` with `debug_mode=GYRO_SCALED`; that knowledge lives in the `FirmwareProfile`, not in the analyses.
 
 ### 4.2 Timebase
 
-Blackbox не гарантує рівномірний крок: є jitter, пропущені кадри (dropped frames), `I`/`P` інтервали, resync після пошкодження. Політика:
+Blackbox does not guarantee a uniform step: there is jitter, dropped frames, `I`/`P` intervals, resync after corruption. The policy:
 
-- Зберігаємо **фактичні** мітки часу (`time` у мкс, i64) для кожного кадру.
-- `Timebase` містить номінальний крок (з `looptime × pid_process_denom × P-interval`), медіанний фактичний крок, max‑jitter та список інтервалів‑прогалин.
-- Для спектральних аналізів ряд **ресемплюється** на рівномірну сітку (лінійна інтерполяція в межах допуску, прогалини більші за `gap_tolerance` позначаються як невалідні й виключаються з сегментів). Це робиться один раз у `analysis::Prepared` і кешується.
-- Усе це видно користувачу у панелі «Діагностика логу».
+- The **actual** timestamps (`time` in µs, i64) of every frame are kept.
+- `Timebase` holds the nominal step (from `looptime × pid_process_denom × P-interval`), the median actual step, the maximum jitter and the list of gaps.
+- For the spectral analyses the series is **resampled** onto a uniform grid (linear interpolation within the tolerance; gaps longer than `gap_tolerance` are marked invalid and excluded from the segments). This happens once in `analysis::Prepared` and is cached.
+- All of it is visible to the user in the "Log diagnostics" panel.
 
-### 4.3 Налаштування (`Settings`)
+### 4.3 Settings
 
-Типізована структура з опціональними полями (`Option<T>`), яку заповнює `FirmwareProfile`:
+A typed structure with optional fields (`Option<T>`), filled in by the `FirmwareProfile`:
 
 ```rust
 pub struct Settings {
     pub pid: PerAxis<PidGains>,          // P, I, D, D_min/D_max, F
-    pub gyro_filters: FilterChain,       // lowpass1/2 (тип, cutoff, dyn min/max), notch, dyn‑notch, rpm‑notch
+    pub gyro_filters: FilterChain,       // lowpass1/2 (type, cutoff, dyn min/max), notch, dyn-notch, rpm-notch
     pub dterm_filters: FilterChain,
     pub rates: RatesProfile,
-    pub motor: MotorConfig,              // протокол, poles, kv?
+    pub motor: MotorConfig,              // protocol, poles, kv?
     pub loop_rates: LoopRates,           // gyro rate, pid rate, log rate
-    pub extra: BTreeMap<String, String>, // усе, що не зіставлено
+    pub extra: BTreeMap<String, String>, // everything not mapped
 }
 ```
 
-Усе зіставлення — через явні таблиці `header_name → setter`, щоб додавання нового параметра було локальною зміною.
+All mapping goes through explicit `header_name → setter` tables, so adding a parameter is a local change.
 
-### 4.4 Trait‑и розширення
+### 4.4 Extension traits
 
 ```rust
-/// Формат файлу логу.
+/// A log file format.
 pub trait LogFormat: Send + Sync {
     fn id(&self) -> &'static str;                       // "blackbox-binary"
     fn sniff(&self, head: &[u8], name: &str) -> Confidence;
     fn open(&self, src: &dyn ByteSource, opts: &OpenOptions) -> Result<LogFile, FormatError>;
 }
 
-/// Семантика конкретної прошивки/версії: мапінг полів, одиниці, дефолти.
+/// The semantics of a specific firmware / version: field mapping, units, defaults.
 pub trait FirmwareProfile: Send + Sync {
     fn matches(&self, headers: &RawHeaders) -> Option<Score>;
     fn map_field(&self, field: &str, headers: &RawHeaders) -> Option<(ChannelId, Unit, Scale)>;
     fn settings(&self, headers: &RawHeaders) -> Settings;
-    fn derive(&self, session: &mut FlightSession);      // throttle %, pid error, gyro stage тощо
-    fn filter_model(&self, s: &Settings) -> Option<FilterChainModel>; // для Filter Sim
-    fn slider_model(&self) -> Option<Box<dyn SliderModel>>;          // для PID slider tool
+    fn derive(&self, session: &mut FlightSession);      // throttle %, pid error, gyro stage, …
+    fn filter_model(&self, s: &Settings) -> Option<FilterChainModel>; // for Filter Sim
+    fn slider_model(&self) -> Option<Box<dyn SliderModel>>;          // for the PID slider tool
 }
 
-/// Обчислення поверх сесії. Чиста функція від (дані, параметри).
+/// A computation over a session. A pure function of (data, parameters).
 pub trait Analysis: Send + Sync {
     type Params: Clone + Hash + Serialize + Default;
     type Output: Serialize;
     fn id(&self) -> &'static str;
-    fn requires(&self) -> &'static [Requirement];      // які ChannelId потрібні
+    fn requires(&self) -> &'static [Requirement];      // which ChannelIds are needed
     fn run(&self, ctx: &AnalysisCtx, p: &Self::Params) -> Result<Self::Output, AnalysisError>;
 }
 
-/// Рекомендації змін налаштувань (autotune та подібне) — фаза 3.
+/// Recommendations of setting changes (autotune and the like), phase 3.
 pub trait Recommender: Send + Sync {
     fn id(&self) -> &'static str;
     fn recommend(&self, s: &FlightSession, results: &ResultStore) -> Vec<Proposal>;
 }
 
-/// Експорт у зовнішній вигляд (CLI diff прошивки, CSV, JSON, PNG).
+/// Export to an external form (a firmware CLI diff, CSV, JSON, PNG).
 pub trait Exporter: Send + Sync {
     fn id(&self) -> &'static str;
     fn export(&self, what: &Exportable, w: &mut dyn Write) -> Result<(), ExportError>;
 }
 ```
 
-Реєстри (`FormatRegistry`, `ProfileRegistry`, `AnalysisRegistry`, …) заповнюються статично в `openpid-app`/`openpid-cli` через `inventory`‑подібний власний механізм (простий `fn builtin() -> Vec<Box<dyn …>>`, без макросів і без динамічного завантаження). Динамічні плагіни (WASM / cdylib) свідомо відкладені: вони додають ABI‑поверхню і залежності; за потреби їх можна додати пізніше як ще один `LogFormat`/`Analysis` adapter без зміни trait‑ів.
+The registries (`FormatRegistry`, `ProfileRegistry`, `AnalysisRegistry`, …) are filled statically in `openpid-app`/`openpid-cli` through an own `inventory`-like mechanism (a plain `fn builtin() -> Vec<Box<dyn …>>`, no macros, no dynamic loading). Dynamic plugins (WASM / cdylib) are deliberately postponed: they add an ABI surface and dependencies; when needed they can be added later as one more `LogFormat`/`Analysis` adapter without changing the traits.
 
-### 4.5 Чому це «ООП» у Rust
+### 4.5 Why this is "OOP" in Rust
 
-Ми дотримуємося принципів, а не синтаксису спадкування:
+We follow the principles, not the inheritance syntax:
 
-- **Інверсія залежностей** — ядро залежить від абстракцій (trait), а конкретні прошивки/формати — від ядра.
-- **Open/Closed** — нові формати, аналізи, рекомендатори додаються новими типами; існуючий код не змінюється.
-- **Single responsibility** — crate = одна відповідальність (формат, математика, аналіз, GUI).
-- **Композиція замість спадкування** — `FirmwareProfile` для Emuflight/Rotorflight *делегує* профілю Betaflight і перевизначає лише відмінності.
-- **Типи як документація** — одиниці вимірювання, осі, стадії фільтрації закодовані в enum‑ах; неможливо випадково подати сирий gyro замість фільтрованого.
-
----
-
-## 5. Декодер Blackbox (`openpid-fmt-blackbox`)
-
-Власна реалізація за публічною специфікацією (Betaflight «Blackbox Logging Internals»; еталонні реалізації — `blackbox-tools/parser.c`, `blackbox-log-viewer/flightlog_parser.js`).
-
-- **Вхід**: `&[u8]` (через `memmap2` для великих файлів або повне читання) — zero‑copy, без проміжних рядків.
-- **Контейнер**: один файл → N логів, межа — маркер заголовка `H Product:Blackbox flight data recorder by Nicholas Sherlock`. Підтримати `.BBL/.BFL/.TXT` і дампи SD‑карти з «сміттям» між логами.
-- **Заголовки**: `H Field I name/signed/predictor/encoding`, `H Field P predictor/encoding`, `H Field S …`, `H Field G/H …`, `I interval`, `P interval`, `P ratio`, `Data version`, `minthrottle`, `vbatref`, `gyro_scale`, `motorOutput` та всі інші — зберігаються сирими та передаються `FirmwareProfile`.
-- **Кадри**: `I` (intra), `P` (inter), `S` (slow), `G`/`H` (GPS), `E` (events). Предиктори 0–10, кодування 0–10 (SignedVB, UnsignedVB, Neg14, EliasDelta u/s, TAG8_8SVB, TAG2_3S32, TAG8_4S16, Null, TAG2_3SVariable). Кожне кодування — окрема функція з property‑тестами (кодер у тестах → декодер → ідентичність).
-- **Стійкість**: валідація кадру по наступному байту (має бути початком відомого кадру), перевірка монотонності `loopIteration`/`time`, resync на наступний `I`‑кадр, облік статистики пошкоджень у `Diagnostics`. Фаззинг декодера — обов'язковий, бо вхід недовірений (мутаційний фаззер без `cargo fuzz`, ADR‑0013).
-- **Події**: sync beep, inflight adjustment, logging resume, disarm, flight mode flags → `Event`.
-- **Вихід**: колонки `i64` → після мапінгу профілем стають `Channel` з `f64` та одиницями (масштаб застосовується один раз, у `f64`, без проміжного округлення).
-
-Профілі (`openpid-fmt-blackbox::profiles`): `betaflight` (4.0–4.6+, різні debug_mode), `emuflight`, `rotorflight` (делегують BF з перевизначенням), `inav` (інші масштаби gyro, інші імена). Профіль обирається за `Firmware revision`, бо `Firmware type` завжди `Cleanflight`.
-
-Окремий crate `openpid-fmt-csv` читає CSV від офіційного `blackbox_decode` — використовується для **конформанс‑тестів** нашого декодера (той самий лог → ті самі значення) і як fallback для екзотичних логів.
+- **Dependency inversion**: the core depends on abstractions (traits), the concrete firmwares and formats depend on the core.
+- **Open/closed**: new formats, analyses and recommenders are new types; existing code does not change.
+- **Single responsibility**: a crate is one responsibility (format, mathematics, analysis, GUI).
+- **Composition over inheritance**: the `FirmwareProfile` for EmuFlight/Rotorflight *delegates* to the Betaflight profile and overrides only the differences.
+- **Types as documentation**: units, axes and filter stages are encoded in enums; a raw gyro cannot be passed where a filtered one is expected by accident.
 
 ---
 
-## 6. Математика (`openpid-dsp`, `openpid-analysis`)
+## 5. The Blackbox decoder (`openpid-fmt-blackbox`)
 
-### 6.1 Політика чисел
+An own implementation from the public specification (Betaflight "Blackbox Logging Internals"; the reference implementations are `blackbox-tools/parser.c` and `blackbox-log-viewer/flightlog_parser.js`).
 
-- Усі ряди — `f64`. Сирі лічильники (`loopIteration`, `time`) — `i64`/`u64` до останнього моменту.
-- `Series` = `Vec<f64>` + `BitMask` валідності; операції через маску, без NaN‑«сентинелів».
-- FFT — `rustfft` (чистий Rust, детермінований, MIT/Apache). Обгортка `dsp::fft::Planner` кешує плани за довжиною. Довжини — довільні (rustfft не вимагає степеня двійки), але для швидкості стандартні сегменти беруться найближчим «гладким» числом (2^a·3^b·5^c).
-- Вікна: Hann (за замовчуванням, як у PTB), Hamming, Blackman‑Harris, Tukey(α). Нормування вікна (coherent gain / ENBW) враховується **явно** в PSD, щоб амплітуди між різними довжинами сегментів були порівнянні.
-- Кожна функція `dsp` має тест проти еталону, згенерованого `tools/reference/*.py` (NumPy/SciPy) і збереженого як fixture; допуск — відносна похибка ≤ 1e‑9 для лінійних операцій, ≤ 1e‑6 для ітеративних.
-- Додатково: property‑тести (Парсеваль для PSD, лінійність деконволюції, імпульс → крок через cumsum).
+- **Input**: `&[u8]` (through `memmap2` for big files, or read whole), zero-copy, no intermediate strings.
+- **Container**: one file → N logs, separated by the header marker `H Product:Blackbox flight data recorder by Nicholas Sherlock`. Supports `.BBL/.BFL/.TXT` and SD-card dumps with garbage between the logs.
+- **Headers**: `H Field I name/signed/predictor/encoding`, `H Field P predictor/encoding`, `H Field S …`, `H Field G/H …`, `I interval`, `P interval`, `P ratio`, `Data version`, `minthrottle`, `vbatref`, `gyro_scale`, `motorOutput` and every other one are kept raw and handed to the `FirmwareProfile`.
+- **Frames**: `I` (intra), `P` (inter), `S` (slow), `G`/`H` (GPS), `E` (events). Predictors 0–10, encodings 0–10 (SignedVB, UnsignedVB, Neg14, EliasDelta u/s, TAG8_8SVB, TAG2_3S32, TAG8_4S16, Null, TAG2_3SVariable). Every encoding is a separate function with property tests (an encoder in the tests → decoder → identity).
+- **Robustness**: frame validation by the next byte (it must start a known frame), monotonicity checks of `loopIteration`/`time`, resync at the next `I` frame, corruption statistics in `Diagnostics`. Fuzzing of the decoder is mandatory because the input is untrusted (a mutation fuzzer without `cargo fuzz`, ADR-0013).
+- **Events**: sync beep, inflight adjustment, logging resume, disarm, flight-mode flags → `Event`.
+- **Output**: `i64` columns that become `Channel`s with `f64` values and units after the profile mapping (the scale is applied once, in `f64`, without intermediate rounding).
+
+Profiles (`openpid-fmt-blackbox::profiles`): `betaflight` (4.0–4.6+, the various debug modes), `emuflight`, `rotorflight` (delegating to BF with overrides), `inav` (other gyro scales, other names). The profile is chosen by `Firmware revision`, because `Firmware type` is always `Cleanflight`.
+
+The separate crate `openpid-fmt-csv` reads the CSV of the official `blackbox_decode`; it is used for the **conformance tests** of our decoder (the same log → the same values) and as a fallback for exotic logs.
+
+---
+
+## 6. Mathematics (`openpid-dsp`, `openpid-analysis`)
+
+### 6.1 Number policy
+
+- Every series is `f64`. Raw counters (`loopIteration`, `time`) stay `i64`/`u64` until the last moment.
+- `Series` = `Vec<f64>` + a validity `BitMask`; operations go through the mask, no NaN sentinels.
+- FFT: `rustfft` (pure Rust, deterministic, MIT/Apache). The `dsp::fft::Planner` wrapper caches plans by length. Lengths are arbitrary (rustfft does not need powers of two), but for speed the standard segments use the nearest "smooth" number (2^a·3^b·5^c).
+- Windows: Hann (the default, as in PTB), Hamming, Blackman-Harris, Tukey(α). The window normalisation (coherent gain / ENBW) is applied **explicitly** in the PSD, so amplitudes are comparable between segment lengths.
+- Every `dsp` function has a test against a reference generated by `tools/reference/*.py` (NumPy/SciPy) and stored as a fixture; the tolerance is a relative error ≤ 1e-9 for linear operations and ≤ 1e-6 for iterative ones.
+- Also property tests (Parseval for the PSD, linearity of the deconvolution, impulse → step through cumsum).
 
 ### 6.2 Step response
 
-Метод — **Wiener‑деконволюція** вхід (setpoint) → вихід (gyro filtered), як у сучасних PTB/PID‑Analyzer, а не евристика «кінець маневру» зі старого PTB.
+The method is **Wiener deconvolution** from the input (setpoint) to the output (filtered gyro), as in the modern PTB and PID-Analyzer, not the "end of manoeuvre" heuristic of the old PTB.
 
-1. Епоха (вибраний користувачем діапазон часу) ділиться на вікна довжиною `L` (за замовч. 2 с) з кроком `L/superpos` (superpos = 16 → 125 мс).
-2. Кожне вікно: `x = setpoint·w`, `y = gyro·w` (Hann), zero‑pad до гладкої довжини.
-3. `H = Y·conj(X) / (|X|² + λ(f))`, де `λ(f)` — регуляризація: `reg_low` (0.1) нижче `cutoff` (за замовч. 25 Гц), `reg_high` (1e8) вище, між ними raised‑cosine перехід ±20 % у log‑шкалі. Обидва сигнали множаться на Hann перед FFT: без цього неспостережуваний хвіст відгуку за межею запису занижує підсилення (≈10 % для 4‑с запису і τ = 20 мс — перевірено на синтетичній моделі). Довжина FFT — 5‑smooth число ≥ 1.5·len, щоб циклічна згортка не накладалась. Імпульсна відповідь `h = IFFT(H)`, крокова `s = cumsum(h)` на перші 500 мс.
-4. Відбір вікон: `max|setpoint| ≥ threshold` (за замовч. 20 °/с, окремо «low/high input» як у PID‑Analyzer з порогом 500 °/с), виключення вікон з прогалинами/пошкодженнями.
-5. Агрегація: зважене середнє (вага = амплітуда входу) **та** 2D‑гістограма (час × амплітуда) для показу розкиду; опційна Y‑offset корекція (нормування на стале значення в хвості) і згладжування (PTB «smoothing 1/20/40/60»).
-6. Метрики: rise time (10–90 %), overshoot %, settling time (±5 %), delay (час першого перетину 50 % усередненої кривої) і **latency** — зсув максимуму крос‑кореляції setpoint↔gyro по сирих сигналах епохи (`openpid_dsp::xcorr::lag_of_max`, пошук до 100 мс, параболічне уточнення піка). Для білого входу це транспортна затримка осі; для плавного стік‑входу пік захоплює й частину власного відставання об'єкта (на логах: 10–17 мс проти 50 %‑delay 18–22 мс), тому величину читають поруч із delay. Варіант із «відбілюванням» через перші різниці відкинуто: на реальних логах шум гіроскопа домінує в похідній (r ≈ 0.1) і пік стрибає від 4 до 37 мс залежно від згладжування. Обидві величини показуються поруч: delay залежить від фільтрів і PID, latency — транспортна затримка осі. Y‑offset: кожне вікно нормується на середнє останньої чверті відгуку, якщо воно > 0.2 (інакше вікно лишається як є).
+1. The epoch (the user's time range) is cut into windows of length `L` (default 2 s) with a hop of `L/superpos` (superpos = 16 → 125 ms).
+2. Every window: `x = setpoint·w`, `y = gyro·w` (Hann), zero-padded to a smooth length.
+3. `H = Y·conj(X) / (|X|² + λ(f))`, where `λ(f)` is the regularisation: `reg_low` (0.1) below `cutoff` (default 25 Hz), `reg_high` (1e8) above, with a raised-cosine transition of ±20 % on a log scale between them. Both signals are multiplied by Hann before the FFT: without it the unobserved tail of the response beyond the record understates the gain (≈ 10 % for a 4 s record and τ = 20 ms, checked on a synthetic model). The FFT length is a 5-smooth number ≥ 1.5·len so the circular convolution does not wrap. The impulse response is `h = IFFT(H)`, the step response `s = cumsum(h)` over the first 500 ms.
+4. Window selection: `max|setpoint| ≥ threshold` (default 20 °/s, with separate "low/high input" as in PID-Analyzer at 500 °/s), windows with gaps or corruption excluded.
+5. Aggregation: a weighted mean (weight = input amplitude) **and** a 2D histogram (time × amplitude) to show the spread; optional Y-offset correction (normalising on the settled tail value) and smoothing (PTB "smoothing 1/20/40/60").
+6. Metrics: rise time (10–90 %), overshoot %, settling time (±5 %), delay (the first crossing of 50 % of the mean curve) and **latency**: the lag of the cross-correlation peak of setpoint ↔ gyro on the raw signals of the epoch (`openpid_dsp::xcorr::lag_of_max`, searched up to 100 ms, parabolic peak refinement). For a white input this is the transport delay of the axis; with smooth stick input the peak also catches part of the plant's own lag (on real logs 10–17 ms against a 50 % delay of 18–22 ms), so the value is read next to delay. A "whitened" variant through first differences was rejected: on real logs the gyro noise dominates the derivative (r ≈ 0.1) and the peak jumps between 4 and 37 ms depending on the smoothing. Both values are shown side by side: delay depends on the filters and PIDs, latency is the transport delay of the axis. Y-offset: every window is normalised on the mean of the last quarter of its response when that is > 0.2 (otherwise the window is left as is).
 
-Параметри (`StepParams`): `window_s, superpos, cutoff_hz, min_input, high_input, resp_len_s, y_offset, smoothing, axis`.
+Parameters (`StepParams`): `window_s, superpos, cutoff_hz, min_input, high_input, resp_len_s, y_offset, smoothing, axis`.
 
 ### 6.3 2D spectral analyzer (PSD)
 
-Welch: сегменти `nfft` (за замовч. 1024 при 4 kHz… параметризовано у секундах), overlap 50 %, Hann, усереднення періодограм, одиниці — `(°/s)²/Hz` з опцією dB та лінійної. Канали: gyro raw/filtered, D‑term, PID error, setpoint, motor, debug[n]. Порівняння A/B на одній осі.
+Welch: `nfft` segments (default 1024 at 4 kHz; parameterised in seconds), 50 % overlap, Hann, averaged periodograms, units `(°/s)²/Hz` with a dB or linear option. Channels: gyro raw/filtered, D-term, PID error, setpoint, motor, debug[n]. A/B comparison on one axis.
 
 ### 6.4 Freq × throttle heatmap
 
-Як у PTB `PTthrSpec`, але без MATLAB‑артефактів:
+As the PTB `PTthrSpec`, without the MATLAB artifacts:
 
-1. Сегменти по 200 мс (параметр), Hann, FFT, однобічна амплітуда `|Y|/N·2`.
-2. Для кожного сегмента — середній throttle (%).
-3. Для кожного throttle‑біна `t ∈ 0..100` усереднюються спектри сегментів з `|thr − t| ≤ half_window` (за замовч. 6 %) — ковзне вікно по throttle.
-4. Згладжування 2D box‑фільтром (параметри `thr_smooth=8`, `freq_smooth=segment_len/100`), обрізка до `max_freq`.
-5. Результат — `Grid2D { x: throttle, y: freq, z: amp }` + кількість сегментів на бін (показується, щоб порожні біни не виглядали як «тиша»).
+1. Segments of 200 ms (a parameter), Hann, FFT, the one-sided amplitude `|Y|/N·2`.
+2. The mean throttle (%) of every segment.
+3. For every throttle bin `t ∈ 0..100` the spectra of the segments with `|thr − t| ≤ half_window` (default 6 %) are averaged: a sliding window over throttle.
+4. 2D box smoothing (parameters `thr_smooth=8`, `freq_smooth=segment_len/100`), cut at `max_freq`.
+5. The result is `Grid2D { x: throttle, y: freq, z: amp }` plus the number of segments per bin (shown so that empty bins do not look like silence).
 
 ### 6.5 Freq × time heatmap (STFT)
 
-STFT з `nfft`, hop, Hann → `Grid2D { x: time, y: freq, z: amp/dB }`. Це ж джерело для «Dynamic spectrum player» (фаза 2) — плеєр просто проходить по стовпцях.
+An STFT with `nfft`, hop, Hann → `Grid2D { x: time, y: freq, z: amp/dB }`. It is also the source of the "Dynamic spectrum player" (phase 2): the player simply walks the columns.
 
-### 6.6 Фільтри та overlay (фаза 2)
+### 6.6 Filters and overlays (phase 2)
 
-- `openpid-sim` (ADR‑0012): PT1/PT2/PT3, biquad LPF/notch (формули Betaflight/RBJ) як машини станів `update(x)` з аналітичною `response(f)`, зібрані в `Chain`. Усі — у `f64`, з тестами частотної відповіді проти аналітичних формул і узгодженості `update` ↔ `response`.
-- `ChainModel::from_settings` збирає ланцюг gyro або D‑term із `Settings` (+ сирі заголовки для expo, fade, weights) і проганяє сигнал під керуванням `Drive` (газ, RPM моторів, центри dyn notch): lpf1 із газозалежним зрізом `min + (max−min)·(t(1−t)·expo + t)`, що перераховується раз на 5 мс із кроком 1 % газу; RPM‑notch на гармоніках `k·rpm/60` зі згладженою частотою, fade‑in над `min_hz`, ваговими коефіцієнтами гармонік і пропуском гармонік вище 0,48·fs; dyn notch, що стежить за найсильнішими піками STFT (≈100 мс, крок 16 мс, PT1 4 Гц) у смузі `min..max`. Порядок: RPM → статичні notch → lpf1 → lpf2 → dyn notch. Обмеження моделі: працює на частоті логу, а не гіроскопа (на 1 кГц лишається смуга до 500 Гц, гармоніки RPM вище не моделюються), трекер dyn notch — наближення SDFT прошивки, крива expo‑0 для < 4.2 — лінійна. На фікстурі Betaflight 2025.12 (gyroUnfilt у логу) залишок `gyro.sim − gyro.filtered` становить 5–13 % RMS проти 27–75 % без фільтрів (тест у crate).
-- **Filter Sim** (`FilterSimAnalysis`, вкладка Filter Sim, `openpid run filter-sim --set …`): `gyro.raw → ChainModel(settings) → gyro.sim`, порівняння з `gyro.filtered` з логу (метрика валідації: залишок у % RMS, затримка за крос‑кореляцією) і з «what‑if» ланцюгом (`FilterOverrides`: зрізи й типи LPF1/LPF2, динамічний діапазон, RPM‑ і dyn‑notch, статичний notch; 0 вимикає стадію). Виводи: обидва ряди в часі, PSD raw/logged/sim/as‑flown, опис стадій. Потребує нефільтрованого гіро в логі (`gyroUnfilt`, `debug_mode GYRO_SCALED`, batch sampler ArduPilot).
-- **RPM/dyn‑notch overlay** (`RpmOverlay` у виводі freq×throttle): з `motor_rpm.*` (eRPM і `motor_poles`) — медіана RPM кожного мотора на кожен бін газу (ті самі сегменти й вікно, що й спектри); GUI малює гармоніки `k·rpm/60` (перемикачі на мотор, кількість гармонік, за замовчуванням — скільки знімає RPM‑фільтр), смуги статичних notch, смугу dyn notch і мінімум RPM‑фільтра; у JSON CLI `overlay` є завжди, коли є RPM. Перевірено на фікстурі 4.5.1: фундаментальна лінія лежить на хребті спектра нефільтрованого гіро у 93 % бінів. 3D — та сама сітка як поверхня (#26).
-- **RPM estimator** (`RpmEstimator`, `openpid run rpm`): коли eRPM відсутній — кандидати з найсильніших піків STFT нефільтрованого гіро у смузі `rpm_min..rpm_max` (і як 1‑ша…3‑тя гармоніка), динамічне програмування обирає неперервний у часі шлях (штраф за відносний стрибок і за вищу гармоніку), достовірність = перевищення піка над медіаною смуги. При чотирьох моторах на близьких обертах оцінка стежить за їх середнім: медіанна похибка 2,9 % на фікстурі 4.5.1 і 2,0 % на 2025.12 (проти логованого eRPM, рахується у виводі як `median_error`). `gyro.filtered` непридатний — RPM‑фільтр уже зняв піки.
-- **Motor noise** (`MotorNoiseAnalysis`, вкладка Motor noise, `openpid run motor-noise`): для кожного мотора — амплітуда гіро на його гармоніках `k·rpm/60` у кожному кадрі STFT (усереднена), відношення до середнього по моторах, сума; швидкості з eRPM або з RPM‑естиматора (тоді один рядок на всі мотори). «Гнутий пропелер» видно як рядок із відношенням > 1 і підсвіченим найгучнішим мотором; перевірено на синтетиці генератора з 2,5× підсиленням одного мотора.
+- `openpid-sim` (ADR-0012): PT1/PT2/PT3, biquad LPF/notch (Betaflight/RBJ formulas) as state machines `update(x)` with an analytic `response(f)`, assembled into a `Chain`. All in `f64`, with tests of the frequency response against the analytic formulas and of the consistency of `update` ↔ `response`.
+- `ChainModel::from_settings` builds the gyro or D-term chain from `Settings` (plus the raw headers for expo, fade, weights) and runs the signal under a `Drive` (throttle, motor rpm, dynamic-notch centres): lpf1 with a throttle-dependent cutoff `min + (max−min)·(t(1−t)·expo + t)` recomputed every 5 ms in 1 % throttle steps; an RPM notch on the harmonics `k·rpm/60` with a smoothed frequency, a fade-in above `min_hz`, harmonic weights and skipping of harmonics above 0.48·fs; a dynamic notch that tracks the strongest STFT peaks (≈ 100 ms, 16 ms hop, PT1 4 Hz) in the `min..max` band. The order: RPM → static notches → lpf1 → lpf2 → dynamic notch. Limits of the model: it runs at the log rate, not the gyro rate (at 1 kHz only the band up to 500 Hz remains, higher RPM harmonics are not modelled), the dynamic-notch tracker approximates the firmware's SDFT, the expo-0 curve for < 4.2 is linear. On the Betaflight 2025.12 fixture (`gyroUnfilt` in the log) the residual `gyro.sim − gyro.filtered` is 5–13 % RMS against 27–75 % without filters (a test in the crate).
+- **Filter Sim** (`FilterSimAnalysis`, the Filter Sim tab, `openpid run filter-sim --set …`): `gyro.raw → ChainModel(settings) → gyro.sim`, compared with the log's `gyro.filtered` (validation metrics: residual in % RMS, delay by cross-correlation) and with a "what-if" chain (`FilterOverrides`: LPF1/LPF2 cutoffs and types, the dynamic range, RPM and dynamic notches, a static notch; 0 switches a stage off). Outputs: both series over time, PSD raw/logged/sim/as-flown, a description of the stages. It needs the unfiltered gyro in the log (`gyroUnfilt`, `debug_mode GYRO_SCALED`, the ArduPilot batch sampler).
+- **RPM / dyn-notch overlay** (`RpmOverlay` in the freq × throttle output): from `motor_rpm.*` (eRPM and `motor_poles`), the median rpm of every motor per throttle bin (the same segments and window as the spectra); the GUI draws the harmonics `k·rpm/60` (toggles per motor, number of harmonics, by default as many as the RPM filter removes), the static notch bands, the dynamic-notch band and the RPM-filter minimum; the CLI JSON always has `overlay` when rpm exists. Checked on the 4.5.1 fixture: the fundamental line sits on the ridge of the unfiltered-gyro spectrum in 93 % of the bins. 3D is the same grid as a surface (#26).
+- **RPM estimator** (`RpmEstimator`, `openpid run rpm`): without eRPM, the candidates are the strongest STFT peaks of the unfiltered gyro in the `rpm_min..rpm_max` band (as the 1st…3rd harmonic), dynamic programming picks a path continuous in time (penalties for a relative jump and for a higher harmonic), the confidence is the peak's excess over the band median. With four motors at similar speed the estimate follows their mean: a median error of 2.9 % on the 4.5.1 fixture and 2.0 % on 2025.12 (against the logged eRPM, reported as `median_error`). `gyro.filtered` is unusable: the RPM filter has already removed the peaks.
+- **Motor noise** (`MotorNoiseAnalysis`, the Motor noise tab, `openpid run motor-noise`): per motor, the gyro amplitude at its harmonics `k·rpm/60` in every STFT frame (averaged), the ratio to the mean over the motors, the sum; the speeds come from eRPM or the RPM estimator (then one row for all motors). A "bent prop" shows as a row with a ratio > 1 and the loudest motor highlighted; checked on the generator's synthetic data with one motor amplified 2.5×.
 
-### 6.7 Кеш та інкрементальність
+### 6.7 Cache and incrementality
 
-`ResultStore` кешує `Output` за ключем `(session_id, epoch, analysis_id, hash(params))`. Важкі обчислення виконуються у фоновому потоці (`std::thread` + канал; `rayon` — лише якщо вимірювання покажуть потребу), GUI отримує прогрес і не блокується.
+`ResultStore` caches an `Output` by the key `(session_id, epoch, analysis_id, hash(params))`. Heavy computations run on a worker thread (`std::thread` plus a channel; `rayon` only if measurements show the need); the GUI receives progress and never blocks.
 
 ---
 
 ## 7. GUI (`openpid-app`)
 
-### 7.1 Технологія
+### 7.1 Technology
 
-**egui + eframe (wgpu backend) + egui_plot** — ADR‑0002. Чистий Rust, один бінарник на macOS/Windows/Linux, GPU‑рендеринг, вбудована підтримка мультитачу (`MultiTouchInfo`: pinch‑zoom, two‑finger pan, rotation), активна спільнота, стабільні релізи.
+**egui + eframe (wgpu backend) + egui_plot**, ADR-0002. Pure Rust, one binary per platform (macOS/Windows/Linux), GPU rendering, built-in multi-touch (`MultiTouchInfo`: pinch zoom, two-finger pan, rotation), an active community, stable releases.
 
-Розглянуті альтернативи: `iced` 0.14 (Elm‑архітектура, менше готових компонентів для графіків), `slint` 1.18 (власна DSL‑мова розмітки, ліцензія GPLv3 / royalty‑free з обмеженнями / комерційна), `tauri` (веб‑стек — суперечить P1).
+Alternatives considered: `iced` 0.14 (Elm architecture, fewer ready plot components), `slint` 1.18 (its own markup DSL, licence GPLv3 / royalty-free with restrictions / commercial), `tauri` (a web stack, against P1).
 
-### 7.2 Структура застосунку
+### 7.2 Application structure
 
 ```
 AppState
 ├─ Workspace { logs: [LoadedLog], active: {A, B}, epoch: {A, B} }
-├─ ResultStore (кеш аналізів)
-├─ ViewState (поточна вкладка, параметри кожного інструмента, zoom/pan)
-└─ Prefs (тема, touch‑режим, одиниці, мова)
+├─ ResultStore (analysis cache)
+├─ ViewState (current tab, the parameters of every tool, zoom/pan)
+└─ Prefs (theme, touch mode, units, language)
 
-Views (кожен — struct, що реалізує trait View { fn ui(&mut self, ctx, state) })
-├─ LogViewer      — часові графіки, вибір епохи, курсор‑синхронізація A/B
-├─ StepResponse   — криві + метрики + гістограма розкиду
-├─ Spectral2D     — PSD, A/B overlay, маркери частот
-├─ HeatmapThr     — freq×throttle, overlay notch/RPM
-├─ HeatmapTime    — freq×time, плеєр (фаза 2)
+Views (each a struct implementing trait View { fn ui(&mut self, ctx, state) })
+├─ LogViewer      — time plots, epoch selection, A/B cursor sync
+├─ StepResponse   — curves, metrics, spread histogram
+├─ Spectral2D     — PSD, A/B overlay, frequency markers
+├─ HeatmapThr     — freq × throttle, notch/RPM overlay
+├─ HeatmapTime    — freq × time, player (phase 2)
 ├─ SliderTool     — PID slider ↔ gains
-├─ FilterSim      — (фаза 2)
-├─ Diagnostics    — заголовки, статистика кадрів, прогалини
+├─ FilterSim      — (phase 2)
+├─ Diagnostics    — headers, frame statistics, gaps
 └─ Settings
 ```
 
-- Heatmap рендериться у текстуру (`ColorImage` → `TextureHandle`) один раз на зміну даних; осі/overlay малюються поверх через `egui_plot`. Це тримає 60 fps навіть при 100×1000 сітках.
-- Усі параметри інструментів — звичайні `struct`и, серіалізуються у «проєкт» (`.openpid.json`, схема `openpid_analysis::Project` v1 з default для кожного поля): логи зі шляхами відносно файлу проєкту, сесія й епоха кожного слота, активна вкладка, touch‑режим, усі параметри інструментів. Меню Project → Open/Save as, drag‑and‑drop `.openpid.json` або аргумент командного рядка; `openpid run <аналіз> --project p.openpid.json` бере лог слота A, сесію, епоху й параметри з проєкту (прапорці `--axis/--channel/--epoch` мають пріоритет).
-- **Touch‑режим**: автовмикання при першій touch‑події або вручну; збільшує розміри контролів (≥ 44 pt), додає жести: pinch — zoom по осі (egui класифікує горизонтальний/вертикальний pinch, egui_plot масштабує відповідну вісь), два пальці — pan, довгий дотик (≥ 0,6 с без руху > 8 px) — курсор‑вимірювач у log viewer, двотап — reset zoom. Список каналів у log viewer обмежений по висоті й прокручується, щоб у touch‑режимі не витіснити графік.
-- Теми: темна (за замовч., у стилі PTB) і світла; локалізація UA/EN через просту таблицю рядків.
-- **Settings** (фаза 1): тема, touch‑режим, одиниці (deg/s ↔ rad/s, g ↔ m/s²) зберігаються у `prefs.json` в каталозі конфігурації платформи (`~/.config/openpid`, `~/Library/Application Support/openpid`, `%APPDATA%\openpid`; перевизначення — `OPENPID_CONFIG_DIR`). Невідомі поля ігноруються, відсутні — за замовчуванням, тому версії можуть ділити файл. Одиниці застосовуються до трас log viewer; аналізи лишаються в deg/s.
+- A heatmap is rendered into a texture (`ColorImage` → `TextureHandle`) once per data change; axes and overlays are drawn on top through `egui_plot`. That keeps 60 fps even on 100 × 1000 grids.
+- Every tool parameter is a plain `struct`, serialised into a "project" (`.openpid.json`, the `openpid_analysis::Project` v1 schema with a default for every field): logs with paths relative to the project file, the session and epoch of every slot, the active tab, touch mode, every tool parameter. Project → Open / Save as, drag-and-drop of a `.openpid.json`, or a command-line argument; `openpid run <analysis> --project p.openpid.json` takes the log of slot A, its session, epoch and parameters from the project (the `--axis/--channel/--epoch` flags win).
+- **Touch mode**: switched on automatically at the first touch event or by hand; it enlarges the controls (≥ 44 pt) and adds gestures: pinch zooms an axis (egui classifies a horizontal or vertical pinch, egui_plot scales the matching axis), two fingers pan, a long press (≥ 0.6 s without moving > 8 px) places the measuring cursor in the log viewer, a double tap resets the zoom. The channel list of the log viewer is height-limited and scrolls, so in touch mode it does not push the plot away.
+- Themes: dark (the default, PTB-like) and light; UA/EN localisation through a simple string table.
+- **Settings** (phase 1): theme, touch mode and units (deg/s ↔ rad/s, g ↔ m/s²) are saved in `prefs.json` in the platform's configuration directory (`~/.config/openpid`, `~/Library/Application Support/openpid`, `%APPDATA%\openpid`; override with `OPENPID_CONFIG_DIR`). Unknown fields are ignored, missing ones take their defaults, so versions can share the file. The units apply to the log-viewer traces; the analyses stay in deg/s.
 
-### 7.3 Робочий процес користувача
+### 7.3 The user's workflow
 
-1. Відкрити файл (діалог `rfd` або drag‑and‑drop) → список сесій у файлі → вибрати.
-2. Log viewer: побачити весь політ, вибрати епоху (у PTB — поля «start/end sec»; у нас — ще й перетягування меж на графіку).
-3. Перейти на інструмент; параметри змінюються — результат перераховується у фоні.
-4. Завантажити лог B, порівняти.
-5. Експорт: PNG графіка, CSV/JSON результатів, (фаза 3) diff налаштувань.
+1. Open a file (the `rfd` dialog or drag-and-drop) → the list of sessions in the file → pick one.
+2. Log viewer: see the whole flight, pick the epoch (in PTB the "start/end sec" fields; here also by dragging the bounds on the plot).
+3. Go to a tool; parameters change and the result is recomputed in the background.
+4. Load log B, compare.
+5. Export: a PNG of the plot, CSV/JSON of the results, (phase 3) a settings diff.
 
 ---
 
 ## 8. CLI (`openpid-cli`)
 
 ```
-openpid info  <log>                      # сесії, прошивка, діагностика
-openpid decode <log> --session 1 --csv   # сумісний з blackbox_decode CSV
+openpid info  <log>                      # sessions, firmware, diagnostics
+openpid decode <log> --session 1 --csv   # blackbox_decode-compatible CSV
 openpid run step <log> --axis roll --epoch 5..60 --json
 openpid run psd  <log> --channel gyro.filtered.roll
 openpid run thr-heatmap <log> --png out.png
 ```
 
-`openpid gen [<spec.json>] [--out synthetic.csv]` (`openpid-sim::SignalSpec`): синтетична сесія з відомою «правдою» — профіль газу (константа/рампа/синус), стік (кроки/чирп/синус), об'єкт першого порядку із затримкою, гармоніки моторів, прив'язані до газу, білий/рожевий шум і тони, PT1‑«прошивковий» фільтр, джитер і пропуски. Записується як масштабований CSV із канонічними ключами колонок, який `openpid` відкриває як звичайний лог (`gen --example` друкує спец за замовчуванням). На цьому ґрунтуються генераторні тести аналізів (`crates/openpid-analysis/tests/synthetic.rs`).
+`openpid gen [<spec.json>] [--out synthetic.csv]` (`openpid-sim::SignalSpec`): a synthetic session with known ground truth: a throttle profile (constant / ramp / sine), stick input (steps / chirp / sine), a first-order plant with delay, motor harmonics tied to the throttle, white/pink noise and tones, a PT1 "firmware" filter, jitter and dropouts. Written as a scaled CSV with the canonical column keys, which `openpid` opens like any log (`gen --example` prints the default spec). The generator tests of the analyses (`crates/openpid-analysis/tests/synthetic.rs`) are built on it.
 
-CLI використовує ті самі реєстри, що й GUI, і є основою golden‑тестів у CI (вихід порівнюється з `tests/golden/*.json`).
-
----
-
-## 9. Інтеграція з autotune / пристроєм (фаза 3, архітектурний задел)
-
-- `Recommender` отримує `FlightSession` + результати аналізів і повертає `Vec<Proposal>` (`{ path: "pid.roll.d", from, to, rationale, confidence }`).
-- `Exporter("betaflight-cli")` перетворює `Proposal` у `set …` команди / diff.
-- Реалізовано (v1.0): `openpid-core::recommend` (`Proposal`, `Exporter`, `diff_headers`), `openpid-analysis::recommend::Recommend` — три правила з явними доказами (overshoot → D, пік без notch → notch, запас над gyro LPF → зріз), `openpid-fmt-blackbox::BetaflightCli`, `openpid diff` і `openpid run recommend --cli`.
-- Пізніше — `Device` trait (MSP через serial) для читання/запису налаштувань і завантаження логів з FC. Рішення — ADR‑0014: у v1.0 без доступу до пристрою; згодом окремий crate `openpid-msp` за feature `device` на `serial2` (чистий Rust), запис лише з підтвердженням і читанням назад.
-
-Жодна з цих частин не вимагає змін у `core`: усе — нові реалізації існуючих trait‑ів.
+The CLI uses the same registries as the GUI and is the basis of the golden tests in CI (the output is compared with `tests/golden/*.json`).
 
 ---
 
-## 10. Залежності (початковий список, ADR‑0001)
+## 9. Autotune / device integration (phase 3, the architectural groundwork)
 
-| Crate | Навіщо | Чому не самому |
-|-------|--------|----------------|
-| `eframe`/`egui`/`egui_plot` | GUI, вікна, GPU | Власний UI‑тулкіт — роки роботи |
-| `wgpu`, `winit` | транзитивно через eframe | те саме |
-| `rustfft` | FFT | власний FFT можливий, але rustfft — еталонно перевірений, чистий Rust, SIMD; ризик помилок у власному вищий, ніж користь |
-| `serde` + `serde_json` | проєкти, golden‑тести, експорт | де‑факто стандарт, чистий Rust |
-| ~~`memmap2`~~ | zero‑copy великих логів | не знадобився: логи читаються в пам'ять цілком (аудит 2026‑11‑05, вилучено з workspace) |
-| `rfd` | нативні діалоги файлів | платформні API |
-| `thiserror` | типи помилок | лише derive‑макрос; можна й без нього |
-| `clap` (тільки cli) | парсинг аргументів | опційно; можна замінити ручним парсером |
+- A `Recommender` receives a `FlightSession` plus the analysis results and returns `Vec<Proposal>` (`{ path: "pid.roll.d", from, to, rationale, confidence }`).
+- `Exporter("betaflight-cli")` turns `Proposal`s into `set …` commands / a diff.
+- Implemented (v1.0): `openpid-core::recommend` (`Proposal`, `Exporter`, `diff_headers`), `openpid-analysis::recommend::Recommend` with three rules and explicit evidence (overshoot → D, an uncovered peak → notch, headroom above the gyro LPF → cutoff), `openpid-fmt-blackbox::BetaflightCli`, `openpid diff` and `openpid run recommend --cli`.
+- Later: a `Device` trait (MSP over serial) to read and write settings and to download logs from the FC. The decision is ADR-0014: no device access in v1.0; later a separate `openpid-msp` crate behind the `device` feature on `serial2` (pure Rust), writes only with confirmation and a read-back.
 
-Dev‑only: `proptest`, `criterion`, `insta` (snapshot); `cargo-fuzz` не використовується (ADR‑0013). Усе інше — додається лише через ADR. `cargo deny` перевіряє ліцензії (allow: MIT/Apache‑2.0/BSD/Zlib/MPL‑2.0 — узгодити з Q1) та дублікати.
+None of these parts needs a change in `core`: all of them are new implementations of existing traits.
 
 ---
 
-## 11. Якість і тестування
+## 10. Dependencies (the initial list, ADR-0001)
 
-- **Unit**: кодування blackbox (roundtrip), предиктори, вікна, FFT‑обгортка, фільтри (частотна відповідь vs аналітика).
-- **Reference**: `tools/reference/*.py` генерує fixtures (JSON) для step/PSD/heatmap на синтетичних сигналах і на еталонних логах; Rust‑тести порівнюють з допусками.
-- **Conformance**: наш декодер vs CSV `blackbox_decode` на `tests/logs/*` (усі канали, усі кадри).
-- **Golden**: вихід CLI на еталонних логах зафіксований у `tests/golden`; зміна алгоритму = свідоме оновлення golden з описом у PR.
-- **Fuzz**: декодер blackbox, парсер заголовків — власний мутаційний фаззер (`tests/fuzz.rs`, ADR‑0013): короткий прогін у кожному CI, щотижневий із бюджетом часу (`fuzz.yml`).
-- **Bench**: `criterion` для декодера (МБ/с) і для step/heatmap (мс на 60 с логу при 8 kHz).
-- **CI**: GitHub Actions матриця macOS/Windows/Linux: `fmt`, `clippy -D warnings`, тести, `cargo deny`, збірка релізних бінарників. Цілі продуктивності: лог 8 kHz × 3 хв декодується < 1 с, усі аналізи фази 1 — < 2 с на ноутбуці.
-- **Lints**: `#![deny(unsafe_code)]` у всіх crate‑ах, крім `fmt-blackbox` (mmap) із задокументованими `unsafe`‑блоками; `clippy::pedantic` вибірково.
+| Crate | Why | Why not our own |
+|-------|-----|-----------------|
+| `eframe`/`egui`/`egui_plot` | GUI, windows, GPU | An own UI toolkit is years of work |
+| `wgpu`, `winit` | transitively through eframe | the same |
+| `rustfft` | FFT | an own FFT is possible, but rustfft is reference-validated, pure Rust, SIMD; the risk of mistakes in our own outweighs the benefit |
+| `serde` + `serde_json` | projects, golden tests, export | the de-facto standard, pure Rust |
+| ~~`memmap2`~~ | zero-copy of big logs | not needed: logs are read whole into memory (audit 2026-11-05, removed from the workspace) |
+| `rfd` | native file dialogs | platform APIs |
+| `thiserror` | error types | only a derive macro; possible without it |
+| `clap` (CLI only) | argument parsing | optional; replaceable by a hand-written parser |
 
----
-
-## 12. План фаз
-
-| Фаза | Зміст | Критерій готовності |
-|------|-------|---------------------|
-| 0 — Фундамент ✅ | workspace, `core` модель і trait‑и, `fmt-blackbox` (BF/Emu/RF), `fmt-csv`, `cli info/decode`, конформанс‑ і robustness‑тести, CI | Конформанс з незалежним декодером `blackbox-log` на всіх тестових логах; CSV‑конформанс з `blackbox_decode` вмикається, щойно з'являться CSV‑фікстури |
-| 1 — Паритет з PTB (free) ✅ | `dsp` базис, step, PSD, heatmaps, GUI з 7 вкладками, A/B, touch, PID slider tool (Betaflight simplified tuning, звірено на логах 4.5 і 2025.12). Аудит 2026‑11‑05 — перенесено у backlog (milestone v0.4, якщо не вказано інше): проєкти (#31), експорт PNG/CSV (#32), звірка дефолтів з PTB (#33), touch‑жести §7.2 (#35), тема/локалізація (#34), вкладка Settings і збережені Prefs (#53), маркери частот у спектрі (#51), перетягування меж епохи на графіку (#52), лічильник сегментів на heatmap (#54), Y‑offset/latency step response (#50), property‑тести деконволюції (#55, v0.3), CSV‑фікстури `blackbox_decode` з фази 0 (#49, v0.2) | Користувач відтворює свій звичний PTB‑воркфлоу повністю в OpenPID |
-| 2 — Паритет з Pro ✅ | фільтри/sim (ADR‑0012), notch/RPM overlay 2D і 3D‑поверхня, RPM estimator, генератор (`openpid gen`), motor‑noise, spectrum player, бенчмарки (#36), фаззинг (ADR‑0013), touch‑жести, локалізація UA/EN, user guide; формати ArduPilot (ADR‑0010) та INAV — зроблено, KISS/Fettec/QuickSilver чекають на зразки логів (#18) | Усі рядки таблиці §2 = «так» (крім форматів без зразків) |
-| 3 — Розширення ✅ | `Recommender` з трьома правилами й доказами, вкладка Advice, `openpid run recommend --cli`, `openpid diff`, експортер Betaflight CLI; MSP — відкладено (ADR‑0014) | Перша рекомендація, яку користувач реально застосовує: текст `set …` з вкладки Advice |
+Dev only: `proptest`, `criterion`, `insta` (snapshots); `cargo-fuzz` is not used (ADR-0013). Everything else is added only through an ADR. `cargo deny` checks licences (allow: MIT/Apache-2.0/BSD/Zlib/MPL-2.0, aligned with Q1) and duplicates.
 
 ---
 
-## 13. Ризики
+## 11. Quality and testing
 
-| Ризик | Пом'якшення |
-|-------|-------------|
-| Нюанси формату між версіями прошивок (імена полів, масштаби, debug_mode) | Профілі + конформанс до `blackbox_decode`; збирати бібліотеку тестових логів від спільноти |
-| Відсутність публічної специфікації для KISS/Fettec/QuickSilver/Ardupilot | Окремі `fmt-*` crate‑и, кожен — після отримання зразків; Ardupilot (DataFlash `FMT`‑самоописний) — найкраще документований |
-| Розбіжність наших графіків із PTB «на око» через інші параметри згладжування | Параметри винесені в UI з PTB‑сумісними дефолтами; документуємо різницю |
-| Продуктивність egui на великих масивах точок | Децимація (min/max per pixel) для line‑plot, текстури для heatmap |
-| Ліцензійна чистота | Жодного копіювання коду з GPL‑джерел; лише власні реалізації за описом алгоритму |
+- **Unit**: the blackbox encodings (round trip), predictors, windows, the FFT wrapper, filters (frequency response against the analytic formulas).
+- **Reference**: `tools/reference/*.py` generates fixtures (JSON) for step / PSD / heatmap on synthetic signals and on the reference logs; the Rust tests compare with tolerances.
+- **Conformance**: our decoder against the `blackbox_decode` CSV on `tests/logs/*` (every channel, every frame).
+- **Golden**: the CLI output on the reference logs is pinned in `tests/golden`; an algorithm change is a deliberate golden update described in the PR.
+- **Fuzz**: the blackbox decoder and the header parser, with an own mutation fuzzer (`tests/fuzz.rs`, ADR-0013): a short run in every CI, a weekly one with a time budget (`fuzz.yml`).
+- **Bench**: `criterion` for the decoder (MB/s) and for step / heatmap (ms per 60 s of log at 8 kHz).
+- **CI**: a GitHub Actions matrix macOS/Windows/Linux: `fmt`, `clippy -D warnings`, tests, `cargo deny`, release binaries. Performance targets: an 8 kHz × 3 min log decodes in < 1 s, every phase-1 analysis in < 2 s on a laptop.
+- **Lints**: `#![deny(unsafe_code)]` in every crate except `fmt-blackbox` (mmap) with documented `unsafe` blocks; `clippy::pedantic` selectively.
 
 ---
 
-## 14. Відкриті питання
+## 12. Phase plan
 
-Див. `docs/OPEN-QUESTIONS.md`. Відповіді на Q1–Q5 потрібні до початку фази 0.
+| Phase | Content | Done when |
+|-------|---------|-----------|
+| 0 — Foundation ✅ | workspace, the `core` model and traits, `fmt-blackbox` (BF/Emu/RF), `fmt-csv`, `cli info/decode`, conformance and robustness tests, CI | Conformance with the independent `blackbox-log` decoder on every test log; CSV conformance with `blackbox_decode` switches on as soon as CSV fixtures exist |
+| 1 — PTB (free) parity ✅ | the `dsp` basis, step, PSD, heatmaps, a GUI with 7 tabs, A/B, touch, the PID slider tool (Betaflight simplified tuning, checked on 4.5 and 2025.12 logs). Audit 2026-11-05, moved to the backlog (milestone v0.4 unless stated otherwise): projects (#31), PNG/CSV export (#32), PTB default comparison (#33), touch gestures §7.2 (#35), theme / localisation (#34), the Settings tab and saved Prefs (#53), frequency markers in the spectrum (#51), dragging the epoch bounds on the plot (#52), the segment counter on the heatmap (#54), Y-offset / latency in the step response (#50), deconvolution property tests (#55, v0.3), `blackbox_decode` CSV fixtures from phase 0 (#49, v0.2) | The user reproduces the whole usual PTB workflow in OpenPID |
+| 2 — Pro parity ✅ | filters / sim (ADR-0012), notch / RPM overlay 2D and the 3D surface, the RPM estimator, the generator (`openpid gen`), motor noise, the spectrum player, benchmarks (#36), fuzzing (ADR-0013), touch gestures, UA/EN localisation, the user guide; the ArduPilot (ADR-0010) and INAV formats done, KISS/Fettec/QuickSilver wait for sample logs (#18) | Every row of the §2 table is "yes" (except the formats without samples) |
+| 3 — Extensions ✅ | a `Recommender` with three rules and evidence, the Advice tab, `openpid run recommend --cli`, `openpid diff`, the Betaflight CLI exporter; MSP postponed (ADR-0014) | The first recommendation a user really applies: the `set …` text from the Advice tab |
+
+---
+
+## 13. Risks
+
+| Risk | Mitigation |
+|------|------------|
+| Format details between firmware versions (field names, scales, debug modes) | Profiles plus conformance with `blackbox_decode`; collect a library of test logs from the community |
+| No public specification for KISS/Fettec/QuickSilver/ArduPilot | Separate `fmt-*` crates, each after samples arrive; ArduPilot (the self-describing DataFlash `FMT`) is the best documented |
+| Our plots differ from PTB "by eye" because of other smoothing parameters | The parameters are in the UI with PTB-compatible defaults; the difference is documented |
+| egui performance on large point arrays | Decimation (min/max per pixel) for line plots, textures for heatmaps |
+| Licence cleanliness | No code copied from GPL sources; only own implementations from the algorithm descriptions |
+
+---
+
+## 14. Open questions
+
+See `docs/OPEN-QUESTIONS.md`. The answers to Q1–Q5 were needed before phase 0.
