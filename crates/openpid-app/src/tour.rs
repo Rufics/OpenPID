@@ -190,7 +190,8 @@ impl App {
                 // a full-screen widget swallows the clicks meant for the UI below
                 let (_, resp) = ui.allocate_exact_size(screen.size(), egui::Sense::click());
                 resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Group, true, tr("Tour")));
-                let painter = ui.painter();
+                // the area's own clip rect is its content so far: paint on the whole screen
+                let painter = ui.painter().with_clip_rect(screen);
                 let dim = Color32::from_black_alpha(140);
                 // four rectangles around the cut-out
                 painter.rect_filled(

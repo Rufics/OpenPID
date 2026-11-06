@@ -366,7 +366,7 @@ impl App {
             tools,
             touch_mode: prefs.touch_mode,
             touch_applied: false,
-            status: "Open a blackbox log (File → Open, or drop it here)".into(),
+            status: "Open a blackbox log (Open log…, Open sample log, or drop it here)".into(),
             viewer: views::ViewerState::default(),
             spectrum: views::SpectrumState::default(),
             slider_state: views::SliderState::default(),
