@@ -353,3 +353,34 @@ fn fitness_of_the_real_logs() {
     assert_eq!(f.level("sticks"), FitnessLevel::Fail);
     assert!(f.check("duration").unwrap().fix.is_some());
 }
+
+#[test]
+fn auto_epoch_of_the_real_logs() {
+    use openpid_analysis::epoch::{ACTIVE_WINDOW_S, auto, most_active};
+    // 2025.12: a 40 s flight with eRPM; the take-off and landing go
+    let log = load("betaflight-2025.12.2-btfl_027.bbl");
+    let s = &log.sessions[0];
+    let e = auto(s).expect("flies");
+    eprintln!("2025.12 auto {e:?} of {:.1} s", s.timebase.duration_s());
+    assert!(e.start_s >= 1.0 && e.start_s < 5.0, "{e:?}");
+    assert!(e.end_s - e.start_s >= 30.0, "{e:?}");
+    assert!(e.end_s <= s.timebase.duration_s() - 1.0, "{e:?}");
+    let m = most_active(s, ACTIVE_WINDOW_S).expect("long enough");
+    eprintln!("2025.12 most active {m:?}");
+    assert!((m.end_s - m.start_s - ACTIVE_WINDOW_S).abs() < 1e-6);
+    assert!(m.start_s >= 0.0 && m.end_s <= s.timebase.duration_s() + 1e-6);
+    // 4.2.0: 17 s without eRPM, throttle alone
+    let log = load("betaflight-4.2.0.BFL");
+    let e = auto(&log.sessions[0]).expect("flies");
+    eprintln!(
+        "4.2.0 auto {e:?} of {:.1} s",
+        log.sessions[0].timebase.duration_s()
+    );
+    assert!(e.end_s - e.start_s >= 5.0);
+    // 4.5.1 session 0 is a 3 s stub: too short to trim
+    let log = load("betaflight-4.5.1-two-sessions.bbl");
+    let short = log.sessions.iter().min_by_key(|s| s.len()).unwrap();
+    assert!(short.timebase.duration_s() < 5.0);
+    assert_eq!(auto(short), None);
+    assert_eq!(most_active(short, ACTIVE_WINDOW_S), None);
+}

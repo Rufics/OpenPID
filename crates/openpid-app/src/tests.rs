@@ -592,6 +592,10 @@ fn cursor_buttons_set_the_epoch() {
     run_until(&mut h, no_slot_loading);
     assert!(has_label_containing(&h, "Click or tap the plot"));
     assert!(h.query_by_label("A start = cursor").is_none());
+    // the log opened on its automatic trim; start from the whole log
+    h.get_by_label("All").click();
+    h.step();
+    assert!(app(&h).loaded(Slot::A).unwrap().epoch.is_none());
     let duration = app(&h)
         .loaded(Slot::A)
         .unwrap()
@@ -620,7 +624,7 @@ fn cursor_buttons_set_the_epoch() {
     h.step();
     let e = app(&h).loaded(Slot::A).unwrap().epoch.unwrap();
     assert_eq!((e.start_s, e.end_s), (0.5, 1.0));
-    h.get_by_label("whole log").click();
+    h.get_by_label("All").click();
     h.step();
     assert!(app(&h).loaded(Slot::A).unwrap().epoch.is_none());
 }
@@ -1282,6 +1286,221 @@ fn filter_sim_tab_validates_the_model_and_applies_what_if_changes() {
     assert!(app(&h2).cache.is_empty());
 }
 
+// ------------------------------------------------------------------ analysis window
+
+/// Screen x of time `t` on slot A's timeline strip.
+fn strip_x(h: &H, t: f64) -> f32 {
+    let rect = app(h).strip.rects[&Slot::A];
+    let duration = app(h)
+        .loaded(Slot::A)
+        .unwrap()
+        .current()
+        .unwrap()
+        .timebase
+        .duration_s();
+    rect.left() + (t / duration) as f32 * rect.width()
+}
+
+fn step_windows(h: &H) -> usize {
+    match app(h).current_result(Slot::A).as_deref() {
+        Some(crate::worker::Output::Step(o)) => o.windows_used,
+        other => panic!("expected a step result, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_log_opens_on_its_automatic_trim_and_all_restores_the_whole_log() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Step));
+    run_until(&mut h, idle);
+    let l = app(&h).loaded(Slot::A).unwrap();
+    let auto = l.epoch.expect("the 4.2.0 log flies for 17 s");
+    assert!(l.epoch_auto);
+    assert!(auto.start_s > 1.0 && auto.end_s < 17.0, "{auto:?}");
+    assert!(
+        has_label_containing(&h, "· auto"),
+        "the badge says it was automatic"
+    );
+    assert!(
+        h.query_by_label("A timeline").is_some(),
+        "the strip is on the Step tab"
+    );
+    let trimmed = step_windows(&h);
+    h.get_by_label("All").click();
+    h.step();
+    run_until(&mut h, idle);
+    let l = app(&h).loaded(Slot::A).unwrap();
+    assert!(l.epoch.is_none() && !l.epoch_auto);
+    assert!(!has_label_containing(&h, "· auto"));
+    assert!(
+        step_windows(&h) >= trimmed,
+        "the whole log has at least as many windows"
+    );
+    // the Auto menu brings the trim back, "Most active 20 s" is not auto
+    h.get_by_label("Auto").click();
+    h.run_steps(2);
+    h.get_by_label("Trim take-off and landing").click();
+    h.run_steps(2);
+    let l = app(&h).loaded(Slot::A).unwrap();
+    assert_eq!(l.epoch, Some(auto));
+    assert!(l.epoch_auto);
+    h.get_by_label("Auto").click();
+    h.run_steps(2);
+    h.get_by_label("Most active 20 s").click();
+    h.run_steps(2);
+    assert!(
+        has_label_containing(&h, "log shorter than 20 s"),
+        "17 s: {}",
+        app(&h).status
+    );
+    // the strip is on every tab with slots, not on Settings
+    for tab in Tab::ALL {
+        select_tab(&mut h, tab);
+        assert_eq!(
+            h.query_by_label("A timeline").is_some(),
+            tab != Tab::Settings,
+            "{tab:?}"
+        );
+    }
+}
+
+#[test]
+fn a_short_session_is_too_short_to_trim() {
+    let mut h = harness(vec![LOG_4_5_1.into()], Some(Tab::Diagnostics));
+    run_until(&mut h, no_slot_loading);
+    // the longest session opened on its trim; session 0 is a 3 s stub
+    assert!(app(&h).loaded(Slot::A).unwrap().epoch.is_some());
+    h.get_by_role_and_label(Role::ComboBox, "session").click();
+    h.run_steps(2);
+    h.get_by_label_contains("session 0 (").click();
+    h.run_steps(2);
+    let l = app(&h).loaded(Slot::A).unwrap();
+    assert_eq!(l.session, 0);
+    assert!(l.epoch.is_none(), "too short: the whole log");
+    h.get_by_label("Auto").click();
+    h.run_steps(2);
+    h.get_by_label("Trim take-off and landing").click();
+    h.run_steps(2);
+    assert!(
+        app(&h).status.contains("log too short to trim"),
+        "{}",
+        app(&h).status
+    );
+    assert!(app(&h).loaded(Slot::A).unwrap().epoch.is_none());
+}
+
+#[test]
+fn strip_handles_fields_and_the_log_viewer_share_the_epoch() {
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Spectrum));
+    run_until(&mut h, idle);
+    let duration = app(&h)
+        .loaded(Slot::A)
+        .unwrap()
+        .current()
+        .unwrap()
+        .timebase
+        .duration_s();
+    h.get_by_label("All").click();
+    h.run_steps(2);
+    // drag the end handle from the end of the log to 60 %
+    let rect = app(&h).strip.rects[&Slot::A];
+    let y = rect.center().y;
+    let target = duration * 0.6;
+    let x_end = strip_x(&h, duration);
+    pointer_button(&mut h, egui::pos2(x_end, y), true);
+    pointer_move(&mut h, egui::pos2(x_end - 12.0, y));
+    assert_eq!(
+        app(&h).strip.drag,
+        Some((Slot::A, crate::views::StripDrag::End))
+    );
+    let x_target = strip_x(&h, target);
+    pointer_move(&mut h, egui::pos2(x_target, y));
+    pointer_button(&mut h, egui::pos2(x_target, y), false);
+    h.step();
+    let e = app(&h)
+        .loaded(Slot::A)
+        .unwrap()
+        .epoch
+        .expect("set by the drag");
+    let px_s = duration / f64::from(rect.width());
+    assert!(
+        (e.end_s - target).abs() <= 2.0 * px_s,
+        "end {} vs {target}",
+        e.end_s
+    );
+    assert_eq!(e.start_s, 0.0);
+    assert!(!app(&h).loaded(Slot::A).unwrap().epoch_auto);
+    assert_eq!(app(&h).strip.drag, None);
+    // drag inside the window moves it, keeping its length
+    let len = e.end_s - e.start_s;
+    let x_mid = strip_x(&h, len / 2.0);
+    pointer_button(&mut h, egui::pos2(x_mid, y), true);
+    pointer_move(&mut h, egui::pos2(x_mid + 12.0, y));
+    assert!(matches!(
+        app(&h).strip.drag,
+        Some((Slot::A, crate::views::StripDrag::Move { .. }))
+    ));
+    let x_to = strip_x(&h, len / 2.0 + duration * 0.2);
+    pointer_move(&mut h, egui::pos2(x_to, y));
+    pointer_button(&mut h, egui::pos2(x_to, y), false);
+    h.step();
+    let moved = app(&h).loaded(Slot::A).unwrap().epoch.unwrap();
+    assert!(
+        (moved.end_s - moved.start_s - len).abs() < 1e-6,
+        "{moved:?} keeps {len}"
+    );
+    assert!(
+        (moved.start_s - duration * 0.2).abs() <= 2.0 * px_s,
+        "{moved:?}"
+    );
+    // the fields accept typed values, clamped to the session
+    let start_field = h
+        .get_all_by_role_and_label(Role::SpinButton, "start")
+        .next()
+        .unwrap();
+    start_field.set_value_accesskit(1.0);
+    h.run_steps(2);
+    let e = app(&h).loaded(Slot::A).unwrap().epoch.unwrap();
+    assert!((e.start_s - 1.0).abs() < 1e-9, "{e:?}");
+    let end_field = h
+        .get_all_by_role_and_label(Role::SpinButton, "end")
+        .next()
+        .unwrap();
+    end_field.set_value_accesskit(duration + 100.0);
+    h.run_steps(2);
+    let e = app(&h).loaded(Slot::A).unwrap().epoch.unwrap();
+    assert!(
+        (e.end_s - duration).abs() < 1e-9,
+        "clamped to the log: {e:?}"
+    );
+    // the Log viewer shows the very same window: its start handle sits at 1 s
+    select_tab(&mut h, Tab::LogViewer);
+    h.run_steps(2);
+    let x = plot_x(&h, 1.0);
+    let frame = app(&h).viewer.plot_frame.unwrap();
+    pointer_move(&mut h, egui::pos2(x, frame.center().y));
+    assert_eq!(app(&h).viewer.hover_handle, Some((Slot::A, true)));
+    // a double-click on the strip is the whole log
+    let rect = app(&h).strip.rects[&Slot::A];
+    let c = egui::pos2(strip_x(&h, 5.0), rect.center().y);
+    for _ in 0..2 {
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: c,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        });
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: c,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        });
+        h.step();
+    }
+    h.step();
+    assert!(app(&h).loaded(Slot::A).unwrap().epoch.is_none());
+}
+
 // ------------------------------------------------------------------ keyboard shortcuts
 
 #[test]
@@ -1836,6 +2055,13 @@ fn time_heatmap_player_plays_scrubs_and_syncs_the_cursor() {
 #[test]
 fn advice_tab_lists_proposals_evidence_and_cli() {
     let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Advice));
+    run_until(&mut h, no_slot_loading);
+    // the advice below is about the whole log, not the automatic trim
+    app_mut(&mut h)
+        .loaded_mut(Slot::A)
+        .unwrap()
+        .set_epoch(None, false);
+    h.step();
     run_until(&mut h, idle);
     h.run_steps(2);
     assert!(h.query_by_label("Proposals").is_some());
@@ -1928,6 +2154,13 @@ fn heatmaps_show_a_colour_scale_with_linked_maxima_and_a_hover_value() {
 fn json_export_equals_the_cli_serialisation_and_names_the_file() {
     use openpid_analysis::{Analysis, AnalysisCtx, StepAnalysis};
     let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Step));
+    run_until(&mut h, no_slot_loading);
+    // compared with the CLI on the whole log, so drop the automatic trim
+    app_mut(&mut h)
+        .loaded_mut(Slot::A)
+        .unwrap()
+        .set_epoch(None, false);
+    h.step();
     run_until(&mut h, idle);
     assert_eq!(
         app(&h).export_file_name(Slot::A, "json"),

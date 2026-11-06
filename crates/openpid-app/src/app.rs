@@ -111,6 +111,8 @@ pub struct Loaded {
     pub sessions: Vec<Arc<FlightSession>>,
     pub session: usize,
     pub epoch: Option<Epoch>,
+    /// The epoch was set by the automatic trim, not by the user.
+    pub epoch_auto: bool,
     /// Fitness of every session, computed once when the file was loaded.
     pub fitness: Vec<Fitness>,
 }
@@ -118,6 +120,21 @@ pub struct Loaded {
 impl Loaded {
     pub fn current(&self) -> Option<&Arc<FlightSession>> {
         self.sessions.get(self.session)
+    }
+
+    /// Set the epoch; `auto` marks it as the automatic trim.
+    pub fn set_epoch(&mut self, epoch: Option<Epoch>, auto: bool) {
+        self.epoch = epoch;
+        self.epoch_auto = auto && epoch.is_some();
+    }
+
+    /// The automatic trim of the current session (take-off and landing cut),
+    /// or the whole log when the session is too short to trim.
+    pub fn apply_auto_epoch(&mut self) {
+        let e = self
+            .current()
+            .and_then(|s| openpid_analysis::epoch::auto(s));
+        self.set_epoch(e, true);
     }
 
     /// Fitness of the selected session.
@@ -243,6 +260,8 @@ pub struct App {
     pub surface: surface::SurfaceState,
     /// Playback state of the freq × time tab.
     pub player: views::PlayerState,
+    /// Timeline strips under the slot rows: drag state, rectangles, envelopes.
+    pub strip: views::StripState,
     /// Persisted preferences (Settings tab).
     pub prefs: Prefs,
     /// Where `prefs` are saved; `None` = no config directory, keep them for the session.
@@ -331,6 +350,7 @@ impl App {
             overlay: views::OverlayState::default(),
             surface: surface::SurfaceState::default(),
             player: views::PlayerState::default(),
+            strip: views::StripState::default(),
             prefs,
             prefs_path,
             theme_applied: None,
@@ -483,6 +503,7 @@ impl App {
         self.slots.retain(|e| e.id != slot);
         self.cache.retain(|k, _| k.slot != slot);
         self.pending.remove(&slot);
+        self.strip.forget(slot);
         if self.slots.is_empty() {
             self.slots.push(SlotEntry::empty(Slot::A));
         }
@@ -669,6 +690,7 @@ impl App {
                         let sessions: Vec<Arc<FlightSession>> =
                             file.sessions.iter().cloned().map(Arc::new).collect();
                         // pick the longest session by default, or what the project asked for
+                        let from_project = self.pending.contains_key(&slot);
                         let (wanted, epoch) = self.pending.remove(&slot).unwrap_or((None, None));
                         let session = wanted.filter(|w| *w < sessions.len()).unwrap_or_else(|| {
                             sessions
@@ -684,16 +706,20 @@ impl App {
                             sessions.get(session).map_or(0, |s| s.len()),
                             session
                         );
-                        self.set_state(
-                            slot,
-                            SlotState::Ready(Loaded {
-                                path,
-                                sessions,
-                                session,
-                                epoch,
-                                fitness,
-                            }),
-                        );
+                        let mut loaded = Loaded {
+                            path,
+                            sessions,
+                            session,
+                            epoch,
+                            epoch_auto: false,
+                            fitness,
+                        };
+                        // a fresh log opens on its automatic trim; a project keeps its own epoch
+                        if !from_project {
+                            loaded.apply_auto_epoch();
+                        }
+                        self.strip.forget(slot);
+                        self.set_state(slot, SlotState::Ready(loaded));
                     }
                     Err(e) => {
                         self.status = format!("{}: {e}", path.display());
