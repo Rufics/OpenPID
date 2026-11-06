@@ -12,6 +12,7 @@ mod shortcuts;
 mod surface;
 #[cfg(test)]
 mod tests;
+mod tour;
 mod views;
 mod worker;
 

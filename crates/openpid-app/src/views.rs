@@ -257,9 +257,16 @@ pub(crate) fn panel_width(ui: &Ui, n: usize) -> f32 {
 /// The slot bar: one header row per slot and the "Add log" button
 /// (docs/design/multi-slot, R2).
 pub(crate) fn slot_headers(app: &mut App, ui: &mut Ui) {
+    let top = ui.cursor().top();
     for slot in app.slot_ids() {
         slot_header(app, ui, slot);
     }
+    let bar = egui::Rect::from_min_max(
+        egui::pos2(ui.max_rect().left(), top),
+        egui::pos2(ui.max_rect().right(), ui.cursor().top()),
+    );
+    app.anchors
+        .insert("slot-bar", bar.intersect(ui.clip_rect()));
     ui.horizontal(|ui| {
         let full = app.slots.len() >= Slot::MAX;
         let button = ui.add_enabled(!full, egui::Button::new(format!("+ {}", tr("Add log"))));
@@ -749,6 +756,9 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
             update = Some((None, false));
         }
         app.strip.rects.insert(slot, rect);
+        if app.first_loaded() == Some(slot) {
+            app.anchors.insert("epoch-handles", rect);
+        }
         // fields
         let l = ui.label(tr("start"));
         let a = ui
@@ -2957,6 +2967,7 @@ pub fn advice(app: &mut App, ui: &mut Ui) {
         .map(|slot| (*slot, app.result(*slot, Kind::Recommend(params.clone()))))
         .collect();
     let w = panel_width(ui, slots.len());
+    let mut cli_anchor: Option<egui::Rect> = None;
     egui::ScrollArea::both()
         .id_salt("advice-panels")
         .show(ui, |ui| {
@@ -2966,8 +2977,10 @@ pub fn advice(app: &mut App, ui: &mut Ui) {
                         ui.set_width(w - 8.0);
                         match result {
                             Some(Ok(o)) => {
-                                if let Output::Recommend(r) = o.as_ref() {
-                                    advice_slot(app, ui, slot, r);
+                                if let Output::Recommend(r) = o.as_ref()
+                                    && let Some(rect) = advice_slot(app, ui, slot, r)
+                                {
+                                    cli_anchor = Some(rect);
                                 }
                             }
                             Some(Err(e)) => show_error(ui, slot, &e),
@@ -2979,10 +2992,19 @@ pub fn advice(app: &mut App, ui: &mut Ui) {
                 }
             });
         });
+    if let Some(rect) = cli_anchor {
+        app.anchors.insert("advice-cli", rect);
+    }
 }
 
-fn advice_slot(app: &App, ui: &mut Ui, slot: Slot, r: &openpid_analysis::RecommendOutput) {
+fn advice_slot(
+    app: &App,
+    ui: &mut Ui,
+    slot: Slot,
+    r: &openpid_analysis::RecommendOutput,
+) -> Option<egui::Rect> {
     use openpid_core::Exporter as _;
+    let mut cli_rect: Option<egui::Rect> = None;
     ui.label(
         RichText::new(format!("{} {}", tr("Slot"), slot.name()))
             .color(slot_color(slot))
@@ -3038,20 +3060,115 @@ fn advice_slot(app: &App, ui: &mut Ui, slot: Slot, r: &openpid_analysis::Recomme
                         Ok(text) => text,
                         Err(e) => format!("# {e}"),
                     };
-                ui.add(
+                let edit = ui.add(
                     egui::TextEdit::multiline(&mut cli)
                         .code_editor()
                         .desired_rows(6)
                         .desired_width(f32::INFINITY)
                         .interactive(true),
-                )
-                .labelled_by(l.id);
+                );
+                cli_rect = Some(edit.rect);
+                edit.labelled_by(l.id);
             }
         }
     }
+    cli_rect
 }
 
 // ---------------------------------------------------------------------------
+
+/// The start screen: shown instead of a tab while nothing is loaded
+/// (docs/design/onboarding-tour): open a log, the sample log, the tour,
+/// recent files, the user guide.
+pub fn start_screen(app: &mut App, ui: &mut Ui) {
+    const CARD_W: f32 = 520.0;
+    let touch = app.touch_mode;
+    let avail = ui.available_rect_before_wrap();
+    let x = avail.center().x - CARD_W / 2.0;
+    let y = (avail.top() + avail.height() * 0.18).max(avail.top() + 8.0);
+    let card = egui::Rect::from_min_size(
+        egui::pos2(x.max(avail.left()), y),
+        egui::vec2(
+            CARD_W.min(avail.width()),
+            avail.height() - (y - avail.top()),
+        ),
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(card)
+            .layout(egui::Layout::top_down(egui::Align::Center)),
+    );
+    let ui = &mut child;
+    ui.heading(RichText::new("OpenPID").size(32.0).strong());
+    ui.label(
+        RichText::new(tr(
+            "Blackbox analysis for tuning: noise, filters, step response, advice.",
+        ))
+        .color(MUTED),
+    );
+    ui.add_space(16.0);
+    ui.label(tr("Drop a log here, or"));
+    ui.add_space(6.0);
+    let size = if touch {
+        egui::vec2(220.0, 44.0)
+    } else {
+        egui::vec2(200.0, 30.0)
+    };
+    ui.horizontal(|ui| {
+        ui.add_space((ui.available_width() - 2.0 * size.x - 8.0).max(0.0) / 2.0);
+        if ui
+            .add(egui::Button::new(format!("{}…", tr("Open log"))).min_size(size))
+            .on_hover_text(shortcuts::keys_of(ui.ctx(), Action::OpenLog))
+            .clicked()
+            && let Some(slot) = app.free_slot()
+        {
+            app.dialog = Some(crate::app::Dialog::OpenLog(slot));
+        }
+        if ui
+            .add(egui::Button::new(tr("Open sample log")).min_size(size))
+            .on_hover_text(tr("a synthetic 30 s flight: no file needed"))
+            .clicked()
+        {
+            app.open_sample();
+        }
+    });
+    ui.add_space(4.0);
+    if ui
+        .add(egui::Button::new(tr("Start the tour")).min_size(size))
+        .on_hover_text(tr("seven steps through the tuning loop, on the sample log"))
+        .clicked()
+    {
+        app.start_tour();
+    }
+    if !app.prefs.recent.is_empty() {
+        ui.add_space(16.0);
+        ui.label(RichText::new(tr("Recent files")).strong());
+        let recent = app.prefs.recent.clone();
+        for r in &recent {
+            let name = r
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if ui
+                .add(
+                    egui::Button::new(format!("{name}   {}", r.opened))
+                        .min_size(egui::vec2(CARD_W - 40.0, if touch { 44.0 } else { 24.0 })),
+                )
+                .on_hover_text(r.path.display().to_string())
+                .clicked()
+                && let Some(slot) = app.free_slot()
+            {
+                app.open(slot, r.path.clone());
+            }
+        }
+    }
+    ui.add_space(16.0);
+    ui.hyperlink_to(
+        tr("User guide"),
+        "https://github.com/Rufics/OpenPID/blob/master/docs/USER-GUIDE.md",
+    );
+}
 
 /// Settings tab: theme, touch mode and display units, saved on every change.
 pub fn settings(app: &mut App, ui: &mut Ui) {
@@ -3229,6 +3346,22 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             .color(MUTED),
         ),
     };
+    ui.add_space(8.0);
+    ui.horizontal_wrapped(|ui| {
+        changed |= ui
+            .checkbox(
+                &mut app.prefs.show_tour,
+                tr("Show the tour on the first opened log"),
+            )
+            .changed();
+        if ui.button(tr("Reset first-run state")).clicked() {
+            app.prefs.tour_done = false;
+            changed = true;
+        }
+        if ui.button(tr("Show tour")).clicked() {
+            app.start_tour();
+        }
+    });
     if changed {
         app.save_prefs();
     }
