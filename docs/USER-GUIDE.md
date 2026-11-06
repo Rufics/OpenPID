@@ -1,407 +1,423 @@
-# OpenPID — посібник користувача
+# OpenPID — user guide
 
-OpenPID читає blackbox‑логи (Betaflight, EmuFlight, Rotorflight, INAV, ArduPilot
-DataFlash, CSV з `blackbox_decode`) і показує те, що потрібно для тюнінгу PID і
-фільтрів: часові графіки, step response, спектри, теплові карти частота×газ і
-частота×час, симуляцію фільтрів, шум моторів і PID‑слайдери Betaflight. Усе,
-що робить GUI, має еквівалент у CLI (`openpid run …`), тож результати можна
-відтворити скриптом.
+OpenPID reads blackbox logs (Betaflight, EmuFlight, Rotorflight, INAV,
+ArduPilot DataFlash, `blackbox_decode` CSV) and shows what PID and filter
+tuning needs: time plots, step response, spectra, frequency × throttle and
+frequency × time heatmaps, a filter simulation, motor noise and the Betaflight
+PID sliders. Everything the GUI does has a CLI equivalent (`openpid run …`),
+so a result can be reproduced by a script.
 
-Робочий процес (DESIGN §7.3): **відкрити лог → вибрати сесію й епоху → подивитися
-інструмент → змінити параметри → порівняти з логом B → зберегти проєкт або
-експортувати.**
+The workflow (DESIGN §7.3): **open a log → pick the session and the epoch →
+look at a tool → change its parameters → compare with log B → save the project
+or export.**
 
-## 1. Запуск і відкриття логів
+## 1. Starting and opening logs
 
 ```sh
-cargo run --release -p openpid-app                      # або ./target/release/openpid-gui
-./target/release/openpid-gui logA.bbl logB.bbl --tab step   # одразу два логи й вкладка
-./target/release/openpid-gui flight.openpid.json          # проєкт (п. 12)
+cargo run --release -p openpid-app                      # or ./target/release/openpid-gui
+./target/release/openpid-gui logA.bbl logB.bbl --tab step   # two logs and a tab at once
+./target/release/openpid-gui flight.openpid.json          # a project (section 12)
 ```
 
-- **Стартовий екран.** Поки не відкрито жодного логу, замість вкладки показано
-  картку: **Open log…**, **Open sample log** (синтетичний політ 30 с із
-  недодемпфованим відгуком — без файлу, щоб роздивитись інтерфейс), **Start the
-  tour**, список **Recent files** (до 8 останніх логів із датою; клік відкриває)
-  і посилання на цей посібник.
+- **Start screen.** While no log is open, the tab is replaced by a card:
+  **Open log…**, **Open sample log** (a synthetic 30 s flight with an
+  underdamped response, no file needed, to look around), **Start the tour**,
+  the **Recent files** list (up to 8 logs with their date; a click opens one)
+  and a link to this guide.
 
-  ![Стартовий екран](screenshots/start.png)
+  ![Start screen](screenshots/start.png)
 
-- **Тур.** При першому відкритому лозі (або зразковому) запускається тур із
-  7 кроків: затемнення з «віконцем» на потрібному елементі та картка з текстом —
-  слоти → вікно аналізу → Spectrum → Freq × throttle → Filter Sim → Step
-  response → Advice з командами CLI. Кнопки **Back / Next / Skip**, клавіші
-  `→`/`Enter`, `←`, `Esc`. Тур показується один раз; повторно — **Help → Show
-  tour**; вимкнути автозапуск або скинути стан — у Settings.
+- **Tour.** The first opened log (or the sample) starts a seven-step tour: a
+  dimmed screen with a window on the relevant widget and a card with the text:
+  slots → analysis window → Spectrum → Freq × throttle → Filter Sim → Step
+  response → Advice with its CLI commands. Buttons **Back / Next / Skip**,
+  keys `→`/`Enter`, `←`, `Esc`. The tour shows once; again from **Help → Show
+  tour**; the autostart can be switched off, and the state reset, in Settings.
 
-  ![Тур, крок 3](screenshots/tour-3.png)
+  ![Tour, step 3](screenshots/tour-3.png)
 
-- **Open log…** у верхній панелі (`Ctrl+O`) або перетягніть файли у вікно: один
-  файл займає вільний слот (спочатку A), два — A і B. Гарячі клавіші — п. 13а.
-- Лог із кількома сесіями (кілька армувань) відкривається на найдовшій; інша
-  обирається у списку **session** біля назви слота. Епоха при зміні сесії
-  скидається.
-- Рядок стану внизу показує, що завантажено, скільки сесій і зразків, а також
-  результат збереження/експорту.
-- **Перевірка логу.** Після тривалості в рядку слота стоять бейджі `raw`, `rpm`,
-  `sticks` і загальна оцінка: `[ok]` — усе гаразд, `[!]` — попередження, `[x]` —
-  для цієї вкладки/аналізу даних бракує. Наведіть курсор — побачите пояснення і
-  команду CLI, яка це виправить (наприклад, `set blackbox_disable_gyrounfilt = OFF`).
-  Повний список перевірок — на вкладці Diagnostics (п. 11).
-- **Touch mode** (прапорець угорі) збільшує контроли; вмикається сам при першому
-  дотику.
+- **Open log…** in the top bar (`Ctrl+O`) or drop files into the window: one
+  file takes the free slot (A first), two take A and B. Shortcuts: section 13a.
+- A log with several sessions (several arms) opens on the longest one; another
+  is picked in the **session** list next to the slot name. Switching the
+  session resets the epoch.
+- The status bar at the bottom says what is loaded, how many sessions and
+  samples, and the outcome of a save or export.
+- **Log check.** After the duration, the slot row carries the badges `raw`,
+  `rpm`, `sticks` and an overall mark: `[ok]` fine, `[!]` a warning, `[x]` the
+  data for this tab or analysis is missing. Hover for the explanation and the
+  CLI command that fixes it (for example `set blackbox_disable_gyrounfilt = OFF`).
+  The full list of checks is on the Diagnostics tab (section 11).
+- **Touch mode** (checkbox at the top) enlarges the controls; it switches
+  itself on at the first touch.
 
 ![Log viewer](screenshots/log.png)
 
-## 2. Log viewer — епоха й канали
+## 2. Log viewer — epoch and channels
 
-- **Channels**: прапорці каналів слота A; поле **filter** звужує список
-  (`gyro`, `pid.d`, `motor`…). Назви каналів однакові для всіх прошивок:
-  `gyro.filtered.roll`, `gyro.raw.pitch`, `setpoint.yaw`, `pid.p.roll`,
-  `motor.0`, `motor_rpm.0`, `throttle`, `rc.3`, `debug.0`, `custom:…`.
-- **Епоха** — вікно часу, яке аналізують усі інструменти. Під рядком кожного
-  слота на всіх вкладках є **стрічка-таймлайн**: сіра огинаюча газу (або |gyro|,
-  якщо газу немає) по всій сесії, кольором слота — обране вікно з двома ручками.
-  Тягніть ручку, щоб змінити межу; тягніть усередині вікна, щоб зсунути його;
-  подвійний клік — увесь лог. Поруч поля **start** / **end** (крок 0,1 с,
-  обмежені тривалістю сесії), меню **Auto** і кнопка **All** (`Shift+A` для всіх
-  слотів), підпис «1.8–16.0 s · 14.2 s».
-- **Auto**: «Trim take-off and landing» відрізає землю — лишає від першої до
-  останньої миті «в повітрі» (газ ≥ 5 % і, якщо є eRPM, мотори ≥ 1000 об/хв не
-  менше 1 с) мінус 1 с з кожного боку; якщо виходить менше 5 с — «log too short
-  to trim», епоха не змінюється. «Most active 20 s» бере 20 с із найбільшою
-  енергією |setpoint| на roll і pitch — найбільше вікон для step response.
-- **При відкритті лог одразу обрізається Auto** (бейдж «auto» у підписі), якщо
-  це можливо; інакше аналізується весь лог. Проєкт зберігає свою епоху як є.
-- **Курсор**: клік або тап по графіку. Кнопки **A start = cursor** /
-  **A end = cursor** задають межі епохи від курсора.
-- **Межі епохи** можна перетягувати і прямо на графіку (заштрихована область,
-  ручки 8 px, 22 px у touch‑режимі); перетягування поза ручками панорамує графік.
-- Масштабування — колесо або pinch, панорамування — перетягування, подвійний
-  клік скидає масштаб.
-- Одиниці кутової швидкості (deg/s або rad/s) і прискорення (g або m/s²)
-  обираються у Settings і діють лише на трейси цієї вкладки.
+- **Channels**: checkboxes of slot A's channels; the **filter** field narrows
+  the list (`gyro`, `pid.d`, `motor`…). Channel names are the same for every
+  firmware: `gyro.filtered.roll`, `gyro.raw.pitch`, `setpoint.yaw`,
+  `pid.p.roll`, `motor.0`, `motor_rpm.0`, `throttle`, `rc.3`, `debug.0`,
+  `custom:…`.
+- **Epoch**: the time window every tool analyses. Under each slot row, on every
+  tab, sits a **timeline strip**: the grey throttle envelope (or |gyro| when
+  there is no throttle) over the whole session, with the chosen window in the
+  slot colour and two handles. Drag a handle to move a bound; drag inside the
+  window to shift it; double-click for the whole log. Next to it the
+  **start** / **end** fields (0.1 s steps, clamped to the session), the
+  **Auto** menu and the **All** button (`Shift+A` for every slot), and the
+  label "1.8–16.0 s · 14.2 s".
+- **Auto**: "Trim take-off and landing" cuts the ground time: it keeps the
+  span from the first to the last airborne moment (throttle ≥ 5 % and, when
+  eRPM is logged, motors ≥ 1000 rpm for at least 1 s) minus 1 s on each side;
+  under 5 s it says "log too short to trim" and leaves the epoch alone. "Most
+  active 20 s" takes the 20 s with the most |setpoint| energy on roll and
+  pitch, which gives the step response the most windows.
+- **A log opens on its Auto trim** (the "auto" badge in the label) when that is
+  possible; otherwise the whole log is analysed. A project keeps its own epoch.
+- **Cursor**: click or tap the plot. The **A start = cursor** / **A end =
+  cursor** buttons set an epoch bound from the cursor.
+- **Epoch bounds** can also be dragged on the plot itself (the shaded region,
+  8 px handles, 22 px in touch mode); dragging away from a handle pans.
+- Zoom with the wheel or a pinch, pan by dragging, double-click resets the view.
+- The angular-rate unit (deg/s or rad/s) and the acceleration unit (g or m/s²)
+  are chosen in Settings and apply to the traces of this tab only.
 
-Епоха зберігається у ключі кешу: кожна комбінація «сесія + епоха + параметри»
-рахується один раз у фоновому потоці, тож перемикання вкладок миттєве.
+The epoch is part of the cache key: every combination of session, epoch and
+parameters is computed once on the worker thread, so switching tabs is instant.
 
 ## 3. Step response
 
-Над графіком — **таблиця вердиктів**: рядок на кожну вісь (roll / pitch / yaw)
-кожного слота, стовпці windows · rise · delay · latency · overshoot · settling ·
-final. Клітинка = значення + мітка: зелений `ok`, жовтий `!`, червоний `x`,
-сірий `?` (не виміряно або замало вікон). Наведіть курсор — побачите поріг і
-пояснення. Клік по рядку перемикає вісь на графіку. Усі три осі рахуються
-одразу (кеш), тож перемикання миттєве.
+Above the plot is the **verdict table**: one row per axis (roll / pitch / yaw)
+of every slot, columns windows · rise · delay · latency · overshoot · settling
+· final. A cell is the value plus a mark: green `ok`, yellow `!`, red `x`, grey
+`?` (not measured, or too few windows). Hover for the threshold and the
+explanation. A click on a row switches the plotted axis. All three axes are
+computed at once (cached), so the switch is instant.
 
-Пороги (**Settings → Targets**, пресети Freestyle / Racing / Cinematic або
-власні): overshoot warn 15 % / fail 30 %, rise ≤ 60 ms, settling ≤ 120 ms,
-final 1 ± 0.10, вікон ≥ 10 (5–9 — «weak», < 5 — «unreliable», решта вердиктів
-стає `?`). Той самий поріг overshoot використовує правило D у Advice. Зміна
-порогів змінює мітки без перерахунку.
+The thresholds (**Settings → Targets**, presets Freestyle / Racing / Cinematic
+or custom): overshoot warn 15 % / fail 30 %, rise ≤ 60 ms, settling ≤ 120 ms,
+final 1 ± 0.10, windows ≥ 10 (5–9 "weak", < 5 "unreliable", the other verdicts
+become `?`). The Advice D rule uses the same overshoot threshold. Changing the
+thresholds changes the marks without recomputing anything.
 
-На графіку: зелена **цільова смуга** 1 ± tol від settling-порогу до кінця
-відповіді, пунктирні лінії overshoot warn (жовта) і fail (червона). Якщо Advice
-має пропозицію по PID цієї осі, під таблицею з'являється рядок «Advice: A roll
-D 40 -> 44 (…)» з кнопкою **Go to Advice**.
+On the plot: the green **target band** 1 ± tol from the settling threshold to
+the end of the response, and dashed overshoot warn (yellow) and fail (red)
+lines. When Advice has a PID proposal for this axis, a line "Advice: A roll D
+40 -> 44 (…)" with a **Go to Advice** button appears under the table.
 
 ![Step response](screenshots/step.png)
 
-Відгук на одиничний крок setpoint → gyro за Wiener‑деконволюцією (DESIGN §6.2):
-епоха ріжеться на вікна, вікна з малим стіком відкидаються, решта усереднюється
-з вагою за амплітудою входу, окремо для **low** (< `high input`) і **high**
-входів. Гістограма внизу показує розкид відгуків окремих вікон.
+The response to a unit step, setpoint → gyro, by Wiener deconvolution (DESIGN
+§6.2): the epoch is cut into windows, windows with little stick input are
+dropped, the rest are averaged with the input amplitude as the weight,
+separately for **low** (< `high input`) and **high** inputs. The histogram
+below shows the spread of the individual windows.
 
-| Параметр | Що робить | Типово |
+| Parameter | What it does | Default |
 |---|---|---|
 | Axis | roll / pitch / yaw | roll |
-| window | довжина вікна, с | 2 |
-| cutoff | частота зрізу деконволюції, Гц (вище — шум) | 25 |
-| min input | мінімальний пік setpoint у вікні, °/с | 20 |
-| high input | межа груп low/high, °/с | 500 |
-| smooth | ковзне середнє по кривій, мс (0 = без) | 0 |
-| Y‑offset | нормувати кожне вікно на його усталений хвіст | вимк. |
+| window | window length, s | 2 |
+| cutoff | deconvolution cut-off, Hz (higher = more noise) | 25 |
+| min input | minimum setpoint peak in a window, °/s | 20 |
+| high input | boundary between the low and high groups, °/s | 500 |
+| smooth | moving average over the curve, ms (0 = none) | 0 |
+| Y-offset | normalise every window on its settled tail | off |
 
-Рядок метрик: `rise` 10–90 %, `delay (50 %)` — перший перетин половини
-усталеного значення, `latency (xcorr)` — зсув максимуму крос‑кореляції
-setpoint↔gyro (транспортна затримка осі; для плавного стіку включає частину
-відставання об'єкта, тому читайте поруч із delay), `overshoot`, `settling` ±5 %,
-`final` — усталене значення (≈1; менше означає, що гіро не доходить до setpoint).
+The metrics: `rise` 10–90 %, `delay (50 %)` the first crossing of half the
+settled value, `latency (xcorr)` the lag of the setpoint ↔ gyro
+cross-correlation peak (the transport delay of the axis; with smooth stick
+input it also carries part of the plant's lag, so read it next to delay),
+`overshoot`, `settling` ±5 %, `final` the settled value (≈ 1; less means the
+gyro does not reach the setpoint).
 
-Як читати: повільне наростання і `final` < 1 — замало P/FF або завеликі
-фільтри; перерегулювання > 10–15 % і коливання — забагато P чи замало D;
-`latency` помітно більший за сусідні логи — зайва затримка у фільтрах.
+How to read it: a slow rise and `final` < 1 mean too little P/FF or too much
+filtering; overshoot above 10–15 % and oscillation mean too much P or too
+little D; a `latency` clearly above neighbouring logs means extra delay in the
+filters.
 
 ## 4. Spectrum
 
-PSD Велча обраного каналу (DESIGN §6.3). **Channel** — будь‑який канал, кнопки
-осі підставляють `gyro.filtered.<вісь>`; **segment** — довжина сегмента (довший
-= дрібніша частотна сітка, менше усереднення), **max** обмежує вісь частот,
-**dB** перемикає шкалу.
+Welch PSD of the chosen channel (DESIGN §6.3). **Channel** is any channel, the
+axis buttons put `gyro.filtered.<axis>`; **segment** is the segment length
+(longer = finer frequency grid, less averaging), **max** limits the frequency
+axis, **dB** switches the scale.
 
-- **peaks** / **prominence** — автоматичні маркери N найпомітніших піків
-  (помітність у дБ над оточенням); підпис показує частоту й рівень.
-- Клік по графіку ставить ручний маркер (прилипає до найближчого біна); рядок
-  під контролами показує частоти маркерів і Δ між двома останніми, **Clear
-  markers** прибирає їх. Ручні маркери дублюються горизонтальними лініями на
-  обох теплових картах — зручно звіряти пік спектра з гармонікою мотора.
+- **peaks** / **prominence**: automatic markers on the N most prominent peaks
+  (prominence in dB above the surroundings); the label shows the frequency and
+  level.
+- A click on the plot places a manual marker (snapped to the nearest bin); the
+  line under the controls lists the marker frequencies and the Δ between the
+  last two, **Clear markers** removes them. Manual markers are mirrored as
+  horizontal lines on both heatmaps, handy for matching a spectrum peak with a
+  motor harmonic.
 
-Порівняйте `gyro.raw` і `gyro.filtered` одного логу: різниця — це робота
-фільтрів; піки, що лишилися у filtered, і є те, що доходить до PID.
+Compare `gyro.raw` and `gyro.filtered` of one log: the difference is the work
+of the filters; the peaks left in filtered are what reaches the PIDs.
 
 ## 5. Freq × throttle
 
 ![Freq × throttle](screenshots/throttle.png)
 
-Теплова карта амплітуди спектра залежно від газу (DESIGN §6.4): епоха ріжеться
-на сегменти (**segment**, с), кожен отримує спектр і середній газ; для кожного
-біна газу 0…100 % усереднюються сегменти в межах **throttle window ±** %.
-**max** — верхня частота, **colour max** — стеля шкали кольору (0 = автоматично,
-99‑й процентиль без рядків нижче 20 Гц). Праворуч від кожної карти — **колірна
-шкала** з поділками й одиницею; під картою — значення клітинки під курсором
-(«37 %, 172 Hz: 0.45 deg/s»). З кількома логами **link scales** (увімкнено за
-замовчуванням) дає всім панелям одну стелю — найбільшу з автоматичних, тож
-однаковий колір означає однакове значення; вимкніть, щоб кожна карта мала свою.
-Те саме на Freq × time і Surface 3D.
+A heatmap of the spectrum amplitude against throttle (DESIGN §6.4): the epoch
+is cut into segments (**segment**, s), each gets a spectrum and a mean
+throttle; for every throttle bin 0…100 % the segments within **throttle window
+±** % are averaged. **max** is the top frequency, **colour max** the ceiling of
+the colour scale (0 = automatic, the 99th percentile without the rows below
+20 Hz). Right of every map is a **colour bar** with ticks and the unit; under
+the map the value of the cell under the pointer ("37 %, 172 Hz: 0.45 deg/s").
+With several logs, **link scales** (on by default) gives every panel the same
+ceiling, the largest of the automatic ones, so the same colour means the same
+value; switch it off for a scale per map. The same on Freq × time and Surface
+3D.
 
-- Під картою — смуга **сегментів на бін**: скільки сегментів потрапило в кожен
-  бін газу. Біни з кількістю меншою за **min segments** затемнені: там даних
-  немає, а не тиша.
-- **RPM overlay** (коли в логу є eRPM): лінії гармонік `k·rpm/60` кожного мотора
-  (кольори за моторами, перемикачі M1…Mn, **harmonics** — скільки малювати, 0 =
-  стільки, скільки знімає RPM‑фільтр), смуги статичних notch, смуга dyn notch і
-  мінімум RPM‑фільтра (**notches**). Хребет шуму має лягати на лінію
-  фундаментальної гармоніки; якщо він вище/нижче — `motor_poles` або `rpm_min`
-  виставлені неправильно.
+- Under the map is the **segments per bin** strip: how many segments fell into
+  each throttle bin. Bins with fewer than **min segments** are dimmed: there is
+  no data there, not silence.
+- **RPM overlay** (when the log has eRPM): the harmonic lines `k·rpm/60` of
+  every motor (colours per motor, M1…Mn toggles, **harmonics** = how many to
+  draw, 0 = as many as the RPM filter removes), the static notch bands, the
+  dynamic notch band and the RPM filter minimum (**notches**). The noise ridge
+  should sit on the fundamental line; if it is above or below, `motor_poles` or
+  `rpm_min` is set wrong.
 
 ### Surface 3D
 
 ![Surface 3D](screenshots/surface.png)
 
-Та сама сітка freq × throttle × amplitude як рельєф: висота й колір — амплітуда
-(стеля — **colour max**, як у тепловій карті, **height** — висота стелі).
-Малюється власним програмним проєктуванням без GPU‑залежностей: до 128 × 192
-клітинок після усереднення, тож обертання плавне й на великих логах.
+The same freq × throttle × amplitude grid as a relief: height and colour are
+the amplitude (ceiling: **colour max**, as on the heatmap; **height** scales
+the relief). Drawn by our own software projection without GPU dependencies:
+up to 128 × 192 cells after averaging, so rotation stays smooth on big logs.
 
-- **Перетягування** — обертання (горизонталь — навколо вертикальної осі,
-  вертикаль — нахил аж до «виду зверху», тобто звичайної теплової карти);
-  **коліщатко / щипок** — масштаб; **shift‑ або праве перетягування, два
-  пальці** — зсув; **подвійний клік** або **Reset view** — початковий вигляд.
-- **RPM overlay** і **notches** ті самі, що й на тепловій карті: гармоніки
-  моторів і смуги notch лежать на поверхні.
-- Наведення на вузол показує газ, частоту й амплітуду у кутку панелі.
-- **shading** — освітлення за нахилом поверхні (підкреслює хребти); вимкніть,
-  щоб колір відповідав шкалі теплової карти точно.
-- Експорт CSV/PNG з цієї вкладки віддає ту саму сітку, що й Freq × throttle.
+- **Drag** rotates (horizontal around the vertical axis, vertical tilts down
+  to a top view, that is the plain heatmap); **wheel / pinch** zooms; **shift-
+  or right-drag, two fingers** pans; **double-click** or **Reset view**
+  restores the initial view.
+- **RPM overlay** and **notches** are the same as on the heatmap: the motor
+  harmonics and notch bands lie on the surface.
+- Hovering a node shows throttle, frequency and amplitude in the panel corner.
+- **shading** lights the surface by its slope (ridges stand out); switch it
+  off for colours that match the heatmap scale exactly.
+- CSV/PNG export from this tab gives the same grid as Freq × throttle.
 
 ## 6. Freq × time
 
-Спектрограма (STFT) каналу: частота по вертикалі, час по горизонталі. Параметри
-**segment** і **max** як у п. 5. Показує, як шум змінюється протягом польоту
-(розгін моторів, пропвош, резонанси при певних маневрах). Ручні маркери з
-вкладки Spectrum також видно тут.
+A spectrogram (STFT) of a channel: frequency vertical, time horizontal.
+**segment** and **max** as in section 5. It shows how the noise changes over
+the flight (motor spin-up, propwash, resonances during certain manoeuvres).
+Manual markers from the Spectrum tab show here too.
 
 ![Freq × time](screenshots/time.png)
 
-**Програвач спектра.** Під картою — спектр поточного стовпця STFT (амплітуда
-по частоті), а на карті — вертикальна лінія позиції. **Play / Pause** веде
-позицію в реальному часі (×**speed**, по кінцю — спочатку), **< step / step >** —
-на один стовпець, **To start** — на початок, повзунок **position** і клік по
-карті (у touch‑режимі — протягування пальцем) — перемотування. Позиція — це
-курсор Log viewer: поставлений там курсор переносить програвач, а програвач
-веде курсор, тож епоху можна виставити з того місця, де спектр «спалахує».
+**Spectrum player.** Under the map is the spectrum of the current STFT column
+(amplitude over frequency), and on the map a vertical position line. **Play /
+Pause** advances the position in real time (× **speed**, looping at the end),
+**< step / step >** move one column, **To start** rewinds, the **position**
+slider and a click on the map (a finger drag in touch mode) scrub. The
+position is the Log viewer cursor: a cursor placed there moves the player and
+the player moves the cursor, so the epoch can be set from the place where the
+spectrum "lights up".
 
 ## 7. Filter Sim
 
 ![Filter Sim](screenshots/filter.png)
 
-Нефільтроване гіро (`gyro.raw`) проганяється через модель ланцюга фільтрів,
-зібрану з налаштувань логу (DESIGN §6.6): LPF1 (статичний або залежний від
-газу), LPF2, статичні notch, RPM‑notch на гармоніках моторів, dyn notch, що
-стежить за піками. Потрібен лог із нефільтрованим гіро: Betaflight ≥ 4.5 пише
-`gyroUnfilt`, старіші — `debug_mode = GYRO_SCALED`; ArduPilot — batch sampler.
+The unfiltered gyro (`gyro.raw`) is run through a model of the filter chain
+built from the log's settings (DESIGN §6.6): LPF1 (static or throttle-dependent),
+LPF2, static notches, the RPM notch on the motor harmonics, the dynamic notch
+that tracks the peaks. It needs a log with the unfiltered gyro: Betaflight ≥ 4.5
+writes `gyroUnfilt`, older versions need `debug_mode = GYRO_SCALED`; ArduPilot
+the batch sampler.
 
-- Рядок **fit**: залишок `gyro.sim − gyro.filtered` у % від RMS фільтрованого
-  (наскільки модель повторює прошивку; 5–15 % — норма, модель працює на частоті
-  логу), для порівняння — залишок без фільтрів, і затримка sim відносно логу.
-- **What‑if**: поля редактора показують значення з логу; змінене поле стає
-  override (підсвічується) і перераховує симуляцію. 0 вимикає стадію. **Reset
-  to log** повертає все.
-- Графіки: PSD raw / logged filtered / sim as flown (пунктир) / sim what‑if і
-  ті самі ряди в часі.
+- The **fit** line: the residual `gyro.sim − gyro.filtered` in % of the
+  filtered RMS (how well the model reproduces the firmware; 5–15 % is normal,
+  the model runs at the log rate), the residual without any filter for
+  comparison, and the delay of the simulation against the log.
+- **What-if**: the editor fields show the log's values; a changed field
+  becomes an override (highlighted) and recomputes the simulation. 0 switches
+  a stage off. **Reset to log** restores everything.
+- Plots: PSD raw / logged filtered / sim as flown (dashed) / sim what-if, and
+  the same series over time.
 
-Типовий сценарій: зняти LPF2 або підняти LPF1 і подивитися, скільки шуму
-прийде на PID (sim what‑if проти logged), перш ніж міняти прошивку.
+A typical use: remove LPF2 or raise LPF1 and see how much noise reaches the
+PIDs (sim what-if against logged) before touching the firmware.
 
 ## 8. Motor noise
 
 ![Motor noise](screenshots/motors.png)
 
-Таблиця: для кожного мотора — середні оберти, амплітуда гіро на гармоніках
-`×1…×n` і відношення до середнього по моторах, сума. Найгучніший мотор і
-відношення > 1.3 підсвічені: гнутий пропелер або битий підшипник видно як рядок,
-що випадає. Швидкості беруться з eRPM; без телеметрії працює оцінка з піків
-гіро (п. 9), тоді в таблиці один рядок на всі мотори. Нижче — спектр із
-гармоніками кожного мотора у його кольорі.
+A table with, per motor, the mean rpm, the gyro amplitude at the harmonics
+`×1…×n` and the ratio to the mean over the motors, and the sum. The loudest
+motor and ratios > 1.3 are highlighted: a bent prop or a worn bearing shows as
+a row that stands out. The speeds come from eRPM; without telemetry the
+estimate from the gyro peaks (section 9) is used and the table has one row for
+all motors. Below is the spectrum with every motor's harmonics in its colour.
 
-## 9. Оберти без eRPM
+## 9. Motor speed without eRPM
 
-`openpid run rpm <log>` оцінює оберти з піків спектра `gyro.raw` (DESIGN §6.6):
-кандидати — найсильніші піки у смузі `rpm_min..rpm_max` і їхні гармоніки,
-динамічне програмування обирає неперервний шлях; у виводі `confidence`
-кожного кадру і, якщо eRPM є, `median_error` для контролю. Фільтроване гіро для
-цього не годиться — RPM‑фільтр уже зняв піки.
+`openpid run rpm <log>` estimates the motor speed from the peaks of the
+`gyro.raw` spectrum (DESIGN §6.6): the candidates are the strongest peaks in
+`rpm_min..rpm_max` and their harmonics, dynamic programming picks a continuous
+path; the output carries the `confidence` of every frame and, when eRPM is
+logged, a `median_error` for control. The filtered gyro is no use for this:
+the RPM filter has already removed the peaks.
 
 ## 10. PID sliders
 
 ![PID sliders](screenshots/sliders.png)
 
-Для логів Betaflight 4.3+ із simplified tuning: слайдери, з якими летів лог, і
-коефіцієнти, які вони дають. Рухайте слайдери — праворуч нові PID і готові
-команди CLI (`set …`); **Reset** повертає значення з логу. Те саме в терміналі:
-`openpid sliders <log> --set simplified_master_multiplier=110`.
+For Betaflight 4.3+ logs with simplified tuning: the sliders the log flew with
+and the gains they produce. Move the sliders and the new PIDs and ready CLI
+commands (`set …`) appear on the right; **Reset** restores the logged values.
+The same in the terminal: `openpid sliders <log> --set simplified_master_multiplier=110`.
 
-## 11. Diagnostics і Settings
+## 11. Diagnostics and Settings
 
-- **Diagnostics**: прошивка, профіль, частоти, кадри (валідні/пошкоджені/
-  resync), прогалини, нерозпізнані поля, усі заголовки логу (для ArduPilot — усі
-  `PARM`), нотатки декодера (batch sampler, хвіст іншого файлу тощо).
-- **Log check** (картка над таблицею Diagnostics) — чи придатний лог для кожного
-  аналізу. Перевірки та пороги:
+- **Diagnostics**: firmware, profile, rates, frames (valid / corrupt / resync),
+  gaps, unmapped fields, every log header (for ArduPilot every `PARM`), decoder
+  notes (batch sampler, the tail of another file, and so on).
+- **Log check** (the card above the Diagnostics table): whether the log is fit
+  for each analysis. The checks and thresholds:
 
-  | Перевірка | Ok | Попередження `[!]` | Помилка `[x]` |
+  | Check | Ok | Warning `[!]` | Failure `[x]` |
   |---|---|---|---|
-  | rate — частота логу | ≥ 1 kHz (≥ 950 Hz) | 500–950 Hz | < 500 Hz |
-  | duration — тривалість сесії | ≥ 20 s | 5–20 s | < 5 s |
-  | raw — нефільтрований gyro | є | — | немає: Filter Sim, Motor noise і правило піків недоступні |
-  | rpm — eRPM моторів | є | немає (overlay бере оцінку обертів) | — |
-  | frames — пошкоджені кадри | < 0.5 % | 0.5–5 % | > 5 % |
-  | gaps — прогалини часу | 0 | ≤ 3 | > 3 |
-  | sticks — step-вікон на roll і pitch | ≥ 10 | 5–9 | < 5: step response ненадійний |
-  | throttle — покриття діапазону газу | ≥ 30 % | 10–30 % | < 10 %: Freq × throttle неповний |
-  | debug — `debug_mode` | інформаційно | | |
+  | rate — log rate | ≥ 1 kHz (≥ 950 Hz) | 500–950 Hz | < 500 Hz |
+  | duration — session length | ≥ 20 s | 5–20 s | < 5 s |
+  | raw — unfiltered gyro | present | — | missing: Filter Sim, Motor noise and the peak rule are unavailable |
+  | rpm — motor eRPM | present | missing (the overlay uses the rpm estimate) | — |
+  | frames — corrupt frames | < 0.5 % | 0.5–5 % | > 5 % |
+  | gaps — timebase gaps | 0 | ≤ 3 | > 3 |
+  | sticks — step windows on roll and pitch | ≥ 10 | 5–9 | < 5: the step response is unreliable |
+  | throttle — throttle range coverage | ≥ 30 % | 10–30 % | < 10 %: Freq × throttle is incomplete |
+  | debug — `debug_mode` | informational | | |
 
-  Загальна оцінка — найгірша з rate, duration, frames; решта лише попереджає.
-  Поруч із кожною порадою є кнопка **Copy** — команда копіюється в буфер і
-  вставляється в CLI конфігуратора. Вкладки Filter Sim і Motor noise, яким
-  бракує raw gyro, показують ту саму пораду. Для логу з кількома сесіями
-  перевірка робиться для кожної; картка показує обрану.
-- **Settings**: тема (dark/light), **мова інтерфейсу** (English / Українська —
-  перемикається миттєво, одиниці й числа не змінюються), touch‑режим на старті,
-  одиниці deg/s↔rad/s і g↔m/s², **Targets** — пороги вердиктів step response
-  (пресет або власні, п. 3), **перший запуск** — показувати тур при першому
-  лозі, скинути стан, показати тур зараз. Зберігається у `prefs.json` каталогу конфігурації (`~/.config/openpid`,
-  `~/Library/Application Support/openpid`, `%APPDATA%\openpid`; `OPENPID_CONFIG_DIR`
-  перевизначає).
+  The overall mark is the worst of rate, duration and frames; the rest only
+  warn. Next to every fix is a **Copy** button: the command goes to the
+  clipboard, ready for the configurator CLI. The Filter Sim and Motor noise
+  tabs show the same fix when the raw gyro is missing. A log with several
+  sessions is checked per session; the card shows the selected one.
+- **Settings**: theme (dark/light), the **interface language** (English /
+  Ukrainian, switched instantly; units and numbers do not change), touch mode
+  at start, the deg/s ↔ rad/s and g ↔ m/s² units, **Targets** (the step
+  response verdict thresholds: a preset or custom, section 3), **first run**
+  (show the tour on the first log, reset the state, show the tour now). Saved
+  in `prefs.json` of the configuration directory (`~/.config/openpid`,
+  `~/Library/Application Support/openpid`, `%APPDATA%\openpid`;
+  `OPENPID_CONFIG_DIR` overrides it).
 
-## 12. Порівняння A/B, проєкти, експорт
+## 12. Comparing logs, projects, export
 
-- **Кілька логів** (до 8): **Open log…**, **+ Add log** або перетягування
-  файлів у вікно відкриває кожен лог у власний слот A…H зі своїм кольором
-  (палітра Okabe–Ito, видима й при дальтонізмі). Лінійні вкладки (Log viewer,
-  Step response, Spectrum, Filter Sim) накладають усі слоти на один графік;
-  панельні (теплові карти, Surface 3D, Motor noise, Advice, Diagnostics) ставлять
-  панелі поруч — дві на всю ширину, більше — у прокрутку. У рядку слота:
-  прапорець «показувати», **S** (solo — лише цей слот; повторне натискання
-  повертає всі) і **x** (закрити; букви інших слотів не змінюються). Епоха в
-  кожного слота своя. Перший завантажений слот — еталон для списку каналів,
-  PID-слайдерів і назв експортованих файлів.
-- **Project → Save as…** записує `.openpid.json`: логи (шляхи відносно файлу
-  проєкту), сесії, епохи, вкладку, touch‑режим і всі параметри інструментів;
-  **Open…**, перетягування або аргумент командного рядка відновлює вид.
-  `openpid run step --project flight.openpid.json` бере перший лог проєкту, сесію,
-  епоху й параметри з проєкту. Проєкт зберігає всі слоти з буквами й видимістю
-  (схема v2; файли v1 читаються).
-- **Export → Plot as PNG…** зберігає область вкладки; **<слот> result as JSON…**
-  — результат аналізу точно таким, як друкує `openpid run … `. Для теплових карт
-  `openpid run thr-heatmap <log> --png out.png` пише картинку сітки.
+- **Several logs** (up to 8): **Open log…**, **+ Add log** or dropping files
+  into the window opens every log in its own slot A…H with its own colour (the
+  Okabe–Ito palette, readable with colour-vision deficiency). Line tabs (Log
+  viewer, Step response, Spectrum, Filter Sim) overlay every slot on one plot;
+  panel tabs (the heatmaps, Surface 3D, Motor noise, Advice, Diagnostics) put
+  the panels side by side: two across the full width, more in a scroll. In the
+  slot row: a "show" checkbox, **S** (solo: this slot only; pressing it again
+  shows every slot) and **x** (close; the other letters do not change). Every
+  slot has its own epoch. The first loaded slot is the reference for the
+  channel list, the PID sliders and the export file names.
+- **Project → Save as…** writes `.openpid.json`: the logs (paths relative to
+  the project file), sessions, epochs, the tab, touch mode and every tool
+  parameter; **Open…**, dropping the file or a command-line argument restores
+  the view. `openpid run step --project flight.openpid.json` takes the first
+  log of the project, its session, epoch and parameters. A project keeps every
+  slot with its letter and visibility (schema v2; v1 files are read).
+- **Export → Plot as PNG…** saves the tab area; **<slot> result as JSON…** the
+  analysis result exactly as `openpid run …` prints it. For the heatmaps
+  `openpid run thr-heatmap <log> --png out.png` writes the grid as an image.
 
-## 12а. Advice — рекомендації з доказами
+## 12a. Advice — recommendations with evidence
 
 ![Advice](screenshots/advice.png)
 
-Вкладка **Advice** (і `openpid run recommend <log> [--epoch A..B]`) проганяє три
-консервативні правила і показує пропозиції (`path`, `from`, `to`, `rationale`, `confidence`) разом із
-доказами кожного правила — також тими, що нічого не запропонували:
+The **Advice** tab (and `openpid run recommend <log> [--epoch A..B]`) runs
+three conservative rules and shows the proposals (`path`, `from`, `to`,
+`rationale`, `confidence`) together with the evidence of every rule, the ones
+that proposed nothing included:
 
-- **overshoot** — перерегулювання step response понад 15 % на осі з ненульовим D,
-  коли D‑term не зашумлений (рівень PSD `pid.d` на 150–400 Гц проти 5–30 Гц
-  нижче −15 дБ) → `pid.<вісь>.d` +10 %; зашумлений D‑term — порада спершу
-  понизити D‑term фільтр; yaw без D не чіпається.
-- **peak** — найвиразніший пік сирого гіроскопа вище 80 Гц (≥ 8 дБ), який не
-  накриває ні статичний notch, ні діапазон dyn notch, ні RPM‑фільтр → розширити
-  діапазон dyn notch або поставити статичний notch на пік.
-- **gyro-lpf** — коли шум сирого гіроскопа у смузі «зріз…2×зріз» на 10 дБ нижчий
-  за низьку смугу (10…зріз/2) → статичний зріз LPF1 ×1,25 (менша фазова
-  затримка; у поясненні — мілісекунди до/після).
+- **overshoot**: a step-response overshoot above 15 % on an axis with
+  non-zero D, when the D-term is not noisy (the PSD level of `pid.d` at
+  150–400 Hz against 5–30 Hz below −15 dB) → `pid.<axis>.d` +10 %; a noisy
+  D-term gets the advice to lower the D-term filter first; yaw without D is
+  left alone.
+- **peak**: the most prominent raw-gyro peak above 80 Hz (≥ 8 dB) that no
+  static notch, dynamic-notch range or RPM filter covers → widen the dynamic
+  notch range or put a static notch on the peak.
+- **gyro-lpf**: when the raw-gyro noise in the "cutoff…2×cutoff" band is 10 dB
+  below the low band (10…cutoff/2) → static LPF1 cutoff ×1.25 (less phase
+  delay; the explanation gives the milliseconds before and after).
 
-На вкладці: пороги правил (**overshoot limit**, **D step**, **peak prominence**,
-**LPF headroom**) зберігаються у проєкті; таблиця **Proposals** (шлях, було → буде,
-впевненість, пояснення), таблиця **Evidence** (● — правило спрацювало, ○ — ні) і
-готовий текст для Betaflight CLI; Export → JSON віддає той самий результат.
-У CLI `--cli` замість JSON друкує докази коментарями й команди `set … / save` для
-Betaflight CLI (`openpid-fmt-blackbox::BetaflightCli`, та сама таблиця імен,
-що й в `openpid diff --cli`). Правила — лише підказки з доказами, не autotune:
-застосовуйте по одній зміні й перевіряйте новим логом.
+On the tab: the rule thresholds (**overshoot limit**, **D step**, **peak
+prominence**, **LPF headroom**) are saved in the project; the **Proposals**
+table (path, from → to, confidence, rationale), the **Evidence** table (● the
+rule fired, ○ it did not) and ready text for the Betaflight CLI; Export → JSON
+gives the same result. In the CLI, `--cli` prints the evidence as comments and
+the `set … / save` commands for the Betaflight CLI instead of JSON
+(`openpid-fmt-blackbox::BetaflightCli`, the same name table as `openpid diff
+--cli`). The rules are hints with evidence, not an autotune: apply one change
+at a time and check it with a new log.
 
-## 13. CLI — відповідності
+## 13. CLI equivalents
 
-| Вкладка | Команда |
+| Tab | Command |
 |---|---|
 | Log viewer | `openpid info <log>`, `openpid decode <log> --scaled` |
-| Log check | `openpid info <log>` — блок `fitness` (у `--json` — поле `fitness`) |
-| Step response | `openpid run step <log> --axis pitch --epoch 2..12` (`--json` містить `verdicts` за порогами проєкту або за замовчуванням) |
+| Log check | `openpid info <log>`: the `fitness` block (the `fitness` field with `--json`) |
+| Step response | `openpid run step <log> --axis pitch --epoch 2..12` (`--json` carries `verdicts` against the project's targets, or the defaults) |
 | Spectrum | `openpid run psd <log> --channel gyro.raw.roll` |
 | Freq × throttle | `openpid run thr-heatmap <log> [--png out.png]` |
 | Freq × time | `openpid run stft <log> --channel motor.0` |
 | Filter Sim | `openpid run filter-sim <log> --set lpf1_hz=100,lpf1_type=1` |
 | Motor noise | `openpid run motor-noise <log>` |
-| Оберти без eRPM | `openpid run rpm <log>` |
+| Motor speed without eRPM | `openpid run rpm <log>` |
 | PID sliders | `openpid sliders <log> --set …` |
-| Порівняння налаштувань двох логів | `openpid diff <logA> <logB> [--session N --session-b M] [--cli \| --json]` |
-| Рекомендації з доказами | `openpid run recommend <log> [--epoch A..B] [--cli]` |
-| Синтетичний лог | `openpid gen --example > spec.json; openpid gen spec.json --out synthetic.csv` |
+| Settings diff of two logs | `openpid diff <logA> <logB> [--session N --session-b M] [--cli \| --json]` |
+| Advice | `openpid run recommend <log> [--epoch A..B] [--cli]` |
+| Synthetic log | `openpid gen --example > spec.json; openpid gen spec.json --out synthetic.csv` |
 
-`--session N` обирає сесію, `--epoch A..B` — секунди, `--epoch auto` — обрізати
-зліт і посадку, `--epoch active` — найактивніші 20 с (обране вікно друкується в
-stderr), `--out` пише у файл.
+`--session N` picks the session, `--epoch A..B` the seconds, `--epoch auto`
+trims the take-off and landing, `--epoch active` takes the most active 20 s
+(the chosen window is printed to stderr), `--out` writes to a file.
 
-## 13а. Гарячі клавіші
+## 13a. Keyboard shortcuts
 
-Довідник — `?` (або `Ctrl+/`, `F1`, меню **Help → Keyboard shortcuts**); кожна
-кнопка з клавішею показує її в підказці. `Cmd` на macOS, `Ctrl` на Windows/Linux.
-Одиночні клавіші (`1`…`=`, `?`, `Space`, `,`, `.`, `Home`, `Shift+A`, `Esc`)
-працюють, лише коли фокус не в текстовому полі: у полі `2` вводить цифру,
-`Esc` виходить із поля.
+The reference is `?` (or `Ctrl+/`, `F1`, the **Help → Keyboard shortcuts**
+menu); every button with a key shows it in its tooltip. `Cmd` on macOS, `Ctrl`
+on Windows/Linux. Single keys (`1`…`=`, `?`, `Space`, `,`, `.`, `Home`,
+`Shift+A`, `Esc`) work only while no text field has the keyboard: in a field,
+`2` types a digit and `Esc` leaves the field.
 
-| Дія | Клавіша |
+| Action | Key |
 |---|---|
-| Вкладки за порядком (Log viewer … Settings) | `1`…`9`, `0` (10-та, PID sliders), `-` (11-та, Diagnostics), `=` (12-та, Settings) |
-| Наступна / попередня вкладка (по колу) | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
-| Відкрити лог у перший порожній слот | `Ctrl+O` |
-| Відкрити лог для порівняння (у слот після останнього завантаженого) | `Ctrl+Shift+O` |
-| Закрити останній відкритий слот | `Ctrl+W` |
-| Проєкт: зберегти як… / відкрити… | `Ctrl+S` / `Ctrl+Shift+S` |
-| Експорт вкладки як PNG | `Ctrl+E` |
-| Довідник клавіш (показати/сховати) | `?`, `Ctrl+/`, `F1` |
-| Закрити довідник | `Esc` |
-| Плеєр на Freq × time: відтворити/пауза, стовпець назад/вперед, на початок | `Space`, `,` / `.`, `Home` |
-| Епоха: весь лог для всіх слотів | `Shift+A` |
-| Сенсорний режим | `Ctrl+T` |
+| Tabs in order (Log viewer … Settings) | `1`…`9`, `0` (10th, PID sliders), `-` (11th, Diagnostics), `=` (12th, Settings) |
+| Next / previous tab (wrapping) | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
+| Open a log into the first empty slot | `Ctrl+O` |
+| Open a log to compare (into the slot after the last loaded one) | `Ctrl+Shift+O` |
+| Close the last opened slot | `Ctrl+W` |
+| Project: save as… / open… | `Ctrl+S` / `Ctrl+Shift+S` |
+| Export the tab as PNG | `Ctrl+E` |
+| Keyboard reference (show/hide) | `?`, `Ctrl+/`, `F1` |
+| Close the reference | `Esc` |
+| Player on Freq × time: play/pause, column back/forward, to start | `Space`, `,` / `.`, `Home` |
+| Epoch: whole log for every slot | `Shift+A` |
+| Touch mode | `Ctrl+T` |
 
-Порядок цифр відповідає порядку вкладок у верхній панелі; якщо вкладка
-додається, таблиця оновлюється разом із нею.
+The digits follow the order of the tabs in the top bar; when a tab is added,
+the table is updated with it.
 
-## 14. Якщо щось не так
+## 14. When something is off
 
-| Симптом | Причина й що робити |
+| Symptom | Cause and what to do |
 |---|---|
-| «no unfiltered gyro in this log» | Увімкніть `gyroUnfilt` у полях blackbox (BF 4.5+) або `debug_mode = GYRO_SCALED`; на ArduPilot — `INS_LOG_BAT_MASK`. |
-| RPM overlay відсутній | У логу немає eRPM (DShot‑телеметрія вимкнена). Оберти можна оцінити (`run rpm`). |
-| Step response: «none of N windows had stick input» | Епоха без маневрів або `min input` зависокий; оберіть ділянку з рухом стіка. |
-| Freq × throttle майже порожня | Короткий політ або вузький діапазон газу: дивіться смугу сегментів на бін. |
-| Лог відкрився з «corrupt frames» у Diagnostics | Пошкоджені кадри пропущені; якщо їх багато — карта/лог‑швидкість (див. docs/BLACKBOX-VERSIONS.md). |
-| ArduPilot: setpoint сходинками | `RATE`/`PIDR` пишуться на 10 Гц; увімкніть `ATTITUDE_FAST` і `PID` у `LOG_BITMASK`. |
+| "no unfiltered gyro in this log" | Enable `gyroUnfilt` in the blackbox fields (BF 4.5+) or `debug_mode = GYRO_SCALED`; on ArduPilot `INS_LOG_BAT_MASK`. |
+| No RPM overlay | The log has no eRPM (DShot telemetry off). The speed can be estimated (`run rpm`). |
+| Step response: "none of N windows had stick input" | The epoch has no manoeuvres, or `min input` is too high; pick a span with stick movement. |
+| Freq × throttle almost empty | A short flight or a narrow throttle range: look at the segments-per-bin strip. |
+| The log opened with "corrupt frames" in Diagnostics | Corrupt frames are skipped; many of them point at the card or the log rate (see docs/BLACKBOX-VERSIONS.md). |
+| ArduPilot: a stair-stepped setpoint | `RATE`/`PIDR` are written at 10 Hz; enable `ATTITUDE_FAST` and `PID` in `LOG_BITMASK`. |
 
-Скріншоти оновлюються скриптом `tools/screenshots.sh` (Xvfb + ImageMagick) на
-фікстурі Betaflight 2025.12.
+The screenshots are refreshed by `tools/screenshots.sh` (Xvfb + ImageMagick)
+on the Betaflight 2025.12 fixture.
