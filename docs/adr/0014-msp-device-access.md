@@ -1,61 +1,63 @@
-# ADR-0014: Доступ до польотного контролера через MSP
+# ADR-0014: Access to the flight controller over MSP
 
-- Статус: прийнято (рішення про межі; код не додається)
-- Дата: 2026-11-05
+- Status: accepted (a decision on the boundaries; no code is added)
+- Date: 2026-11-05
 
-## Контекст
+## Context
 
-DESIGN §9 передбачає trait `Device`: читати налаштування з контролера, писати
-пропозиції (`Proposal`, ADR-0013‑сусідні `openpid-core::recommend`) і
-завантажувати логи з flash без картки. Для Betaflight/INAV/Rotorflight це
-MSP (MultiWii Serial Protocol, v1 і v2) поверх USB‑CDC або UART.
+DESIGN §9 foresees a `Device` trait: read the settings from the controller,
+write proposals (`Proposal`, the neighbouring `openpid-core::recommend`) and
+download logs from the flash without a card. For Betaflight/INAV/Rotorflight
+that is MSP (MultiWii Serial Protocol, v1 and v2) over USB-CDC or UART.
 
-Проблема — залежність на послідовний порт. Найпоширеніший crate `serialport`
-на Linux за замовчуванням тягне `libudev` (C‑бібліотека для переліку портів);
-без неї (`default-features = false`) лишаються лише прив'язки до libc через
-`nix`, але на деяких ОС збірка досі потребує системних пакетів. Це суперечить
-ADR-0001 (мінімум залежностей, чистий Rust, збірка без системних бібліотек на
-трьох ОС) і правилу CI «нічого не змінюється без коміту».
+The problem is the serial-port dependency. The most common crate,
+`serialport`, pulls `libudev` on Linux by default (a C library for port
+enumeration); without it (`default-features = false`) only the libc bindings
+through `nix` remain, and on some platforms the build still needs system
+packages. That contradicts ADR-0001 (minimal dependencies, pure Rust, a build
+without system libraries on three platforms) and the CI rule "nothing changes
+without a commit".
 
-Розглянуті варіанти:
+Options considered:
 
-| Варіант | Плюси | Мінуси |
+| Option | Pros | Cons |
 |---|---|---|
-| `serialport` (default features) | стандарт де‑факто, перелік портів через udev | C‑залежність на Linux, `pkg-config`/`libudev-dev` у CI й у користувачів |
-| `serialport` без `libudev` | без C‑коду | перелік портів на Linux обмежений; API усе одно через `nix`/`winapi` |
-| `serial2` | чистий Rust (прив'язки до системних API без C‑коду), BSD‑2‑Clause, перелік портів через sysfs/IOKit/реєстр, без `tokio` | молодший crate, менше користувачів |
-| Власні прив'язки до termios/`CreateFile` | нуль залежностей | об'єм і ризик помилок на трьох ОС, не наша предметна область |
-| Поза межами проєкту (лише файли логів) | нічого не змінюється | немає «застосувати пораду одним кліком» і логів без картки |
+| `serialport` (default features) | the de-facto standard, port enumeration through udev | a C dependency on Linux, `pkg-config`/`libudev-dev` in CI and for users |
+| `serialport` without `libudev` | no C code | port enumeration on Linux limited; the API still goes through `nix`/`winapi` |
+| `serial2` | pure Rust (bindings to the system APIs without C code), BSD-2-Clause, enumeration through sysfs/IOKit/the registry, no `tokio` | a younger crate, fewer users |
+| own bindings to termios / `CreateFile` | zero dependencies | volume and risk of mistakes on three platforms, not our domain |
+| out of scope (log files only) | nothing changes | no "apply the advice in one click" and no logs without a card |
 
-## Рішення
+## Decision
 
-1. **У v1.0 доступу до пристрою немає.** Робочий цикл лишається «лог → аналіз →
-   поради → текст для CLI configurator‑а» (`openpid run recommend --cli`,
-   вкладка Advice). Це закриває дослідницьке питання #42 без коду.
-2. **Коли дійдемо** (окрема віха після v1.0), реалізація буде такою:
-   - окремий crate **`openpid-msp`** з feature **`device`**, вимкненою за
-     замовчуванням; GUI і CLI збираються без нього так само, як тепер;
-   - послідовний порт — **`serial2`** (чистий Rust, BSD‑2‑Clause — дозволена в
-     `deny.toml`), додається через оновлення цього ADR і `deny.toml`;
-   - MSP v2 реалізується **за документацією протоколу** (Betaflight wiki /
-     `msp_protocol.h` як специфікація констант), без копіювання коду прошивки;
-     мінімальний набір: `MSP_API_VERSION`, `MSP_FC_VARIANT`, `MSP_PID`,
-     `MSP_FILTER_CONFIG`, `MSP_SET_*`, `MSP_EEPROM_WRITE`,
-     `MSP_DATAFLASH_SUMMARY/READ`;
-   - **запис — лише через явне підтвердження** в UI з показом diff (той самий
-     `BetaflightCli::diff_commands`), з обов'язковим читанням назад і
-     порівнянням; жодного автоматичного `save`;
-   - trait `Device` живе в `openpid-core` (без залежностей), `openpid-msp`
-     його реалізує; headless‑тести — на фейковому порту (`Read + Write` у
-     пам'яті) з записаними обмінами.
-3. Завантаження логів із flash (`MSP_DATAFLASH_READ`) — частина тієї самої
-   віхи; формат отриманого потоку — звичайний `.bbl`, який уже відкриває
-   `openpid-fmt-blackbox`.
+1. **No device access in v1.0.** The workflow stays "log → analysis → advice →
+   text for the configurator CLI" (`openpid run recommend --cli`, the Advice
+   tab). That closes research question #42 without code.
+2. **When we get there** (a separate milestone after v1.0), the implementation
+   will be:
+   - a separate crate **`openpid-msp`** behind the **`device`** feature, off by
+     default; the GUI and CLI build without it as they do now;
+   - the serial port through **`serial2`** (pure Rust, BSD-2-Clause, allowed in
+     `deny.toml`), added through an update of this ADR and of `deny.toml`;
+   - MSP v2 implemented **from the protocol documentation** (the Betaflight
+     wiki / `msp_protocol.h` as the specification of the constants), without
+     copying firmware code; the minimal set: `MSP_API_VERSION`,
+     `MSP_FC_VARIANT`, `MSP_PID`, `MSP_FILTER_CONFIG`, `MSP_SET_*`,
+     `MSP_EEPROM_WRITE`, `MSP_DATAFLASH_SUMMARY/READ`;
+   - **writes only after an explicit confirmation** in the UI showing the diff
+     (the same `BetaflightCli::diff_commands`), with a mandatory read-back and
+     comparison; never an automatic `save`;
+   - the `Device` trait lives in `openpid-core` (no dependencies) and
+     `openpid-msp` implements it; headless tests on a fake port (`Read + Write`
+     in memory) with recorded exchanges.
+3. Downloading logs from the flash (`MSP_DATAFLASH_READ`) is part of the same
+   milestone; the received stream is an ordinary `.bbl` that
+   `openpid-fmt-blackbox` already opens.
 
-## Наслідки
+## Consequences
 
-- Жодної нової залежності й C‑коду зараз; CI і збірка користувачів без змін.
-- Поради застосовуються через CLI configurator‑а — один крок копіювання, зате
-  прозорий: користувач бачить кожен `set` перед `save`.
-- Коли feature `device` з'явиться, вона не впливає на збірку за замовчуванням;
-  ризик `serial2` локалізований в одному crate.
+- No new dependency and no C code now; CI and the users' builds are unchanged.
+- Advice is applied through the configurator CLI: one copy step, but a
+  transparent one: the user sees every `set` before `save`.
+- When the `device` feature appears it does not affect the default build; the
+  `serial2` risk is confined to one crate.

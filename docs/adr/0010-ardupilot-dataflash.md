@@ -1,41 +1,39 @@
-# ADR-0010: ArduPilot DataFlash — окремий crate `openpid-fmt-ardupilot`
+# ADR-0010: ArduPilot DataFlash as a separate crate `openpid-fmt-ardupilot`
 
-- Статус: прийнято
-- Дата: 2026-11-04
+- Status: accepted
+- Date: 2026-11-04
 
-## Контекст
+## Context
 
-Фаза 2 (рішення Q2) додає ArduPilot, потім INAV. DataFlash — не Blackbox: інший
-контейнер (самоописні пакети `FMT`), кілька незалежних потоків повідомлень
-замість одного кадру на ітерацію, параметри у `PARM` замість заголовків, інші
-одиниці (рад/с, м/с², сантиградуси у старих версіях).
+Phase 2 (decision Q2) adds ArduPilot, then INAV. DataFlash is not Blackbox:
+another container (self-describing `FMT` packets), several independent message
+streams instead of one frame per iteration, parameters in `PARM` instead of
+headers, other units (rad/s, m/s², centidegrees in old versions).
 
-## Рішення
+## Decision
 
-- **Окремий crate** `openpid-fmt-ardupilot` з власним `LogFormat` і
-  `FirmwareProfile` (`ArdupilotProfile`), без нових залежностей (лише
-  `openpid-core`). Декодер пакетів (`reader`) не інтерпретує дані; `session`
-  будує `FlightSession`; `profile` відображає `MSG.Col` → канал і `PARM` →
-  `Settings`. Той самий поділ, що й у `openpid-fmt-blackbox`.
-- **Одна часова база**: найчастіше з `IMU[0]`, `RATE`, `PIDR`; інші
-  повідомлення sample‑and‑hold з validity mask. Інтерполяцію не робимо: вона
-  вигадує значення, яких контролер не бачив; аналізам потрібна чесна маска.
-- **Експорт за білим списком** повідомлень, що стосуються тюнінгу; решта лише
-  рахується в діагностиці. Невідомі колонки експортованих повідомлень стають
-  `custom:` з одиницею та множником із `FMTU`/`UNIT`/`MULT`.
-- **Одиниці** приводяться до ядра OpenPID (deg/s, g, %, V, A, mAh);
-  відмінності між Copter і Plane (рад/с vs deg/s у PID‑повідомленнях,
-  мотори vs сервоприводи у `RCOU`) обираються за рядком прошивки.
-- **Фікстури** — три MIT‑логи (Copter 3.3, Plane 4.3.5, QuadPlane 4.4.4) у
-  Git LFS; байтова відповідність перевіряється проти незалежного
-  Python‑декодера (`tests/golden/*.rows.json`), згенерованого за тим самим
-  описом формату.
+- **A separate crate** `openpid-fmt-ardupilot` with its own `LogFormat` and
+  `FirmwareProfile` (`ArdupilotProfile`), without new dependencies (only
+  `openpid-core`). The packet decoder (`reader`) does not interpret the data;
+  `session` builds the `FlightSession`; `profile` maps `MSG.Col` → channel and
+  `PARM` → `Settings`. The same split as in `openpid-fmt-blackbox`.
+- **One timebase**: the fastest of `IMU[0]`, `RATE`, `PIDR`; the other messages
+  are sample-and-hold with a validity mask. No interpolation: it invents values
+  the controller never saw; the analyses need an honest mask.
+- **Export by an allow-list** of the messages relevant to tuning; the rest is
+  only counted in the diagnostics. Unknown columns of the exported messages
+  become `custom:` with the unit and multiplier from `FMTU`/`UNIT`/`MULT`.
+- **Units** are brought to the OpenPID core (deg/s, g, %, V, A, mAh); the
+  differences between Copter and Plane (rad/s vs deg/s in the PID messages,
+  motors vs servos in `RCOU`) are chosen by the firmware string.
+- **Fixtures**: three MIT logs (Copter 3.3, Plane 4.3.5, QuadPlane 4.4.4) in
+  Git LFS; byte-level agreement is checked against an independent Python
+  decoder (`tests/golden/*.rows.json`) written from the same format description.
 
-## Наслідки
+## Consequences
 
-- `openpid-cli`/`openpid-app` реєструють формат; `.bin` відкривається як і
-  `.bbl`.
-- Якість step response залежить від частоти `RATE`/`PIDR` у лозі (див.
-  `docs/ARDUPILOT.md`); це властивість логів ArduPilot, не декодера.
-- Filter Sim для ArduPilot чекає на читання batch sampler (`ISBH/ISBD`) —
-  окреме завдання фази 2.
+- `openpid-cli`/`openpid-app` register the format; a `.bin` opens like a `.bbl`.
+- The step-response quality depends on the `RATE`/`PIDR` rate in the log (see
+  `docs/ARDUPILOT.md`); that is a property of ArduPilot logs, not of the decoder.
+- Filter Sim for ArduPilot waits for the batch-sampler reader (`ISBH/ISBD`), a
+  separate phase-2 task.

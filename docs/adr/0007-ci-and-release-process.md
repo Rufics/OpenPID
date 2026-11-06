@@ -1,34 +1,33 @@
-# ADR-0007: Процес розробки, CI‑перевірки та релізи
+# ADR-0007: Development process, CI checks and releases
 
-Статус: прийнято (2026-11-04)
+Status: accepted (2026-11-04)
 
-## Рішення
-- **Trunk‑based з feature‑гілками**: `master` захищена ruleset‑ом (`.github/rulesets/master.json`): тільки PR, squash‑merge, 1 схвалення code owner, вирішені треди, лінійна історія, підписані коміти, strict status checks.
-- **Conventional Commits** для комітів і заголовків PR (`.commitlintrc.json`, job `commits`); з них release‑plz генерує CHANGELOG, версії (єдина на workspace) і теги `vX.Y.Z`; `release.yml` додає бінарники до GitHub Release.
-- **Обов'язкові перевірки**: fmt, clippy з lint‑ами стилю (`docs/STYLE.md`), rustdoc без попереджень, typos, тести на трьох ОС, **покриття ≥ 90 % рядків** усього workspace (`cargo llvm-cov --fail-under-lines`; GUI тестується headless, ADR-0008), cargo‑deny. Job `CI OK` агрегує їх для ruleset‑а.
-- **Артефакти**: кожен запуск CI публікує бінарники для трьох ОС і lcov‑звіт (14 днів).
-- **Кеш**: `Swatinem/rust-cache` з окремими ключами на job; concurrency скасовує застарілі запуски.
-- **SonarCloud** як додаткова (не блокуюча до появи секрета) перевірка з тим самим lcov; після налаштування Quality Gate додається до ruleset.
-- **Dependabot** щотижня групованими PR для cargo і actions.
+## Decision
+- **Trunk-based with feature branches**: `master` is protected by a ruleset (`.github/rulesets/master.json`): PRs only, squash merge, one code-owner approval, resolved threads, a linear history, signed commits, strict status checks.
+- **Conventional Commits** for commits and PR titles (`.commitlintrc.json`, the `commits` job); release-plz builds the CHANGELOG, the versions (one per workspace) and the `vX.Y.Z` tags from them; `release.yml` attaches the binaries to the GitHub Release.
+- **Required checks**: fmt, clippy with the style lints (`docs/STYLE.md`), rustdoc without warnings, typos, tests on three platforms, **line coverage ≥ 90 %** over the whole workspace (`cargo llvm-cov --fail-under-lines`; the GUI is tested headless, ADR-0008), cargo-deny. The `CI OK` job aggregates them for the ruleset.
+- **Artifacts**: every CI run publishes the binaries for the three platforms and the lcov report (14 days).
+- **Cache**: `Swatinem/rust-cache` with separate keys per job; concurrency cancels stale runs.
+- **SonarCloud** as an additional check (not blocking until the secret exists) on the same lcov; after the Quality Gate is set up it is added to the ruleset.
+- **Dependabot** weekly, grouped PRs for cargo and actions.
 
-## Чому так
-- 90 % — поріг для бібліотечного коду з golden/reference‑тестами (на момент рішення ≈ 92 %); GUI спочатку було виключено; з ADR-0008 воно тестується headless через `egui_kittest` і входить до порогу.
-- release‑plz замість release‑please: рідний для Cargo‑workspace, розуміє успадкування версії, не потребує Node.
-- Squash‑merge робить заголовок PR єдиним джерелом правди для журналу змін і спрощує bisect.
+## Why
+- 90 % is the threshold for library code with golden / reference tests (≈ 92 % at the time of the decision); the GUI was excluded at first; since ADR-0008 it is tested headless with `egui_kittest` and counts towards the threshold.
+- release-plz rather than release-please: native to a Cargo workspace, understands version inheritance, needs no Node.
+- Squash merges make the PR title the single source of truth for the changelog and simplify bisecting.
 
-## Наслідки
-- Для роботи release‑plz і Sonar власник додає секрети (`docs/RELEASING.md`).
-- Будь‑який новий публічний елемент без документації або `unwrap()` поза тестами ламає CI — свідомо.
+## Consequences
+- The owner adds the secrets for release-plz and Sonar (`docs/RELEASING.md`).
+- Any new public item without documentation, or an `unwrap()` outside tests, breaks CI, on purpose.
 
-## Закріплення версій у CI (доповнення 2026‑11)
+## Pinned versions in CI (addendum 2026-11)
 
-- Кожен GitHub Action вказується **повним SHA коміту** з тегом у коментарі (`uses: actions/checkout@3d3c42e… # v7.0.1`). Тег можна переписати, SHA — ні; Dependabot (`.github/dependabot.yml`, екосистема `github-actions`) оновлює SHA і коментар разом.
-- Runner‑и — лише датовані образи (`ubuntu-24.04`, `macos-15`, `macos-15-intel`, `windows-2025`), не `*-latest`: зміна образу — свідомий коміт, а не сюрприз від GitHub.
-- Покинуті через нестачу runner‑ів job‑и перезапускаються вручну (docs/RELEASING.md), без retry‑action: це нова залежність, яка не лікує причину. macOS збирається на обох пулах (`macos-15` arm64 і `macos-15-intel` x86_64), тож реліз не залежить від одного з них (#44).
-- Інструменти, які ставляться в CI, також із версією (`cargo-llvm-cov@0.9.1` через `taiki-e/install-action`; toolchain — `RUST_TOOLCHAIN`, той самий, що в `rust-toolchain.toml`).
-- Назви job‑ів у matrix не містять імені runner‑а (`test (linux)`, а не `test (ubuntu-24.04)`), щоб оновлення образу не ламало список обов'язкових перевірок у ruleset‑і.
+- Every GitHub Action is referenced by the **full commit SHA** with the tag in a comment (`uses: actions/checkout@3d3c42e… # v7.0.1`). A tag can be rewritten, a SHA cannot; Dependabot (`.github/dependabot.yml`, the `github-actions` ecosystem) updates the SHA and the comment together.
+- Runners are dated images only (`ubuntu-24.04`, `macos-15`, `macos-15-intel`, `windows-2025`), never `*-latest`: an image change is a deliberate commit, not a surprise from GitHub.
+- Jobs abandoned for lack of runners are rerun by hand (docs/RELEASING.md), without a retry action: that is a new dependency that does not cure the cause. macOS builds on both pools (`macos-15` arm64 and `macos-15-intel` x86_64), so the release does not depend on either (#44).
+- Tools installed in CI carry a version too (`cargo-llvm-cov@0.9.1` through `taiki-e/install-action`; the toolchain is `RUST_TOOLCHAIN`, the same as in `rust-toolchain.toml`).
+- Matrix job names do not contain the runner name (`test (linux)`, not `test (ubuntu-24.04)`), so an image update never breaks the list of required checks in the ruleset.
 
-## Підсумковий коментар у PR (доповнення 2026‑11)
+## The PR summary comment (addendum 2026-11)
 
-Job `PR summary comment` (`.github/scripts/pr_summary.py`, лише стандартна бібліотека Python) після `coverage` і `sonar` публікує один коментар у PR і оновлює його на кожен push: покриття рядків по crate‑ах з дельтою до базової гілки та найменш покритими файлами, стан quality gate SonarCloud з усіма умовами, лічильники bugs/vulnerabilities/code smells/hotspots і таблицю відкритих зауважень із посиланнями. Коментар інформаційний: він не входить до `CI OK`, а публікується навіть коли gate покриття впав. Для PR із fork‑ів job пропускається (token лише на читання).
-
+The `PR summary comment` job (`.github/scripts/pr_summary.py`, the Python standard library only) runs after `coverage` and `sonar`, posts one comment on the PR and updates it on every push: line coverage per crate with the delta to the base branch and the least covered files, the SonarCloud quality-gate state with every condition, the bug / vulnerability / code smell / hotspot counts and a table of the open findings with links. The comment is informational: it is not part of `CI OK` and is posted even when the coverage gate failed. For PRs from forks the job is skipped (the token is read-only).

@@ -1,22 +1,22 @@
-# ADR-0004: Власний декодер Blackbox замість crate `blackbox-log`
+# ADR-0004: An own Blackbox decoder instead of the `blackbox-log` crate
 
-Статус: прийнято (2026-11-04)
+Status: accepted (2026-11-04)
 
-## Контекст
-Існує crate `blackbox-log` 0.4.3 (MIT/Apache‑2.0, Betaflight + INAV), чистий Rust. Його можна було б використати напряму.
+## Context
+The crate `blackbox-log` 0.4.3 (MIT/Apache-2.0, Betaflight + INAV) exists and is pure Rust. It could have been used directly.
 
-## Рішення
-Писати власний декодер у `openpid-fmt-blackbox`, використовуючи `blackbox-log` і офіційний `blackbox_decode` лише як **еталони в тестах**.
+## Decision
+Write an own decoder in `openpid-fmt-blackbox`, using `blackbox-log` and the official `blackbox_decode` only as **references in the tests**.
 
-Причини:
-- Вимога користувача: власна функціональна частина.
-- `blackbox-log` тягне `uom`, `bitvec`, `hashbrown`, `time`, `tracing` — суперечить ADR‑0001.
-- Нам потрібні: інкрементальне декодування з прогресом, детальна діагностика пошкоджень, мапінг на `ChannelId` через `FirmwareProfile`, Emuflight/Rotorflight профілі, пізніше — інші формати через той самий trait.
-- Формат публічно документований; еталонні реалізації (C, JS) відкриті для перевірки поведінки (не для копіювання коду).
+Reasons:
+- The user's requirement: an own functional core.
+- `blackbox-log` pulls `uom`, `bitvec`, `hashbrown`, `time`, `tracing`, against ADR-0001.
+- We need incremental decoding with progress, detailed corruption diagnostics, mapping onto `ChannelId` through a `FirmwareProfile`, EmuFlight/Rotorflight profiles and, later, other formats through the same trait.
+- The format is publicly documented; the reference implementations (C, JS) are open for checking behaviour (not for copying code).
 
-## Наслідки
-- Конформанс‑тести проти CSV від `blackbox_decode` обов'язкові з фази 0.
-- Фаззинг декодера обов'язковий (вхід недовірений).
+## Consequences
+- Conformance tests against the `blackbox_decode` CSV are mandatory from phase 0.
+- Fuzzing of the decoder is mandatory (the input is untrusted).
 
-## Доповнення (після реалізації)
-Конформанс‑тест проти `blackbox-log` 0.4.3 виявив два відхилення **еталона** від прошивки (перевірено по `blackbox.c`): він ігнорує `P interval` при відновленні `loopIteration` (`skipped = 0; // FIXME`) і після I‑кадру не дублює його в обидва слоти історії (прошивка робить `history[2] = history[1] = history[0]`). Наш декодер слідує прошивці та C‑еталону; тест порівнює решту полів побітово, а поля з предикторами `AVERAGE_2`/`STRAIGHT_LINE` — лише на I‑кадрах. Окремий тест перевіряє відсутність стрибків на межах I→P.
+## Addendum (after the implementation)
+The conformance test against `blackbox-log` 0.4.3 found two deviations of the **reference** from the firmware (checked against `blackbox.c`): it ignores `P interval` when restoring `loopIteration` (`skipped = 0; // FIXME`) and after an I frame it does not copy it into both history slots (the firmware does `history[2] = history[1] = history[0]`). Our decoder follows the firmware and the C reference; the test compares the other fields bit for bit, and the fields with the `AVERAGE_2`/`STRAIGHT_LINE` predictors on I frames only. A separate test checks that there are no jumps at the I → P boundaries.

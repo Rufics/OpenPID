@@ -1,21 +1,21 @@
-# ADR-0011: Планування — Scrum на GitHub Issues, Milestones і Projects
+# ADR-0011: Planning with Scrum on GitHub Issues, Milestones and Projects
 
-- Статус: прийнято
-- Дата: 2026-11-04
+- Status: accepted
+- Date: 2026-11-04
 
-## Контекст
+## Context
 
-План (`docs/DESIGN.md` §12) жив лише в документі; виконане і невиконане не було видно, пріоритети не фіксувалися. Команда — власник продукту плюс AI‑асистент, тому процес має бути легким і повністю в GitHub.
+The plan (`docs/DESIGN.md` §12) lived only in the document; what was done and what was not was invisible, and priorities were not recorded. The team is a product owner plus an AI assistant, so the process must be light and entirely on GitHub.
 
-## Рішення
+## Decision
 
-- **Issues** — єдиний backlog; кожне має Context / Scope / Acceptance (Definition of Ready) і однаковий Definition of Done. Великі теми — `epic` із sub‑issues (нативні sub‑issues GitHub).
-- **Milestones = фази плану** (`v0.2 … v1.0`) з критерієм готовності в описі; дати не ставимо, поки немає виміряної швидкості.
-- **Мітки**: type / area / priority / blocked. Статус, розмір і спринт — поля GitHub Project, щоб не дублювати.
-- **Project (Projects v2)** як Scrum‑dashboard: Backlog, Sprint board, Roadmap, Bugs, Blocked; спринт = iteration 2 тижні. Створюється скриптом `tools/github-project.sh` (API Projects — лише GraphQL, недоступний з агентних сесій), доналаштовується в UI за `docs/PROCESS.md`.
-- Ритуали мінімальні й асинхронні; зміни процесу — правки `docs/PROCESS.md`.
+- **Issues** are the single backlog; each has Context / Scope / Acceptance (the Definition of Ready) and the same Definition of Done. Large topics are an `epic` with sub-issues (GitHub's native sub-issues).
+- **Milestones = the phases of the plan** (`v0.2 … v1.0`) with the completion criterion in the description; no dates until velocity is measured.
+- **Labels**: type / area / priority / blocked. Status, size and sprint are fields of the GitHub Project, to avoid duplication.
+- **A Project (Projects v2)** as the Scrum dashboard: Backlog, Sprint board, Roadmap, Bugs, Blocked; a sprint is a two-week iteration. It is created by `tools/github-project.sh` (the Projects API is GraphQL only, unreachable from agent sessions) and finished in the UI per `docs/PROCESS.md`.
+- Rituals are minimal and asynchronous; process changes are edits to `docs/PROCESS.md`.
 
-## Наслідки
+## Consequences
 
-- Нова робота починається з issue; PR посилається `Closes #N`.
-- Backlog фаз 2–3 заведено (#10–#44) у день ухвалення.
+- New work starts with an issue; a PR references `Closes #N`.
+- The backlog of phases 2–3 (#10–#44) was created on the day of the decision.
