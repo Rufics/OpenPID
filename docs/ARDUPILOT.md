@@ -1,113 +1,120 @@
-# ArduPilot DataFlash: як лог стає сесією OpenPID
+# ArduPilot DataFlash: how a log becomes an OpenPID session
 
-Crate `openpid-fmt-ardupilot` читає бінарні логи ArduPilot (`.bin` з SD‑карти
-або завантажені через MAVLink). Формат самоописний: пакети `FMT` задають ім'я,
-довжину, назви та типи колонок кожного іншого пакета; `FMTU`/`UNIT`/`MULT`
-(з 4.0) додають одиниці та множники. Реалізацію зроблено за описом формату
-(`libraries/AP_Logger/LogStructure.h`), без запозичення коду.
+The `openpid-fmt-ardupilot` crate reads ArduPilot binary logs (`.bin` from
+the SD card or downloaded over MAVLink). The format is self-describing: `FMT`
+packets give the name, length, column names and types of every other packet;
+`FMTU`/`UNIT`/`MULT` (since 4.0) add units and multipliers. The implementation
+follows the format description (`libraries/AP_Logger/LogStructure.h`) without
+borrowing code.
 
-## Часова база
+## Timebase
 
-Повідомлення пишуться кожне зі своєю частотою: `IMU` — сотні Гц, `RATE`/`PIDR` —
-10…400 Гц, `BAT` — 10 Гц. OpenPID тримає всі канали на одній часовій базі, тому:
+Every message is written at its own rate: `IMU` at hundreds of Hz,
+`RATE`/`PIDR` at 10…400 Hz, `BAT` at 10 Hz. OpenPID keeps every channel on one
+timebase, so:
 
-- базою стає найчастіше з `IMU` (екземпляр 0), `RATE`, `PIDR`;
-- решта повідомлень «утримується» (sample‑and‑hold): у кожній точці бази канал
-  несе останнє значення, залоговане не пізніше за цю точку, а до першого
-  значення він недійсний (validity mask).
+- the base is the fastest of `IMU` (instance 0), `RATE`, `PIDR`;
+- the other messages are held (sample-and-hold): at every base point a channel
+  carries the last value logged no later than that point, and it is invalid
+  before its first value (validity mask).
 
-Наслідок: для step response потрібні setpoint і gyro з близькими частотами.
-У логах, де `RATE`/`PIDR` пишуться в 10 Гц (стандартний `LOG_BITMASK`),
-відгук буде сходинковим; для тюнінгу вмикайте швидке логування
-(`LOG_BITMASK` біт `ATTITUDE_FAST`, `PID`).
+Consequence: the step response needs setpoint and gyro at similar rates. In
+logs where `RATE`/`PIDR` are written at 10 Hz (the default `LOG_BITMASK`) the
+response is stair-stepped; for tuning, enable fast logging (`LOG_BITMASK` bits
+`ATTITUDE_FAST`, `PID`).
 
-## Відображення полів
+## Field mapping
 
-| Поле | Канал | Одиниця | Примітка |
-|------|-------|---------|----------|
-| `IMU.GyrX/Y/Z` | `gyro.filtered.*` | deg/s | рад/с × 57.3; у `IMU` гіро вже після `INS_GYRO_FILTER` |
-| `IMU.AccX/Y/Z` | `acc.*` | g | м/с² ÷ 9.80665 |
-| `RATE.RDes/PDes/YDes` | `setpoint.*` | deg/s | Copter < 3.4: сантиградуси/с × 0.01 |
+| Field | Channel | Unit | Note |
+|-------|---------|------|------|
+| `IMU.GyrX/Y/Z` | `gyro.filtered.*` | deg/s | rad/s × 57.3; in `IMU` the gyro is already behind `INS_GYRO_FILTER` |
+| `IMU.AccX/Y/Z` | `acc.*` | g | m/s² ÷ 9.80665 |
+| `RATE.RDes/PDes/YDes` | `setpoint.*` | deg/s | Copter < 3.4: centidegrees/s × 0.01 |
 | `RATE.R/P/Y`, `ROut/…` | `custom:rate.*`, `custom:rate_out.*` | deg/s, — | |
-| `PIDR/PIDP/PIDY.Tar` | `setpoint.*` (якщо немає `RATE`) або `custom:pid_target.*` | deg/s | Copter: рад/с × 57.3; Plane: уже deg/s |
-| `PID*.Err` | `pid_error.*` | deg/s | те саме масштабування |
-| `PID*.P/I/D/FF` | `pid.p/i/d/f.*` | raw | вихід контролера |
-| `RCOU.C1…` | Copter: `motor.N` (%, за `MOT_PWM_MIN/MAX`); Plane: `custom:servo.N` (µs) | | |
+| `PIDR/PIDP/PIDY.Tar` | `setpoint.*` (without `RATE`) or `custom:pid_target.*` | deg/s | Copter: rad/s × 57.3; Plane: already deg/s |
+| `PID*.Err` | `pid_error.*` | deg/s | the same scaling |
+| `PID*.P/I/D/FF` | `pid.p/i/d/f.*` | raw | controller output |
+| `RCOU.C1…` | Copter: `motor.N` (%, by `MOT_PWM_MIN/MAX`); Plane: `custom:servo.N` (µs) | | |
 | `RCIN.C1…` | `rc.N` | µs | |
-| `CTUN.ThO` / `ThrOut` | `throttle` | % | Copter 4.x: 0…1 × 100; 3.x: 0…1000 × 0.1; Plane: уже % |
-| `BAT`/`CURR` | `battery.voltage/current/consumed` | V, A, mAh | `CURR` (3.x) у сантивольтах/сантиамперах |
-| `ESC[i].RPM` | `motor_rpm.i` | rpm | фізичні оберти з телеметрії ESC (не eRPM) |
+| `CTUN.ThO` / `ThrOut` | `throttle` | % | Copter 4.x: 0…1 × 100; 3.x: 0…1000 × 0.1; Plane: already % |
+| `BAT`/`CURR` | `battery.voltage/current/consumed` | V, A, mAh | `CURR` (3.x) in centivolts/centiamperes |
+| `ESC[i].RPM` | `motor_rpm.i` | rpm | physical rpm from the ESC telemetry (not eRPM) |
 | `ATT.*` | `custom:attitude.*` | deg | |
-| інші колонки експортованих повідомлень | `custom:MSG.Col` | з `FMTU` | множник із `MULT`; без `FMTU` — за символом формату (`c`/`e` → ×0.01, `L` → ×1e‑7) |
+| other columns of the exported messages | `custom:MSG.Col` | from `FMTU` | the multiplier from `MULT`; without `FMTU` by the format character (`c`/`e` → ×0.01, `L` → ×1e-7) |
 
-Експортуються `IMU`, `RATE`, `PIDR/P/Y`, `RCOU`, `RCIN`, `CTUN`, `ATT`,
-`BAT`/`CURR`, `ESC` (усі екземпляри). Решта (GPS, EKF, BARO, …) лишається
-поза каналами; їх перелік і кількість — у `diagnostics.notes`. `MODE` та `EV`
-стають подіями.
+Exported messages: `IMU`, `RATE`, `PIDR/P/Y`, `RCOU`, `RCIN`, `CTUN`, `ATT`,
+`BAT`/`CURR`, `ESC` (every instance). The rest (GPS, EKF, BARO, …) stays out of
+the channels; their names and counts are in `diagnostics.notes`. `MODE` and
+`EV` become events.
 
-## Batch sampler (`ISBH`/`ISBD`): гіро до фільтра
+## Batch sampler (`ISBH`/`ISBD`): the gyro before the filter
 
-`IMU.Gyr*` уже пройшов `INS_GYRO_FILTER`. Нефільтровані вибірки пише batch
-sampler (`INS_LOG_BAT_MASK` ≠ 0): `ISBH` відкриває пакет (`N`, `type` 0 = акселерометр /
-1 = гіро, `instance`, множник `mul`, `smp_cnt`, `SampleUS`, `smp_rate`), далі
-`ISBD` по 32 вибірки `int16` (`x`, `y`, `z`, `seqno` = позиція в пакеті), значення =
-`int16 / mul` у рад/с або м/с². Пакети йдуть сплесками (у фікстурі QuadPlane —
-1024 вибірки на 3276 Гц, тобто 0,31 с, раз на ~0,7 с), а з `INS_LOG_BAT_OPT` біт 2
-чергуються копії до і після фільтра; «після» логуються з `instance + кількість IMU`
-(так їх розрізняють і інструменти ArduPilot). Пакет без `ISBD` з його `N` лишається
-з недійсними вибірками; обрізаний лог дає неповний останній пакет.
+`IMU.Gyr*` has already passed `INS_GYRO_FILTER`. The unfiltered samples are
+written by the batch sampler (`INS_LOG_BAT_MASK` ≠ 0): `ISBH` opens a batch
+(`N`, `type` 0 = accelerometer / 1 = gyro, `instance`, the multiplier `mul`,
+`smp_cnt`, `SampleUS`, `smp_rate`), then `ISBD` carries 32 `int16` samples
+each (`x`, `y`, `z`, `seqno` = position in the batch); a value is `int16 / mul`
+in rad/s or m/s². The batches come in bursts (in the QuadPlane fixture 1024
+samples at 3276 Hz, that is 0.31 s, every ~0.7 s), and with `INS_LOG_BAT_OPT`
+bit 2 the pre- and post-filter copies alternate; the "post" ones are logged
+with `instance + number of IMUs` (the ArduPilot tools tell them apart the same
+way). A batch whose `N` has no `ISBD` keeps invalid samples; a truncated log
+leaves an incomplete last batch.
 
-Рішення щодо часової бази: пакети **ресемплюються на базу сесії**, а не
-утримуються — кожна точка бази отримує середнє вибірок пакета в межах ± півперіоду
-бази (box‑антиаліасинг шириною в один період; якщо база швидша за пакет — найближчу
-вибірку), а поза пакетами канал недійсний. Так `gyro.raw` можна порівнювати з
-`gyro.filtered` на тих самих відліках (PSD показує спад `INS_GYRO_FILTER`), ціною
-смуги: на базі 300 Гц лишається лише до 150 Гц. Повна частота пакетів (окрема
-часова база) знадобиться Filter Sim — це окреме рішення у фазі 2b.
+The timebase decision: the batches are **resampled onto the session base**,
+not held: every base point gets the mean of the batch samples within ± half a
+base period (box anti-aliasing one period wide; when the base is faster than
+the batch, the nearest sample), and outside the batches the channel is
+invalid. So `gyro.raw` can be compared with `gyro.filtered` on the same samples
+(the PSD shows the roll-off of `INS_GYRO_FILTER`) at the cost of bandwidth: on
+a 300 Hz base only up to 150 Hz remains. The full batch rate (a separate
+timebase) will be needed by Filter Sim; that is a separate decision in phase 2b.
 
-| Пакет | Канал | Одиниця |
-|-------|-------|---------|
-| гіро, до фільтра, IMU часової бази | `gyro.raw.*` | deg/s |
-| акселерометр, до фільтра, IMU часової бази | `custom:acc.raw.*` | g |
-| решта (інший IMU або після фільтра) | `custom:isb[i].{gyro,acc}.{pre,post}.*` | deg/s, g |
+| Batch | Channel | Unit |
+|-------|---------|------|
+| gyro, pre-filter, the timebase IMU | `gyro.raw.*` | deg/s |
+| accelerometer, pre-filter, the timebase IMU | `custom:acc.raw.*` | g |
+| the rest (another IMU, or post-filter) | `custom:isb[i].{gyro,acc}.{pre,post}.*` | deg/s, g |
 
-`diagnostics.notes` фіксує кількість пакетів, частоту, пропущені вибірки й
-покриття бази кожним каналом у відсотках.
+`diagnostics.notes` records the number of batches, the rate, the dropped
+samples and the base coverage of every channel in percent.
 
-## Налаштування з `PARM`
+## Settings from `PARM`
 
-| Що | Параметри |
-|----|-----------|
-| PID по осях | Copter: `ATC_RAT_{RLL,PIT,YAW}_{P,I,D,FF}` (3.x: `RATE_*`); Plane: `{RLL,PTCH,YAW}_RATE_*` (без yaw‑контролера — нулі) |
-| Частоти | `SCHED_LOOP_RATE` → pid_hz; `INS_GYRO_RATE` → gyro_hz (1/2/4/8 кГц); log_hz — частота часової бази |
-| Фільтр гіро | `INS_GYRO_FILTER` → lowpass1 (biquad 2‑го порядку) |
-| D‑term | `*_FLTD` → dterm lowpass1 (PT1) |
-| Harmonic notch | `INS_HNTCH_*`: режим 2/3 (RPM/ESC) → `rpm_notch`; 4 (FFT) → `dyn_notch`; 0/1 (статичний/за газом) → статичний `notch`; усі параметри — в `settings.extra` |
-| Мотори | `MOT_PWM_MIN/MAX`, `MOT_PWM_TYPE`, `FRAME_CLASS` → кількість |
+| What | Parameters |
+|------|------------|
+| PID per axis | Copter: `ATC_RAT_{RLL,PIT,YAW}_{P,I,D,FF}` (3.x: `RATE_*`); Plane: `{RLL,PTCH,YAW}_RATE_*` (without a yaw controller: zeros) |
+| Rates | `SCHED_LOOP_RATE` → pid_hz; `INS_GYRO_RATE` → gyro_hz (1/2/4/8 kHz); log_hz is the timebase rate |
+| Gyro filter | `INS_GYRO_FILTER` → lowpass1 (second-order biquad) |
+| D-term | `*_FLTD` → dterm lowpass1 (PT1) |
+| Harmonic notch | `INS_HNTCH_*`: mode 2/3 (RPM/ESC) → `rpm_notch`; 4 (FFT) → `dyn_notch`; 0/1 (static / by throttle) → a static `notch`; every parameter in `settings.extra` |
+| Motors | `MOT_PWM_MIN/MAX`, `MOT_PWM_TYPE`, `FRAME_CLASS` → count |
 
-Усі `PARM` і рядки `MSG` доступні як raw headers (вкладка Diagnostics).
+Every `PARM` and every `MSG` line is available as a raw header (the Diagnostics
+tab).
 
-## Тестові логи
+## Test logs
 
-`tests/logs/ardupilot-*.bin` (MIT, джерела в `tests/logs/README.md`): Copter 3.3
-(старий формат з `TimeMS`, без `FMTU`), Plane 4.3.5, QuadPlane 4.4.4 з
-телеметрією ESC та harmonic notch. Перші 20 рядків ключових повідомлень
-звірено з незалежним Python‑декодером (`tests/golden/*.rows.json`).
+`tests/logs/ardupilot-*.bin` (MIT, sources in `tests/logs/README.md`): Copter
+3.3 (the legacy format with `TimeMS`, no `FMTU`), Plane 4.3.5, QuadPlane 4.4.4
+with ESC telemetry and the harmonic notch. The first 20 rows of the key
+messages are compared with an independent Python decoder
+(`tests/golden/*.rows.json`).
 
-## Кілька сесій у файлі
+## Several sessions in one file
 
-Кожен лог починається з блоку `FMT`, перший пакет якого описує сам `FMT`
-(тип 128, довжина 89). Файл ділиться на сесії по цих заголовках: перезапуск
-логера чи два склеєні файли дають дві сесії з власними `index` і
-`offset_bytes`; `OpenOptions.sessions` обирає потрібні. Сегмент, у якому є лише
-заголовок без повідомлень контуру стабілізації, пропускається. Стрибки `TimeUS`
-назад без нового заголовка сесією не вважаються.
+Every log starts with a block of `FMT` packets whose first packet describes
+`FMT` itself (type 128, length 89). The file is split into sessions at these
+headers: a logger restart or two concatenated files give two sessions with
+their own `index` and `offset_bytes`; `OpenOptions.sessions` selects the ones
+wanted. A segment with only a header and no stabilisation-loop messages is
+skipped. Backward jumps of `TimeUS` without a new header do not count as a
+session.
 
-## Відомі обмеження
+## Known limitations
 
-- `gyro.raw` з batch sampler покриває лише сплески (у типовому налаштуванні — кілька
-  відсотків часу) і обмежений смугою часової бази; повна частота пакетів поки не
-  експортується.
-- QuadPlane у VTOL‑режимі використовує `Q_A_RAT_*`; відображення обирається за
-  типом машини (Plane), тому в VTOL‑сегментах масштаб `PIDR.Tar` може бути
-  в рад/с.
+- `gyro.raw` from the batch sampler covers only the bursts (a few percent of
+  the time in a typical setup) and is limited to the timebase bandwidth; the
+  full batch rate is not exported yet.
+- A QuadPlane in VTOL mode uses `Q_A_RAT_*`; the mapping is chosen by the
+  vehicle type (Plane), so in VTOL segments the `PIDR.Tar` scale may be in rad/s.
