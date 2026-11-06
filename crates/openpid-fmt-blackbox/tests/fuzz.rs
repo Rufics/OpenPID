@@ -1,8 +1,8 @@
-//! Mutation fuzzing of the Blackbox decoder and header parser (ADR-0013).
+//! Structure-aware mutation smoke test of the Blackbox decoder and header
+//! parser (ADR-0013, kept as the stable smoke test by ADR-0015; the
+//! coverage-guided fuzzing lives in `fuzz/` on cargo-fuzz).
 //!
-//! `cargo fuzz` needs a nightly toolchain and the C++ libFuzzer runtime, which
-//! the project's pure-Rust rule for dev-dependencies rules out. This harness
-//! does the same job without either: every iteration takes a fixture segment
+//! It runs on the stable toolchain in every CI build: every iteration takes a fixture segment
 //! from the corpus, applies one to four structure-aware mutations (bit flips,
 //! chunk deletion / duplication / splicing, frame-marker injection, header
 //! line edits with interesting numbers, multi-log concatenation) and feeds

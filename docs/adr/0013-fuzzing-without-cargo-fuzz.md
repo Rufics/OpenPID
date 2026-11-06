@@ -1,6 +1,6 @@
 # ADR-0013: Fuzzing the decoder without `cargo fuzz`
 
-- Status: accepted
+- Status: superseded by ADR-0015 (2026-11-06): decoder fuzzing moved to cargo-fuzz; the mutators below remain as the stable smoke test `mutated_fixtures_never_panic`
 - Date: 2026-11-05
 
 ## Context
