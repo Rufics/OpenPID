@@ -553,11 +553,15 @@ fn cmd_run(args: &Args) -> Result<(), String> {
     let json = match analysis {
         "step" => {
             let p = openpid_analysis::StepParams { axis, ..base.step };
-            serde_json::to_string_pretty(
-                &openpid_analysis::StepAnalysis
-                    .run(&ctx, &p)
-                    .map_err(|e| e.to_string())?,
-            )
+            let out = openpid_analysis::StepAnalysis
+                .run(&ctx, &p)
+                .map_err(|e| e.to_string())?;
+            // the verdicts against the project's targets (or the defaults)
+            let verdicts =
+                openpid_analysis::verdicts(&out.metrics, out.windows_used, &base.recommend.targets);
+            let mut v = serde_json::to_value(&out).map_err(|e| e.to_string())?;
+            v["verdicts"] = serde_json::to_value(&verdicts).map_err(|e| e.to_string())?;
+            serde_json::to_string_pretty(&v)
         }
         "psd" => {
             let p = openpid_analysis::PsdParams {

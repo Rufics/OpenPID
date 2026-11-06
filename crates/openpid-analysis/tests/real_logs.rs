@@ -355,6 +355,77 @@ fn fitness_of_the_real_logs() {
 }
 
 #[test]
+fn verdicts_of_the_real_logs() {
+    use openpid_analysis::{StepTargets, VerdictLevel, verdicts};
+    let t = StepTargets::default();
+    let judge = |log: &openpid_core::LogFile, session: usize, axis: Axis| {
+        let ctx = AnalysisCtx {
+            session: &log.sessions[session],
+            epoch: None,
+        };
+        let out = StepAnalysis
+            .run(
+                &ctx,
+                &StepParams {
+                    axis,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        verdicts(&out.metrics, out.windows_used, &t)
+    };
+    let level =
+        |v: &[openpid_analysis::Verdict], m: &str| v.iter().find(|x| x.metric == m).unwrap().level;
+    let log = load("betaflight-4.2.0.BFL");
+    assert_eq!(
+        level(&judge(&log, 0, Axis::Roll), "overshoot"),
+        VerdictLevel::Fail
+    );
+    assert_eq!(
+        level(&judge(&log, 0, Axis::Pitch), "overshoot"),
+        VerdictLevel::Fail
+    );
+    let log = load("betaflight-2025.12.2-btfl_027.bbl");
+    assert_eq!(
+        level(&judge(&log, 0, Axis::Pitch), "overshoot"),
+        VerdictLevel::Ok
+    );
+    assert_eq!(
+        level(&judge(&log, 0, Axis::Roll), "overshoot"),
+        VerdictLevel::Warn
+    );
+    let log = load("betaflight-4.5.1-two-sessions.bbl");
+    let longest = log
+        .sessions
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, s)| s.len())
+        .map(|(i, _)| i)
+        .unwrap();
+    let roll = judge(&log, longest, Axis::Roll);
+    assert_eq!(
+        level(&roll, "windows"),
+        VerdictLevel::Ok,
+        "16 windows: {roll:?}"
+    );
+    assert_eq!(
+        level(&roll, "overshoot"),
+        VerdictLevel::Fail,
+        "30.5 %: {roll:?}"
+    );
+    assert_eq!(
+        level(&roll, "settling"),
+        VerdictLevel::Warn,
+        "never settles"
+    );
+    assert_eq!(
+        level(&roll, "final"),
+        VerdictLevel::Warn,
+        "0.8: gain mismatch"
+    );
+}
+
+#[test]
 fn auto_epoch_of_the_real_logs() {
     use openpid_analysis::epoch::{ACTIVE_WINDOW_S, auto, most_active};
     // 2025.12: a 40 s flight with eRPM; the take-off and landing go

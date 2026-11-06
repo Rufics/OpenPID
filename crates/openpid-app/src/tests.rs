@@ -14,6 +14,7 @@ use eframe::egui::{self, Key, Modifiers, accesskit::Role};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use openpid_analysis::{Epoch, FitnessLevel, StepParams};
+use openpid_core::Axis;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -442,16 +443,17 @@ fn every_tab_runs_its_analysis_on_a_real_log() {
 fn step_results_are_cached_per_parameters_and_epoch() {
     let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Step));
     run_until(&mut h, idle);
-    assert_eq!(app(&h).cache.len(), 1);
-    assert!(has_label_containing(&h, "windows ·"));
+    // the verdict table judges all three axes, plus the Advice line's recommender
+    assert_eq!(app(&h).cache.len(), 4);
+    assert!(h.query_by_label("windows").is_some());
     // the same parameters hit the cache: no new job
     h.run_steps(3);
-    assert_eq!(app(&h).cache.len(), 1);
-    // a different cutoff is a different job
+    assert_eq!(app(&h).cache.len(), 4);
+    // a different cutoff is a different job (per axis)
     app_mut(&mut h).tools.step.cutoff_hz += 5.0;
     h.step();
     run_until(&mut h, idle);
-    assert_eq!(app(&h).cache.len(), 2);
+    assert_eq!(app(&h).cache.len(), 7);
     // an epoch is part of the key
     app_mut(&mut h).loaded_mut(Slot::A).unwrap().epoch = Some(Epoch {
         start_s: 0.0,
@@ -459,7 +461,7 @@ fn step_results_are_cached_per_parameters_and_epoch() {
     });
     h.step();
     run_until(&mut h, idle);
-    assert_eq!(app(&h).cache.len(), 3);
+    assert_eq!(app(&h).cache.len(), 11);
     // reloading a slot drops its cache
     app_mut(&mut h).open(Slot::A, LOG_4_2.into());
     assert!(app(&h).cache.is_empty());
@@ -496,7 +498,7 @@ fn spectrum_and_heatmap_controls_change_parameters() {
     assert!(!app(&h).tools.psd_db);
     h.get_by_label("pitch").click();
     h.step();
-    assert_eq!(app(&h).tools.axis, openpid_core::Axis::Pitch);
+    assert_eq!(app(&h).tools.axis, Axis::Pitch);
     run_until(&mut h, idle);
     // automatic peaks: with a 3 dB prominence floor the gyro spectrum of a real log has some
     app_mut(&mut h).spectrum.min_prominence_db = 3.0;
@@ -1286,6 +1288,122 @@ fn filter_sim_tab_validates_the_model_and_applies_what_if_changes() {
     assert!(app(&h2).cache.is_empty());
 }
 
+// ------------------------------------------------------------------ step verdicts
+
+#[test]
+fn step_tab_judges_three_axes_and_targets_change_badges_without_new_jobs() {
+    use openpid_analysis::{TargetPreset, VerdictLevel};
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Step));
+    run_until(&mut h, no_slot_loading);
+    // the acceptance numbers are for the whole log
+    h.get_by_label("All").click();
+    h.step();
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    let rows = app(&h).step_view.rows.clone();
+    assert_eq!(rows.len(), 3, "roll, pitch and yaw of slot A");
+    let level = |axis: Axis, metric: &str| {
+        rows.iter()
+            .find(|(_, a, _)| *a == axis)
+            .and_then(|(_, _, v)| v.iter().find(|x| x.metric == metric))
+            .map(|x| x.level)
+            .unwrap()
+    };
+    assert_eq!(level(Axis::Roll, "overshoot"), VerdictLevel::Fail, "35 %");
+    assert_eq!(level(Axis::Pitch, "overshoot"), VerdictLevel::Fail, "37 %");
+    assert_eq!(level(Axis::Yaw, "overshoot"), VerdictLevel::Warn, "25 %");
+    assert_eq!(level(Axis::Roll, "windows"), VerdictLevel::Ok, "48 windows");
+    assert!(has_label_containing(&h, "35 % x"), "value and ASCII marker");
+    assert!(has_label_containing(&h, "25 % !"));
+    assert!(h.query_by_label("overshoot").is_some(), "column header");
+    // the target band and the Advice line
+    assert_eq!(app(&h).step_view.band, Some((120.0, 0.9, 1.1)));
+    let advice = app(&h)
+        .step_view
+        .advice
+        .clone()
+        .expect("roll D is proposed");
+    assert!(
+        advice.contains("A roll D") && advice.contains("->"),
+        "{advice}"
+    );
+    // a click on a row switches the plotted axis
+    h.get_by_label("A pitch").click();
+    h.step();
+    assert_eq!(app(&h).tools.axis, Axis::Pitch);
+    assert_eq!(app(&h).tools.step.axis, Axis::Pitch);
+    // other targets: the badges change, the step jobs do not
+    let step_jobs = |a: &App| a.cache.keys().filter(|k| k.kind == "step").count();
+    let before = step_jobs(app(&h));
+    app_mut(&mut h).tools.recommend.targets.overshoot_fail_pct = 20.0;
+    h.run_steps(2);
+    assert!(
+        has_label_containing(&h, "25 % x"),
+        "yaw fails a 20 % overshoot limit"
+    );
+    assert_eq!(
+        step_jobs(app(&h)),
+        before,
+        "verdicts are a pure function of the metrics"
+    );
+    // new targets are a new recommender job: the Advice line is back once it ran
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    h.get_by_label("Go to Advice").click();
+    h.step();
+    assert_eq!(app(&h).tab, Tab::Advice);
+    // Settings: presets, custom edits, persisted in prefs
+    select_tab(&mut h, Tab::Settings);
+    h.get_by_label("Targets").click();
+    h.run_steps(2);
+    h.get_by_label("Racing").click();
+    h.run_steps(2);
+    assert_eq!(app(&h).prefs.targets, TargetPreset::Racing.targets());
+    assert_eq!(
+        app(&h).tools.recommend.targets,
+        TargetPreset::Racing.targets()
+    );
+    assert!(h.query_by_label("Custom").is_none());
+    h.get_by_role_and_label(Role::SpinButton, "rise max")
+        .set_value_accesskit(33.0);
+    h.run_steps(2);
+    assert_eq!(app(&h).prefs.targets.rise_ms_max, 33.0);
+    assert!(
+        h.query_by_label("Custom").is_some(),
+        "no preset matches any more"
+    );
+}
+
+#[test]
+fn too_few_windows_grey_out_the_verdicts() {
+    use openpid_analysis::VerdictLevel;
+    // the first 3 s of the 4.2.0 log give 7 step windows; with stricter
+    // window targets that is unreliable
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Step));
+    run_until(&mut h, no_slot_loading);
+    app_mut(&mut h).loaded_mut(Slot::A).unwrap().set_epoch(
+        Some(Epoch {
+            start_s: 0.0,
+            end_s: 3.0,
+        }),
+        false,
+    );
+    app_mut(&mut h).tools.recommend.targets.min_windows_weak = 10;
+    app_mut(&mut h).tools.recommend.targets.min_windows_ok = 20;
+    h.step();
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    let rows = app(&h).step_view.rows.clone();
+    let roll = &rows.iter().find(|(_, a, _)| *a == Axis::Roll).unwrap().2;
+    assert_eq!(roll[0].metric, "windows");
+    assert_eq!(roll[0].level, VerdictLevel::Fail, "{:?}", roll[0]);
+    assert!(
+        roll[1..].iter().all(|v| v.level == VerdictLevel::Unknown),
+        "{roll:?}"
+    );
+    assert!(has_label_containing(&h, " ?"), "grey question marks");
+}
+
 // ------------------------------------------------------------------ analysis window
 
 /// Screen x of time `t` on slot A's timeline strip.
@@ -2072,7 +2190,7 @@ fn advice_tab_lists_proposals_evidence_and_cli() {
     assert!(has_label_containing(&h, "Betaflight CLI to apply"));
     let cached = app(&h).cache.len();
     // a looser overshoot limit: recomputed, nothing left to propose on the PIDs
-    app_mut(&mut h).tools.recommend.overshoot_max_pct = 90.0;
+    app_mut(&mut h).tools.recommend.targets.overshoot_warn_pct = 90.0;
     h.step();
     run_until(&mut h, idle);
     h.run_steps(2);
@@ -2081,7 +2199,7 @@ fn advice_tab_lists_proposals_evidence_and_cli() {
     assert!(has_label_containing(&h, "within the 90 % limit"));
     // the project round-trip keeps the thresholds
     let project = app(&h).project(Path::new("advice.openpid.json"));
-    assert_eq!(project.recommend.overshoot_max_pct, 90.0);
+    assert_eq!(project.recommend.targets.overshoot_warn_pct, 90.0);
 }
 
 // ------------------------------------------------------------------ colour scale

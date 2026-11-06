@@ -16,6 +16,7 @@ pub mod rpm;
 pub mod step;
 pub mod stft;
 pub mod surface;
+pub mod targets;
 pub mod throttle;
 
 pub use filter_sim::{
@@ -35,4 +36,5 @@ pub use recommend::{Finding, Recommend, RecommendOutput, RecommendParams};
 pub use rpm::{RpmEstimateOutput, RpmEstimateParams, RpmEstimator};
 pub use step::{StepAnalysis, StepMetrics, StepOutput, StepParams};
 pub use stft::{StftAnalysis, StftOutput, StftParams};
+pub use targets::{StepTargets, TargetPreset, Verdict, VerdictLevel, verdicts};
 pub use throttle::{RpmOverlay, ThrottleHeatmap, ThrottleHeatmapOutput, ThrottleHeatmapParams};

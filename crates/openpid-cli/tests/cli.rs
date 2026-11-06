@@ -177,6 +177,15 @@ fn run_analyses() {
     assert!(ok, "{err}");
     assert!(err.contains("epoch 1.80..16.02 s"), "{err}");
     assert!(out.contains("windows_used"));
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    let verdicts = v["verdicts"].as_array().expect("verdicts in the step JSON");
+    assert_eq!(verdicts.len(), 7);
+    assert!(
+        verdicts
+            .iter()
+            .any(|x| x["metric"] == "overshoot" && x["level"] == "Fail"),
+        "{verdicts:?}"
+    );
     let (ok, _, err) = run(&["run", "step", f, "--epoch", "active"]);
     assert!(!ok && err.contains("shorter than 20 s"), "{err}");
     let short = log("betaflight-4.5.1-two-sessions.bbl");
