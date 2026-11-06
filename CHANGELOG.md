@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/Rufics/OpenPID/compare/v0.1.1...v0.1.2) - 2026-11-06
+
+### Added
+
+- *(gui)* step response verdicts — three-axis table, target band, presets, Advice line ([#118](https://github.com/Rufics/OpenPID/pull/118))
+- *(gui)* analysis window — timeline strip per slot, Auto trim, --epoch auto ([#117](https://github.com/Rufics/OpenPID/pull/117))
+- *(gui)* first run — start screen, sample log, recent files, 7-step coach-mark tour ([#119](https://github.com/Rufics/OpenPID/pull/119))
+- *(gui)* keyboard shortcuts — tabs by number, Cmd/Ctrl keys, Ctrl+Tab, help window ([#115](https://github.com/Rufics/OpenPID/pull/115))
+
 ## [0.1.1](https://github.com/Rufics/OpenPID/compare/v0.1.0...v0.1.1) - 2026-11-05
 
 ### Added
