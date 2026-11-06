@@ -1,45 +1,50 @@
-# Дизайн-рішення інтерфейсу
+# Interface design decisions
 
-Кожна помітна зміна інтерфейсу оформлюється документом `docs/design/<тема>/README.md`:
-зауваження замовника → причина (виміряна, не вгадана) → варіанти, що відрізняються
-підходом → оцінка за матрицею → рішення → вимоги до реалізації → критерії приймання →
-тести. Документ пишеться **до** реалізації і є технічним завданням для розробника;
-після реалізації до нього додаються розділ «Реалізація» і знімок результату.
+Every noticeable interface change gets a document `docs/design/<topic>/README.md`:
+the owner's remark → the cause (measured, not guessed) → options that differ in
+approach → a score from the matrix → the decision → implementation requirements
+→ acceptance criteria → tests. The document is written **before** the
+implementation and is the specification for the developer; after the
+implementation an "Implementation" section and a screenshot of the result are
+added.
 
-## Матриця оцінки варіантів
+## The scoring matrix
 
-Оцінка 1–5 за кожним критерієм × вага, максимум 55. Рекомендується варіант із
-найвищим балом; за рівності — дешевший. Рішення замовника головніше за бали.
+A score of 1–5 per criterion × weight, 55 at most. The option with the highest
+score is recommended; on a tie, the cheaper one. The owner's decision beats
+the scores.
 
-| Критерій | Вага | Що міряємо |
+| Criterion | Weight | What is measured |
 |---|---|---|
-| Ефективність задач | 3 | скільки дій і секунд до результату в циклі «лог → зміна налаштувань» |
-| Видимість | 2 | чи помітно функцію без документації |
-| Канонічність | 2 | чи так роблять PIDtoolbox, Blackbox Explorer, Adobe/MS/VS Code |
-| Клавіатура й доступність | 2 | керування без миші, accessible names (kittest-перевірка увімкнена) |
-| Масштабування / touch | 1 | 1280×800 і touch-режим, 44 pt цілі |
-| Вартість | 1 | розмір реалізації (XS ≈ ½ дня … L ≈ 5 днів) |
+| Task efficiency | 3 | how many actions and seconds to the result in the "log → settings change" loop |
+| Discoverability | 2 | whether the feature is noticed without documentation |
+| Convention | 2 | whether PIDtoolbox, Blackbox Explorer, Adobe/MS/VS Code do it that way |
+| Keyboard and accessibility | 2 | control without a mouse, accessible names (the kittest check is on) |
+| Scaling / touch | 1 | 1280×800 and touch mode, 44 pt targets |
+| Cost | 1 | implementation size (XS ≈ ½ day … L ≈ 5 days) |
 
-## Спринт UX-1 (milestone v1.1, епік [#98](https://github.com/Rufics/OpenPID/issues/98))
+## Sprint UX-1 (milestone v1.1, epic [#98](https://github.com/Rufics/OpenPID/issues/98))
 
-| Тема | Документ | Issue |
+| Topic | Document | Issue |
 |---|---|---|
-| N логів замість A/B | [multi-slot](multi-slot/README.md) | [#105](https://github.com/Rufics/OpenPID/issues/105) |
-| Перший запуск: тур і стартовий екран | [onboarding-tour](onboarding-tour/README.md) | [#104](https://github.com/Rufics/OpenPID/issues/104) |
-| Вікно аналізу для кожного логу | [analysis-window](analysis-window/README.md) | [#102](https://github.com/Rufics/OpenPID/issues/102) |
-| Чи придатний лог | [log-fitness](log-fitness/README.md) | [#100](https://github.com/Rufics/OpenPID/issues/100) |
-| Колірна шкала heatmap | [colour-scale](colour-scale/README.md) | [#99](https://github.com/Rufics/OpenPID/issues/99) |
-| Step response: вердикти | [step-verdicts](step-verdicts/README.md) | [#103](https://github.com/Rufics/OpenPID/issues/103) |
-| Гарячі клавіші | [hotkeys](hotkeys/README.md) | [#101](https://github.com/Rufics/OpenPID/issues/101) |
+| N logs instead of A/B | [multi-slot](multi-slot/README.md) | [#105](https://github.com/Rufics/OpenPID/issues/105) |
+| First run: tour and start screen | [onboarding-tour](onboarding-tour/README.md) | [#104](https://github.com/Rufics/OpenPID/issues/104) |
+| An analysis window per log | [analysis-window](analysis-window/README.md) | [#102](https://github.com/Rufics/OpenPID/issues/102) |
+| Is the log fit for use | [log-fitness](log-fitness/README.md) | [#100](https://github.com/Rufics/OpenPID/issues/100) |
+| Heatmap colour scale | [colour-scale](colour-scale/README.md) | [#99](https://github.com/Rufics/OpenPID/issues/99) |
+| Step response: verdicts | [step-verdicts](step-verdicts/README.md) | [#103](https://github.com/Rufics/OpenPID/issues/103) |
+| Keyboard shortcuts | [hotkeys](hotkeys/README.md) | [#101](https://github.com/Rufics/OpenPID/issues/101) |
 
-Спільні правила для всіх тем спринту:
+Rules shared by every topic of the sprint:
 
-- **Мова**: усі нові підписи через `tr(…)` з українським перекладом у `i18n.rs`;
-  шрифт egui не має гліфів ▶ ⏸ → ● U+2011 — лише ASCII і базова латиниця/кирилиця.
-- **Доступність**: кожен інтерактивний віджет має accessible name (`labelled_by`),
-  інакше headless-тест падає.
-- **Стан**: параметри інструментів — у `Tools` і в `Project` (`#[serde(default)]`),
-  налаштування користувача — у `Prefs`; жодної математики в `openpid-app`.
-- **Тести**: кожна тема — headless-тест kittest на реальній фікстурі + unit-тести
-  чистої логіки в `openpid-analysis`/`openpid-core`; покриття ≥ 90 % лишається.
-- **Документація**: USER-GUIDE і скриншоти (`tools/screenshots.sh`) оновлюються в тому ж PR.
+- **Language**: every new label goes through `tr(…)` with a Ukrainian translation
+  in `i18n.rs`; the egui font has no glyphs for ▶ ⏸ → ● U+2011, so ASCII and the
+  basic Latin/Cyrillic ranges only.
+- **Accessibility**: every interactive widget has an accessible name
+  (`labelled_by`), otherwise the headless test fails.
+- **State**: tool parameters live in `Tools` and in `Project` (`#[serde(default)]`),
+  user settings in `Prefs`; no mathematics in `openpid-app`.
+- **Tests**: every topic has a headless kittest test on a real fixture plus unit
+  tests of the pure logic in `openpid-analysis`/`openpid-core`; coverage stays ≥ 90 %.
+- **Documentation**: the USER-GUIDE and the screenshots (`tools/screenshots.sh`)
+  are updated in the same PR.

@@ -1,81 +1,83 @@
-# Колірна шкала heatmap
+# Heatmap colour scale
 
-Зауваження замовника (05.11.2026): додати колірну шкалу.
+The owner's remark (2026-11-05): add a colour scale.
 
-## Причина
+## Cause
 
-Freq × throttle, Freq × time і Surface 3D фарбують амплітуду viridis-палітрою з
-«colour max» (0 = 99-й процентиль), але ніде не показують, якому значенню в
-deg/s відповідає колір. Порівняти два слоти з різним auto-max неможливо: жовте
-на A і жовте на B — різні числа.
+Freq × throttle, Freq × time and Surface 3D colour the amplitude with the
+viridis palette and a "colour max" (0 = the 99th percentile), but nowhere say
+which value in deg/s a colour stands for. Two slots with different auto-max
+cannot be compared: yellow on A and yellow on B are different numbers.
 
-## Варіанти
+## Options
 
-| | Варіант | Плюси | Мінуси | Бали |
+| | Option | Pros | Cons | Score |
 |---|---|---|---|---|
-| R0 | Як є | — | значення невідомі | 20 |
-| R1 | **Вертикальна шкала** праворуч від кожної панелі: градієнт, 5 поділок, одиниця, поле colour max над нею | канон (MATLAB/PTB, matplotlib); не заважає графіку | −20 px ширини панелі | **50** |
-| R2 | Горизонтальна шкала під графіком | ширша | під heatmap уже смуга сегментів; плутає з віссю X | 38 |
-| R3 | Лише текст у легенді «0–12 deg/s» | дешево | не показує нелінійності й проміжних значень | 32 |
-| R4 | Шкала + значення під курсором у кутку | найточніше | hover уже є у Surface; те саме додати в heatmap-и | 48 |
-| R5 | Спільна шкала на всі слоти + перемикач «link scales» | чесне порівняння A/B | без R1 нема що зв'язувати | 44 |
+| R0 | As is | — | the values are unknown | 20 |
+| R1 | **A vertical bar** right of every panel: gradient, 5 ticks, the unit, the colour max field above it | the convention (MATLAB/PTB, matplotlib); does not disturb the plot | −20 px of panel width | **50** |
+| R2 | A horizontal bar under the plot | wider | the segment strip is already under the heatmap; confused with the X axis | 38 |
+| R3 | Text only in the legend, "0–12 deg/s" | cheap | shows neither non-linearity nor intermediate values | 32 |
+| R4 | A bar plus the value under the pointer in a corner | the most precise | hover already exists on Surface; the same for the heatmaps | 48 |
+| R5 | A shared scale over every slot plus a "link scales" toggle | an honest A/B comparison | nothing to link without R1 | 44 |
 
-Рекомендація: **R1 + hover із R4 + «link scales» із R5**.
+Recommendation: **R1 + the hover of R4 + "link scales" of R5**.
 
-## Рішення замовника (05.11.2026)
+## The owner's decision (2026-11-05)
 
-R1 з hover-значенням і спільною шкалою.
+R1 with the hover value and the shared scale.
 
-## Вимоги до реалізації
+## Implementation requirements
 
-- `views::colour_bar(ui, max: f64, unit: &str, height: f32) -> Response`: смуга
-  14 px шириною, градієнт `render::VIRIDIS` знизу (0) догори (max) через
-  `Mesh` з 8 вершинами-кольорами; 5 поділок із підписами (`0`, `¼`, `½`, `¾`,
-  `max`) формату `{:.2}` до 10 і `{:.0}` вище; одиниця під шкалою («deg/s»);
-  над шкалою — DragValue `colour max` (0 = auto); поле з рядка параметрів
-  переноситься сюди, щоб шкала й її стеля були поруч.
-- Розміщення: `ui.horizontal` → [plot][bar]; висота bar = висота plot.
-  Freq × throttle: між plot і смугою сегментів ні — bar поруч із plot. Freq × time:
-  bar поруч із heatmap, спектр стовпця без bar. Surface 3D: bar у правому краю
-  панелі (висота = рельєф).
-- Hover-значення: у Freq × throttle / Freq × time при наведенні — підпис у кутку
-  «37 %, 172 Hz: 0.45 deg/s» (із `Grid2D` найближча клітинка, як у Surface).
-- «Link scales» (чекбокс у рядку параметрів, за замовчуванням увімкнено, коли слотів > 1):
-  auto-max = максимум auto-max усіх слотів; шкала одна на панель, але однакова.
-- Експорт PNG включає шкалу (експорт знімає область вкладки — уже так).
-- Параметр у `Tools` (`heatmap_link_scales: bool`) і в `Project`.
+- `views::colour_bar(ui, max: f64, unit: &str, height: f32) -> Response`: a
+  14 px wide bar, the `render::VIRIDIS` gradient from the bottom (0) to the top
+  (max) as a `Mesh` with 8 coloured vertices; 5 ticks with labels (`0`, `¼`,
+  `½`, `¾`, `max`) formatted `{:.2}` up to 10 and `{:.0}` above; the unit under
+  the bar ("deg/s"); above the bar the `colour max` DragValue (0 = auto); the
+  field moves here from the parameter row so the scale and its ceiling sit together.
+- Placement: `ui.horizontal` → [plot][bar]; the bar height is the plot height.
+  Freq × throttle: not between the plot and the segment strip; the bar next to
+  the plot. Freq × time: the bar next to the heatmap, the column spectrum without
+  a bar. Surface 3D: the bar at the right edge of the panel (height = the relief).
+- The hover value: on Freq × throttle / Freq × time, hovering shows a label in
+  the corner, "37 %, 172 Hz: 0.45 deg/s" (the nearest `Grid2D` cell, as on Surface).
+- "Link scales" (a checkbox in the parameter row, on by default when there is
+  more than one slot): auto-max = the maximum of every slot's auto-max; one
+  scale per panel, but the same one.
+- PNG export includes the scale (the export captures the tab area, already so).
+- A parameter in `Tools` (`heatmap_link_scales: bool`) and in `Project`.
 
-## Критерії приймання
+## Acceptance criteria
 
-- Кожна з трьох вкладок має шкалу з 5 підписами й одиницею; значення під курсором
-  збігається з `Grid2D` (тест через `app.hover`-подібне поле).
-- Із двома логами й увімкненим link обидві панелі мають однаковий max; вимкнення — різний.
-- Headless-тести на вкладках throttle і time; знімки для user guide оновлені.
+- Each of the three tabs has a scale with 5 labels and the unit; the value under
+  the pointer matches `Grid2D` (a test through an `app.hover`-like field).
+- With two logs and link on, both panels have the same max; off, different ones.
+- Headless tests on the throttle and time tabs; the user-guide screenshots refreshed.
 
-## Розмір
+## Size
 
-S (≈ 1 день).
+S (≈ 1 day).
 
-## Реалізація (05.11.2026)
+## Implementation (2026-11-05)
 
-- **`views.rs`:** `colour_bar(ui, max, unit, height)` — смуга 14 px (mesh з 8
-  вершин `render::VIRIDIS`), 5 поділок, одиниця, accessible name «colour scale 0 to
-  … unit»; `effective_max` (явна стеля або робастний максимум над 20 Гц) і
-  `linked_scales` (спільна стеля = найбільша з автоматичних, коли увімкнено
-  `Tools.heatmap_link`); `heatmap_hover` / `hover_label` — клітинка під курсором
-  (`surface::value_at`) під картою; `app.colour_scales`, `app.heatmap_hover`,
-  `app.heatmap_frames` для тестів.
-- **Розміщення:** Freq × throttle і Freq × time — `[plot][bar]` в `ui.horizontal`,
-  plot на `BAR_W = 56 px` вужчий, смуга сегментів тієї ж ширини; Surface 3D — смуга
-  праворуч від рельєфу, стеля передається в `draw_surface`.
-- **Відхилення:** поле «colour max» лишилось у рядку параметрів (одне на вкладку), а
-  не над кожною смугою: з кількома логами воно дублювалось би.
-- **Проєкт:** `heatmap_link` у `Tools` і `Project` (default `true`).
-- **Тест:** `heatmaps_show_a_colour_scale_with_linked_maxima_and_a_hover_value`
-  (два логи: спільна стеля, власні стелі, явна стеля, hover збігається з сіткою,
-  те саме на Freq × time і Surface 3D, проєкт зберігає link).
+- **`views.rs`:** `colour_bar(ui, max, unit, height)`: a 14 px bar (an 8-vertex
+  mesh of `render::VIRIDIS`), 5 ticks, the unit, the accessible name "colour
+  scale 0 to … unit"; `effective_max` (an explicit ceiling, or the robust
+  maximum above 20 Hz) and `linked_scales` (the shared ceiling = the largest of
+  the automatic ones when `Tools.heatmap_link` is on); `heatmap_hover` /
+  `hover_label`, the cell under the pointer (`surface::value_at`) under the
+  map; `app.colour_scales`, `app.heatmap_hover`, `app.heatmap_frames` for the tests.
+- **Placement:** Freq × throttle and Freq × time are `[plot][bar]` in
+  `ui.horizontal`, the plot `BAR_W = 56 px` narrower, the segment strip the
+  same width; Surface 3D has the bar right of the relief, the ceiling passed to
+  `draw_surface`.
+- **Deviation:** the "colour max" field stayed in the parameter row (one per
+  tab) rather than above every bar: with several logs it would be duplicated.
+- **Project:** `heatmap_link` in `Tools` and `Project` (default `true`).
+- **Test:** `heatmaps_show_a_colour_scale_with_linked_maxima_and_a_hover_value`
+  (two logs: a shared ceiling, own ceilings, an explicit ceiling, hover matches
+  the grid, the same on Freq × time and Surface 3D, the project keeps the link).
 
-**Перевірено.** Знімки `throttle.png`, `time.png`, `surface.png` перезняті з лог
-2025.12.
+**Verified.** The screenshots `throttle.png`, `time.png`, `surface.png` were
+retaken from the 2025.12 log.
 
-![Freq × throttle зі шкалою](../../screenshots/throttle.png)
+![Freq × throttle with the scale](../../screenshots/throttle.png)
