@@ -1,35 +1,35 @@
-# Відкриті питання до замовника
+# Open questions for the product owner
 
-## Ухвалені рішення (2026-11-04)
+## Decisions taken (2026-11-04)
 
-| # | Рішення |
-|---|---------|
-| Q1 | Ліцензія **MIT**. |
-| Q2 | Порядок прошивок: фаза 0 — Betaflight/EmuFlight/Rotorflight; фаза 2 — **ArduPilot, потім INAV**. |
-| Q3 | Логи для розробки збираються зі спільноти (див. `tests/logs/README.md`); власні логи замовника — лише для фінальної перевірки. |
-| Q4 | «Сенсори» = сенсорні екрани на десктопі; мобільні ОС не блокуються, але не в плані. |
-| Q5 | `rustfft` прийнятний. |
-| Q6 | PID slider tool — лише Betaflight (simplified tuning 4.3+). Реалізовано через `FirmwareProfile::slider_model`. |
+| # | Decision |
+|---|----------|
+| Q1 | Licence **MIT**. |
+| Q2 | Firmware order: phase 0 Betaflight/EmuFlight/Rotorflight; phase 2 **ArduPilot, then INAV**. |
+| Q3 | Development logs come from the community (see `tests/logs/README.md`); the owner's own logs are for the final check only. |
+| Q4 | "Touch support" means touch screens on the desktop; mobile platforms are not blocked but not planned. |
+| Q5 | `rustfft` is acceptable. |
+| Q6 | PID slider tool: Betaflight only (simplified tuning 4.3+). Implemented through `FirmwareProfile::slider_model`. |
 
-Решта (Q6–Q12) лишаються відкритими до відповідної фази.
+The rest (Q6–Q12) stay open until the relevant phase.
 
-## Повний перелік
+## Full list
 
-| # | Питання | Варіанти / моя рекомендація |
-|---|---------|-----------------------------|
-| Q1 | **Ліцензія проєкту.** PIDtoolbox (у відкритому форку) — GPLv3; старі файли — Beerware. Ми не копіюємо код, тож вільні у виборі. | Рекомендую MIT **або** Apache‑2.0 (дозволяє будь‑яке використання, сумісно з усіма нашими залежностями). GPLv3 — якщо хочеш, щоб форки лишалися відкритими. |
-| Q2 | **Пріоритет прошивок для MVP.** Betaflight/Emuflight/Rotorflight — один бінарний формат (фаза 0). INAV — той самий формат, інші масштаби. Ardupilot (DataFlash .bin), KISS Ultra, Fettec, QuickSilver — окремі формати без загальнодоступної спеки. | Рекомендую: фаза 0 — BF/Emu/RF; фаза 1 — INAV; фаза 2 — решта, по мірі надходження зразків логів. Підтверди або зміни порядок. |
-| Q3 | **Зразки логів.** Для конформанс‑ і golden‑тестів потрібні невеликі (5–30 с) реальні логи з кожної прошивки/версії, бажано з увімкненим `gyroUnfilt`, eRPM, debug_mode різних типів. Чи можеш надати (або дозволити зібрати зі спільноти) і покласти їх у репозиторій під ліцензією проєкту? | Так/ні; якщо так — які прошивки вже є під рукою. |
-| Q4 | **«Підтримка сенсорів»** — ти маєш на увазі сенсорні екрани (тач на ноутбуках/планшетах з Windows/Linux/iPad‑подібні сценарії) чи щось інше (наприклад, пізніше мобільні ОС)? | Я заклав мультитач‑жести у десктоп‑GUI (egui підтримує нативно) і не блокую майбутні iOS/Android збірки. Підтверди. |
-| Q5 | **Межа «мінімальних залежностей».** Чи прийнятний `rustfft` (чистий Rust) для FFT, чи хочеш власну реалізацію FFT? `wgpu`/`winit` неминучі для GUI. | Рекомендую `rustfft` (див. ADR‑0001). |
-| Q6 | **PID slider tool** — це саме Betaflight‑слайдери (Configurator 10.9+/4.3+ «simplified tuning»), що перераховують positions → P/I/D/F/D_min? Чи треба інші прошивки? | Реалізую через `FirmwareProfile::slider_model`, спочатку лише Betaflight. Тут буде корисним твій доступ до UI PTB, щоб звірити поведінку. |
-| Q7 | **Порівняння A/B** (два логи одночасно, як у PTB) потрібне вже у фазі 1, чи можна відкласти? | Рекомендую у фазі 1 — це ядро PTB‑воркфлоу. |
-| Q8 | **Обсяг «Pro»‑функцій.** Усі 7 рядків таблиці (notch overlay 2D/3D, RPM estimator, filter sim, generator, motor noise, spectrum player) у фазі 2, чи є пріоритетні? | Пропоную порядок: filter sim → notch/RPM overlay 2D → RPM estimator → motor noise → overlay 3D → generator → player. |
-| Q9 | **Мова інтерфейсу та документації.** | Пропоную UI UA + EN (перемикач), код і коментарі — EN, docs — UA (як цей документ). |
-| Q10 | **Autotune / рекомендації.** Чи є вже бачення алгоритму (правила на кшталт PTB‑гайдів, або модель), чи це R&D на фазу 3? | Архітектурно закладено trait `Recommender`; зміст — фаза 3. |
-| Q11 | **Назва / бренд.** Репозиторій `OpenPID`; бінарники `openpid` (CLI) та `openpid-gui`. | Підтверди або запропонуй іншу назву. |
-| Q12 | **Доступ до UI PTB.** Для фази 1 мені знадобляться скриншоти/опис: step response вкладки (параметри smoothing, Y‑offset, пороги), spectral вкладки (діапазони, clim), slider tool. Коли дійдемо — попрошу конкретні екрани. | — |
+| # | Question | Options / recommendation |
+|---|----------|--------------------------|
+| Q1 | **Project licence.** PIDtoolbox (the public fork) is GPLv3; the old files are Beerware. We copy no code, so we are free to choose. | MIT **or** Apache-2.0 recommended (allows any use, compatible with every dependency). GPLv3 if forks must stay open. |
+| Q2 | **Firmware priority for the MVP.** Betaflight/EmuFlight/Rotorflight share one binary format (phase 0). INAV: the same format, other scales. ArduPilot (DataFlash .bin), KISS Ultra, Fettec, QuickSilver: separate formats without a public spec. | Recommended: phase 0 BF/Emu/RF; phase 1 INAV; phase 2 the rest as sample logs arrive. Confirm or reorder. |
+| Q3 | **Sample logs.** Conformance and golden tests need short (5–30 s) real logs from every firmware and version, ideally with `gyroUnfilt`, eRPM and various `debug_mode` values. Can you provide them (or allow collecting them from the community) and put them in the repository under the project licence? | Yes/no; if yes, which firmwares are at hand. |
+| Q4 | **"Touch support"**: touch screens (laptops and tablets with Windows/Linux, iPad-like scenarios) or something else (for example mobile platforms later)? | Multi-touch gestures are in the desktop GUI (egui supports them natively) and future iOS/Android builds are not blocked. Confirm. |
+| Q5 | **The "minimal dependencies" line.** Is `rustfft` (pure Rust) acceptable for the FFT, or do you want an own FFT? `wgpu`/`winit` are unavoidable for the GUI. | `rustfft` recommended (see ADR-0001). |
+| Q6 | **PID slider tool**: the Betaflight sliders (Configurator 10.9+ / 4.3+ "simplified tuning") that turn positions into P/I/D/F/D_min? Other firmwares? | Implemented through `FirmwareProfile::slider_model`, Betaflight first. Your access to the PTB UI will help to compare the behaviour. |
+| Q7 | **A/B comparison** (two logs at once, as in PTB): needed in phase 1 or can it wait? | Phase 1 recommended: it is the core of the PTB workflow. |
+| Q8 | **Scope of the "Pro" features.** All seven rows of the table (notch overlay 2D/3D, RPM estimator, filter sim, generator, motor noise, spectrum player) in phase 2, or are some priorities? | Suggested order: filter sim → notch/RPM overlay 2D → RPM estimator → motor noise → overlay 3D → generator → player. |
+| Q9 | **Interface and documentation language.** | UI EN + UA (a switch); code, comments and documents in English. |
+| Q10 | **Autotune / recommendations.** Is there a vision of the algorithm (rules like the PTB guides, or a model), or is it R&D for phase 3? | The `Recommender` trait is in the architecture; the content is phase 3. |
+| Q11 | **Name / brand.** Repository `OpenPID`; binaries `openpid` (CLI) and `openpid-gui`. | Confirm or propose another name. |
+| Q12 | **Access to the PTB UI.** For phase 1 I will need screenshots or descriptions: the step-response tab (smoothing parameters, Y-offset, thresholds), the spectral tab (ranges, clim), the slider tool. I will ask for specific screens when we get there. | — |
 
-## Що я не зміг перевірити в цій сесії
-- Patreon‑сторінку PIDtoolbox та `betaflight.com` не вдалося відкрити (мережеві обмеження сесії); специфікацію Blackbox узято з репозиторію `betaflight/betaflight.com` на GitHub.
-- Оригінальний репозиторій `bw1129/PIDtoolbox` більше недоступний; алгоритми звірено по відкритому форку (стара версія, GPLv3) та PID‑Analyzer (деконволюція). Поточна логіка PTB 0.9x (деконволюція у `PTstepcalc`) відтворена за описом і за PID‑Analyzer, тож деталі (значення дефолтів) варто звірити з твоїм UI.
+## What could not be checked in that session
+- The PIDtoolbox Patreon page and `betaflight.com` could not be opened (network restrictions of the session); the Blackbox specification was taken from the `betaflight/betaflight.com` repository on GitHub.
+- The original `bw1129/PIDtoolbox` repository is no longer available; the algorithms were compared against the public fork (an old GPLv3 version) and PID-Analyzer (deconvolution). The current PTB 0.9x logic (deconvolution in `PTstepcalc`) is reproduced from its description and from PID-Analyzer, so the details (default values) should be compared with your UI.

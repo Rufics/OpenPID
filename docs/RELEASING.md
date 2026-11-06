@@ -1,68 +1,75 @@
-# Релізи та налаштування репозиторію
+# Releases and repository setup
 
-## Одноразове налаштування на GitHub (робить власник)
+## One-time GitHub setup (done by the owner)
 
-1. **Ruleset для `master`.** Settings → Rules → Rulesets → New ruleset → Import a ruleset → файл `.github/rulesets/master.json`. Він вимагає PR зі squash‑злиттям, 1 схвалення code owner, вирішені треди, лінійну історію, підписані коміти, заборону force‑push/видалення та зелені перевірки: `CI OK`, `fmt + clippy + docs + typos`, `conventional commits`, `test (ubuntu/macos/windows)`, `coverage (>= 90% lines)`, `cargo deny`. Перевірки мають «strict» режим — гілка PR має бути оновлена до `master`.
-   - Якщо підписані коміти небажані — видаліть правило `required_signatures` з JSON перед імпортом.
-   - Поле `integration_id: 15368` — GitHub Actions; при імпорті GitHub підставить правильне значення сам.
-2. **Секрети та бот для релізів.**
-   - `SONAR_TOKEN` — вже доданий; job `SonarCloud` активний.
-   - **Токен для release‑plz — тільки від бота, не від людини.** Workflow `release-plz` автентифікується як GitHub App і сам видає собі одногодинний installation‑токен (`actions/create-github-app-token`); жодних персональних PAT. Навіщо взагалі токен: PR і теги, створені стандартним `GITHUB_TOKEN`, за правилами GitHub не запускають інші workflow (захист від рекурсії), тож release‑PR не отримав би перевірок CI і його не можна було б злити під ruleset‑ом, а тег не запустив би збірку бінарників. Токен App цього обмеження не має.
-     Створення (5 хвилин, один раз):
-     1. Settings → Developer settings → GitHub Apps → *New GitHub App*. Назва, напр. `openpid-release-bot`; Homepage — URL репозиторію; *Webhook* вимкнути.
-     2. Permissions → Repository permissions: **Contents: Read and write**, **Pull requests: Read and write**, **Metadata: Read‑only** (додається автоматично). Більше нічого. *Where can this App be installed* — *Only on this account*.
-     3. Create → на сторінці App запам'ятати **App ID**; нижче *Generate a private key* → завантажиться `.pem`.
-     4. Install App → встановити на свій акаунт, обравши **тільки репозиторій OpenPID**.
-     5. У репозиторії: Settings → Secrets and variables → Actions: змінна `RELEASE_APP_ID` = App ID; секрет `RELEASE_APP_PRIVATE_KEY` = вміст `.pem` цілком. Після цього workflow `release-plz` вмикається сам (без змінної він пропускається і не червоніє).
-     Відкликати доступ можна будь‑коли: видалити інсталяцію App або згенерувати новий ключ.
-     Перевірка після налаштування: наступний push у `master` (будь‑який merge) має дати запуск `release-plz`
-     зі статусом *success* (не *skipped*) і PR `chore: release vX.Y.Z` від `<назва App>[bot]`, на якому
-     запускаються звичайні перевірки CI. Типові збої: запуск *skipped* — змінна `RELEASE_APP_ID` не створена
-     (або створена як секрет); червоний крок «Mint a short-lived token» — обрізаний `.pem` або App не
-     встановлений на репозиторій; відмова у push — бракує *Contents: Read and write*.
-   - Альтернатива «заборонити»: не створювати App — тоді релізи робляться вручну (`git tag vX.Y.Z && git push --tags` з робочої машини запускає `release.yml`), а CHANGELOG ведеться руками. Автоматика вимкнена, але нічого не ламається.
-3. **Settings → General → Pull Requests**: лишити увімкненим тільки *Allow squash merging*, встановити *Default commit message: Pull request title and description*, увімкнути *Automatically delete head branches*.
-4. **Settings → Actions → General**: *Workflow permissions: Read repository contents*. Опцію *Allow GitHub Actions to create and approve pull requests* вмикати **не потрібно**: App‑токен не підпадає під це обмеження.
-5. **Dependabot** уже налаштований (`.github/dependabot.yml`): щотижневі згруповані PR для cargo і GitHub Actions. Settings → Code security: увімкнути Dependabot alerts.
-6. **SonarCloud**: після першого аналізу встановити Quality Gate «Sonar way» і увімкнути *Pull request decoration*; Sonar стане ще однією перевіркою, яку можна додати до ruleset (`SonarCloud Code Analysis`).
+1. **Ruleset for `master`.** Settings → Rules → Rulesets → New ruleset → Import a ruleset → the file `.github/rulesets/master.json`. It requires PRs with squash merge, one code-owner approval, resolved threads, a linear history, signed commits, no force-push or deletion, and green checks: `CI OK`, `fmt + clippy + docs + typos`, `conventional commits`, `test (ubuntu/macos/windows)`, `coverage (>= 90% lines)`, `cargo deny`. The checks are "strict": the PR branch must be up to date with `master`.
+   - If signed commits are not wanted, remove the `required_signatures` rule from the JSON before importing.
+   - The field `integration_id: 15368` is GitHub Actions; GitHub fills in the right value on import.
+2. **Secrets and the release bot.**
+   - `SONAR_TOKEN` is already set; the `SonarCloud` job is active.
+   - **The token for release-plz comes from a bot, never from a person.** The `release-plz` workflow authenticates as a GitHub App and mints itself a one-hour installation token (`actions/create-github-app-token`); no personal access tokens. Why a token at all: PRs and tags created with the default `GITHUB_TOKEN` do not start other workflows (GitHub's recursion guard), so a release PR would get no CI checks and could not be merged under the ruleset, and the tag would not start the binary build. An App token has no such restriction.
+     Creating it (five minutes, once):
+     1. Settings → Developer settings → GitHub Apps → *New GitHub App*. A name such as `openpid-release-bot`; Homepage: the repository URL; *Webhook* off.
+     2. Permissions → Repository permissions: **Contents: Read and write**, **Pull requests: Read and write**, **Metadata: Read-only** (added automatically). Nothing else. *Where can this App be installed*: *Only on this account*.
+     3. Create → note the **App ID** on the App page; below it *Generate a private key* downloads a `.pem`.
+     4. Install App → install it on your account, selecting **only the OpenPID repository**.
+     5. In the repository: Settings → Secrets and variables → Actions: the variable `RELEASE_APP_ID` = App ID; the secret `RELEASE_APP_PRIVATE_KEY` = the whole `.pem`. The `release-plz` workflow then enables itself (without the variable it is skipped and does not go red).
+     Access can be revoked at any time: delete the App installation or generate a new key.
+     Checking the setup: the next push to `master` (any merge) must give a `release-plz` run with status *success* (not *skipped*) and a `chore: release vX.Y.Z` PR from `<App name>[bot]` on which the usual CI checks run. Typical failures: a *skipped* run means the `RELEASE_APP_ID` variable is missing (or was created as a secret); a red "Mint a short-lived token" step means a truncated `.pem` or an App not installed on the repository; a refused push means *Contents: Read and write* is missing.
+   - The "forbid" alternative: do not create the App; releases are then made by hand (`git tag vX.Y.Z && git push --tags` from a workstation starts `release.yml`) and the CHANGELOG is kept manually. The automation is off, nothing breaks.
+3. **Settings → General → Pull Requests**: leave only *Allow squash merging* on, set *Default commit message: Pull request title and description*, enable *Automatically delete head branches*.
+4. **Settings → Actions → General**: *Workflow permissions: Read repository contents*. The option *Allow GitHub Actions to create and approve pull requests* is **not** needed: the App token is not subject to it.
+5. **Dependabot** is configured (`.github/dependabot.yml`): weekly grouped PRs for cargo and GitHub Actions. Settings → Code security: enable Dependabot alerts.
+6. **SonarCloud**: after the first analysis set the Quality Gate to "Sonar way" and enable *Pull request decoration*; Sonar becomes one more check that can be added to the ruleset (`SonarCloud Code Analysis`).
 
-## Як виходить реліз
+## How a release happens
 
 ```
 feature branch ──PR──▶ master ──release-plz──▶ PR "chore: release vX.Y.Z" ──merge──▶ tag vX.Y.Z
                                                                                      └─▶ GitHub Release + CHANGELOG
-                                                                                     └─▶ release.yml: бінарники для
+                                                                                     └─▶ release.yml: binaries for
                                                                                          Linux x86_64, macOS arm64/x86_64, Windows x86_64
 ```
 
-Версія єдина для всього workspace (`[workspace.package].version`), тег — `v<version>`, журнал — `CHANGELOG.md` з Conventional Commits. Публікації на crates.io немає (`publish = false`). Тег і GitHub release (назва «OpenPID v<version>», опис — запис із CHANGELOG) створює лише крейт `openpid-cli`; для решти крейтів `git_tag_enable = false`, інакше кожен намагався б створити той самий тег і другий падав би з 422 (#113). Решта крейтів вважаються випущеними за цим спільним тегом.
+One version for the whole workspace (`[workspace.package].version`), the tag
+is `v<version>`, the log is `CHANGELOG.md` built from Conventional Commits.
+Nothing is published to crates.io (`publish = false`). The tag and the GitHub
+release (named "OpenPID v<version>", the body is the CHANGELOG entry) are
+created by the `openpid-cli` crate alone; every other crate has
+`git_tag_enable = false`, otherwise each would try to create the same tag and
+the second one would fail with 422 (#113). The other crates count as released
+under that shared tag.
 
-## Артефакти CI
+## CI artifacts
 
-Кожен запуск CI збирає `openpid` і `openpid-gui` для трьох ОС (job `build`) і звіт покриття (`coverage-lcov`); завантажити їх можна зі сторінки запуску (Actions → run → Artifacts), зберігаються 14 днів.
+Every CI run builds `openpid` and `openpid-gui` for the three platforms (the
+`build` job) and the coverage report (`coverage-lcov`); they can be downloaded
+from the run page (Actions → run → Artifacts) and are kept for 14 days.
 
-## Кеш
+## Cache
 
-`Swatinem/rust-cache` кешує `~/.cargo` і `target/` за ключем `Cargo.lock` + toolchain окремо для job‑ів `check`, `test`, `coverage`, `build-<os>`; повторні запуски перезбирають лише змінені crate‑и.
+`Swatinem/rust-cache` caches `~/.cargo` and `target/` keyed by `Cargo.lock`
+plus the toolchain, separately for the `check`, `test`, `coverage` and
+`build-<os>` jobs; repeated runs rebuild only the changed crates.
 
-## Покинуті job‑и на macOS (нестача arm64‑runner‑ів)
+## Abandoned macOS jobs (arm64 runner shortage)
 
-GitHub час від часу не виділяє `macos-15` (arm64) runner: job завершується як
-*abandoned* («The job was not acquired by Runner of type hosted even after
-multiple attempts»). `CI OK` рахує такий результат червоним — це свідомо (#9),
-щоб злиття не проходило з непротестованою платформою. Політика:
+Now and then GitHub does not allocate a `macos-15` (arm64) runner: the job
+ends as *abandoned* ("The job was not acquired by Runner of type hosted even
+after multiple attempts"). `CI OK` counts that as red on purpose (#9), so a
+merge never goes through with an untested platform. The policy:
 
-1. **Нічого не пушити заради перезапуску** — ні порожніх комітів, ні
-   закриття/відкриття PR. Перезапуск: у Actions → run → *Re‑run failed jobs*,
-   або `gh run rerun <run-id> --failed` (потрібен `repo` scope). Перезапускаються
-   лише покинуті/впалі job‑и, зелені не рахуються заново.
-2. **Дві спроби, потім чекати.** Якщо після другого перезапуску runner так і не
-   з'явився, нестача глобальна — дивитись https://www.githubstatus.com і
-   повторити пізніше; CI не послаблюємо.
-3. **Автоматичний retry не додаємо.** `nick-fields/retry` чи аналог — нова
-   залежність у workflow (ADR‑0007), а повторний `cargo test` не допомагає,
-   коли проблема у виділенні машини, а не в тесті.
-4. **macOS‑артефакти двох архітектур.** `build (macos)` збирає arm64 на
-   `macos-15`, `build (macos-intel)` — x86_64 на `macos-15-intel` (інший пул
-   runner‑ів). Коли arm64‑пул порожній, реліз усе одно має macOS‑збірку, а
-   користувачі Intel‑Mac — свою.
+1. **Push nothing just to rerun**: no empty commits, no closing and reopening
+   the PR. Rerun from Actions → run → *Re-run failed jobs*, or
+   `gh run rerun <run-id> --failed` (needs the `repo` scope). Only the
+   abandoned or failed jobs rerun; the green ones are not recounted.
+2. **Two attempts, then wait.** If the runner still does not appear after the
+   second rerun, the shortage is global: check https://www.githubstatus.com
+   and retry later; CI is not weakened.
+3. **No automatic retry.** `nick-fields/retry` or the like is a new workflow
+   dependency (ADR-0007), and a repeated `cargo test` does not help when the
+   problem is machine allocation, not the test.
+4. **macOS artifacts for both architectures.** `build (macos)` builds arm64 on
+   `macos-15`, `build (macos-intel)` x86_64 on `macos-15-intel` (a different
+   runner pool). When the arm64 pool is empty the release still has a macOS
+   build, and Intel-Mac users have theirs.
