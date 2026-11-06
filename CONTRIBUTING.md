@@ -59,6 +59,13 @@ Golden files are updated deliberately:
 `OPENPID_UPDATE_GOLDEN=1 cargo test -p openpid-fmt-blackbox --test fixtures`;
 the numeric reference fixtures with `python3 -I tools/reference/make_fixtures.py`.
 
+## Fuzzing
+
+The decoders are fuzzed with cargo-fuzz in the separate `fuzz/` package
+(`fuzz/README.md`, ADR-0015): `cargo +nightly fuzz run blackbox_open` after
+`sh fuzz/seed.sh`. CI runs every target weekly and for a minute on PRs that
+touch a decoder. A new decoder entry point gets a target in the same PR.
+
 ## Process
 
 The backlog, milestones per phase, sprints and the Definition of Ready/Done are

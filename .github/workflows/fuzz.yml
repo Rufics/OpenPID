@@ -1,9 +1,10 @@
-# Weekly mutation fuzzing of the Blackbox decoder (ADR-0013). The same harness
-# runs for a few seconds on every CI build (`tests/fuzz.rs`); here it gets a
-# time budget and a fresh seed per run, so each week explores different inputs.
-# Crashing inputs are uploaded as an artifact; the failure names the
-# `OPENPID_FUZZ_REPLAY=<seed>:<iteration>` that reproduces each one.
-# Every action is pinned to a full commit SHA, as in ci.yml.
+# Coverage-guided fuzzing of the decoders with cargo-fuzz / libFuzzer
+# (fuzz/, ADR-0015). Every target runs weekly with a time budget, on a manual
+# dispatch, and for a minute on pull requests that touch a decoder crate or
+# the fuzz package. Crashing inputs are uploaded as an artifact; the failure
+# names the file that reproduces them with `cargo +nightly fuzz run <target> <file>`.
+# The toolchain is a dated nightly and cargo-fuzz a pinned version, bumped
+# deliberately (ADR-0007). Every action is pinned to a full commit SHA, as in ci.yml.
 name: Fuzz
 
 on:
@@ -12,24 +13,32 @@ on:
   workflow_dispatch:
     inputs:
       seconds:
-        description: Time budget, seconds
+        description: Time budget per target, seconds
         default: '1200'
-      seed:
-        description: Seed (empty = the run id)
-        default: ''
+  pull_request:
+    paths:
+      - 'crates/openpid-core/**'
+      - 'crates/openpid-fmt-*/**'
+      - 'fuzz/**'
+      - '.github/workflows/fuzz.yml'
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_TOOLCHAIN: 1.97.0
+  NIGHTLY_TOOLCHAIN: nightly-2026-11-05
+  CARGO_FUZZ_VERSION: 0.13.2
 
 permissions:
   contents: read
 
 jobs:
   fuzz:
-    name: mutation fuzzing (blackbox decoder)
+    name: fuzz (${{ matrix.target }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [blackbox_open, blackbox_headers, ardupilot_open, csv_open]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Test logs from Git LFS (cached by content, pulled only when they change)
@@ -42,22 +51,31 @@ jobs:
       - run: git lfs pull
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-11
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
+      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        with:
+          tool: cargo-fuzz@${{ env.CARGO_FUZZ_VERSION }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          shared-key: fuzz
+          shared-key: fuzz-${{ matrix.target }}
+          workspaces: |
+            . -> target
+            fuzz -> fuzz/target
+      - name: Seed corpus from the test logs
+        run: sh fuzz/seed.sh
       - name: Fuzz with a time budget
         env:
-          OPENPID_FUZZ_SECONDS: ${{ github.event.inputs.seconds || '1200' }}
-          OPENPID_FUZZ_SEED: ${{ github.event.inputs.seed || github.run_id }}
+          # a minute on pull requests, the input (or 20 minutes) otherwise
+          BUDGET: ${{ github.event_name == 'pull_request' && '60' || github.event.inputs.seconds || '1200' }}
         run: |
-          echo "seed $OPENPID_FUZZ_SEED, budget $OPENPID_FUZZ_SECONDS s" >> "$GITHUB_STEP_SUMMARY"
-          cargo test -p openpid-fmt-blackbox --release --test fuzz -- --ignored --nocapture fuzz_long 2>&1 | tee fuzz.log
-          grep '^fuzz:' fuzz.log >> "$GITHUB_STEP_SUMMARY" || true
+          echo "target ${{ matrix.target }}, budget $BUDGET s" >> "$GITHUB_STEP_SUMMARY"
+          cargo +${{ env.NIGHTLY_TOOLCHAIN }} fuzz run ${{ matrix.target }} -- \
+            -max_total_time="$BUDGET" -timeout=10 -rss_limit_mb=2048 2>&1 | tee fuzz.log
+          grep -E '^#[0-9]+ +DONE|^Done ' fuzz.log >> "$GITHUB_STEP_SUMMARY" || true
       - name: Crashing inputs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: fuzz-crashes
-          path: target/tmp/fuzz-crashes/
+          name: fuzz-crashes-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}/
           if-no-files-found: ignore

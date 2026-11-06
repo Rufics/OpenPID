@@ -1,0 +1,54 @@
+# Coverage-guided fuzzing of the decoders with cargo-fuzz / libFuzzer (ADR-0015).
+#
+# This package is excluded from the workspace on purpose: it depends on
+# `libfuzzer-sys` (the C++ libFuzzer runtime) and runs on a nightly toolchain,
+# neither of which may enter the workspace, its lock file or the shipped
+# binaries. Run with `cargo +nightly fuzz run <target>` from the repository root.
+[package]
+name = "openpid-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+openpid-core = { path = "../crates/openpid-core" }
+openpid-fmt-blackbox = { path = "../crates/openpid-fmt-blackbox" }
+openpid-fmt-ardupilot = { path = "../crates/openpid-fmt-ardupilot" }
+openpid-fmt-csv = { path = "../crates/openpid-fmt-csv" }
+
+# Symbols for the stack traces of a crash.
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "blackbox_open"
+path = "fuzz_targets/blackbox_open.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "blackbox_headers"
+path = "fuzz_targets/blackbox_headers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ardupilot_open"
+path = "fuzz_targets/ardupilot_open.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "csv_open"
+path = "fuzz_targets/csv_open.rs"
+test = false
+doc = false
+bench = false
