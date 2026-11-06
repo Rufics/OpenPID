@@ -3,20 +3,20 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/Rufics/OpenPID"
 rust-version = "1.88"
 
 [workspace.dependencies]
-openpid-core = { path = "crates/openpid-core", version = "0.1.1" }
-openpid-fmt-blackbox = { path = "crates/openpid-fmt-blackbox", version = "0.1.1" }
-openpid-fmt-csv = { path = "crates/openpid-fmt-csv", version = "0.1.1" }
-openpid-fmt-ardupilot = { path = "crates/openpid-fmt-ardupilot", version = "0.1.1" }
-openpid-dsp = { path = "crates/openpid-dsp", version = "0.1.1" }
-openpid-analysis = { path = "crates/openpid-analysis", version = "0.1.1" }
-openpid-sim = { path = "crates/openpid-sim", version = "0.1.1" }
+openpid-core = { path = "crates/openpid-core", version = "0.1.2" }
+openpid-fmt-blackbox = { path = "crates/openpid-fmt-blackbox", version = "0.1.2" }
+openpid-fmt-csv = { path = "crates/openpid-fmt-csv", version = "0.1.2" }
+openpid-fmt-ardupilot = { path = "crates/openpid-fmt-ardupilot", version = "0.1.2" }
+openpid-dsp = { path = "crates/openpid-dsp", version = "0.1.2" }
+openpid-analysis = { path = "crates/openpid-analysis", version = "0.1.2" }
+openpid-sim = { path = "crates/openpid-sim", version = "0.1.2" }
 rustfft = "6.4"
 eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
 egui_plot = "0.38"
