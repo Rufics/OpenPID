@@ -1,97 +1,164 @@
 # OpenPID
 
-Кросплатформенний інструмент на Rust для аналізу blackbox‑логів політних контролерів і допомоги в налаштуванні PID та фільтрів (функціональний орієнтир — PIDtoolbox / PIDtoolbox Pro, код — повністю власний). Ліцензія — MIT.
-
-## Стан
+**Blackbox log analysis for tuning flight controllers.** Open a Betaflight,
+EmuFlight, Rotorflight, INAV or ArduPilot log and see what the quad is doing:
+noise spectra, step response, filter and motor behaviour, and rule-based
+tuning advice with the evidence behind it. Desktop GUI and a scriptable CLI,
+written in Rust, MIT licensed.
 
 [![CI](https://github.com/Rufics/OpenPID/actions/workflows/ci.yml/badge.svg)](https://github.com/Rufics/OpenPID/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Rufics/OpenPID?display_name=tag)](https://github.com/Rufics/OpenPID/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](rust-toolchain.toml)
 
-Фази 0–3 плану (`docs/DESIGN.md` §12) реалізовані: фундамент, паритет з PIDtoolbox free і Pro, рекомендації з доказами; відкриті лише формати без зразків логів і доступ до пристрою (ADR‑0014):
+![Step response with verdicts](docs/screenshots/step.png)
 
-- `openpid-fmt-ardupilot` — декодер ArduPilot DataFlash (`.bin`), див. `docs/ARDUPILOT.md`.
-- `openpid-core` — доменна модель (`FlightSession`, `Channel`, `ChannelId`, `Series`, `Timebase`, `Settings`) і trait‑и розширення (`LogFormat`, `FirmwareProfile`, `Analysis`).
-- `openpid-fmt-blackbox` — власний декодер бінарного Blackbox (усі кодування та предиктори, I/P/S/G/H/E‑кадри, валідація, ресинхронізація, rollover часу, події) та профілі прошивок Betaflight, EmuFlight, Rotorflight, INAV (базовий) і generic.
-- `openpid-fmt-csv` — читання CSV‑експорту `blackbox_decode`.
-- `openpid-dsp` — FFT‑обгортка, вікна, Welch PSD, STFT, деконволюція Вінера, ресемплінг; кожна функція звірена з фікстурами NumPy/SciPy (`tests/reference`, генератор `tools/reference/make_fixtures.py`).
-- `openpid-analysis` — step response (деконволюція setpoint → gyro), PSD, heatmap freq×throttle та freq×time. Рекомендатор (фаза 3): правила з явними доказами (overshoot → більше D, пік без notch → notch, запас над gyro LPF → вища частота зрізу), кожна пропозиція з поясненням і впевненістю; вкладка Advice у GUI та `openpid run recommend`; експорт у Betaflight CLI.
-- `openpid-cli` — `openpid info`, `openpid decode`, `openpid run`, `openpid sliders`.
-- `openpid-app` — десктопний GUI (`openpid-gui`, egui/eframe): log viewer з вибором епохи, step response, спектр, heatmap‑и freq×throttle і freq×time (з програвачем спектра по стовпцях STFT, синхронним із курсором log viewer), 3D‑поверхня freq×throttle×amplitude з RPM‑overlay (програмне проєктування, без GPU‑залежностей), PID‑слайдери Betaflight (simplified tuning: позиції з логу → гейни, порівняння з фактичними, готові CLI‑команди), діагностика; до 8 логів одночасно (слоти A…H з власними кольорами, видимістю і solo) для порівняння; аналізи у фоновому потоці з кешем; touch‑режим (вмикається автоматично при першому дотику); інтерфейс англійською або українською (Settings → Language), темна і світла теми.
+## What it does
 
-Подальший план — у [`docs/DESIGN.md`](docs/DESIGN.md) (§12).
+- **Step response**: setpoint-to-gyro deconvolution per axis, with verdicts
+  (rise, delay, overshoot, settling, final value) judged against Freestyle,
+  Racing or Cinematic targets, and a target band on the plot.
+- **Noise**: Welch spectra with automatic peak markers, frequency × throttle
+  and frequency × time heatmaps, a 3D surface, a player that steps through the
+  spectrum over time, and an RPM overlay of the motor harmonics.
+- **Filters**: Filter Sim runs the unfiltered gyro through the modelled filter
+  chain (lowpass, dynamic notch, RPM filter) so you can try new settings
+  without flying; Motor noise lists every motor's harmonics on the gyro; the
+  motor speed is estimated from the noise when eRPM is not logged.
+- **Advice**: tuning rules with explicit evidence (overshoot → more D, an
+  uncovered peak → a notch, headroom above the gyro LPF → a higher cutoff),
+  each proposal with its rationale and confidence, exported as Betaflight CLI
+  `set …` commands. PID sliders reproduce Betaflight simplified tuning.
+- **Workflow**: up to eight logs side by side (A…H), an analysis window per
+  log with automatic take-off/landing trim, a log check that says what each
+  log is fit for, `diff` of the settings between two logs, projects that save
+  the whole view, PNG and JSON export, keyboard shortcuts, touch mode, a
+  first-run tour, English and Ukrainian interface.
 
-## Збірка та використання
+OpenPID is inspired by the PIDtoolbox workflow but shares no code with it:
+the decoder, DSP and analyses are written from the published format and
+algorithm descriptions and validated against NumPy/SciPy references and the
+official `blackbox_decode` output.
+
+## Supported logs
+
+| Firmware | Format | Notes |
+|---|---|---|
+| Betaflight 4.2 … 2026.x | Blackbox binary (`.bbl`, `.bfl`, `.txt`), `blackbox_decode` CSV | all encodings and predictors, every frame type, resync after corruption; `gyroUnfilt`, `eRPM`, `debug_mode GYRO_SCALED`, high-resolution logs |
+| EmuFlight, Rotorflight | Blackbox binary | own firmware profiles |
+| INAV | Blackbox binary | basic profile |
+| ArduPilot (Copter, Plane, QuadPlane) | DataFlash (`.bin`) | IMU batch sampler for the raw gyro, ESC telemetry for motor rpm; see [docs/ARDUPILOT.md](docs/ARDUPILOT.md) |
+
+Format details per Betaflight version are in
+[docs/BLACKBOX-VERSIONS.md](docs/BLACKBOX-VERSIONS.md).
+
+## Install
+
+**Binaries**: download the archive for your platform from the
+[latest release](https://github.com/Rufics/OpenPID/releases/latest)
+(`openpid-vX.Y.Z-<target>.tar.gz` for Linux and macOS, `.zip` for Windows).
+Each one holds `openpid-gui` (desktop) and `openpid` (CLI).
+
+**From source** (the pinned Rust toolchain is installed automatically by
+`rustup` through `rust-toolchain.toml`):
 
 ```sh
-git lfs install && git lfs pull        # тестові логи (tests/logs) зберігаються в Git LFS
+git clone https://github.com/Rufics/OpenPID.git
+cd OpenPID
 cargo build --release
-./target/release/openpid info  path/to/LOG.BFL            # огляд сесій, прошивки, частот, каналів
-./target/release/openpid info  path/to/LOG.BFL --json     # те саме у JSON
-./target/release/openpid decode path/to/LOG.BBL --session 1 --out log1.csv   # сирі цілі, як blackbox_decode
-./target/release/openpid decode path/to/LOG.BBL --scaled                     # канонічні канали у фізичних одиницях
-./target/release/openpid run step path/to/LOG.BBL --axis pitch --epoch 5..60   # step response (JSON)
-./target/release/openpid run psd  path/to/LOG.BBL --channel gyro.raw.roll      # Welch PSD
-./target/release/openpid run thr-heatmap path/to/LOG.BBL                       # freq × throttle
-./target/release/openpid run stft path/to/LOG.BBL --channel pid.d.roll         # freq × time
-./target/release/openpid sliders path/to/LOG.BBL --set simplified_d_gain=90     # PID-слайдери Betaflight
-./target/release/openpid diff before.BBL after.BBL [--cli]                       # що змінилось у налаштуваннях; --cli дає `set …` для CLI
-./target/release/openpid run recommend path/to/LOG.BBL --cli                     # правила тюнінгу з доказами → `set …` для Betaflight CLI
-./target/release/openpid info path/to/00000042.BIN                              # ArduPilot DataFlash — той самий набір команд
+./target/release/openpid-gui         # desktop
+./target/release/openpid --help      # CLI
 ```
 
-### GUI
+The test logs under `tests/logs/` live in Git LFS; they are only needed to run
+the test suite (`git lfs install && git lfs pull`).
+
+## Quick start
+
+**GUI.** Start `openpid-gui`, drop a log into the window (or use *Open sample
+log* for a synthetic flight), and take the seven-step tour. Tabs: Log viewer,
+Step response, Spectrum, Freq × throttle, Freq × time, Surface 3D, Filter
+Sim, Motor noise, Advice, PID sliders, Diagnostics, Settings. Every control is
+described in the [user guide](docs/USER-GUIDE.md).
 
 ```sh
-cargo run --release -p openpid-app                # або ./target/release/openpid-gui [logA] [logB]
+openpid-gui flight.bbl                      # one log
+openpid-gui before.bbl after.bbl --tab step # two logs to compare, on a tab
+openpid-gui session.openpid.json            # a saved project
 ```
 
-Повний опис кожної вкладки, параметрів і робочого процесу A/B — у
-[посібнику користувача](docs/USER-GUIDE.md).
+**CLI.** Every analysis of the GUI is a command that prints JSON (or a PNG for
+the heatmaps), so it fits in scripts and notebooks:
+
+```sh
+openpid info flight.bbl                                   # sessions, firmware, rates, channels, log check
+openpid run step flight.bbl --axis pitch --epoch auto     # step response, take-off and landing trimmed
+openpid run psd flight.bbl --channel gyro.raw.roll        # Welch spectrum
+openpid run thr-heatmap flight.bbl --png throttle.png     # frequency x throttle
+openpid run filter-sim flight.bbl --set lpf1_hz=120       # what if the gyro lowpass moved to 120 Hz
+openpid run recommend flight.bbl --cli                    # tuning advice as Betaflight `set …` commands
+openpid sliders flight.bbl --set simplified_d_gain=90     # Betaflight simplified tuning
+openpid diff before.bbl after.bbl --cli                   # settings that changed, as CLI commands
+openpid decode flight.bbl --session 1 --out log1.csv      # raw CSV like blackbox_decode
+```
+
+`openpid --help` lists every command and option.
+
+## Screenshots
+
+<details>
+<summary>Log viewer, heatmaps, 3D surface, Filter Sim, Motor noise, Advice, sliders</summary>
 
 ![Log viewer](docs/screenshots/log.png)
-![Step response](docs/screenshots/step.png)
+![Several logs at once](docs/screenshots/slots-step.png)
 ![Freq × throttle](docs/screenshots/throttle.png)
+![Freq × time](docs/screenshots/time.png)
 ![Surface 3D](docs/screenshots/surface.png)
-![Advice](docs/screenshots/advice.png)
-![Log viewer, українською](docs/screenshots/log-ua.png)
 ![Filter Sim](docs/screenshots/filter.png)
 ![Motor noise](docs/screenshots/motors.png)
+![Advice](docs/screenshots/advice.png)
 ![PID sliders](docs/screenshots/sliders.png)
+![Start screen](docs/screenshots/start.png)
+![Tour](docs/screenshots/tour-3.png)
 
-Файли відкриваються кнопками «Open A…/Open B…» або перетягуванням у вікно. У Log viewer клік/тап по графіку ставить курсор, кнопки «start = cursor»/«end = cursor» задають епоху аналізу; масштабування — колесо або pinch (горизонтальний pinch масштабує лише час, вертикальний — лише амплітуду), панорамування — перетягування, подвійний клік/тап скидає масштаб; у touch‑режимі палець, що лежить на графіку ~0,6 с, ставить курсор, а контроли мають ≥ 44 pt. Усі обчислення виконуються у фоновому потоці, результати кешуються за параметрами.
+</details>
 
-## Тести
+## Documentation
 
-```sh
-cargo test --workspace            # unit, golden, конформанс, стійкість до пошкоджень
-OPENPID_UPDATE_GOLDEN=1 cargo test -p openpid-fmt-blackbox --test fixtures   # оновити golden‑файли після свідомої зміни
-OPENPID_FUZZ_SECONDS=600 cargo test -p openpid-fmt-blackbox --release --test fuzz -- --ignored fuzz_long   # мутаційний фаззинг декодера (ADR‑0013)
-python3 -I tools/reference/make_fixtures.py   # перегенерувати фікстури NumPy/SciPy (потрібні numpy, scipy)
-cargo bench -p openpid-analysis --bench analyses   # таймінги декодера й аналізів (без залежностей, лише звіт)
-```
+| Document | What is in it |
+|---|---|
+| [User guide](docs/USER-GUIDE.md) | every tab, parameter and workflow, with screenshots; CLI equivalents |
+| [Design](docs/DESIGN.md) | architecture, crates, data model, the roadmap (§12) |
+| [Architecture decisions](docs/adr/) | ADRs: minimal dependencies, own decoder, numeric validation, headless GUI tests, fuzzing, … |
+| [UX design notes](docs/design/) | one note per feature: problem, options with scores, decision, requirements, acceptance |
+| [Blackbox versions](docs/BLACKBOX-VERSIONS.md) | what changed between Betaflight versions and which logs cover it |
+| [ArduPilot](docs/ARDUPILOT.md) | how DataFlash messages map to channels and settings |
+| [Style](docs/STYLE.md) | code style (adapted Google Rust Style Guide, enforced by clippy) |
+| [Process](docs/PROCESS.md) | backlog, milestones, sprints, Definition of Done |
+| [Releasing](docs/RELEASING.md) | release-plz, tags, binaries |
+| [Test logs](tests/logs/README.md) | where the fixtures come from |
 
-Орієнтовні таймінги (release, один потік, ноутбучний x86‑64; CI друкує свою таблицю
-у summary job‑а `benchmarks`): декодер Betaflight 30–47 МБ/с (лог 8 кГц × 3 хв ≈ 40 МБ —
-близько секунди), на сесії 40 с @ 1 кГц: step response 22 мс, PSD 1 мс, freq×throttle
-4 мс, freq×time 8 мс, Filter Sim 46 мс, RPM‑естиматор 13 мс, motor noise 5 мс
-(ціль DESIGN §11 — < 2 с на аналіз); mesh 3D‑поверхні для сітки 100 × 1000 — 3 мс
-(ціль #26 — 60 fps).
+## Contributing
 
+Issues and pull requests are welcome. The short version of
+[CONTRIBUTING.md](CONTRIBUTING.md):
 
-Якщо поруч із логом у `tests/logs/` покласти `<лог>.<сесія>.csv`, згенерований офіційним `blackbox_decode --index <сесія>`, тест `csv_conformance` порівняє наш сирий декод із ним поле в поле.
+- Every PR references an issue (`Closes #N` or `Part of #N`); create one first
+  if there is none.
+- Commits and PR titles follow [Conventional Commits](https://www.conventionalcommits.org/);
+  PRs are squash-merged.
+- Before pushing: `cargo fmt --all -- --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace`, `cargo deny check`. CI repeats this on Linux,
+  macOS and Windows with a 90 % line-coverage gate, and it never stays red.
+- New dependencies need an ADR; the PIDtoolbox code (GPLv3) is never copied.
 
-## Якість і процес
+Architecture at a glance: `openpid-core` (data model and extension traits),
+`openpid-fmt-*` (decoders), `openpid-dsp` (FFT, spectra, deconvolution),
+`openpid-analysis` (analyses and the recommender), `openpid-sim` (synthetic
+logs and filter models), `openpid-cli`, `openpid-app` (egui desktop).
 
-- Стиль коду — адаптований Google Rust Style Guide: [`docs/STYLE.md`](docs/STYLE.md); більшість правил перевіряє clippy (`missing_docs`, `unwrap_used`, `wildcard_imports`, `pedantic`, …) з `-D warnings`.
-- Робочий процес, Conventional Commits, релізи: [`CONTRIBUTING.md`](CONTRIBUTING.md) і [`docs/RELEASING.md`](docs/RELEASING.md). `master` захищена ruleset‑ом (`.github/rulesets/master.json`): лише PR зі squash, зелені перевірки, схвалення code owner.
-- CI (`.github/workflows/ci.yml`): fmt, clippy, rustdoc, typos, тести на Linux/macOS/Windows, покриття ≥ 90 % рядків усього workspace (job `coverage`; GUI тестується headless через `egui_kittest`), cargo‑deny, артефакти бінарників для трьох ОС, SonarCloud (коли є `SONAR_TOKEN`), перевірка повідомлень комітів і заголовка PR; кеш `Swatinem/rust-cache`. Щотижня `fuzz.yml` ганяє мутаційний фаззер декодера з бюджетом 20 хв. Правило проєкту: CI ніколи не лишається червоним (`CLAUDE.md`).
-- Релізи: release‑plz будує CHANGELOG і версії з Conventional Commits, тег `vX.Y.Z` запускає збірку бінарників у GitHub Release.
+## License
 
-## Документи
-
-- [`docs/DESIGN.md`](docs/DESIGN.md) — дизайн‑проєкт
-- [`docs/adr/`](docs/adr/) — архітектурні рішення
-- [`docs/OPEN-QUESTIONS.md`](docs/OPEN-QUESTIONS.md) — питання та ухвалені рішення
-- [`docs/PROCESS.md`](docs/PROCESS.md) — процес: backlog, milestones, спринти, Definition of Done
-- [`docs/ARDUPILOT.md`](docs/ARDUPILOT.md) — як лог ArduPilot DataFlash відображається на канали й налаштування
-- [`docs/BLACKBOX-VERSIONS.md`](docs/BLACKBOX-VERSIONS.md) — відмінності формату між версіями Betaflight і покриття логами
-- [`tests/logs/README.md`](tests/logs/README.md) — походження тестових логів
+[MIT](LICENSE). PIDtoolbox is a separate project under its own licence; its
+name is used here only to describe the workflow OpenPID is modelled on.

@@ -1,9 +1,9 @@
-# OpenPID — правила для роботи з репозиторієм
+# OpenPID — rules for working in this repository
 
-- **CI ніколи не залишати червоним.** Після кожного push перевіряти статус GitHub Actions; якщо червоний — виправляти негайно, перш ніж братися за іншу роботу. Перед push локально проганяти `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo deny check` (встановити: `cargo install cargo-deny --locked`).
-- Toolchain закріплено у `rust-toolchain.toml`; CI використовує ту саму версію. Оновлювати версію свідомо, окремим комітом, разом із виправленням нових lint-ів.
-- Нові залежності — лише через ADR (`docs/adr/`); dev-залежності мають бути чистим Rust із ліцензією, дозволеною в `deny.toml`.
-- Мова документів — українська, код і коментарі — англійською.
-- Код PIDtoolbox (GPLv3) не копіювати; алгоритми реалізовувати за описом.
-- **Кожен PR посилається на issue** (`Closes #N` або `Part of #N` в описі). Немає issue — створити його перед PR. CI перевіряє (job `conventional commits`, крок «PR references an issue»).
-- **PR не закривати мовчки.** Якщо PR замінюється іншим (наприклад, заголовок коміту перевищив ліміт commitlint, а force-push заборонений) або скасовується — перед закриттям залишити в ньому коментар із причиною і посиланням на PR-заміну чи issue. Слід має бути в самому PR, а не лише у звіті.
+- **CI is never left red.** After every push check the GitHub Actions status; if it is red, fix it before anything else. Before pushing run locally: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo deny check` (install with `cargo install cargo-deny --locked`).
+- The toolchain is pinned in `rust-toolchain.toml`; CI uses the same version. Bump it deliberately, in its own commit, together with the fixes for any new lints.
+- New dependencies only through an ADR (`docs/adr/`); dev-dependencies must be pure Rust with a licence allowed by `deny.toml`.
+- **The repository language is English** for everything: code, comments, documents, README, PR and issue text. Documents that are still in Ukrainian are translated step by step (separate issues); new documents are written in English from the start. The interface translation (`i18n.rs`) is a product feature and stays.
+- Never copy PIDtoolbox code (GPLv3); implement the algorithms from their descriptions.
+- **Every PR references an issue** (`Closes #N` or `Part of #N` in the description). No issue yet — create it before the PR. CI checks this (job `conventional commits`, step "PR references an issue").
+- **No PR is closed silently.** When a PR is replaced by another one (for example the commit header exceeded the commitlint limit and force-push is not allowed) or abandoned, leave a comment with the reason and a link to the replacement PR or issue before closing it. The trail belongs in the PR itself, not only in a report.
