@@ -1,7 +1,7 @@
 # Fuzzing the decoders
 
 Coverage-guided fuzzing with [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz)
-(libFuzzer), ADR-0015. This directory is a separate package, excluded from the
+(libFuzzer), ADR-0013. This directory is a separate package, excluded from the
 workspace: `libfuzzer-sys` and the nightly toolchain never reach the shipped
 binaries, the workspace lock file or `cargo deny`.
 
@@ -24,9 +24,14 @@ rustup toolchain install nightly          # once
 cargo install cargo-fuzz --locked         # once
 git lfs pull                              # the test logs seed the corpus
 sh fuzz/seed.sh                           # fuzz/corpus/<target>/ from tests/logs
-cargo +nightly fuzz run blackbox_open -- -max_total_time=600 -timeout=10
+cargo +nightly fuzz run blackbox_open -- -max_total_time=600 -timeout=10 -dict=fuzz/dictionaries/blackbox.dict
 cargo +nightly fuzz list
 ```
+
+The dictionaries under `fuzz/dictionaries/` carry the structural knowledge of
+the formats (frame markers, header keys, message names, interesting numbers),
+so libFuzzer reaches the header and frame logic without guessing bytes:
+`blackbox.dict` for the two Blackbox targets, `ardupilot.dict`, `csv.dict`.
 
 A crash is written to `fuzz/artifacts/<target>/crash-<hash>`; reproduce it with
 `cargo +nightly fuzz run <target> fuzz/artifacts/<target>/crash-<hash>`, then

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-# cargo-fuzz targets: a separate package on nightly with libfuzzer-sys (ADR-0015)
+# cargo-fuzz targets: a separate package on nightly with libfuzzer-sys (ADR-0013)
 exclude = ["fuzz"]
 
 [workspace.package]

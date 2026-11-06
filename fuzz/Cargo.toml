@@ -1,4 +1,4 @@
-# Coverage-guided fuzzing of the decoders with cargo-fuzz / libFuzzer (ADR-0015).
+# Coverage-guided fuzzing of the decoders with cargo-fuzz / libFuzzer (ADR-0013).
 #
 # This package is excluded from the workspace on purpose: it depends on
 # `libfuzzer-sys` (the C++ libFuzzer runtime) and runs on a nightly toolchain,
