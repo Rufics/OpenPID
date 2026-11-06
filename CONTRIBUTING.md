@@ -46,3 +46,5 @@ cargo llvm-cov --workspace --fail-under-lines 90   # cargo install cargo-llvm-co
 ## Процес
 
 Backlog, milestones за фазами, спринти й Definition of Ready/Done описані в [`docs/PROCESS.md`](docs/PROCESS.md). **Кожен PR обов'язково посилається на issue**: `Closes #N` (закриває) або `Part of #N` (частина епіку) в описі PR. Немає issue — спочатку створіть його (Context / Scope / Acceptance). CI перевіряє це кроком «PR references an issue» job‑а `conventional commits`; PR від ботів (release‑plz, Dependabot) звільнені.
+
+**PR не закривають мовчки.** Якщо PR замінюється новим (типовий випадок: заголовок коміту довший за 100 символів commitlint, а force‑push у репозиторії заборонений, тож зміну збирають заново в новій гілці) або скасовується, перед закриттям у ньому пишуть коментар із причиною і посиланням на PR‑заміну чи issue. Так історія лишається в самому PR.

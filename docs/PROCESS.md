@@ -13,6 +13,7 @@
 | Increment | squash‑merge у `master` → release‑plz → тег і реліз із бінарниками | `docs/RELEASING.md` |
 | Definition of Done | нижче | кожне issue має цей блок |
 | Зв'язок PR ↔ issue | обов'язковий: `Closes #N` / `Part of #N` в описі PR | крок «PR references an issue» у CI; у ruleset `master` — як required status check |
+| Закриття PR без злиття | лише з коментарем: причина + посилання на PR‑заміну або issue | вручну; приклад — #107 → #110 |
 
 ### Milestones
 
