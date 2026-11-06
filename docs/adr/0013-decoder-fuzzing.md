@@ -65,7 +65,32 @@ Blackbox targets call exactly these. Line coverage of
 union of the two cargo-fuzz targets after 4 minutes each on the seeded corpus
 with the dictionary (one laptop core):
 
-COMPARISON_TABLE
+| File (`src/…`) | Old harness, lines hit | cargo-fuzz corpus, lines hit |
+|---|---:|---:|
+| `encoding.rs` | 165 | 186 |
+| `headers.rs` | 159 | 163 |
+| `lib.rs` | 99 | 99 |
+| `parser.rs` | 460 | 497 |
+| `predictor.rs` | 32 | 34 |
+| `profiles/common.rs` | 431 | 440 |
+| `profiles/inav.rs` | 156 | 162 |
+| `profiles/rotorflight.rs` | 81 | 82 |
+| `profiles/betaflight.rs`, `emuflight.rs`, `generic.rs`, `mod.rs`, `reader.rs`, `session.rs` | 17 / 25 / 15 / 9 / 49 / 166 | the same |
+| **Total** | **1864** | **1944** |
+
+Functions hit: 206 by the old harness, 209 by the corpus, none hit by the old
+harness only. One line is hit by the old harness only (a closing brace in
+`profiles/common.rs`, a region-attribution difference); 81 lines are hit by the
+corpus only, mostly in `parser.rs` and `encoding.rs` (frame bodies the
+structure-blind mutators never assembled). The corpus was measured by replaying
+its 2787 files through the same entry points under cargo-llvm-cov, so both
+sides use one instrumentation; the first attempt that compared cargo-llvm-cov
+with `cargo fuzz coverage` directly showed ±90 lines of noise from inlining
+differences and was discarded.
+
+The dictionary matters: without it the same four minutes reached 1860 lines and
+missed the Rotorflight custom-string event; the event tokens added to
+`blackbox.dict` closed that gap.
 
 ## Consequences
 
