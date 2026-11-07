@@ -1,5 +1,5 @@
 # Coverage-guided fuzzing of the decoders with cargo-fuzz / libFuzzer
-# (fuzz/, ADR-0015). Every target runs weekly with a time budget, on a manual
+# (fuzz/, ADR-0013). Every target runs weekly with a time budget, on a manual
 # dispatch, and for a minute on pull requests that touch a decoder crate or
 # the fuzz package. Crashing inputs are uploaded as an artifact; the failure
 # names the file that reproduces them with `cargo +nightly fuzz run <target> <file>`.
@@ -67,10 +67,12 @@ jobs:
         env:
           # a minute on pull requests, the input (or 20 minutes) otherwise
           BUDGET: ${{ github.event_name == 'pull_request' && '60' || github.event.inputs.seconds || '1200' }}
+          DICT: ${{ startsWith(matrix.target, 'blackbox') && 'blackbox' || startsWith(matrix.target, 'ardupilot') && 'ardupilot' || 'csv' }}
         run: |
-          echo "target ${{ matrix.target }}, budget $BUDGET s" >> "$GITHUB_STEP_SUMMARY"
+          echo "target ${{ matrix.target }}, budget $BUDGET s, dictionary $DICT" >> "$GITHUB_STEP_SUMMARY"
           cargo +${{ env.NIGHTLY_TOOLCHAIN }} fuzz run ${{ matrix.target }} -- \
-            -max_total_time="$BUDGET" -timeout=10 -rss_limit_mb=2048 2>&1 | tee fuzz.log
+            -max_total_time="$BUDGET" -timeout=10 -rss_limit_mb=2048 \
+            -dict="$PWD/fuzz/dictionaries/$DICT.dict" 2>&1 | tee fuzz.log
           grep -E '^#[0-9]+ +DONE|^Done ' fuzz.log >> "$GITHUB_STEP_SUMMARY" || true
       - name: Crashing inputs
         if: failure()

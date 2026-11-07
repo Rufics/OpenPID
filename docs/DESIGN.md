@@ -258,7 +258,7 @@ An own implementation from the public specification (Betaflight "Blackbox Loggin
 - **Container**: one file → N logs, separated by the header marker `H Product:Blackbox flight data recorder by Nicholas Sherlock`. Supports `.BBL/.BFL/.TXT` and SD-card dumps with garbage between the logs.
 - **Headers**: `H Field I name/signed/predictor/encoding`, `H Field P predictor/encoding`, `H Field S …`, `H Field G/H …`, `I interval`, `P interval`, `P ratio`, `Data version`, `minthrottle`, `vbatref`, `gyro_scale`, `motorOutput` and every other one are kept raw and handed to the `FirmwareProfile`.
 - **Frames**: `I` (intra), `P` (inter), `S` (slow), `G`/`H` (GPS), `E` (events). Predictors 0–10, encodings 0–10 (SignedVB, UnsignedVB, Neg14, EliasDelta u/s, TAG8_8SVB, TAG2_3S32, TAG8_4S16, Null, TAG2_3SVariable). Every encoding is a separate function with property tests (an encoder in the tests → decoder → identity).
-- **Robustness**: frame validation by the next byte (it must start a known frame), monotonicity checks of `loopIteration`/`time`, resync at the next `I` frame, corruption statistics in `Diagnostics`. Fuzzing of the decoder is mandatory because the input is untrusted (cargo-fuzz in the separate `fuzz/` package, ADR-0015; a stable smoke test with structure-aware mutations in every CI build, ADR-0013).
+- **Robustness**: frame validation by the next byte (it must start a known frame), monotonicity checks of `loopIteration`/`time`, resync at the next `I` frame, corruption statistics in `Diagnostics`. Fuzzing of the decoder is mandatory because the input is untrusted (cargo-fuzz in the separate `fuzz/` package with format dictionaries, ADR-0013).
 - **Events**: sync beep, inflight adjustment, logging resume, disarm, flight-mode flags → `Event`.
 - **Output**: `i64` columns that become `Channel`s with `f64` values and units after the profile mapping (the scale is applied once, in `f64`, without intermediate rounding).
 
@@ -410,7 +410,7 @@ None of these parts needs a change in `core`: all of them are new implementation
 | `thiserror` | error types | only a derive macro; possible without it |
 | `clap` (CLI only) | argument parsing | optional; replaceable by a hand-written parser |
 
-Dev only: `proptest`, `criterion`, `insta` (snapshots); `cargo-fuzz` with `libfuzzer-sys` only in the separate `fuzz/` package (ADR-0015). Everything else is added only through an ADR. `cargo deny` checks licences (allow: MIT/Apache-2.0/BSD/Zlib/MPL-2.0, aligned with Q1) and duplicates.
+Dev only: `proptest`, `criterion`, `insta` (snapshots); `cargo-fuzz` with `libfuzzer-sys` only in the separate `fuzz/` package (ADR-0013). Everything else is added only through an ADR. `cargo deny` checks licences (allow: MIT/Apache-2.0/BSD/Zlib/MPL-2.0, aligned with Q1) and duplicates.
 
 ---
 
@@ -420,7 +420,7 @@ Dev only: `proptest`, `criterion`, `insta` (snapshots); `cargo-fuzz` with `libfu
 - **Reference**: `tools/reference/*.py` generates fixtures (JSON) for step / PSD / heatmap on synthetic signals and on the reference logs; the Rust tests compare with tolerances.
 - **Conformance**: our decoder against the `blackbox_decode` CSV on `tests/logs/*` (every channel, every frame).
 - **Golden**: the CLI output on the reference logs is pinned in `tests/golden`; an algorithm change is a deliberate golden update described in the PR.
-- **Fuzz**: every decoder entry point with cargo-fuzz / libFuzzer (`fuzz/`, ADR-0015): weekly with a time budget and for a minute on decoder PRs (`fuzz.yml`); plus the stable smoke test of structure-aware mutations (`tests/fuzz.rs`, ADR-0013) in every CI build.
+- **Fuzz**: every decoder entry point with cargo-fuzz / libFuzzer (`fuzz/`, ADR-0013): weekly with a time budget and for a minute on decoder PRs (`fuzz.yml`), with dictionaries of the format tokens.
 - **Bench**: `criterion` for the decoder (MB/s) and for step / heatmap (ms per 60 s of log at 8 kHz).
 - **CI**: a GitHub Actions matrix macOS/Windows/Linux: `fmt`, `clippy -D warnings`, tests, `cargo deny`, release binaries. Performance targets: an 8 kHz × 3 min log decodes in < 1 s, every phase-1 analysis in < 2 s on a laptop.
 - **Lints**: `#![deny(unsafe_code)]` in every crate except `fmt-blackbox` (mmap) with documented `unsafe` blocks; `clippy::pedantic` selectively.

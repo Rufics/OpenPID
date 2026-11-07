@@ -1,0 +1,48 @@
+# libFuzzer dictionary for the CSV target: the blackbox_decode header line,
+# the canonical column keys of a scaled export and numeric edge cases.
+
+# header fragments
+"loopIteration"
+"time (us)"
+"time"
+"gyroADC[0]"
+"gyroADC[1]"
+"gyroADC[2]"
+"setpoint[0]"
+"axisP[0]"
+"axisD[0]"
+"rcCommand[3]"
+"motor[0]"
+"vbatLatest (V)"
+"amperageLatest (A)"
+"flightModeFlags (flags)"
+"debug[0]"
+"gyro.filtered.roll"
+"gyro.raw.roll"
+"setpoint.roll"
+"throttle"
+"motor_rpm.0"
+"custom:"
+
+# separators and line endings
+","
+", "
+"\x0a"
+"\x0d\x0a"
+"\""
+" "
+
+# numbers
+"0"
+"-1"
+"1e308"
+"-1e308"
+"NaN"
+"inf"
+"-inf"
+"1.5"
+"4294967296"
+"18446744073709551616"
+"0x10"
+"1,2,3"
+",,"

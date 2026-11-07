@@ -15,4 +15,4 @@ The golden files (`tests/golden/*.json`) pin the summary of every fixture; an al
 
 ## Consequences
 - Dev-dependencies are not bound by ADR-0001 as strictly as runtime dependencies, but they must be pure Rust with a compatible licence.
-- Fuzzing through `cargo fuzz` is replaced for now by a deterministic robustness test (random corruption of the fixtures in CI); `cargo fuzz` is added when it becomes available in the environment. *Update 2026-11-05:* instead of `cargo fuzz`, an own mutation fuzzer was adopted (ADR-0013). *Update 2026-11-06:* cargo-fuzz after all, in a separate `fuzz/` package outside the workspace that may depend on `libfuzzer-sys` and nightly (ADR-0015); the own fuzzer stays as the stable smoke test.
+- Fuzzing through `cargo fuzz` is replaced for now by a deterministic robustness test (random corruption of the fixtures in CI); `cargo fuzz` is added when it becomes available in the environment. *Update 2026-11-06:* cargo-fuzz in a separate `fuzz/` package outside the workspace that may depend on `libfuzzer-sys` and nightly (ADR-0013, rewritten; it first chose an own mutation fuzzer).

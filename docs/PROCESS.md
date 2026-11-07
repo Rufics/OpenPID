@@ -91,6 +91,8 @@ X = time, group by Status).
 ## Branches and commits
 
 Feature branch → PR → squash-merge into `master` (the ruleset requires `CI OK`).
+The merge itself is the owner's call: the assistant opens the PR, gets CI green
+and reports; nothing is merged without the owner's explicit confirmation.
 The PR title and the commits follow Conventional Commits (`feat(area): …`,
 `fix: …`, `ci: …`); release-plz builds the CHANGELOG and the version from them
 (`docs/RELEASING.md`).
