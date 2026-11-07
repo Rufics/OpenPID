@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/Rufics/OpenPID/compare/v0.1.2...v0.1.3) - 2026-11-07
+
+### Other
+
+- *(fuzz)* fold the cargo-fuzz decision into ADR-0013 and retire the own mutation harness ([#135](https://github.com/Rufics/OpenPID/pull/135))
+- *(fuzz)* move decoder fuzzing to cargo-fuzz in a separate fuzz/ package (ADR-0015) ([#132](https://github.com/Rufics/OpenPID/pull/132))
+
 ## [0.1.2](https://github.com/Rufics/OpenPID/compare/v0.1.1...v0.1.2) - 2026-11-06
 
 ### Added
