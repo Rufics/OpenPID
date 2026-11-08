@@ -9,7 +9,7 @@ The official `blackbox_decode` (C) could not be built in the development environ
 Three layers of checks, independent of each other:
 1. **The specification**: unit tests of the encodings on the examples from "Blackbox Internals" (the UVB, ZigZag and Elias-delta tables) and round trips through own encoders that mirror the firmware logic.
 2. **An independent decoder**: `blackbox-log` 0.4.3 as a *dev-dependency* (it never reaches the binaries), comparing the raw frame values aligned by timestamp. The known deviations of the reference are documented in ADR-0004 and excluded from the comparison.
-3. **The official tool**: the `csv_conformance` test compares our raw decode with the `blackbox_decode` CSV when such files sit next to the fixtures (`<log>.<session>.csv`). The owner or CI generates them on a machine where the tool is built.
+3. **The official tool**: the `csv_conformance` test compares our raw decode with the `blackbox_decode` CSV (`<log>.<session>.csv`, the first 2000 frames, plus `<log>.<session>.rows` with the full frame count). The owner generates them with `tools/blackbox-decode-csv.sh` on a machine where the tool is built; once `tests/logs/blackbox_decode.version` exists, every Blackbox fixture must have a reference for every flight log.
 
 The golden files (`tests/golden/*.json`) pin the summary of every fixture; an algorithm change requires their deliberate update.
 

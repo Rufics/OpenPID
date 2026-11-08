@@ -57,7 +57,10 @@ Committed logs come only from MIT/Apache-compatible sources
 (`tests/logs/README.md`); the rest is fetched by `tools/fetch-community-logs.sh`.
 Golden files are updated deliberately:
 `OPENPID_UPDATE_GOLDEN=1 cargo test -p openpid-fmt-blackbox --test fixtures`;
-the numeric reference fixtures with `python3 -I tools/reference/make_fixtures.py`.
+the numeric reference fixtures with `python3 -I tools/reference/make_fixtures.py`;
+the reference CSVs of the official `blackbox_decode` with
+`sh tools/blackbox-decode-csv.sh <betaflight/blackbox-tools checkout>`
+(after a new Blackbox fixture is added; see `tests/logs/README.md`).
 
 ## Fuzzing
 

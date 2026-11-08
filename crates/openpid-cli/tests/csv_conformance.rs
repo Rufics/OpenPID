@@ -1,8 +1,17 @@
-//! Compare our raw decode with CSV files produced by the official
-//! `blackbox_decode` tool, when such files are present next to the fixtures
-//! (`tests/logs/<name>.<session>.csv`, generated with
-//! `blackbox_decode --index <session> <log>`). Integer-valued columns must
-//! match exactly; unit-converted columns are skipped.
+//! Compare our raw decode with the official Betaflight `blackbox_decode`
+//! (#49). The reference files are made by `tools/blackbox-decode-csv.sh`:
+//!
+//! - `tests/logs/<fixture>.<N>.csv`: the header and the first frames of flight
+//!   log `N` (counted from 0; `blackbox_decode --index` counts from 1);
+//! - `tests/logs/<fixture>.<N>.rows`: how many frames `blackbox_decode` wrote
+//!   for that log in total;
+//! - `tests/logs/blackbox_decode.version`: the decoder commit.
+//!
+//! Integer-valued columns (no unit, or `time (us)`) must match exactly;
+//! unit-converted columns are skipped. The frame count must match the
+//! `.rows` file. Once `blackbox_decode.version` exists, every Blackbox
+//! fixture must have a CSV for every flight log our splitter finds, so a
+//! missing or extra log is a failure, not a silent skip.
 #![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 use openpid_fmt_csv::read_table;
@@ -12,60 +21,97 @@ fn logs_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/logs")
 }
 
-#[test]
-fn raw_decode_matches_blackbox_decode_csv() {
-    let mut compared = 0usize;
-    let entries: Vec<PathBuf> = std::fs::read_dir(logs_dir())
+/// Blackbox fixtures (`.bbl`, `.bfl`, `.txt` in any case).
+fn blackbox_fixtures() -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = std::fs::read_dir(logs_dir())
         .unwrap()
         .flatten()
         .map(|e| e.path())
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "bbl" | "bfl" | "txt"))
+        })
         .collect();
-    for csv_path in entries
-        .iter()
-        .filter(|p| p.extension().is_some_and(|e| e == "csv"))
-    {
-        let stem = csv_path.file_stem().unwrap().to_str().unwrap();
-        let Some((log_name, session)) = stem.rsplit_once('.') else {
-            continue;
-        };
-        let Ok(session) = session.parse::<usize>() else {
-            continue;
-        };
-        let log_path = csv_path.with_file_name(log_name);
-        let Ok(data) = std::fs::read(&log_path) else {
-            continue;
-        };
-        let table = read_table(&std::fs::read(csv_path).unwrap()).unwrap();
+    v.sort();
+    v
+}
+
+/// The reference CSV of flight log `session` of `fixture`, if present.
+fn reference(fixture: &Path, session: usize) -> PathBuf {
+    let name = fixture.file_name().unwrap().to_str().unwrap();
+    fixture.with_file_name(format!("{name}.{session}.csv"))
+}
+
+#[test]
+fn raw_decode_matches_blackbox_decode_csv() {
+    let strict = logs_dir().join("blackbox_decode.version").exists();
+    let mut compared = 0usize;
+    let mut logs_checked = 0usize;
+    let mut missing = Vec::new();
+    for fixture in blackbox_fixtures() {
+        let data = std::fs::read(&fixture).unwrap();
         let segments = openpid_fmt_blackbox::split_logs(&data);
-        let (_, bytes) = segments[session];
-        let mine = openpid_fmt_blackbox::decode(bytes).unwrap();
-        assert_eq!(
-            mine.len(),
-            table.rows.len(),
-            "{}: frame count",
-            csv_path.display()
-        );
-        for (ci, col) in table.columns.iter().enumerate() {
-            let exact =
-                col.unit.is_none() || (col.name == "time" && col.unit.as_deref() == Some("us"));
-            let Some(ours) = mine.column(&col.name) else {
-                continue;
-            };
-            if !exact {
+        for (session, (_, bytes)) in segments.iter().enumerate() {
+            let csv_path = reference(&fixture, session);
+            if !csv_path.exists() {
+                missing.push(csv_path.file_name().unwrap().to_string_lossy().into_owned());
                 continue;
             }
-            for (row, r) in table.rows.iter().enumerate() {
-                let Some(v) = r[ci] else { continue };
-                assert_eq!(
-                    ours[row] as f64,
-                    v,
-                    "{}: row {row} field {}",
-                    csv_path.display(),
-                    col.name
-                );
-                compared += 1;
+            let table = read_table(&std::fs::read(&csv_path).unwrap()).unwrap();
+            let mine = openpid_fmt_blackbox::decode(bytes).unwrap();
+            let rows_path = csv_path.with_extension("rows");
+            let total = std::fs::read_to_string(&rows_path)
+                .map_or(table.rows.len(), |s| s.trim().parse::<usize>().unwrap());
+            assert_eq!(
+                mine.len(),
+                total,
+                "{}: frame count, ours vs blackbox_decode",
+                csv_path.display()
+            );
+            assert!(
+                table.rows.len() <= mine.len(),
+                "{}: more reference rows than frames",
+                csv_path.display()
+            );
+            for (ci, col) in table.columns.iter().enumerate() {
+                let exact =
+                    col.unit.is_none() || (col.name == "time" && col.unit.as_deref() == Some("us"));
+                let Some(ours) = mine.column(&col.name) else {
+                    continue;
+                };
+                if !exact {
+                    continue;
+                }
+                for (row, r) in table.rows.iter().enumerate() {
+                    let Some(v) = r[ci] else { continue };
+                    assert_eq!(
+                        ours[row] as f64,
+                        v,
+                        "{}: row {row} field {}",
+                        csv_path.display(),
+                        col.name
+                    );
+                    compared += 1;
+                }
             }
+            logs_checked += 1;
         }
+        // a reference for a log our splitter does not see is a disagreement too
+        let extra = reference(&fixture, segments.len());
+        assert!(
+            !extra.exists(),
+            "{}: blackbox_decode found more flight logs than our splitter ({})",
+            extra.display(),
+            segments.len()
+        );
     }
-    eprintln!("csv conformance: compared {compared} values");
+    eprintln!("csv conformance: {logs_checked} flight logs, {compared} values compared");
+    if strict {
+        assert!(
+            missing.is_empty(),
+            "blackbox_decode.version is present but these references are missing: {missing:?}"
+        );
+        assert!(compared > 0, "no values compared");
+    }
 }
