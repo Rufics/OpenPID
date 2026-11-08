@@ -37,8 +37,12 @@ part of this directory.
 `<fixture>.<N>.csv` (Git LFS) and `<fixture>.<N>.rows` are the output of the
 official Betaflight `blackbox_decode` for flight log `N` of a Blackbox fixture
 (counted from 0): the header and the first 2000 frames, and the total frame
-count. `blackbox_decode.version` names the decoder commit. They are made by
+count. `blackbox_decode.version` names the decoder commit, and
+`blackbox_decode.skip` lists the fixtures the official decoder cannot process
+(it hangs or writes nothing; the script stops each run after 60 s), with the
+reason: `emuflight-3.7.0-truncated.BFL`, cut mid-frame on purpose and named
+`crashing-LOG00002.BFL` at its source, is one. They are made by
 `sh tools/blackbox-decode-csv.sh <blackbox-tools checkout>` and checked by
 `crates/openpid-cli/tests/csv_conformance.rs` (#49): integer columns must match
 our raw decode exactly, the frame counts must agree, and every flight log our
-splitter finds must have a reference.
+splitter finds must have a reference unless its fixture is in the skip list.

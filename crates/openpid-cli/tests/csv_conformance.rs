@@ -5,13 +5,16 @@
 //!   log `N` (counted from 0; `blackbox_decode --index` counts from 1);
 //! - `tests/logs/<fixture>.<N>.rows`: how many frames `blackbox_decode` wrote
 //!   for that log in total;
-//! - `tests/logs/blackbox_decode.version`: the decoder commit.
+//! - `tests/logs/blackbox_decode.version`: the decoder commit;
+//! - `tests/logs/blackbox_decode.skip`: fixtures the official decoder cannot
+//!   process (it hangs or writes nothing), `<fixture>\t<reason>` per line.
 //!
 //! Integer-valued columns (no unit, or `time (us)`) must match exactly;
 //! unit-converted columns are skipped. The frame count must match the
 //! `.rows` file. Once `blackbox_decode.version` exists, every Blackbox
 //! fixture must have a CSV for every flight log our splitter finds, so a
-//! missing or extra log is a failure, not a silent skip.
+//! missing or extra log is a failure, not a silent skip; the only exception
+//! is a fixture listed in `blackbox_decode.skip`, which must have no CSV.
 #![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 use openpid_fmt_csv::read_table;
@@ -37,6 +40,19 @@ fn blackbox_fixtures() -> Vec<PathBuf> {
     v
 }
 
+/// Fixtures the official decoder cannot process, with the reason.
+fn skipped() -> Vec<(String, String)> {
+    std::fs::read_to_string(logs_dir().join("blackbox_decode.skip"))
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| {
+            let (name, reason) = l.split_once('\t').unwrap_or((l, ""));
+            (name.trim().to_string(), reason.trim().to_string())
+        })
+        .collect()
+}
+
 /// The reference CSV of flight log `session` of `fixture`, if present.
 fn reference(fixture: &Path, session: usize) -> PathBuf {
     let name = fixture.file_name().unwrap().to_str().unwrap();
@@ -46,10 +62,20 @@ fn reference(fixture: &Path, session: usize) -> PathBuf {
 #[test]
 fn raw_decode_matches_blackbox_decode_csv() {
     let strict = logs_dir().join("blackbox_decode.version").exists();
+    let skip = skipped();
     let mut compared = 0usize;
     let mut logs_checked = 0usize;
     let mut missing = Vec::new();
     for fixture in blackbox_fixtures() {
+        let name = fixture.file_name().unwrap().to_str().unwrap().to_string();
+        if let Some((_, reason)) = skip.iter().find(|(n, _)| *n == name) {
+            assert!(
+                !reference(&fixture, 0).exists(),
+                "{name} is listed in blackbox_decode.skip ({reason}) but has a reference CSV"
+            );
+            eprintln!("csv conformance: {name} skipped: {reason}");
+            continue;
+        }
         let data = std::fs::read(&fixture).unwrap();
         let segments = openpid_fmt_blackbox::split_logs(&data);
         for (session, (_, bytes)) in segments.iter().enumerate() {
