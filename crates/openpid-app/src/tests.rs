@@ -120,6 +120,12 @@ fn select_tab(h: &mut H, tab: Tab) {
     assert_eq!(app(h).tab, tab);
 }
 
+/// Open the top bar's "···" menu (Open log, Project, Export, Help, Touch mode).
+fn open_menu(h: &mut H) {
+    h.get_by_label(crate::i18n::tr("Menu")).click();
+    h.run_steps(2);
+}
+
 fn has_label_containing(h: &H, text: &str) -> bool {
     h.query_all_by_label_contains(text).next().is_some()
 }
@@ -233,13 +239,20 @@ fn loads_logs_into_both_slots() {
         .expect("two sessions");
     assert_eq!(b.session, longest, "the longest session is selected");
     assert!(app(&h).status.contains("session(s)"));
-    assert!(has_label_containing(&h, "betaflight-4.2.0.BFL"));
-    assert!(has_label_containing(&h, "Betaflight 4.2.0"));
+    assert!(has_label_containing(&h, "betaflight-4.2.0.BFL"), "chip A");
+    // the dock shows the last log opened, B, with its session picker
+    assert_eq!(app(&h).dock_slot(), Some(Slot::B));
+    assert!(has_label_containing(&h, "Betaflight 4.2.11"));
     assert!(has_label_containing(&h, "Hz"));
     assert!(
         has_label_containing(&h, "session "),
         "slot B offers a session picker"
     );
+    // a click on chip A brings A into the dock
+    h.get_by_label_contains("Slot A:").click();
+    h.run_steps(2);
+    assert_eq!(app(&h).dock_slot(), Some(Slot::A));
+    assert!(has_label_containing(&h, "Betaflight 4.2.0"));
 }
 
 #[test]
@@ -880,11 +893,15 @@ fn sliders_tab_edits_resets_and_prints_cli() {
 fn touch_mode_checkbox_and_touch_events_scale_the_ui() {
     let mut h = harness(Vec::new(), None);
     assert_eq!(h.ctx.zoom_factor(), 1.0);
+    open_menu(&mut h);
     h.get_by_label("Touch mode").click();
     h.step();
     assert!(app(&h).touch_mode);
     h.run_steps(2); // applied at the start of the next frame, zoom one frame later
     assert_eq!(h.ctx.zoom_factor(), 1.25);
+    if h.query_by_label("Touch mode").is_none() {
+        open_menu(&mut h);
+    }
     h.get_by_label("Touch mode").click();
     h.run_steps(3);
     assert!(!app(&h).touch_mode);
@@ -1389,6 +1406,7 @@ fn the_tour_starts_once_on_the_first_log_and_walks_the_tuning_loop() {
     assert!(recent[0].path.ends_with("betaflight-4.2.0.BFL"));
     assert_eq!(recent[0].opened.len(), 10, "YYYY-MM-DD");
     // Help -> Show tour restarts it; Back, Skip and Esc
+    open_menu(&mut h2);
     h2.get_by_label("Help").click();
     h2.run_steps(2);
     h2.get_by_label("Show tour").click();
@@ -1407,6 +1425,7 @@ fn the_tour_starts_once_on_the_first_log_and_walks_the_tuning_loop() {
     h2.get_by_label("Skip").click();
     h2.step();
     assert!(!app(&h2).tour.active);
+    open_menu(&mut h2);
     h2.get_by_label("Help").click();
     h2.run_steps(2);
     h2.get_by_label("Show tour").click();
@@ -1818,6 +1837,7 @@ fn number_keys_ctrl_tab_and_the_help_window() {
     h.key_press(Key::Questionmark);
     h.step();
     assert!(!app(&h).show_help, "? toggles");
+    open_menu(&mut h);
     h.get_by_label("Help").click();
     h.run_steps(2);
     h.get_by_label_contains("Keyboard shortcuts").click();
@@ -1855,6 +1875,7 @@ fn file_shortcuts_ask_for_dialogs_and_close_the_last_slot() {
     assert_eq!(app(&h).dialog, Some(Dialog::ExportPng));
     app_mut(&mut h).dialog = None;
     // the buttons go through the same dialog queue
+    open_menu(&mut h);
     h.get_by_label_contains("Open log").click();
     h.step();
     assert_eq!(app(&h).dialog, Some(Dialog::OpenLog(Slot(2))));
@@ -1961,16 +1982,21 @@ fn every_button_with_a_shortcut_shows_it_in_the_tooltip() {
     run_until(&mut h, idle);
     h.ctx.all_styles_mut(|s| s.interaction.tooltip_delay = 0.0);
     let checks: Vec<(&str, Action)> = vec![
-        ("Open log", Action::OpenLog),
-        ("Touch mode", Action::TouchMode),
         ("Add log", Action::OpenLogNext),
         ("Play", Action::PlayPause),
         ("To start", Action::ToStart),
         ("< step", Action::StepBack),
         ("step >", Action::StepForward),
         ("Step response", Action::Tab(1)),
+        // last: these two are in the top bar's menu, which stays open
+        ("Open log", Action::OpenLog),
+        ("Touch mode", Action::TouchMode),
     ];
     for (label, action) in checks {
+        if ["Open log", "Touch mode"].contains(&label) && h.query_by_label_contains(label).is_none()
+        {
+            open_menu(&mut h);
+        }
         h.get_by_label_contains(label).hover();
         h.run_steps(3);
         let keys = keys_of(&h.ctx, action);
@@ -2196,6 +2222,7 @@ fn language_switch_translates_labels_and_persists() {
     // tab titles, headings, labels, buttons and tooltips all follow
     assert!(h.query_by_label("Налаштування").is_some());
     assert!(h.query_by_label("Вигляд").is_some());
+    open_menu(&mut h);
     assert!(h.query_by_label("Сенсорний режим").is_some());
     assert!(h.query_by_label("Скинути до типових").is_some());
     assert!(h.query_by_label("Settings").is_none());
@@ -2203,7 +2230,11 @@ fn language_switch_translates_labels_and_persists() {
     h.step();
     assert_eq!(app(&h).tab, Tab::LogViewer);
     assert!(has_label_containing(&h, "Слот A"));
-    assert!(h.query_by_label("Слот B: порожній").is_some());
+    assert!(
+        h.query_by_label("Слот B: порожній").is_none(),
+        "an empty slot has no chip"
+    );
+    assert!(h.query_by_label("Додати лог").is_some());
     assert!(has_label_containing(&h, "Канали"));
     // dynamic read-outs keep their units and numbers
     assert!(has_label_containing(&h, " s"));
@@ -2477,7 +2508,8 @@ fn json_export_equals_the_cli_serialisation_and_names_the_file() {
     select_tab(&mut h, Tab::LogViewer);
     assert!(app(&h).current_kind().is_none());
     assert!(app(&h).export_json(Slot::A, &path).is_err());
-    // the Export menu is on the top bar
+    // the Export menu is in the top bar's menu
+    open_menu(&mut h);
     assert!(h.query_by_label("Export").is_some());
     // a cropped PNG of a synthetic frame
     let image = egui::ColorImage::filled([4, 3], egui::Color32::from_rgb(10, 20, 30));
@@ -2633,9 +2665,10 @@ fn project_file_saves_and_restores_the_view() {
     app_mut(&mut h3).open_project(bad);
     assert!(app(&h3).status.contains("not a project file"));
     assert!(app(&h3).loaded(Slot::A).is_some());
+    open_menu(&mut h3);
     assert!(
         h3.query_by_label("Project").is_some(),
-        "menu on the top bar"
+        "in the top bar's menu"
     );
     // a session index past the file falls back to the longest session
     let mut p = saved.clone();
@@ -2670,6 +2703,12 @@ fn step_tab_stacks_the_axes_and_the_panel_collapses() {
         assert!(has_label_containing(&h, pid), "P,I,D,Dm,F {pid}");
     }
     assert!(!app(&h).tools.step_display.raw, "Raw off by default");
+    // Raw draws every window under the mean, in the slot's colour ramp
+    h.get_by_label("Raw").click();
+    h.run_steps(2);
+    assert!(app(&h).tools.step_display.raw);
+    h.get_by_label("Raw").click();
+    h.run_steps(2);
     // collapse with the button: a strip with the reopen button stays inside the window
     h.get_by_label("Hide the control panel").click();
     h.run_steps(2);
@@ -2684,4 +2723,43 @@ fn step_tab_stacks_the_axes_and_the_panel_collapses() {
     h.run_steps(2);
     assert!(app(&h).prefs.panel_open);
     assert!(h.query_by_label("Hide the control panel").is_some());
+}
+
+#[test]
+fn the_shell_keeps_its_height_as_logs_are_added() {
+    // docs/design/app-shell, R4: logs are chips in the one-line top bar and
+    // the timeline sits in a fixed dock, so adding logs never moves the tab
+    let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Step));
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    let one = app(&h).central_rect;
+    for path in [LOG_4_5_1, LOG_2025] {
+        let slot = app_mut(&mut h).next_slot().expect("a free slot");
+        app_mut(&mut h).open(slot, path.into());
+    }
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    assert_eq!(app(&h).loaded_slots().len(), 3);
+    assert_eq!(app(&h).central_rect, one, "the tab area did not move");
+    // three chips; the dock shows the last one opened, a click switches it
+    for s in ["Slot A:", "Slot B:", "Slot C:"] {
+        assert!(has_label_containing(&h, s), "{s}");
+    }
+    assert_eq!(app(&h).dock_slot(), Some(Slot(2)));
+    h.get_by_label_contains("Slot B:").click();
+    h.run_steps(2);
+    assert_eq!(app(&h).dock_slot(), Some(Slot::B));
+    assert!(has_label_containing(&h, "Betaflight 4.5.1"));
+    // the dock's eye hides B from the plots, the chip stays
+    h.get_by_label("hide B").click();
+    h.run_steps(2);
+    assert!(!app(&h).visible_slots().contains(&Slot::B));
+    h.get_by_label("show B").click();
+    h.run_steps(2);
+    assert!(app(&h).visible_slots().contains(&Slot::B));
+    // closing the docked log hands the dock to the first log left
+    h.get_by_label("close B").click();
+    h.run_steps(2);
+    assert_eq!(app(&h).dock_slot(), Some(Slot::A));
+    assert_eq!(app(&h).central_rect, one);
 }

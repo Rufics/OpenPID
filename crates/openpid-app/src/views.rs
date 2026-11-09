@@ -253,34 +253,295 @@ pub(crate) fn panel_width(ui: &Ui, n: usize) -> f32 {
     if n <= 2.0 { w } else { w.max(480.0) }
 }
 
-/// The slot bar: one header row per slot and the "Add log" button
-/// (docs/design/multi-slot, R2).
-pub(crate) fn slot_headers(app: &mut App, ui: &mut Ui) {
-    let top = ui.cursor().top();
+/// The log chips in the top bar (docs/design/app-shell, R4): one chip per
+/// slot and "+" to add a log. The bar keeps its height however many logs
+/// are open; a click picks the log the timeline dock shows.
+pub(crate) fn log_chips(app: &mut App, ui: &mut Ui) {
+    let top_left = ui.cursor().min;
+    let active = app.dock_slot();
+    let compact = app
+        .slots
+        .iter()
+        .filter(|e| !matches!(e.state, SlotState::Empty))
+        .count()
+        > 2;
     for slot in app.slot_ids() {
-        slot_header(app, ui, slot);
-    }
-    let bar = egui::Rect::from_min_max(
-        egui::pos2(ui.max_rect().left(), top),
-        egui::pos2(ui.max_rect().right(), ui.cursor().top()),
-    );
-    app.anchors
-        .insert("slot-bar", bar.intersect(ui.clip_rect()));
-    ui.horizontal(|ui| {
-        let full = app.slots.len() >= Slot::MAX;
-        let button = ui.add_enabled(!full, egui::Button::new(format!("+ {}", tr("Add log"))));
-        if button
-            .on_hover_text(shortcuts::hint(
-                ui.ctx(),
-                tr("open another log to compare (up to 8)"),
-                Action::OpenLogNext,
-            ))
-            .clicked()
-            && let Some(slot) = app.free_slot()
-        {
-            app.dialog = Some(crate::app::Dialog::OpenLog(slot));
+        if matches!(app.slot_state(slot), Some(SlotState::Empty)) {
+            continue;
         }
+        if log_chip(app, ui, slot, active == Some(slot), compact).clicked() {
+            app.dock = Some(slot);
+        }
+    }
+    let full = app.slots.len() >= Slot::MAX;
+    let add = ui.add_enabled(
+        !full,
+        egui::Button::new(RichText::new("+").strong()).min_size(egui::vec2(28.0, 0.0)),
+    );
+    add.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, !full, tr("Add log")));
+    let add_rect = add.rect;
+    if add
+        .on_hover_text(shortcuts::hint(
+            ui.ctx(),
+            tr("Add log: open another log to compare (up to 8), or drop it on the window"),
+            Action::OpenLogNext,
+        ))
+        .clicked()
+        && let Some(slot) = app.free_slot()
+    {
+        app.dialog = Some(crate::app::Dialog::OpenLog(slot));
+    }
+    app.anchors
+        .insert("slot-bar", egui::Rect::from_min_max(top_left, add_rect.max));
+}
+
+/// One log chip: the slot's dot and letter, the file name (only the
+/// active one when more than two logs are open) and the log check's mark.
+fn log_chip(app: &App, ui: &mut Ui, slot: Slot, active: bool, compact: bool) -> egui::Response {
+    let font = egui::FontId::proportional(13.0);
+    let visible = app.slot_entry(slot).is_some_and(|e| e.visible);
+    let (name, mark, accessible) = match app.slot_state(slot) {
+        Some(SlotState::Ready(_)) => {
+            let loaded = app.loaded(slot).expect("ready");
+            let file = loaded
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let stem = loaded
+                .path
+                .file_stem()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let max = if compact { 14 } else { 18 };
+            let short: String = if stem.chars().count() > max {
+                stem.chars().take(max - 1).chain(['…']).collect()
+            } else {
+                stem
+            };
+            let mark = loaded.fitness().map(|f| f.overall);
+            ((!compact || active).then_some(short), mark, file)
+        }
+        Some(SlotState::Loading(p)) => (
+            Some(format!("{}…", tr("loading"))),
+            None,
+            format!("{} {}", tr("loading"), p.display()),
+        ),
+        Some(SlotState::Failed(p, e)) => (
+            None,
+            Some(FitnessLevel::Fail),
+            format!("{} — {e}", p.display()),
+        ),
+        Some(SlotState::Empty) | None => (None, None, tr("empty").to_string()),
+    };
+    let strong = ui.visuals().strong_text_color();
+    let letter = ui
+        .painter()
+        .layout_no_wrap(slot.name().to_string(), font.clone(), strong);
+    let name = name.map(|n| {
+        ui.painter()
+            .layout_no_wrap(n, font.clone(), ui.visuals().text_color())
     });
+    let mut w = 8.0 + 8.0 + 6.0 + letter.size().x + 8.0;
+    if let Some(g) = &name {
+        w += g.size().x + 6.0;
+    }
+    if mark.is_some() {
+        w += 14.0;
+    }
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 26.0), egui::Sense::click());
+    let label = format!("{} {}: {accessible}", tr("Slot"), slot.name());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, active, &label));
+    let v = ui.visuals();
+    let (fill, stroke) = if active {
+        (
+            crate::theme::ACCENT.gamma_multiply(0.22),
+            egui::Stroke::new(1.0, crate::theme::ACCENT.gamma_multiply(0.8)),
+        )
+    } else if resp.hovered() {
+        (v.widgets.hovered.weak_bg_fill, v.widgets.hovered.bg_stroke)
+    } else {
+        (
+            v.widgets.inactive.weak_bg_fill,
+            v.widgets.inactive.bg_stroke,
+        )
+    };
+    let p = ui.painter();
+    p.rect(rect, 6.0, fill, stroke, egui::StrokeKind::Inside);
+    let cy = rect.center().y;
+    let mut x = rect.left() + 8.0;
+    let dot = if visible {
+        slot_color(slot)
+    } else {
+        slot_color(slot).gamma_multiply(0.3)
+    };
+    p.circle_filled(egui::pos2(x + 4.0, cy), 4.0, dot);
+    x += 14.0;
+    let lw = letter.size();
+    p.galley(egui::pos2(x, cy - lw.y / 2.0), letter, strong);
+    x += lw.x + 6.0;
+    if let Some(g) = name {
+        let gs = g.size();
+        p.galley(egui::pos2(x, cy - gs.y / 2.0), g, strong);
+        x += gs.x + 6.0;
+    }
+    if let Some(level) = mark {
+        paint_mark(p, egui::pos2(x + 4.0, cy), level, level_color(level));
+    }
+    resp.on_hover_text(label)
+}
+
+/// Height of the timeline dock's content.
+pub(crate) const DOCK_H: f32 = 84.0;
+
+/// The timeline dock at the bottom (docs/design/app-shell, R4): the
+/// active log's name, firmware, length, rate, session, log check and its
+/// show / solo / close icons over its timeline strip. Returns whether the
+/// epoch or the session changed.
+pub(crate) fn timeline_dock(app: &mut App, ui: &mut Ui) -> bool {
+    let Some(slot) = app.dock_slot() else {
+        return false;
+    };
+    match app.slot_state(slot) {
+        Some(SlotState::Ready(_)) => dock_body(app, ui, slot),
+        Some(SlotState::Loading(p)) => {
+            let text = format!(
+                "{} {}: {} {}",
+                tr("Slot"),
+                slot.name(),
+                tr("loading"),
+                p.display()
+            );
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.add(egui::Label::new(RichText::new(text).color(MUTED)).truncate());
+            });
+            false
+        }
+        Some(SlotState::Failed(p, e)) => {
+            let text = format!("Slot {}: {} — {e}", slot.name(), p.display());
+            ui.add(egui::Label::new(RichText::new(text).color(Color32::LIGHT_RED)).wrap());
+            false
+        }
+        Some(SlotState::Empty) | None => {
+            ui.label(
+                RichText::new(format!("{} {}: {}", tr("Slot"), slot.name(), tr("empty")))
+                    .color(MUTED),
+            );
+            false
+        }
+    }
+}
+
+fn dock_body(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
+    let mut changed = false;
+    let visible = app.slot_entry(slot).is_some_and(|e| e.visible);
+    let mut action: Option<SlotAction> = None;
+    let loaded = app.loaded_mut(slot).expect("ready");
+    ui.horizontal(|ui| {
+        let colour = slot_color(slot);
+        slot_disc(
+            ui,
+            slot,
+            if visible {
+                colour
+            } else {
+                colour.gamma_multiply(0.35)
+            },
+        );
+        let name = loaded
+            .path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        ui.label(RichText::new(name).strong());
+        if let Some(s) = loaded.current() {
+            let meta = [
+                format!(
+                    "{} {}",
+                    s.firmware.vendor.name(),
+                    s.firmware
+                        .version
+                        .map(|v| v.to_string())
+                        .unwrap_or_default()
+                ),
+                format!("{:.1} s", s.timebase.duration_s()),
+                format!("{:.0} Hz", s.timebase.sample_rate_hz()),
+            ];
+            ui.label(RichText::new(meta.join("  ·  ")).color(MUTED));
+        }
+        let n = loaded.sessions.len();
+        if n > 1 {
+            let before = loaded.session;
+            let l = ui.label(RichText::new(tr("session")).color(MUTED));
+            let combo = egui::ComboBox::from_id_salt(("session", slot.name()))
+                .selected_text(format!("session {}", loaded.session))
+                .show_ui(ui, |ui| {
+                    for (i, s) in loaded.sessions.iter().enumerate() {
+                        ui.selectable_value(
+                            &mut loaded.session,
+                            i,
+                            format!("session {i} ({:.1} s)", s.timebase.duration_s()),
+                        );
+                    }
+                });
+            combo.response.labelled_by(l.id);
+            if loaded.session != before {
+                loaded.apply_auto_epoch();
+                changed = true;
+            }
+        }
+        if let Some(f) = loaded.fitness() {
+            fitness_badges(ui, f);
+        }
+        if let Some(s) = loaded.current()
+            && s.diagnostics.corrupt_frames > 0
+        {
+            pill(
+                ui,
+                &format!("{} corrupt frames", s.diagnostics.corrupt_frames),
+                FitnessLevel::Warn,
+            );
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if icon_button(
+                ui,
+                CardIcon::Close,
+                format!("{} {}", tr("close"), slot.name()),
+            )
+            .clicked()
+            {
+                action = Some(SlotAction::Close);
+            }
+            if icon_button(
+                ui,
+                CardIcon::Solo,
+                format!("{} {}", tr("solo"), slot.name()),
+            )
+            .clicked()
+            {
+                action = Some(SlotAction::Solo);
+            }
+            let eye = format!(
+                "{} {}",
+                if visible { tr("hide") } else { tr("show") },
+                slot.name()
+            );
+            if icon_button(ui, CardIcon::Eye(visible), eye).clicked() {
+                action = Some(SlotAction::Visible(!visible));
+            }
+        });
+    });
+    match action {
+        Some(SlotAction::Visible(v)) => app.set_visible(slot, v),
+        Some(SlotAction::Solo) => app.solo(slot),
+        Some(SlotAction::Close) => app.close_slot(slot),
+        None => {}
+    }
+    if app.loaded(slot).is_some() {
+        changed |= timeline_strip(app, ui, slot);
+    }
+    changed
 }
 
 /// Min/max decimation so a line never carries more than ~2 points per pixel.
@@ -330,7 +591,7 @@ pub fn decimate(
 fn level_color(level: FitnessLevel) -> Color32 {
     match level {
         FitnessLevel::Ok => Color32::from_rgb(0, 158, 115),
-        FitnessLevel::Warn => Color32::from_rgb(240, 228, 66),
+        FitnessLevel::Warn => crate::theme::warn(),
         FitnessLevel::Fail => Color32::from_rgb(213, 94, 0),
     }
 }
@@ -344,15 +605,15 @@ fn fitness_badges(ui: &mut Ui, f: &Fitness) {
         .map(|c| format!("{} {}: {}", c.level.marker(), c.title, c.detail))
         .collect::<Vec<_>>()
         .join("\n");
-    ui.label(RichText::new(f.overall.marker()).color(level_color(f.overall)))
-        .on_hover_text(summary.clone());
+    let overall = match f.overall {
+        FitnessLevel::Ok => tr("log ok"),
+        FitnessLevel::Warn => tr("log usable"),
+        FitnessLevel::Fail => tr("log unfit"),
+    };
+    pill(ui, overall, f.overall).on_hover_text(summary);
     for id in ["raw_gyro", "erpm", "sticks"] {
         if let Some(c) = f.check(id) {
-            ui.label(
-                RichText::new(format!("{} {}", c.title, c.level.marker()))
-                    .color(level_color(c.level)),
-            )
-            .on_hover_text(match &c.fix {
+            pill(ui, &c.title, c.level).on_hover_text(match &c.fix {
                 Some(fix) => format!("{}\n{fix}", c.detail),
                 None => c.detail.clone(),
             });
@@ -406,128 +667,139 @@ enum SlotAction {
     Close,
 }
 
-pub(crate) fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
-    match app.slot_state(slot) {
-        Some(SlotState::Empty) | None => {
-            ui.label(
-                RichText::new(format!("{} {}: {}", tr("Slot"), slot.name(), tr("empty")))
-                    .color(MUTED),
-            );
-            false
-        }
-        Some(SlotState::Loading(p)) => {
-            ui.spinner();
-            ui.label(format!(
-                "{} {}: {} {}",
-                tr("Slot"),
-                slot.name(),
-                tr("loading"),
-                p.display()
+/// Paint the mark of a fitness level centred on `c`: a tick, an
+/// exclamation mark or a cross, so the level reads without its colour.
+pub(crate) fn paint_mark(p: &egui::Painter, c: egui::Pos2, level: FitnessLevel, colour: Color32) {
+    let stroke = egui::Stroke::new(1.6, colour);
+    match level {
+        FitnessLevel::Ok => {
+            p.add(egui::Shape::line(
+                vec![
+                    c + egui::vec2(-3.5, 0.0),
+                    c + egui::vec2(-1.0, 2.8),
+                    c + egui::vec2(3.8, -3.2),
+                ],
+                stroke,
             ));
-            false
         }
-        Some(SlotState::Failed(p, e)) => {
-            ui.colored_label(
-                Color32::LIGHT_RED,
-                format!("Slot {}: {} — {e}", slot.name(), p.display()),
+        FitnessLevel::Warn => {
+            p.line_segment(
+                [c + egui::vec2(0.0, -4.0), c + egui::vec2(0.0, 1.2)],
+                stroke,
             );
-            false
+            p.circle_filled(c + egui::vec2(0.0, 3.6), 0.9, colour);
         }
-        Some(SlotState::Ready(_)) => {
-            let mut changed = false;
-            let mut visible = app.slot_entry(slot).is_some_and(|e| e.visible);
-            let mut action: Option<SlotAction> = None;
-            let loaded = app.loaded_mut(slot).expect("ready");
-            ui.horizontal_wrapped(|ui| {
-                ui.label(
-                    RichText::new(format!("{} {}", tr("Slot"), slot.name()))
-                        .color(slot_color(slot))
-                        .strong(),
-                );
-                if ui
-                    .add(egui::Checkbox::without_text(&mut visible))
-                    .on_hover_text(format!("{} {}", tr("show"), slot.name()))
-                    .changed()
-                {
-                    action = Some(SlotAction::Visible(visible));
-                }
-                if ui
-                    .small_button("S")
-                    .on_hover_text(format!("{} {}", tr("solo"), slot.name()))
-                    .clicked()
-                {
-                    action = Some(SlotAction::Solo);
-                }
-                if ui
-                    .small_button("x")
-                    .on_hover_text(format!("{} {}", tr("close"), slot.name()))
-                    .clicked()
-                {
-                    action = Some(SlotAction::Close);
-                }
-                ui.label(
-                    loaded
-                        .path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_default(),
-                );
-                let n = loaded.sessions.len();
-                if n > 1 {
-                    let before = loaded.session;
-                    let l = ui.label(tr("session"));
-                    let combo = egui::ComboBox::from_id_salt(("session", slot.name()))
-                        .selected_text(format!("session {}", loaded.session))
-                        .show_ui(ui, |ui| {
-                            for (i, s) in loaded.sessions.iter().enumerate() {
-                                ui.selectable_value(
-                                    &mut loaded.session,
-                                    i,
-                                    format!("session {i} ({:.1} s)", s.timebase.duration_s()),
-                                );
-                            }
-                        });
-                    combo.response.labelled_by(l.id);
-                    if loaded.session != before {
-                        loaded.apply_auto_epoch();
-                        changed = true;
-                    }
-                }
-                if let Some(s) = loaded.current() {
-                    ui.label(format!(
-                        "{} {}",
-                        s.firmware.vendor.name(),
-                        s.firmware
-                            .version
-                            .map(|v| v.to_string())
-                            .unwrap_or_default()
-                    ));
-                    ui.label(format!(
-                        "{:.1} s @ {:.0} Hz",
-                        s.timebase.duration_s(),
-                        s.timebase.sample_rate_hz()
-                    ));
-                    if let Some(f) = loaded.fitness() {
-                        fitness_badges(ui, f);
-                    }
-                    if s.diagnostics.corrupt_frames > 0 {
-                        ui.colored_label(
-                            Color32::YELLOW,
-                            format!("{} corrupt frames", s.diagnostics.corrupt_frames),
-                        );
-                    }
-                }
-            });
-            match action {
-                Some(SlotAction::Visible(v)) => app.set_visible(slot, v),
-                Some(SlotAction::Solo) => app.solo(slot),
-                Some(SlotAction::Close) => app.close_slot(slot),
-                None => {}
-            }
-            changed |= timeline_strip(app, ui, slot);
-            changed
+        FitnessLevel::Fail => {
+            let d = 3.2;
+            p.line_segment([c + egui::vec2(-d, -d), c + egui::vec2(d, d)], stroke);
+            p.line_segment([c + egui::vec2(-d, d), c + egui::vec2(d, -d)], stroke);
         }
     }
+}
+
+/// A pill: rounded tinted background, the text and the level's mark in its
+/// colour (fitness badges); read out as "raw [ok]".
+fn pill(ui: &mut Ui, text: &str, level: FitnessLevel) -> egui::Response {
+    let colour = level_color(level);
+    let galley =
+        ui.painter()
+            .layout_no_wrap(text.to_string(), egui::FontId::proportional(12.0), colour);
+    let size = egui::vec2(galley.size().x + 28.0, 18.0);
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let label = format!("{text} {}", level.marker());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &label));
+    let p = ui.painter();
+    p.rect_filled(rect, 9.0, colour.gamma_multiply(0.16));
+    p.galley(
+        egui::pos2(rect.left() + 8.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        colour,
+    );
+    paint_mark(
+        p,
+        egui::pos2(rect.right() - 11.0, rect.center().y),
+        level,
+        colour,
+    );
+    resp
+}
+
+/// The small painted icons of a log card.
+#[derive(Clone, Copy)]
+enum CardIcon {
+    /// Shown (`true`) or hidden.
+    Eye(bool),
+    Solo,
+    Close,
+}
+
+/// A frameless 22 px icon button with an accessible name.
+fn icon_button(ui: &mut Ui, icon: CardIcon, name: String) -> egui::Response {
+    let size = egui::vec2(22.0, 22.0);
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
+    let visuals = ui.style().interact(&resp);
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, 5.0, visuals.weak_bg_fill);
+    }
+    let c = rect.center();
+    let colour = if resp.hovered() {
+        visuals.fg_stroke.color
+    } else {
+        MUTED
+    };
+    let stroke = egui::Stroke::new(1.4, colour);
+    let p = ui.painter();
+    match icon {
+        CardIcon::Eye(shown) => {
+            let pts: Vec<egui::Pos2> = (0..=24)
+                .map(|i| {
+                    let t = std::f32::consts::TAU * i as f32 / 24.0;
+                    c + egui::vec2(7.0 * t.cos(), 4.2 * t.sin())
+                })
+                .collect();
+            p.add(egui::Shape::line(pts, stroke));
+            if shown {
+                p.circle_filled(c, 2.2, colour);
+            } else {
+                p.line_segment(
+                    [c + egui::vec2(-7.0, 6.0), c + egui::vec2(7.0, -6.0)],
+                    stroke,
+                );
+            }
+        }
+        CardIcon::Solo => {
+            p.circle_stroke(c, 6.5, stroke);
+            p.circle_filled(c, 2.5, colour);
+        }
+        CardIcon::Close => {
+            let d = 4.5;
+            p.line_segment([c + egui::vec2(-d, -d), c + egui::vec2(d, d)], stroke);
+            p.line_segment([c + egui::vec2(-d, d), c + egui::vec2(d, -d)], stroke);
+        }
+    }
+    resp.on_hover_text(name)
+}
+
+/// The slot letter on a disc in the slot's colour; named "Slot A" for
+/// screen readers.
+fn slot_disc(ui: &mut Ui, slot: Slot, colour: Color32) {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+    resp.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::Role::Label,
+            true,
+            format!("{} {}", tr("Slot"), slot.name()),
+        )
+    });
+    ui.painter().circle_filled(rect.center(), 10.0, colour);
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        slot.name(),
+        egui::FontId::proportional(12.0),
+        Color32::from_rgb(16, 18, 22),
+    );
 }
 
 /// What a drag on a timeline strip moves.
@@ -1073,7 +1345,6 @@ fn viewer_plot_slot(
 }
 
 pub fn log_viewer(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
     ui.separator();
     let session_a: Option<Arc<FlightSession>> = app
         .first_loaded()
@@ -1212,14 +1483,13 @@ pub struct StepViewState {
 pub(crate) fn verdict_color(level: VerdictLevel) -> Color32 {
     match level {
         VerdictLevel::Ok => Color32::from_rgb(0, 158, 115),
-        VerdictLevel::Warn => Color32::from_rgb(240, 228, 66),
+        VerdictLevel::Warn => crate::theme::warn(),
         VerdictLevel::Fail => Color32::from_rgb(213, 94, 0),
         VerdictLevel::Unknown => MUTED,
     }
 }
 
 pub fn spectrum(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
     ui.separator();
     let session_a = app
         .first_loaded()
@@ -1931,7 +2201,6 @@ fn segment_count_bar(
 
 pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
     let markers = app.spectrum.markers.clone();
-    slot_headers(app, ui);
     ui.separator();
     heatmap_controls(app, ui);
     ui.horizontal_wrapped(|ui| {
@@ -2086,7 +2355,6 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
 
 pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
     let markers = app.spectrum.markers.clone();
-    slot_headers(app, ui);
     ui.separator();
     heatmap_controls(app, ui);
     ui.horizontal_wrapped(|ui| {
@@ -2391,7 +2659,6 @@ fn column_spectrum(
 }
 
 pub fn diagnostics(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
     ui.separator();
     egui::ScrollArea::vertical().show(ui, |ui| {
         for slot in app.loaded_slots() {
@@ -2593,7 +2860,6 @@ fn filter_summary(result: &openpid_core::SliderResult) -> String {
 }
 
 pub fn sliders(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
     ui.separator();
     let first = app.first_loaded().unwrap_or(Slot::A);
     let Some((session_idx, session)) = app
@@ -2658,7 +2924,6 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
 /// Advice tab: the recommender's proposals with their evidence, and the
 /// Betaflight CLI commands that apply them.
 pub fn advice(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
     ui.separator();
     ui.horizontal_wrapped(|ui| {
         let l = ui.label(tr("overshoot limit"));
@@ -2821,96 +3086,214 @@ fn advice_slot(
 // ---------------------------------------------------------------------------
 
 /// The start screen: shown instead of a tab while nothing is loaded
-/// (docs/design/onboarding-tour): open a log, the sample log, the tour,
-/// recent files, the user guide.
+/// (docs/design/onboarding-tour, styled per docs/design/app-shell): a card
+/// with the drop zone and "Open log…", the sample log, the tour, recent
+/// files and the user guide.
 pub fn start_screen(app: &mut App, ui: &mut Ui) {
-    const CARD_W: f32 = 520.0;
+    const CARD_W: f32 = 560.0;
     let touch = app.touch_mode;
     let avail = ui.available_rect_before_wrap();
-    let x = avail.center().x - CARD_W / 2.0;
-    let y = (avail.top() + avail.height() * 0.18).max(avail.top() + 8.0);
-    let card = egui::Rect::from_min_size(
+    let w = CARD_W.min(avail.width());
+    let x = avail.center().x - w / 2.0;
+    let y = (avail.top() + avail.height() * 0.10).max(avail.top() + 8.0);
+    let area = egui::Rect::from_min_size(
         egui::pos2(x.max(avail.left()), y),
-        egui::vec2(
-            CARD_W.min(avail.width()),
-            avail.height() - (y - avail.top()),
-        ),
+        egui::vec2(w, avail.bottom() - y),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
-            .max_rect(card)
+            .max_rect(area)
             .layout(egui::Layout::top_down(egui::Align::Center)),
     );
     let ui = &mut child;
-    ui.heading(RichText::new("OpenPID").size(32.0).strong());
+    let mut job = egui::text::LayoutJob::default();
+    let font = egui::FontId::proportional(34.0);
+    job.append(
+        "Open",
+        0.0,
+        egui::TextFormat::simple(font.clone(), ui.visuals().strong_text_color()),
+    );
+    job.append("PID", 0.0, egui::TextFormat::simple(font, ACCENT));
+    ui.label(job);
     ui.label(
         RichText::new(tr(
             "Blackbox analysis for tuning: noise, filters, step response, advice.",
         ))
         .color(MUTED),
     );
-    ui.add_space(16.0);
-    ui.label(tr("Drop a log here, or"));
-    ui.add_space(6.0);
-    let size = if touch {
-        egui::vec2(220.0, 44.0)
-    } else {
-        egui::vec2(200.0, 30.0)
-    };
-    ui.horizontal(|ui| {
-        ui.add_space((ui.available_width() - 2.0 * size.x - 8.0).max(0.0) / 2.0);
-        if ui
-            .add(egui::Button::new(format!("{}…", tr("Open log"))).min_size(size))
-            .on_hover_text(shortcuts::keys_of(ui.ctx(), Action::OpenLog))
-            .clicked()
-            && let Some(slot) = app.free_slot()
-        {
-            app.dialog = Some(crate::app::Dialog::OpenLog(slot));
-        }
-        if ui
-            .add(egui::Button::new(tr("Open sample log")).min_size(size))
-            .on_hover_text(tr("a synthetic 30 s flight: no file needed"))
-            .clicked()
-        {
-            app.open_sample();
-        }
-    });
-    ui.add_space(4.0);
-    if ui
-        .add(egui::Button::new(tr("Start the tour")).min_size(size))
-        .on_hover_text(tr("seven steps through the tuning loop, on the sample log"))
-        .clicked()
-    {
-        app.start_tour();
-    }
-    if !app.prefs.recent.is_empty() {
-        ui.add_space(16.0);
-        ui.label(RichText::new(tr("Recent files")).strong());
-        let recent = app.prefs.recent.clone();
-        for r in &recent {
-            let name = r
-                .path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            if ui
-                .add(
-                    egui::Button::new(format!("{name}   {}", r.opened))
-                        .min_size(egui::vec2(CARD_W - 40.0, if touch { 44.0 } else { 24.0 })),
-                )
-                .on_hover_text(r.path.display().to_string())
-                .clicked()
-                && let Some(slot) = app.free_slot()
-            {
-                app.open(slot, r.path.clone());
+    ui.add_space(18.0);
+    crate::theme::card(ui)
+        .inner_margin(egui::Margin::same(16))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            drop_zone(app, ui, touch);
+            ui.add_space(12.0);
+            let size = if touch {
+                egui::vec2(200.0, 40.0)
+            } else {
+                egui::vec2(180.0, 28.0)
+            };
+            ui.horizontal(|ui| {
+                ui.add_space((ui.available_width() - 2.0 * size.x - 8.0).max(0.0) / 2.0);
+                if ui
+                    .add(egui::Button::new(tr("Open sample log")).min_size(size))
+                    .on_hover_text(tr("a synthetic 30 s flight: no file needed"))
+                    .clicked()
+                {
+                    app.open_sample();
+                }
+                if ui
+                    .add(egui::Button::new(tr("Start the tour")).min_size(size))
+                    .on_hover_text(tr("seven steps through the tuning loop, on the sample log"))
+                    .clicked()
+                {
+                    app.start_tour();
+                }
+            });
+            if !app.prefs.recent.is_empty() {
+                ui.add_space(14.0);
+                ui.separator();
+                ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.label(RichText::new(tr("Recent files")).strong());
+                    let recent = app.prefs.recent.clone();
+                    for r in &recent {
+                        recent_row(app, ui, r, touch);
+                    }
+                });
             }
-        }
-    }
-    ui.add_space(16.0);
+        });
+    ui.add_space(12.0);
     ui.hyperlink_to(
         tr("User guide"),
         "https://github.com/Rufics/OpenPID/blob/master/docs/USER-GUIDE.md",
     );
+}
+
+/// The dashed drop zone with the primary "Open log…" button in it; it
+/// lights up in the accent while a file is dragged over the window.
+fn drop_zone(app: &mut App, ui: &mut Ui, touch: bool) {
+    let h = if touch { 170.0 } else { 150.0 };
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::hover());
+    let dropping = ui.ctx().input(|i| !i.raw.hovered_files.is_empty());
+    if dropping {
+        ui.painter()
+            .rect_filled(rect, crate::theme::CARD_RADIUS, ACCENT.gamma_multiply(0.10));
+    }
+    crate::theme::dashed_outline(ui, rect);
+    let mut inner = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink(16.0))
+            .layout(egui::Layout::top_down(egui::Align::Center)),
+    );
+    let ui = &mut inner;
+    ui.add_space(6.0);
+    paint_tray(ui, if dropping { ACCENT } else { MUTED });
+    ui.add_space(6.0);
+    ui.label(
+        RichText::new(tr("Drop a log here, or"))
+            .size(15.0)
+            .color(if dropping {
+                ACCENT
+            } else {
+                ui.visuals().text_color()
+            }),
+    );
+    ui.add_space(6.0);
+    let open = egui::Button::new(
+        RichText::new(format!("{}…", tr("Open log")))
+            .strong()
+            .color(Color32::WHITE),
+    )
+    .fill(ACCENT)
+    .min_size(if touch {
+        egui::vec2(200.0, 40.0)
+    } else {
+        egui::vec2(180.0, 30.0)
+    });
+    if ui
+        .add(open)
+        .on_hover_text(shortcuts::keys_of(ui.ctx(), Action::OpenLog))
+        .clicked()
+        && let Some(slot) = app.free_slot()
+    {
+        app.dialog = Some(crate::app::Dialog::OpenLog(slot));
+    }
+    ui.add_space(4.0);
+    ui.label(
+        RichText::new(".bbl  ·  .bfl  ·  .txt  —  Betaflight, INAV, EmuFlight, Rotorflight")
+            .size(11.5)
+            .color(MUTED),
+    );
+}
+
+/// A tray with an arrow into it: the drop zone's icon.
+fn paint_tray(ui: &mut Ui, colour: Color32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(36.0, 28.0), egui::Sense::hover());
+    let p = ui.painter();
+    let s = egui::Stroke::new(1.8, colour);
+    let (l, r, t, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
+    p.add(egui::Shape::line(
+        vec![
+            egui::pos2(l + 2.0, b - 10.0),
+            egui::pos2(l + 2.0, b - 1.0),
+            egui::pos2(r - 2.0, b - 1.0),
+            egui::pos2(r - 2.0, b - 10.0),
+        ],
+        s,
+    ));
+    let cx = rect.center().x;
+    p.line_segment([egui::pos2(cx, t + 1.0), egui::pos2(cx, b - 7.0)], s);
+    p.add(egui::Shape::line(
+        vec![
+            egui::pos2(cx - 6.0, b - 13.0),
+            egui::pos2(cx, b - 7.0),
+            egui::pos2(cx + 6.0, b - 13.0),
+        ],
+        s,
+    ));
+}
+
+/// One recent file: the name, its folder in muted text and when it was
+/// opened; a click opens it.
+fn recent_row(app: &mut App, ui: &mut Ui, r: &crate::prefs::RecentFile, touch: bool) {
+    let name = r
+        .path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let h = if touch { 44.0 } else { 28.0 };
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::click());
+    resp.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::Role::Button, true, format!("{name}   {}", r.opened))
+    });
+    let v = ui.visuals();
+    if resp.hovered() {
+        ui.painter()
+            .rect_filled(rect, 6.0, v.widgets.hovered.weak_bg_fill);
+    }
+    let p = ui.painter();
+    let cy = rect.center().y;
+    p.text(
+        egui::pos2(rect.left() + 8.0, cy),
+        egui::Align2::LEFT_CENTER,
+        &name,
+        egui::FontId::proportional(13.5),
+        v.strong_text_color(),
+    );
+    p.text(
+        egui::pos2(rect.right() - 8.0, cy),
+        egui::Align2::RIGHT_CENTER,
+        &r.opened,
+        egui::FontId::proportional(12.0),
+        MUTED,
+    );
+    if resp.on_hover_text(r.path.display().to_string()).clicked()
+        && let Some(slot) = app.free_slot()
+    {
+        app.open(slot, r.path.clone());
+    }
 }
 
 /// Settings tab: theme, touch mode and display units, saved on every change.
@@ -3364,7 +3747,6 @@ fn whatif_editor(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>
 /// Filter Sim: the unfiltered gyro through the modelled chain, validated
 /// against the logged filtered gyro, and through the what-if chain.
 pub fn filter_sim(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
     ui.separator();
     ui.horizontal_wrapped(|ui| {
         axis_selector(ui, &mut app.tools.axis);
@@ -3567,7 +3949,6 @@ pub fn filter_sim(app: &mut App, ui: &mut Ui) {
 /// Motor noise: a table of every motor's harmonic amplitudes on the gyro and
 /// the spectrum with the harmonics marked per motor.
 pub fn motor_noise(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
     ui.separator();
     ui.horizontal_wrapped(|ui| {
         if axis_selector(ui, &mut app.tools.axis) {

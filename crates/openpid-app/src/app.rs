@@ -99,6 +99,18 @@ impl Tab {
         }
     }
 
+    /// The tab's label in the top bar: the title, shortened where it is
+    /// long so the bar stays one line (docs/design/app-shell).
+    pub fn bar_title(self) -> &'static str {
+        match self {
+            Tab::LogViewer => tr("Log"),
+            Tab::Surface => tr("3D"),
+            Tab::MotorNoise => tr("Motors"),
+            Tab::Sliders => tr("Sliders"),
+            t => t.title(),
+        }
+    }
+
     pub fn title(self) -> &'static str {
         match self {
             Tab::LogViewer => tr("Log viewer"),
@@ -252,6 +264,9 @@ pub struct App {
     pub worker: Worker,
     /// Open logs in slot-bar order (docs/design/multi-slot, R2).
     pub slots: Vec<SlotEntry>,
+    /// The log the timeline dock shows (docs/design/app-shell, R4); the
+    /// last one opened unless a chip was clicked since.
+    pub dock: Option<Slot>,
     pub cache: HashMap<JobKey, Cached>,
     /// Heatmap grids rasterised once per result and colour scale (DESIGN §7.2),
     /// keyed by the result's address and the scale.
@@ -360,6 +375,7 @@ impl App {
         let mut app = App {
             worker,
             slots: vec![SlotEntry::empty(Slot::A), SlotEntry::empty(Slot::B)],
+            dock: None,
             cache: HashMap::new(),
             heatmap_textures: HashMap::new(),
             colour_scales: Vec::new(),
@@ -423,9 +439,11 @@ impl App {
     }
 
     fn apply_theme(&mut self, ctx: &egui::Context) {
+        crate::theme::set_dark(self.prefs.theme == Theme::Dark);
         if self.theme_applied != Some(self.prefs.theme) {
             self.theme_applied = Some(self.prefs.theme);
             ctx.set_visuals(self.prefs.visuals());
+            ctx.all_styles_mut(crate::theme::style);
         }
     }
 
@@ -435,6 +453,17 @@ impl App {
         self.set_state(slot, SlotState::Loading(path.clone()));
         self.cache.retain(|k, _| k.slot != slot);
         self.worker.submit(Job::Load { slot, path });
+        self.dock = Some(slot);
+    }
+
+    /// The slot the timeline dock shows: the chosen one while it holds a
+    /// log (or is loading one), else the first that does.
+    pub fn dock_slot(&self) -> Option<Slot> {
+        let used = |e: &&SlotEntry| !matches!(e.state, SlotState::Empty);
+        self.dock
+            .and_then(|d| self.slots.iter().filter(used).find(|e| e.id == d))
+            .or_else(|| self.slots.iter().find(used))
+            .map(|e| e.id)
     }
 
     // ---------------------------------------------------------------- slot bar
@@ -892,40 +921,122 @@ impl App {
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        egui::Panel::top("top").show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.heading("OpenPID");
-                ui.separator();
+        // docs/design/app-shell (R4): word mark, the log chips, the tabs as
+        // one pill group, the menu; one line whatever the number of logs
+        egui::Panel::top("top")
+            .frame(
+                egui::Frame::side_top_panel(ui.style())
+                    .inner_margin(egui::Margin::symmetric(12, 8)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    crate::theme::word_mark(ui);
+                    ui.add_space(10.0);
+                    if !self.start_screen_wanted() {
+                        views::log_chips(self, ui);
+                        ui.add_space(10.0);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        self.main_menu(ui);
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            egui::ScrollArea::horizontal()
+                                .id_salt("tabs")
+                                .scroll_bar_visibility(
+                                    egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                                )
+                                .show(ui, |ui| self.tab_group(ui, &ctx));
+                        });
+                    });
+                });
+            });
+    }
+
+    /// The tabs as one pill group; the active one carries an accent
+    /// underline. Each tab is read out by its full title.
+    fn tab_group(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let dark = ui.visuals().dark_mode;
+        egui::Frame::new()
+            .fill(crate::theme::background(dark))
+            .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+            .corner_radius(egui::CornerRadius::same(8))
+            .inner_margin(egui::Margin::same(3))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    ui.spacing_mut().button_padding = egui::vec2(7.0, 3.0);
+                    ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
+                    for (i, tab) in Tab::ALL.into_iter().enumerate() {
+                        let selected = self.tab == tab;
+                        let r = ui.add(egui::Button::selectable(selected, tab.bar_title()));
+                        r.widget_info(|| {
+                            egui::WidgetInfo::selected(
+                                egui::Role::Button,
+                                true,
+                                selected,
+                                tab.title(),
+                            )
+                        });
+                        let hover = if tab.bar_title() == tab.title() {
+                            shortcuts::keys_of(ctx, Action::Tab(i))
+                        } else {
+                            format!(
+                                "{}  {}",
+                                tab.title(),
+                                shortcuts::keys_of(ctx, Action::Tab(i))
+                            )
+                        };
+                        let r = r.on_hover_text(hover);
+                        if r.clicked() {
+                            self.tab = tab;
+                        }
+                        if selected {
+                            let y = r.rect.bottom() - 1.0;
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(r.rect.left() + 6.0, y),
+                                    egui::pos2(r.rect.right() - 6.0, y),
+                                ],
+                                egui::Stroke::new(2.0, crate::theme::ACCENT),
+                            );
+                        }
+                        if let Some(id) = tab.anchor() {
+                            self.anchors.insert(id, r.rect);
+                        }
+                    }
+                });
+            });
+    }
+
+    /// The "⋯" menu: opening a log, Project, Export, Help and touch mode.
+    fn main_menu(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let r = egui::containers::menu::MenuButton::new(egui::RichText::new("···").strong()).ui(
+            ui,
+            |ui| {
                 if ui
-                    .button(format!("{}…", tr("Open log")))
-                    .on_hover_text(shortcuts::hint(
+                    .button(shortcuts::hint(
                         &ctx,
-                        tr("into the first empty slot, or a new one"),
+                        &format!("{}…", tr("Open log")),
                         Action::OpenLog,
                     ))
                     .clicked()
-                    && let Some(slot) = self.free_slot()
                 {
-                    self.dialog = Some(Dialog::OpenLog(slot));
-                }
-                ui.separator();
-                for (i, tab) in Tab::ALL.into_iter().enumerate() {
-                    let r = ui
-                        .selectable_value(&mut self.tab, tab, tab.title())
-                        .on_hover_text(shortcuts::keys_of(&ctx, Action::Tab(i)));
-                    if let Some(id) = tab.anchor() {
-                        self.anchors.insert(id, r.rect);
+                    ui.close();
+                    if let Some(slot) = self.free_slot() {
+                        self.dialog = Some(Dialog::OpenLog(slot));
                     }
                 }
-                ui.separator();
-                ui.checkbox(&mut self.touch_mode, tr("Touch mode"))
-                    .on_hover_text(shortcuts::keys_of(&ctx, Action::TouchMode));
                 ui.separator();
                 self.project_menu(ui);
                 self.export_menu(ui);
                 self.help_menu(ui);
-            });
-        });
+                ui.separator();
+                ui.checkbox(&mut self.touch_mode, tr("Touch mode"))
+                    .on_hover_text(shortcuts::keys_of(&ctx, Action::TouchMode));
+            },
+        );
+        r.0.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tr("Menu")));
+        r.0.on_hover_text(tr("Menu"));
     }
 
     /// "Help" menu: the shortcuts window.
@@ -1100,24 +1211,41 @@ impl App {
         self.tour_tab();
         self.top_bar(ui);
         self.status_bar(ui);
+        if self.tab != Tab::Settings && !self.start_screen_wanted() {
+            egui::Panel::bottom("timeline-dock")
+                .resizable(false)
+                .exact_size(views::DOCK_H)
+                .frame(
+                    egui::Frame::side_top_panel(ui.style())
+                        .inner_margin(egui::Margin::symmetric(12, 6)),
+                )
+                .show(ui, |ui| views::timeline_dock(self, ui));
+        }
         if let Some(msg) = self.export_message.lock().ok().and_then(|mut m| m.take()) {
             self.status = msg;
         }
-        let central = egui::CentralPanel::default().show(ui, |ui| match self.tab {
-            _ if self.start_screen_wanted() => views::start_screen(self, ui),
-            Tab::LogViewer => views::log_viewer(self, ui),
-            Tab::Step => crate::axis_layout::step(self, ui),
-            Tab::Spectrum => views::spectrum(self, ui),
-            Tab::ThrottleHeatmap => views::throttle_heatmap(self, ui),
-            Tab::TimeHeatmap => views::time_heatmap(self, ui),
-            Tab::Surface => surface::surface(self, ui),
-            Tab::FilterSim => views::filter_sim(self, ui),
-            Tab::MotorNoise => views::motor_noise(self, ui),
-            Tab::Advice => views::advice(self, ui),
-            Tab::Sliders => views::sliders(self, ui),
-            Tab::Diagnostics => views::diagnostics(self, ui),
-            Tab::Settings => views::settings(self, ui),
-        });
+        let dark = ui.visuals().dark_mode;
+        let central = egui::CentralPanel::default()
+            .frame(
+                egui::Frame::central_panel(ui.style())
+                    .fill(crate::theme::background(dark))
+                    .inner_margin(egui::Margin::same(10)),
+            )
+            .show(ui, |ui| match self.tab {
+                _ if self.start_screen_wanted() => views::start_screen(self, ui),
+                Tab::LogViewer => views::log_viewer(self, ui),
+                Tab::Step => crate::axis_layout::step(self, ui),
+                Tab::Spectrum => views::spectrum(self, ui),
+                Tab::ThrottleHeatmap => views::throttle_heatmap(self, ui),
+                Tab::TimeHeatmap => views::time_heatmap(self, ui),
+                Tab::Surface => surface::surface(self, ui),
+                Tab::FilterSim => views::filter_sim(self, ui),
+                Tab::MotorNoise => views::motor_noise(self, ui),
+                Tab::Advice => views::advice(self, ui),
+                Tab::Sliders => views::sliders(self, ui),
+                Tab::Diagnostics => views::diagnostics(self, ui),
+                Tab::Settings => views::settings(self, ui),
+            });
         self.central_rect = central.response.rect;
         self.help_window(&ctx);
         self.tour_overlay(&ctx);

@@ -15,8 +15,9 @@ pub const SLOT_PALETTE: [Color32; 8] = [
     Color32::from_rgb(213, 94, 0),
     Color32::from_rgb(153, 153, 153),
 ];
-pub const ACCENT: Color32 = Color32::from_rgb(204, 121, 167);
-pub const MUTED: Color32 = Color32::from_rgb(140, 140, 140);
+/// The app accent (docs/design/app-shell): no slot uses it.
+pub const ACCENT: Color32 = crate::theme::ACCENT;
+pub const MUTED: Color32 = crate::theme::MUTED;
 
 /// Colour for `t` in `0..=1` along the viridis anchors (`t <= 0` is transparent
 /// so empty heatmap cells do not hide the grid). Shared with the CLI's PNG.

@@ -8,7 +8,7 @@ use crate::colormap::MUTED;
 use crate::i18n::tr;
 use crate::views::{
     BAR_W, OverlayState, SlotResult, colour_bar, heatmap_controls, linked_scales, motor_color,
-    overlay_controls, overlay_harmonics, panel_width, show_error, slot_color, slot_headers,
+    overlay_controls, overlay_harmonics, panel_width, show_error, slot_color,
 };
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, Pos2, RichText, Sense, Stroke, Ui, Vec2};
@@ -71,7 +71,6 @@ impl SurfaceState {
 
 /// The tab.
 pub fn surface(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
     ui.separator();
     heatmap_controls(app, ui);
     ui.horizontal_wrapped(|ui| {

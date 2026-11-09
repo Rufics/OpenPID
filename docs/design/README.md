@@ -48,3 +48,11 @@ Rules shared by every topic of the sprint:
   tests of the pure logic in `openpid-analysis`/`openpid-core`; coverage stays ≥ 90 %.
 - **Documentation**: the USER-GUIDE and the screenshots (`tools/screenshots.sh`)
   are updated in the same PR.
+
+## Interface rework ([#33](https://github.com/Rufics/OpenPID/issues/33), PR [#143](https://github.com/Rufics/OpenPID/pull/143))
+
+| Topic | Document |
+|---|---|
+| R/P/Y stacked, collapsible control panel | [axis-layout](axis-layout/README.md) |
+| Top bar, log chips, timeline dock, look | [app-shell](app-shell/README.md) |
+

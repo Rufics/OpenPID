@@ -31,24 +31,31 @@ cargo run --release -p openpid-app                      # or ./target/release/op
   dimmed screen with a window on the relevant widget and a card with the text:
   slots → analysis window → Spectrum → Freq × throttle → Filter Sim → Step
   response → Advice with its CLI commands. Buttons **Back / Next / Skip**,
-  keys `→`/`Enter`, `←`, `Esc`. The tour shows once; again from **Help → Show
+  keys `→`/`Enter`, `←`, `Esc`. The tour shows once; again from **··· → Help → Show
   tour**; the autostart can be switched off, and the state reset, in Settings.
 
   ![Tour, step 3](screenshots/tour-3.png)
 
-- **Open log…** in the top bar (`Ctrl+O`) or drop files into the window: one
-  file takes the free slot (A first), two take A and B. Shortcuts: section 13a.
+- **Open log…** on the start screen or in the **···** menu at the right of the
+  top bar (`Ctrl+O`), or drop files into the window: one file takes the free
+  slot (A first), two take A and B. Shortcuts: section 13a.
+- Every open log is a chip in the top bar: its colour, letter, file name and
+  log-check mark. The **timeline dock** at the bottom shows one log: its name,
+  firmware, length and rate, the session, the log check, the show / solo /
+  close icons and the epoch strip. It shows the log opened last; click a chip
+  to dock another one. The tabs never move as logs are added.
 - A log with several sessions (several arms) opens on the longest one; another
-  is picked in the **session** list next to the slot name. Switching the
-  session resets the epoch.
+  is picked in the **session** list in the dock. Switching the session resets
+  the epoch.
 - The status bar at the bottom says what is loaded, how many sessions and
   samples, and the outcome of a save or export.
-- **Log check.** After the duration, the slot row carries the badges `raw`,
-  `rpm`, `sticks` and an overall mark: `[ok]` fine, `[!]` a warning, `[x]` the
-  data for this tab or analysis is missing. Hover for the explanation and the
+- **Log check.** The dock carries the badges `raw`, `rpm`, `sticks` and an
+  overall one (`log ok`, `log usable`, `log unfit`), each with a tick (fine),
+  "!" (a warning) or a cross (the data for this tab or analysis is missing);
+  the chip in the top bar shows the overall mark. Hover for the explanation and the
   CLI command that fixes it (for example `set blackbox_disable_gyrounfilt = OFF`).
   The full list of checks is on the Diagnostics tab (section 11).
-- **Touch mode** (checkbox at the top) enlarges the controls; it switches
+- **Touch mode** (in the **···** menu and in Settings) enlarges the controls; it switches
   itself on at the first touch.
 
 ![Log viewer](screenshots/log.png)
@@ -309,23 +316,23 @@ The same in the terminal: `openpid sliders <log> --set simplified_master_multipl
 
 ## 12. Comparing logs, projects, export
 
-- **Several logs** (up to 8): **Open log…**, **+ Add log** or dropping files
+- **Several logs** (up to 8): **Open log…**, **+** in the top bar or dropping files
   into the window opens every log in its own slot A…H with its own colour (the
   Okabe–Ito palette, readable with colour-vision deficiency). Line tabs (Log
   viewer, Step response, Spectrum, Filter Sim) overlay every slot on one plot;
   panel tabs (the heatmaps, Surface 3D, Motor noise, Advice, Diagnostics) put
   the panels side by side: two across the full width, more in a scroll. In the
-  slot row: a "show" checkbox, **S** (solo: this slot only; pressing it again
-  shows every slot) and **x** (close; the other letters do not change). Every
-  slot has its own epoch. The first loaded slot is the reference for the
+  dock, for the docked log: the eye (show / hide), solo (this slot only;
+  pressing it again shows every slot) and the cross (close; the other letters do
+  not change). Every slot has its own epoch: dock the log to set it. The first loaded slot is the reference for the
   channel list, the PID sliders and the export file names.
-- **Project → Save as…** writes `.openpid.json`: the logs (paths relative to
+- **··· → Project → Save as…** writes `.openpid.json`: the logs (paths relative to
   the project file), sessions, epochs, the tab, touch mode and every tool
   parameter; **Open…**, dropping the file or a command-line argument restores
   the view. `openpid run step --project flight.openpid.json` takes the first
   log of the project, its session, epoch and parameters. A project keeps every
   slot with its letter and visibility (schema v2; v1 files are read).
-- **Export → Plot as PNG…** saves the tab area; **<slot> result as JSON…** the
+- **··· → Export → Plot as PNG…** saves the tab area; **<slot> result as JSON…** the
   analysis result exactly as `openpid run …` prints it. For the heatmaps
   `openpid run thr-heatmap <log> --png out.png` writes the grid as an image.
 

@@ -5,7 +5,7 @@
 use crate::app::App;
 use crate::i18n::tr;
 use crate::shortcuts::{self, Action};
-use crate::views::{grid_heatmap, show_error, slot_color, slot_headers, verdict_color};
+use crate::views::{grid_heatmap, show_error, slot_color, verdict_color};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{HLine, Legend, Line, LineStyle, Plot, PlotPoints, Points};
@@ -266,7 +266,6 @@ pub fn step(app: &mut App, ui: &mut Ui) {
     // before anything wider than the window can stretch the tab
     control_panel(app, ui, "step-panel", step_controls);
     let full_w = ui.available_width();
-    slot_headers(app, ui);
     ui.separator();
     let params = app.tools.step.clone();
     let targets = app.tools.recommend.targets;

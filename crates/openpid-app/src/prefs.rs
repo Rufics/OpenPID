@@ -206,10 +206,7 @@ impl Prefs {
 
     /// egui visuals for the theme.
     pub fn visuals(&self) -> eframe::egui::Visuals {
-        match self.theme {
-            Theme::Dark => eframe::egui::Visuals::dark(),
-            Theme::Light => eframe::egui::Visuals::light(),
-        }
+        crate::theme::visuals(self.theme == Theme::Dark)
     }
 }
 

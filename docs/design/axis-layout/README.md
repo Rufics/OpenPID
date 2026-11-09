@@ -53,8 +53,9 @@ R4, for every analysis tab.
   the tab, 230 px, not resizable, shown when `Prefs::panel_open` (default true,
   persisted). A "Panel >" / "<" button at its top (accessible name
   "Control panel") and Ctrl+. toggle it; collapsed, a "<" button stays at the
-  right edge. Every control of the tab lives in the panel; the slot headers stay
-  on top as now (multi-slot).
+  right edge. Every control of the tab lives in the panel; the logs are chips in the
+  top bar and the timeline sits in a dock at the bottom
+  ([app-shell](../app-shell/README.md)).
 - `views::axis_rows(ui, n)`: splits the remaining height into roll / pitch / yaw
   rows (plus an optional fourth row for throttle / motors), each with its axis
   name on the left; the plots of one tab share a linked x axis and cursor.
@@ -118,7 +119,7 @@ before the next one starts.
 
 - **Shared** (`crates/openpid-app/src/axis_layout.rs`): `control_panel` (drawn
   first, so it keeps the right edge at full height), `row_height`,
-  `Prefs::panel_open`, `Action::TogglePanel` (Ctrl+.). The slot header row no
+  `Prefs::panel_open`, `Action::TogglePanel` (Ctrl+.). The timeline row no
   longer runs past the window (the epoch summary truncates); before, it
   stretched every tab and pushed right-hand panels off screen.
 - **Step response**: three rows with the response and per-log Peak / Latency
