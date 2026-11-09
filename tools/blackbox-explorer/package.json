@@ -1,0 +1,11 @@
+{
+  "name": "openpid-explorer-reference",
+  "private": true,
+  "description": "Reference data from the Blackbox Explorer parser for OpenPID's conformance test",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=20.6" },
+  "dependencies": {
+    "semver": "7.7.4"
+  }
+}

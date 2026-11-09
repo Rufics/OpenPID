@@ -1,0 +1,3665 @@
+{
+  "fixture": "betaflight-4.2.8-44-logs.bbl",
+  "explorer": "betaflight/blackbox-log-viewer e179902 (2026-10-25), 32-bit wrap of PR #862 restored",
+  "chunk": 1024,
+  "logs": [
+    {
+      "error": null,
+      "frames": 205,
+      "first_time": 56367270,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": ["70a32c905e7251a4"],
+        "loopIteration": ["6bae461a3c3be81a"],
+        "time": ["079e2a87d3c2fa9a"],
+        "axisP[0]": ["bb533b952e0af405"],
+        "axisP[1]": ["34fbb6ae00d89428"],
+        "axisP[2]": ["629bea3f4c290593"],
+        "axisI[0]": ["3f2e926d8d5ed945"],
+        "axisI[1]": ["3f2e926d8d5ed945"],
+        "axisI[2]": ["3f2e926d8d5ed945"],
+        "axisD[0]": ["89a92a3d54751b0e"],
+        "axisD[1]": ["3686fe9bdb9d6160"],
+        "axisF[0]": ["59753cfe781f1e9d"],
+        "axisF[1]": ["c627933041a42abd"],
+        "axisF[2]": ["3f2e926d8d5ed945"],
+        "rcCommand[0]": ["ddfa599ef7af6f03"],
+        "rcCommand[1]": ["4dfcf80331c74b66"],
+        "rcCommand[2]": ["3f2e926d8d5ed945"],
+        "rcCommand[3]": ["e6e9438e8fd6d61c"],
+        "setpoint[0]": ["2faa008de1325e64"],
+        "setpoint[1]": ["2faa008de1325e64"],
+        "setpoint[2]": ["3f2e926d8d5ed945"],
+        "setpoint[3]": ["3f2e926d8d5ed945"],
+        "vbatLatest": ["221efac9567e5aae"],
+        "amperageLatest": ["3f2e926d8d5ed945"],
+        "rssi": ["ec1ff94ff35a0be5"],
+        "gyroADC[0]": ["f82d11c50c66df3e"],
+        "gyroADC[1]": ["3044b252342cc553"],
+        "gyroADC[2]": ["17783a1935181738"],
+        "accSmooth[0]": ["555c91de0b4c1e5b"],
+        "accSmooth[1]": ["6584529806d06691"],
+        "accSmooth[2]": ["f39e7af04577a9ae"],
+        "motor[0]": ["b2798945528404b7"],
+        "motor[1]": ["12f41f4ec1aac15a"],
+        "motor[2]": ["eed271621d29a479"],
+        "motor[3]": ["bfc4393e60dacfde"]
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 1,
+        "digests": {
+          "(at)": ["89cd31291d2aefa4"],
+          "flightModeFlags": ["6e8052c08cb9216c"],
+          "stateFlags": ["a8c7f832281a39c5"],
+          "failsafePhase": ["a8c7f832281a39c5"],
+          "rxSignalReceived": ["89cd31291d2aefa4"],
+          "rxFlightChannelsValid": ["89cd31291d2aefa4"]
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 14,
+          "data": {"logIteration":9472,"currentTime":56367270}
+        },
+        {
+          "at": 1,
+          "event": 0,
+          "data": {"time":55063987}
+        },
+        {
+          "at": 1,
+          "event": 30,
+          "data": {"newFlags":524289,"lastFlags":268435459}
+        },
+        {
+          "at": 205,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 205,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 72455,
+      "first_time": 19936397,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": ["0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","390a5a38f3b33aa4"],
+        "loopIteration": ["9be47ad92d784e25","9f62b2f8230b7625","42cb2648cc8cb025","56a4a981d4632225","da2d652c89907e25","af20f1d432bba525","6d40a4fab819d625","94852d6561eba6a5","3708ae0c98be5525","776647b213bbf725","e7509d8a3d1db125","05021a274f121ea5","9925313296b3ba25","309c690b02b73b25","b88309617cde9025","f5997635a2ea2b25","2cea09baa13d0825","1e0f99132e3a8825","bdb9e141a1339425","59b248d49d263725","cdd5bc4834264525","76146c928375a825","1a24dffeef32ad25","c8669c2f306446a5","de95a8c0d1502f25","de841fc39b964925","04f8d929b17a6525","6b849783cdf50e25","edaecdb8c9deba25","767e4e541ce1bc25","8df8c31c41247a25","3e0d9fc0377217a5","ce01148b88940925","031c87e2b33b2525","6110067ca2877d25","4b97fe60392452a5","c5201d2810d4da25","76f3c4bb10bff625","f63411d02e9a1825","f255663b20d23ba5","b7deb7be30dc6425","f582f7838af42025","896f0bc78f06f625","c57eb6fab89ecda5","fcda878fe7b52825","eea0391653d2dd25","0409c38bf754e825","7cad2d8e35495ca5","a877cb833c47f825","7f61b7c60e5e6c25","5919122cb9ca3c25","588654bd3daa65a5","344ed49d8ca2ec25","90cbbe6aa3045925","6a74db4360c8d425","1cb8fd917e14b425","7fa0028b0ee77f25","09e87a72c3d0d725","941c389a76fab725","f25ac3264850d325","8abfb692b79e7425","b26326c4ad3b7225","17d3e6dd667c0625","bb09a3158d5e3ca5","3493fea36adfa025","d94c4416b1ff6425","1d9ccd91e3ae7425","707a5f7d42e1e5a5","4f74556b46291125","48dd774717b66025","4c049b221151a9b7"],
+        "time": ["d3c667bcf371464c","a50498b138fe968e","c67ec16040fb6f64","268551a4a7bb7505","71ffbd4330b34107","babcabc8436c0052","d3b7a9825fc6396c","05844f7e8a5d66c9","986ea9176ec97ba7","3525654bfd734101","c8aa0f700c6a35a9","8be87542b24c3399","1428118e23ef3383","454a04d765be3409","20025ba2356fa134","1d521f903d70a3b2","ad0de3d22ed3accd","7100bc6591ae12c3","c56d9d687a3f3ba6","352bfd0a3e9fecc7","982c69ef685dd9b1","01bbb6898e9e57c7","95d9ff0e71f89ad0","567518073a1768a1","a4837260bb9948e9","7d5c59dca3824228","e545069d83916334","519a3703d4e57040","35f804ef184bd09f","dd5188ad40be016a","9b78dcafea778ad5","d802143979cac678","af694a8a2ef5d1fe","8244c6edab83c96e","691f4c931afc309a","e22a7f739c5aba57","71dff2d9e09ae1d1","d7613ccf11d0ded4","419902046b338a84","b0ad096fad4637e8","e9b0f65faca7f724","902bdddaef0f230e","a4e1711305c83baf","ac55bbaf73c9407f","432f1232e0239176","59fce394d5a66c62","bfb89bab5f2b50ab","be84e15c4d57f009","25fb848ae6647f02","0fbe5aca09872f4b","1f67b7b03f8edf34","18e9a1d3e571b18f","70427eb4b702ae1e","3486e66f775019b7","8caae11e28f5dac5","fca1e0175e3ad139","7d9f30ae0584d485","d82fd123541041d6","e53f801f14d8530a","b5cefb48c8c4aa4b","dc88a6f533f01e46","d4fde855f5f64c1d","0610f81f782138c4","a34e754c29f306fd","ecdb1c4028fb6220","623c271ffc3b9a3f","07bbe5b300dad281","2bf4bf0da6d0e461","ec2807c7d2cea5a3","8cf3564e6150cdb2","830f05ccf3362186"],
+        "axisP[0]": ["915d07c4a258cb42","6d729abacee01841","dce4b2ecaf7a8e87","092954c73807285e","d89e1c4e8a49668d","96de1bf2626470eb","922a30e01a9fa1fd","9e9ff6ffae71e2a3","4d4cfad7ed30d2ab","9f7bb8df9d18477d","03f7a0ed139bf3d4","c4ebc486dde995fc","1cf8276cbe309ef5","6dd56535375832d3","6d505fad0fb9e2af","b38b642967f1b05c","30c8356dccda3da2","e3a2dbca3442bad0","d213f750a6b4a950","6226f12c87614b00","31040739cc78d116","e5eb604732a12942","bf4cb80c4d353ff8","8d177e9f85613638","1a6844951980b5bc","b74787eb45fe9fd2","ef378f7b109e656e","770c1375af950b20","e49868c4b853a94d","f126e89bd8ab6407","df08b68e4f7cc598","68437a5aae8c2633","44401642936be57f","fdd1c645c8296b3e","d7f53b8aa3b50bd0","f74a5fa4f313f5ae","e77cd284b76409de","eddad19563b07435","b6028bee62f94416","bf94f93912ecef32","5c77f1018651bae7","91fcfecf1b9212ad","5730679c2a683f1e","0c7aebbd94f849a1","3bffad4fc14d5c0f","26b3d50b722dee77","273241a503de0f52","0b0a53f6732f9203","4a3dc567ca5ad4c5","7faf6efd4a7909af","b891a2d944a802db","a81c619294bd8636","b115770cfc5fd413","9c8aab7e70b002ad","6b2d4af7122cde94","2795f52c387c237a","1358b09ab58e8d7e","c184d8ed225a28ee","18d14e1e50f37ee0","304aaabd80b520f5","ad23abaf6ef5e660","204a312ccfc40a67","7d7438da29cb41db","e4fe0a445735dd26","f337cd75da820146","acc16b438e8e64b1","653f5ffc5beb503d","609549886934a560","57825ac571330e16","e716b08011c23d47","d8b19d1566abbbdc"],
+        "axisP[1]": ["289ed82a208a979e","6b6af5ef300c3b00","31712a67b903eed8","a2d2d1e149e8f986","f1ad3a9716240aa7","59a2ddea6c10d72d","ef86d5d61ce43fd5","e4de3d8fc5aa5b3c","5d1b985c7d03892e","4248d0c2df53260f","867d67b4014798aa","f6641ee8b5194428","1ab91c6745a49804","c7f25807fef70fe8","485cd38b22f73062","c5adfbbe98990d9b","e52101af10c922bf","601bb04cb134a22d","5c0c586d594ee423","65ec5cefca051266","4676e55bf962bdb7","3dcd6ef7ab4bccce","44b9bc1ff527400e","ccff1532617d476c","91a57b48348ee309","8ace41dc7ea3c3f6","cd8ced5b0b8127f9","f45bad54db292085","503d42f8a85b2bb5","b1bf6340fd55bed6","b8b32292103b9947","0ae081a0d82a1425","d2f3f241c3be0bbe","e47e6f8ff039ba42","3ed21e4b59074e53","763a15197a1c2635","3c807f5da2017bb8","581b9efaa7cae225","2351cd3f733754c9","228afd53c2cb570e","23ebdf18efb5304d","aa58e84c660fc556","1c66d111658174eb","18958443dc542299","ae9d7cda9fd9a763","9c4be670445be186","0403f2547f1d4d31","22419e31ec48cedd","5719d762a01092e3","2dc347342520228d","94bad1de9468689d","6307ff1d46f07646","f07efe0aa1edbed4","c73af65a68592b5c","a5e4cbe5b6a52dce","956e71020aef95c2","fa68e1b5481ad8db","642092e26ae853c6","91d8919249fe9874","c97286904a21bfd9","4a6ff034288a911c","0ad1b71c2ad3fead","79eb4811de48d181","78be338905d008ef","6977f213575b75c9","c265eba87f97e7ca","65e0ef178b6cded7","842126ffa7ae57f7","9310b0768a2fbe4f","67e58eab2dd92e4b","70bd3b3c9717484c"],
+        "axisP[2]": ["abe4975c538b5dc0","15cb90c7ffdbf405","69cbdf35cbe026b4","e3f4b72883a36ee6","c04017eaafb66665","84e0fda87d23d65e","1742056617782096","30c0502cba3ca95c","76ba737501c57446","cb3b1fe777b8e521","13fece7cd959e29c","4259cbbe5a904177","0f00f5944ba5ed61","018fe0f5824a4890","9e3052bed45dc0c0","e49d09ee54fc8d98","e5fc122d1e9220e9","e84f011239cb0077","6d85bd4414983e69","31cfba1505fd010c","e9f9773834d9fdd7","cd8ad468adcac9eb","c0c2e32786996c52","588e6649f45e1e02","2ec12865519993fd","75be075552a5a153","38c96c82251fda79","d98ba699427ebdce","cd1a32c3886bd07d","ee84ee34359dd8a5","e20ef3bc0f6918d1","d253f6ed99d9956e","e995011638d4d250","da785f72d4e2eb55","1efd4a8cc66e58c6","3ee984c78d3d4fe0","90a243ea07629cc1","6d871ea063ec1b44","9853cdbc846bbcd7","13e3b1647546a676","5b978ae18a04211d","6c740f6ae8081ccf","0a549265669363c5","efd788e40db2359e","db6632b970607784","46faebd8c6669f28","161d49e137ce9470","3945b258ae99befc","138a722caefe546c","b0cb0875f35c5b7e","18cf06f19b48a042","830c680dd76a8ef9","bc607a30a77fb78e","45f92b33512df4c8","f34da6fbaaf2d3c9","a21b30523b03be4d","7f9c34c90479f9a0","68c19481f7fb644d","1201350fcb4bb944","df34de96ce1e2e20","f76059c577fc2c9d","c9c34224ba6d0b1f","07fd1fabc93cfd27","b47a0dcc0a61da63","3690b5cd1deee88b","f4a80dfad57296f8","aedb231ff842cb51","4490daf884ad7be9","2106275fde0d8d61","a4db7ec283972961","ceafd6ea1c086a1d"],
+        "axisI[0]": ["a2b66be55f1155b7","dcdbf827beb1fcae","ad1b12b5bbd94a8e","071f7b7614b29186","c5df80d08d8f86d0","803c0bf408e84131","578bf0612feb9dc3","18f3c9e53e43d366","07a7aa50312d96a4","b5d1276d6147f51b","eaa5f183fdbbc380","9f86e7226b7a30ac","df5801068a639e40","d936880e255cb355","e4dd1abb22ee6a93","77ff26e856aa8a80","10137d2831708367","cc236da957e49811","c20ed81e69ea2a67","074497a34098cd55","7a068dd74cc4c141","b92284d8b8a8eaac","547359e7688bf095","ee300b659d77b333","b37f60e1afe3a0a9","28f039ece3f92880","7494cb2569062a98","7279f436c13c2f54","c960a59ced59840a","2ee0eaaab91c75da","8bf68bdafb3df3f4","3ed40bb1b3da4607","6e8ebfd7ad89a7de","2eab5a6c7bef564f","dc2d935d16ae515b","710115fdc312994c","2b0c98ef2705b9a7","8658a4e50fe2bb55","dbbc686309d66b33","b4f313f3aa7a4c2b","88f7930fff10c964","11af82f011bfd0fd","b25c7cdbbb7f12a3","f0ba194c2a24b4f9","e0a094c47b4f61a3","68554f6da93555ce","68b2d487ebe1afc4","75a96276dc007040","419793125c0a4040","f0231963f2277049","c8d01f94a5e87da0","0e6aa43c3a1bebe6","823eac0a7dc0036b","b4cae3c07cbba650","db64ecd4bcebef87","12b03d13ece9514d","314672414d6e2494","9fb0c194b544b683","ea0ea64ee2d221c4","f6435703cff36709","0ccbba64a8d149c6","3db0a02e70db4bd5","4cca5dc01f1ad43c","da282c728d705b3c","d182db9b1c026455","dc679921ec8a5ac8","2a72660c600409e5","6924c6d5a0886d3a","ccf70be917a1f30c","f04aed3b5620423e","f97ccbf526a7b450"],
+        "axisI[1]": ["ffc40e37b7cb5d12","9dedb43b73cdbeff","21a9c7f59b8d3fa3","4171f59119be7588","aecef036da808d4c","c1b1e87f2e834a06","7b997e78fcc6f245","af7fdc4b6814f8c6","19d6fcddfa336f7a","9740772b4aad7fd7","50eb6f432f6b6740","bb409e80386d264f","92c653506e2ce87a","bebecee8d0d603b4","ecbd43dda8ac6900","0cd07d2ce4636527","179a859c60934fe2","9c272a6305acd3c5","3cdd48de7a954741","bb7791adfbd8da58","7f5fbde3c212b301","7ccfc44c76e30c3b","d9b8ed45e58296a3","830212d4781e03a7","3276c07766823d04","9b44753cb5a424b5","776a6e781c6c7803","6263a8c41de1e279","a1979a3359131222","a52cc8ffc2748bde","6137aa2e272a16c2","82ffa5511ba895c2","5f6dc406001eb5d8","b3d339b8204ee121","057a1c78ed07145f","363c74de1c4ea9c1","d92c8b3ac8778b42","27c94fdb25b6a355","21f13c5ad08bd2a0","7058d0e6edac8b41","0ec8bbfd7f957d1f","15fd8b44d1db3be5","cb9808cf870c63f2","9099cdfd9df7e18b","ff3fc2a7fa15788e","af93057794f1a901","7117c230d24c76b2","df94f56facf55102","01a260287500f38d","a4d47cb019f96985","9b92bf15f1de23e2","8f3e46be27dcb7a1","5460daafc5e3a264","cb5e1c18fb7dbc03","3ed9fd9244198efb","992e675f6a9ef3e4","9c237e311c3db665","a27915e5b254fcea","f24d5494ac880469","ccce478be51d9359","bae52054403a9984","5a9f5e4ec65ec1b0","203ce83881a91e53","0dc17c86398d21ab","fd598a3ad00a9d3f","23746cd15bd56921","7cf42b53bc1deef5","390044f0e0abcf30","dc7bcd1c519ff026","20e6a153c2dd69e9","c35ae767c8be3ab6"],
+        "axisI[2]": ["edc8f2424534ed5d","f834be82a692fe12","23c536a58e59f906","ddbdf05924d4374e","d5c0fe5712b736e0","9dd9cd8eb68a257d","e444c30ff21812f4","9cd6feac4d38b25c","b057d44869101ec6","308a9b5bab7cc8e9","f7377793bb348f6d","2e28927a1c25441f","7e73ed0f465a558c","e12d994a0c0c012b","e3d505eb780611d0","f1b974c845d5b668","3d7c635a47241d11","bc611ae2d73b4b31","3172798b92bc1f15","32e03229ef2ccab7","184f28ffa7b861f3","5719dc0de70a3841","dccfbeedd23c2f4c","2f9f707cfecd8e9c","a4bc71eeae04d4f4","649b3c6e340fb59a","d0403635ae51c60e","51e0848a13373bb6","378ba3454a250864","3245b04c41f09c9d","9b8a475bc440d0cf","5c64282ca4c5900f","6be7b619f4fc98fa","6177d872c86d0fa7","df051021864ae0a1","ff6dbb14d987c43c","268b4d8110bbaf28","4efeeac57b0df843","3976e811a62245e2","8281d6d8ae5b3a7d","f37d6c5fe86beed6","2e4fa5daf3db94a9","9110b8be679c2f26","ef98b2905644bcae","68fa91d419306eba","76883a47f0d4043f","58acb729f8169075","2233df934f0d1787","8f2646d042d310c4","b1b76bce4d3a940d","a7af2d2f5110e080","3a74fe8d5524d268","e7907fc161266bd1","761719cf876a1b1b","6eb66e387f188711","4d98c768154e4ba4","14de653617124802","46e953536e4bb3a9","46cc85ae7143b315","bcce84da56122e8f","4f4da18aac4a7bc0","c63d4a3746719a85","58eeea886aebeaa6","398c33b1dc7f6a88","a148f7db028d0983","030f0c3aebbe7797","b868c20a3e54d78a","425b144d00a5c8dd","63b00a67df3d1078","121827e3d58d84bf","d0bd30ecb4670b24"],
+        "axisD[0]": ["1b27f1af124b3290","6a8aeb7424133cf7","f37eb2132eca8f90","6c21388994ad7c63","e9e11e1d5b705820","a6b2bf04a58d2139","a1d3578df6c4f62f","6644049cc9b935d8","fd1e3924358ae147","32a2c842b9c02059","c850d6f0e7d561f5","a7dba5ff96803ba9","eb621c8540614b69","3eda57aef7c686bf","5b7ce2888120cf9c","461b8da3f307f5fe","610cc9b754a70aab","6a53bd1d7ab52ab3","b3b30d28bf7db9a3","40dbd2151a3ce0a5","908986a5acde1b77","7a22645915eb703b","8b0eaef1e50a2dd8","aea4017c1c4fc131","9b0f328417b14405","d524b97398673239","41fffb8b67072ace","5913ef563d772d50","708f20fc29da9dc9","2888b5035c83a803","2b2da37f91c414bd","821f8c5a35eb60d5","38208d271450df29","2c445c50bf417eb9","fbb37563eb9bd9a5","0d11501733fcfeed","574a2479e21bc15e","0d365ba139c44b29","9ec41043ff88427c","fbb4a73847a50f62","cc1660506eff5496","3dfb78c8ca543c16","1ea46ce7982e57da","10fe565946e64128","286a4b34bacf1d57","40a8e1687dc74581","7c6b4adb44886f4a","6511d4d371196c8f","2fa3397270716ef7","8541542ff345d489","5ba727c454eeea0a","9fa3a9ab6120c0d2","1b2202e357bd5926","1c909a92cfe15c62","1edc03ed1a73f767","eabc4732c729f6b4","80518f64cf791ecb","5f86147bc926e51e","f9f05d3faa594763","99f361605fcdb9c1","815566f9d083e798","1259ecbdb84d8d3b","d7208dc49f241f45","ef4a741fe8ec0ad0","3177b92bc44fe055","8877876eccf4115a","fa3c46941e1cdbe6","23ab5ef774aa1c78","df1b531d682e3974","234e204cea95ce63","18ae777ee75b6c88"],
+        "axisD[1]": ["054589db1756c07b","87930ae4070e5a3d","eb623cdb77a68235","b03605c160e285e0","4ac93013954b9600","fe94d11030f6b34d","79246de80c5584ee","bc531fdf910d367d","e3939d5c14c27bef","be4a6d5d342ef485","a4b353a84859b702","fbd50cb45239eca9","a6b5482f2389cf54","6dee6c99068a72a1","e691a96cc450c65b","ed507ad0256f5560","e04d0addaa27e073","341c04657ae4b67b","0bdb16d39dee3067","27cbb5bfa47620b5","1c9ce49fe105dfdd","ecf195d13bedaab5","46bd66847fad3f04","f7ad57856957cc52","7833553d7b72f2fb","bc6e125734d648a5","f43f212029e7e9c6","050e7a77777fa38f","2bb1fed82ff60fb2","098d2c65389ba0b4","ea4f57499af1bf42","acda46b32c48dc8f","285bde97eaaf43ff","df1fa54fb968cd45","a03970310574db9e","2e7586242d08f49f","729f86a30bbb8f7b","6a89b941df5c227f","c23688e67651c8a3","523b17f1ac4633af","961571ed1773659d","ebb72420edce31fc","b82bb7edeecff5a3","45a4bfe158838e23","c57cb3b88fc34a17","0b812367ad340c6c","8ee36b68c8ae0492","7f40adb84ab56549","3c667a27e79f593f","581d942a0155017e","7547e63074d7c2be","1c53da2e4a127291","80aaf6f8192aed2b","62086779da82539f","ba8e2535b85747f0","b367c0577d37c030","b5290f3544502691","884d7014ffb69cf9","084707bfb9d9030c","95ae7f2aec1de6e2","2674d780fdc66b60","140e235f521153e2","70c51bec853f57e1","2f72504fbedc304a","d9d6300cf37b1d14","fe728f1109c1948f","be3e99afca4d91b7","025fb93fdae36fb8","7102acf6ebeded06","e0193a7490e31813","7ab181af2d5f1eed"],
+        "axisF[0]": ["5dfb9cf999238d09","fabd3fa86ac2c4e4","dd26dc1f26aa5400","ac1253c29140f3af","a691f2e3a3e69207","efe45b81fbcabf66","d5787fed0d3fa095","a05f987e4e5b8f6b","132457f45ffd40e8","a1ef14481635fd00","9234d5973db1a270","b3cc14db29862679","2c3d40f903d969b7","6c8bd272e74cdffa","e488ca4631a4da69","daf174ba7a3d7a62","e6b937585be4ddc4","72130c16e1d419f1","19167204c89229c1","6b227f1016f3734b","e88ce17fb11cb15e","0d7f0df01732660c","0e95eb12cb58e3fc","f3b6c6f53380bfe2","f1d67a7b59cd93c5","8bfd0fb388ff1eee","f197c1338dd86c64","2620965a98ac519f","77897d3fd031d8e8","13c9355b8f5c295e","1ce4236103b7a4e6","0c5958717de58637","24e902fc189cb5b0","d4e7faab64395d81","156fb3d516d6af18","ad0e83a986bfaf42","eb54d72b8029aca8","5b6431bce8336877","91c948c198d49c30","44115db1e60db9e5","ff02fdf0d19b6d3c","c43a972be0b5e183","7160564cb073630e","f46685804ce8996e","8c8c8d810e9d5fba","8dee9786adde829d","4f4ab1c4993005f9","1a1989c7649b24f7","1eccd3a2af9cdad4","073441597601c17a","77c47b784d4a367d","c2136dc2e13f5efd","ff0676c690695d51","cb7fbafaf42c732d","1a8dc736ab5956e6","5b62dc4a39abee66","c677c2dca16e9f54","41f692f056b87821","c39818119ccdb058","d1586de5ecea33e4","e11fddcba64b8461","79ee3797647a0848","a2f870797f192a4b","ab150faae357d798","a5d33d226cd03dbb","c0400a72c6aa84e4","5ac4b2e4b66ad26b","7be043cc0f2ba530","0984668b4feeceeb","45a9566348ad89db","3f318f5d806682c5"],
+        "axisF[1]": ["11104d23585845e4","37837dc4f4809136","088c0c312f4d66cf","f52f1f7b945c4b6e","0cf9da6cdb131f45","d41acf8170eea428","e41a69cdc814f523","db3dfb684a1d1204","171b01fad1015042","24d7bcf71bd199bc","60e4dbff162d1bf5","f0840c73c0dbd3c9","e8b2917c1d8d0e07","babc4650df833365","ad26d0f31a3eacf1","3a01f02002ef12cf","7187f3dc8b680999","2d6f4ac93b54c74e","249211d5eed736f2","38cb2b32f60630ad","eeed08d31453a7ab","5994374f9d7fb3d7","dda976be266242c0","cd758f98efc4e06c","8f963ad9f04c8e58","e8a7f9d67e85b482","6598856c912870b6","e1ad3a9690bd919b","42e650080be62987","9075e69be1a166b1","a50a158e02d1cf8c","10a78792d5302ecf","08eb2a0475b3d12d","ea6527cf0f70cbae","3635d1123fb74a4d","1b3f7e5d80e60a24","b200b2538d4ea602","8090944e21092054","753c8707be915c1f","ab9479099160d242","fa3d51bbc582625f","dfefedefd25fc05f","686ae36e4f6a164e","26b0aecdc59b2271","ddb6583ad674f6f5","e8e85ffe527bda9d","9cd8bca556273bfb","7b7ba7804cfb0e3d","31f830a2acce613f","517b854027965312","b2b598bc4b27ec60","683324e6950bf5be","cdf31c42c2d82ebb","1ada9ab9f7650f0e","051df41b33e6da6f","64f87be9eaac91c6","11cd04053176116f","268173de431b982f","a1a896c4677125b7","d29842c7b1d5e974","9b2d79ebd27aac4f","ee9f9a5853e5e7ea","c13507dd38696f94","281a7bf9e8a160a1","7cd6af46f9154532","20b7fbe629a6af54","5241d4ddf287f208","0f454a21f3a2b6e0","ffea37423dd1d86a","77af3593dff1166d","971e8343f9a236f8"],
+        "axisF[2]": ["ec50472eae231be2","06a127e4de89063f","8f0722c6ee33f848","faa8d8ee37b542a2","2d21bac6031bb6e2","043617e8873692b5","aeaefa1c49e9227b","29d45170496f2877","b62313fe5e2ebb40","e2b1ef7fafd87c8f","2f2fef6a32ce6d4b","2f350396c6e9d45d","422e6d9247a1e875","da2cfadbda400ff4","b9171f12829fc125","13671ceb8ce4fc86","ff3e7bd486053ec6","64cfb20cb1deac09","4c3a392264befd1a","eb7ec6e5864ac8f5","460a3fb54742a880","45f2404f5b10197f","72ea66951068c181","9d62030d852fca34","8acf8a33f0c3da8b","c633563d7099fdee","aa825835a1a93393","e5277fff2c203955","c1d61cfd7f69791a","e32368bd4746efbf","81aca358796bdad6","3760e9321fb47556","091d298a114849a0","0b87bd27a96824b6","8274b053a8ec0040","4025afec5a6baee8","63fa1d480459dd2e","d2773ef2e061f502","f7831b6ad64e9ef6","5138bc4294c1075c","7b5d0083ceffc24e","d5ac89e910279096","f178f9bd13ecddcf","4186545a25db258c","53b4cb5c86e4897a","e55748ca9ababa6d","ac7fad4518a2ceae","d9f4c2224906af8d","516c5cc1ef241cce","4df1a2c1e4ebfc30","5411d8f757652c0e","27d311758cb5c375","d598adb7110120a0","42f18f1bbe3fd360","e86d7b73cc277ea7","8b19d328ae24842d","409582bc90a6f5e7","6ce430f15b9a8923","bf586025571118c5","b3c1ab666b0b35bb","f76a67b4582db18d","e8696ea1389512f0","007c9e512bb54967","4fda52f815ca4963","c5924ef453a6f0df","85b5aae387b7b655","cfad9f1676a6115c","fbaca3e17135c703","31be8aa60457f11c","4d5ac65b21c482ec","6a1b351b5a11e6e0"],
+        "rcCommand[0]": ["14694fa3d3a42c9c","a5c4ddfd96ed24b7","1e38a97bea61319e","7a7fb35b56a9e2db","369aecb0aa2e2c83","c44a876757ac17b2","932e2a22fd6fa15b","4e2a78438de72d48","134547826a142db3","b22e7f52d5f37ee4","940efe19b994afed","c2c1d9db2a2f3d93","0240923ffbcc8d1b","527dee72f83963a1","18818263b34d0f01","ff85b0c8a957a413","7f3095fab532b6bd","905697fbcb7e8d82","27d3a886d9b792bd","b3c7cb75136a680c","c730cefa535a6d55","ba7c304855db9b03","3f1c35570ff5d789","e9af1b850eea1c94","8def7829e11fbc86","f8ea286606d8c1c2","12dcb88fc344a1af","ca24006c42d9c294","3be0bdc97cdd10ec","9751a32a8dba5fda","22d7bac593def8a1","d19f63247dccb9a4","d94afab5f46262de","897d7308f4a8504f","8de3c5af07fe8edf","54297418e2f3c9e1","f8c54e8b9f8fd6ca","abc67fe7c6424671","d70872e3cc919818","ab83b9d1e7420266","4930d8f8ebad7592","4c3879715dbd9b3d","55796d995b0dc71b","47015d763baf8e07","426eca98e975add7","817c27b76fe07da7","d48d2b886a8a9178","3f985fd32a9d201e","23d19e2a3867fc34","c7a08736fd0aa6b1","024b13c0774e1025","a7b755c7244f5d12","4d54d060332c3c64","2f3158cf857660d6","41814781f0a9effb","7cd3f3559a70c771","4f43d5faedc556f3","d40f139cc007adba","8af0602a28735e24","108b43a297acbbdc","a07ea8da6ef360c3","013f94cf2f594321","6b94ea24afdbbb63","9418c92258d1d1f9","7aa61282096eeb3f","43eb37d29ea6dd92","50ae295f90c264e9","4fd68875c5a77888","473aeb9bbff24b84","53ae392a4f2683a0","b9a02c9a24a8acdd"],
+        "rcCommand[1]": ["7938343bcd83646d","b279e0a869534e16","a6170bb84400968c","f02822bf9dfaf2c3","85acd7ee0cae4155","b011cfac90bbd1e1","695a796fced4a5e0","cb4abbc881a94a44","f4c76437c0f39aba","b29a8e8cb1c02186","f443fce8a197fc90","a400789e7341af2f","104bc5b781ffd1d7","307b8752a67120fd","2c8f62c0f2d7dd61","7f5953941a25b7bb","61809dfc231c476d","3431a06b0833072a","3d2451024413ba6a","21767d917ea8c508","7d98bf3bc0519427","914fed29dfe6bea9","c16fd427df8ebb89","eb5c043fb06c533e","0a119fc753d8120a","eba43355598b15a0","d681dcd2cd81d416","f3760ce6d9b37c24","62ae4dbe76cdaff6","1577b8e9849bc2a0","88150c143e6a6edd","c4950159fcdb80b0","3339d569168471a3","15207663c1147039","086652df4dc26f3a","83065260cbbe6c23","b0619fd2ff7b213b","3a55a694da997029","d3fdffc80447d159","4303e4f7b2711184","adebe651db8b20b4","90f0071f5b2d70fd","db841b39062aff44","70e67f3b12592558","07e3d9f8a37e0a35","3235204f82a4f2aa","4e6547729a3dbfe4","3e5863fb6f8053ce","1624598aa57bcc74","4fc4619aa4cc2596","c7d2068a9c47bc46","74fadacaa5c9f993","a0050e16d2c94e71","c4a7359c78eaf321","7472cfd3ff376c02","38e3d9a746f5cebe","5afd33304ce65a6f","3e13e88a304d00fe","a1f08aa37dec779e","751c908811f55909","39b7b650b8eab706","ca25e1a4459c194f","0a47a5adb96d3b74","45bde97bc84cba81","6fe4cbf8f41ef894","67656a28eafc8b8d","a43702bf3431dab0","09a71fe985ae896c","626ea46e0f542341","217256c5a14f2234","760e942ab294e6ed"],
+        "rcCommand[2]": ["0d61b6b02ad9168d","da816d516142b3ee","fe39a48d8c5afc7f","619cbc0410b211b7","0be3e0d4e208b4bc","6a76b0d516eded30","1df873987e344e06","baf1c65dace80c6a","8d8ae7edcc8870c0","d5c128971d5c0c8b","17fcb94c6ade7fb1","f042997e5d81ce7f","a313b2ef2167c97d","bdd0192317068afa","e08007c1b1bed87d","b5a7ca4829ac0104","e6c763185bdf6396","1b23853f62c4ec4f","e8a896de8850f6de","d16b723fc6d48c32","87f693fb33aed94e","4e1ff604352d5802","c078fb2f358201a1","8d2f850c46ba4e56","0163bc94ca3eb4ef","6e89d159f02a962a","070729336b918c80","61d2c5ace59521f1","4b5fb2e565425c4e","880454ba6ce10137","30e4e93d8cbfcbbf","35bf29822cba396a","72b4c18ecc49d76b","f383dd110279e02c","b66786d88749d995","1ee29dda66be6c95","952c99d90a5f9666","c6e7bc0125f13237","42a2010a5eb45c99","851cdafcdd75d8a0","42a625c7c0763a44","1f1b9a747f20009e","fc5eff0f24a38ad3","db5e9c175a8bda62","8997e5562ef6c9e3","5ae12c075f8e6a05","c4943f578fd745bf","9d72e8eb61f8b2e5","910311d6704b9031","70b13e22a6215339","e98105d2d8a934e2","ac304b729783e205","346d2e10aecf97d2","6d092c202ac13592","0b5d625a5e34678e","a0d483243b1769a1","29a9e954a3917988","151c59888551ddda","5a656d9c957e4f01","9487817d1279ceda","a64e669388c1f709","10847bd518a8ba76","949948f215de0a08","8a2afc3b4509d24e","7efc678a41f45364","446cc23e61105dcd","ba437b8e376d1b81","4ba14c738fe5a2ad","52e33ef497c1dd6b","490043e1a3b6c57a","083bb78dbce7fb12"],
+        "rcCommand[3]": ["b11c65b92659a444","41454bfb39c304d3","d0c7ed38b482fde3","ccec929eaa0abc8c","1dbf5f247133ed0b","0609387ac34ade6c","69513ff60a349bd6","0f6c436073865d29","64d8148ccfefd3e4","d8b711e266625f66","cf08f25f1f072fd0","10ebff48391eb749","caf515af4267026f","3d7917be7d32e7bd","2d35af5517c3c87e","4015610a45a84e42","d884696cb51d70bc","5827b7b4794d0dd4","d03a184a559f89f8","93d3a8dc798f1cdc","3d94236b83ae6adf","73e63d8cb957ea03","64e65434e0f6b015","3f87ffbf99198275","1f89d127fe731946","45b66f4e5d49fba6","2f50c803067af015","936c40bd3b699dbd","8c0a743a9ea403e2","a55e7ce88370ac85","90c06701f539fae6","41e66cc6ba087b5e","69ae154eb5864cae","d3db13e06b79ce55","dce5180793de2210","859d58f976f185af","d012378a0fceb7d0","35cef96ab2e3b359","d61a29c3c9b4b3b3","26ac11f735382dd7","d8d4b9f1bca39487","b3ec5413a3f3f54d","6ae4db0a6a8fb4f9","4ae619db7206ecc9","717453e77bfb243a","5976afb2a30cc278","9751e53ede242738","153541957d49c426","b933a1ccab26cdac","706c3ad5f4d60916","391d5336b4823a6d","bf7bd146882c1b5b","dcb4237e5933137a","c041d6fa23b00e7d","d542a0550588467c","c170ede731bfa850","81a4d04de066885d","caf20dc0da199e63","0950071ace46dbcc","38cd00e252ccbfb9","4d5fb11166bd5626","f6809c758348bee0","767c7ee731d9e899","f70965938f3dd587","e9e1c24bb962d5d1","5321ce4081164406","645a2b8b4bc929c5","82609d7ab0db3ac6","57be8be1bb95f2d8","0913fb5271ead40e","6ace4ed721955b7e"],
+        "setpoint[0]": ["543b8be63046246a","6ff40c687a27e936","2dacf046b9008648","7699f35044e253a9","af2e3f220045afb8","21ca3e7a85328273","7cc4a4097fd7fedc","2e4d4a71208a523e","fffe54fb60c6b1d1","f19081b2b1dbc0c8","9a7f4171f3b7dcae","abd7a5351183d261","c01ae439b4cdae9f","99f30ee23c10d2e7","2e3206accc0ec322","9586e9776a62fcf6","bd4e1e8f5963f4a2","4d6510f6e23ac6df","5437eebdd9fbbdb6","8961d557f836b26b","95087a35915f5f94","fa2963fa31d1cba7","33e0e329146c68ce","d2d42a88b962d520","2617382584630fde","239cc72294be66cf","51e6f7afe6cfbb7f","1583e5ba36652fe2","c4f0ec8ed3ff0e7a","72130d2391e42dcb","b7f9048b11427f76","a56d074626fa4111","fd8054a0071852d4","6d0ec8b0ee379e3b","cc6153e166fc2041","205c402726ac8aec","c2176b83f92bd052","a86f4edf9e23010e","5a01ae344acc64e7","fa9652bc013fe836","5fd8a8439556d868","9637bc1c574b4a25","c1948350ba8a2ec2","08ba342fa045eaee","3a693fc69b01798c","c712693f5a786a00","7463a095176a522a","1b59ddd8eb8fb3d5","fca22a8bef44b5dd","bb16e2b4d114c86b","d855e70297b6a49c","f61cf05c43f31eba","992ecb67a3c2e04b","2a11ffd5e5950d4e","ff9857be53ad9200","6d54a8463cd80412","23b28e68d3b867f4","35e96c38f9d45e87","42d8f5836ba88f93","95f8092a5973b9ba","dbc29d6988186a05","e8c5c36fdbb45f3a","346e55cabe769b59","05914092b6b872e7","581ab5ab61b6cf77","9118f5eb47030e97","d95fd42650c0c693","f9d9ef2d21142b33","4abf3d8ba392b163","f1bae98151ae3b1c","0a7fefeb7d19984c"],
+        "setpoint[1]": ["25f57b843c1edaa1","c1448327fe520277","eb67bcfa4bb63f31","fc25651bce290648","4b3cadaba332ce6a","b68adc4265947fce","a1d9a3ee37c0c2e5","2ce3625708aabeb1","eadff4123752fc32","4cd33f245f146b2b","73d7b8ecce14e92a","c62abdc2fa135e3d","78efa0f5781d7f77","6281e45bfd832065","a12c124a4af2753e","bc16beb830dd86aa","c42eedce7e1ab514","69a50dd5700eca51","09bf4b72f62f0938","85518e05c8717b08","3a7f6b05d55882b9","e7751346b015622b","f2000a62636af143","e1452648b19195cc","28d5c417b063f380","c7d906ebb3bc7f4a","e0ed88955817c318","042079d6790da5e6","56792575bda363c9","a25f46e19f758300","5316deb720d302f6","4e5e6abe2281f413","ad9d14009e669cbd","dafb6af673259a83","42f59af006fcbff7","fecf54df17a765c6","f0aefea92a87f8cc","24768b802b6d18b5","bd586af7f9f98fe0","805fea9edeccf0f2","5a31b9b2712b865b","bd5b1de11fcbcb35","839fd7d62c4a1ad5","b2e6fbf11e5e8e57","0e618674909d68eb","f231d60c90aea378","f6f7b9578cd2515c","806b0c0885a5bc4f","77aeeb460570db44","0f94aeb3834ef37c","21a578fa6a0eed78","8876742fbb7d1970","8b4039220dfbc4d1","3789b1a2d3b8a725","35b126fe8b5b42b2","f6180138710b0bfc","e1237851e9456986","a6e17ab7f79cca79","baabf40878639bbc","1d16fa923cb6ce4d","96a96d4a46778038","c4296248c94b0022","f39a688ca04c562f","ca55f723670182d6","7605a94c83e682a6","0e1a9631efca42a1","d9abd164aab040f6","ccc2bbdfdb8e50a7","c799308039234f3b","33262c4fb2b073c1","d86ec7082f96fdc7"],
+        "setpoint[2]": ["863d2dcb4afc1f33","ae90a95c2eb7481b","de3178b64bcd678c","17e2f25c99eea9e4","01b6b75569fe0985","30e20a3947ea96f8","b2e99b6a12d38636","67441ccb5c5d48c8","604c5c38bb5f3d07","e1bfecb3018f07f7","54e62cffe63a75d1","c22834b6d0b8ee9c","7b7735de06804e4f","b91ac0425ed54f36","d987044f28979558","ff2bacc69b7cbb68","3ac2af9ed08690e9","c9796a7647d9c305","b79ec5e3faab7906","4ffe17c2ea834dde","e85c979553ee08d9","15771d07ac158950","0c8851de52a87745","6d623615b1161283","7f8d04a9232ac37e","1161d4afb763781c","d565f6a2991dd0ec","68551212a175702f","7098a7047ef15b5d","ad503ac621555eb1","e7c38d227bc5466a","b513096a70ac310e","7319ad4385251dc0","6fa232c9633a5cec","c933b21097518b1b","59fe22f668be3e33","c81a3c46581347c1","a6728f42b7609fa7","c4ea02f83d3bb602","c6e71ce4c441b1c0","fe1e3bd339fe9210","7e21c95ee1cf0399","fe1afe5269e666a9","9cc89f14833c5a52","9dcb279c0bf035fd","cfbb0844b5dba0aa","7d8b68e5bf46a57f","92fe96970087a5cd","0f8270baf782bad6","388f97f916b8dc70","91bb716cf0bdefc6","ddd8071a9df14274","344707455514336e","8f480ddff2aee4d0","cffa5099c4cac775","83288850972b6b51","18f2fd372a8a066d","88aaa4b0674a0af4","d7c33c08aae821ab","841643622ed76835","0aa1ad9f92030d33","c6f5e02ebb853c09","da079775a3556709","9fad08c085fca836","f58bfbe69897a088","01cdad592f6e398c","548e7ba20045d079","563c0ee808be94d3","117f06f3f8c346e2","e70a590ba3489121","7edd8b7f3ac1cc7f"],
+        "setpoint[3]": ["5357fb94648487de","84d0f8bbdb927784","539ee4dbd6538869","7e662781962e8737","6c1750bf975ee2ac","57fd77f769b56b0e","41893c43e41e04f0","613663d6e1b0fca1","e89665a8d756427c","cd565ad8e11befdd","083e72b8be66c16d","8a10b9f19fef83a1","fa6f4dbaf1ca2080","878cd3ba32d553fe","0f29e45ce7262732","4c29cda4f802ccd5","6793a5a6bc73a7b8","a2e942298405b525","36a9dee68f299a00","7cc9d633d1209b8a","dd4ecc799d56c8fe","3798aa75447b0b20","97dd4ec23648b96b","4eac99417e7451e5","7786a969481a8819","c23f5987c437fb48","d5276f91c1ab9bac","7b44f20ebd367fa6","2b1fc4f1b7b8d6a8","52522e741bf7d46d","205a24bf4c420808","b4c82cb842ee8666","b288f23ae9f1cfd1","f2f1355369704e47","2110cfbacafb4e41","c731e5d1cb6f294c","6248445699d9018f","f9380043c0898540","3349b422cdff12d0","7b84dfa59c4e897f","141ce9e1f449bda1","1e148afccad78369","95770d8c43b429b7","59ea24f5c065e05d","b816dda5cf374951","770deeeb627425f9","8a16f7ebb0025557","ad7988533afbdf64","54447d4bb13d23bd","ff18050b6115ec42","c4d73e67dcec2dfd","cba8e2084217ea78","e61a608d2cd77b53","890d5aac8bae7af3","23a499e822b229df","091fa64ed2f241ad","1578390b035193fd","1fc6c100872d25b8","378cd632533ecdef","b8fc51462bbff52b","963eb0a34b2cd5b9","f0514be7644e43da","7ea34017f92def4d","771747171a67e655","60aeccd28dad4513","3adf57b2e19b3c21","8b00866f9f2373b9","c3160a5976afbb3c","bd2ea6141857ccc8","5f1b9a8b421b1f45","68b084355284673b"],
+        "vbatLatest": ["ea5df6305c0bd4ce","cd6a5e3679b78894","c0c74e56e10bca67","778034122640d222","695cb11ad7a7ebe7","9c14087c73c51846","97b55f1d9ca66a6e","765ea1f79f554e9e","92ddd6bb80e6d9bb","7f8a1cc48a3b0779","70d9ae819ab5926e","3b3cec4256b4b5c6","f3b144e61ad74ad1","d99094355b4028f5","6e20bd87eafb4d9f","614af8c319619ded","a1f8509a79330a45","4da02315a55bf3f6","7b10b2b893678ad7","2812faa189eaca28","de1a68e6c168124a","03f8fca493729bea","291a0fcbd40a723c","7680b46c68ee2f91","a7c7c72aec65329e","e9bf7f0bce6ce96c","03026291ad489e5d","8103cbb8584d3c08","983155ee419b7a36","d901a194d31a8e3d","7c472d59c049f7ec","7f9e03018e59fa36","50c25af64ac4283c","49097fa36a9fb353","3888048a780e5ed2","982502a4f5fca4ab","38101132279e089c","3e31c3661a01b57f","01e2177daab60f3f","ace12dbd16a9b9a0","ba3f3036e08a61fe","a4b52ab8d24cb87c","06259d2655f09ad5","c51904dc4f45b733","f0f467be539bb7db","abf913779748a8cc","a6edab0f11bed5c5","207437bf6d65c954","08071ebf21902a35","8dd1015878962e95","d22300b015d567f1","7aa6c35d21605626","99d43f63c6e4e360","5fab865940132995","35cef1ccd5d2738b","0dec8745ea8f85a3","219c25c30291443c","e7dd9f775f010a3a","5f574ac6aefb1913","2fc05eb7ff7dfc65","b6a276125e385bc8","e3d19d59b7192724","aba21ec6544f5354","3bfa0264c2633065","0ff5269865edeb4c","b8c16091cddd61df","4be90897caa70ef6","29a2d6352c9c7672","c62f91dc768f7396","9a9b5bba99623d4e","667d841cc5594d70"],
+        "amperageLatest": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","d4b9b872f6e6c585"],
+        "rssi": ["2868f2c29c32c401","26dd6c6530f6a0ae","7f7cb719bdd54b41","4a57b7f98480738b","c8bcc5ea8226a599","2189c6390e744ada","1b02f32e6e9832e4","92b57281bd0179e0","cd7a6a9f717983fe","351745cb9b2c0b49","533503bc46e0a7e3","eb67685afb29430a","4d35ae87fff861c6","d1f0e9509a75eb13","f0e93c7cd4ccb289","7152f65a548c103b","447f9eae4c2003d2","6af5f9f624578820","6be94ad0a68cc68a","545e99813202c468","707c33662403425f","98fb0cb06fc5692a","2dddb869d5a2544f","3cc4ddfb529fdd92","27a13dbe58de9eb4","546d02b70959e256","508b82cad590f989","979b49cb9753214a","86bfadf66a91e98f","8387ea73ef1dd37d","692f882a220680fe","b38cbcc18089fec4","1e602c5eb52a55b8","3078f943cd342e55","dda3b949c2fb63ad","94ae4776bf874374","2398aab341006541","11198d4d72c03fd2","672e2661dd1c2044","f01a99131882355a","fe46c88688da31b1","215049a90a12f1fd","6f7a61fbe3baef0a","6ac1bd0beca58a6a","69d8255a22c79771","2323fb4106a6386f","db0d14958cf102a0","5d5eee7f49dace39","f6c4052a2c3e78a8","9b7557503ca9fabd","924dbb96d32314e7","b9c0d5428d20a388","54b6c0e858703a93","e143465514e63807","582f5f4f7e336489","d423c23975abfdf1","b2eb17d6ab93961e","9cec6654224ce6ec","16fe2e8184e85d1f","d0f03c5561189677","386b2a41f89f081b","9fbc5b56b9a8dc73","d061e7aec0df08e6","0e3d1142ddbf780a","b8c80d4f81d77949","1f35d91ba05a2b16","86abbd283e0e5c78","5dbee9a419556fab","6134eb4d38c3bb35","01d90f75b08182b4","3c0f3bb0ba956d25"],
+        "gyroADC[0]": ["07b0f2a896d86e43","086ec0517bf77069","44bfeaf7cfb8131a","356109e427ec5166","1dc15b30195bb930","dbbcae1afc2cc48a","01a2820a14acdb7b","5422735bb1d0a23d","1a4fe9e00da9ff04","8eccead5bddcd1ff","fb8eaec63162a757","3895824a11651c4b","e18ad4d284516551","01511bda869b5552","eb01a92f5e0554e4","d4dffb1b673f134d","1b049fcea734c344","2259fec6be094d15","08ae7ae7ef759a25","f6f48439b0dad0aa","38b36f2e71173746","5734a0ae0a7bd9e3","fb40b8c71f67c977","1361153eb58bbf8f","4e9cb06e11b135d6","f0a7adf55a8d493e","02ffa668e28d8760","07de38866b7281ee","2ddb63ae4b8e4751","0117e0fb42919b3c","23bf549c88fdb286","8b90675a9694bd4d","d7eb633113919762","fed2526b6899fa08","20ff6b8781a6f750","5d7e641488fa8689","920334be4d15b041","06fe4b06cff41433","c8f7ff9713887ad5","bd5ca78061952bbe","b31727ca528c430a","18cc69116ebdc17c","d9ed859d42312e5e","9c83bb962a78f47c","052e8b2c454bb2bb","69852c2d40832a04","2ca0b292128e5079","9c5814802842b23d","84072ff904bf4798","4f2e8dfc69aaebce","843b5bcae7abeb6b","3aba0e537403a90b","f71c8bfd96186d9a","1037088351493bff","cf2c959d88e49131","25ef8f74beea9002","82fa2124045a71e3","0de1e1da272d2e8e","43deb07a413181d4","7c9242aab3fc06bd","21921163b3335224","d827fb745946403f","101cfb1612980704","d72a1101fcdf8eb5","84aaada75484ab03","2ef868d26f66b7c6","8cdc602b4aa50d4a","4da1407264d1c2f3","a043c1ed3dd04214","4966067f9d69f218","b1fc0987617a3c82"],
+        "gyroADC[1]": ["e480d1c51d4bfff1","f7edb82670aefd0a","773a139ef68b714c","81fddced549b2cb5","9dd571f4a0171d87","fdb5df7a4b78bc19","9527bdee2ed4a79d","b412951c8000f333","685e7e311f22fd88","627c779b79cf163a","aeebb021f49dcf97","300dc8847330978c","4c5440bd26948454","b65eface31ba3b3d","a2bc4ef8410f3db0","a03d3b5f24a46738","9a39a1e3f61d4fd6","388fa37fb8dca7b1","96b1a1b1571810e5","f41be2a9d13586a2","221ffc58558de50a","d2aaa9ea55c3535f","02363e36a3b84200","ba92883ccf14f879","2b431848eb85bae4","6919d5dcc6ce5d22","63aac6f6efde4c71","d78b7abd796ce44f","141c4b987ee40e2e","c02273c1b5aa536d","c91bef25e566f203","11c063bfd070f138","7ab7c6492fd14227","33a942d44eb12b39","a831d14078ef78e3","599f54de0d6cfb9e","a67987de2b48d872","4a53a7ddedfc852a","e46bc3f600d3bb0e","f332feced8ca958e","b05f2f834d6906d3","dcbebfe53011562b","513faa5a1b26df7a","971d3cd892eddbba","a7bb6c17e1be902f","20c66d4f454cfa8b","5f3c7406e7bae759","5af8896215d2fa23","8bf8275b90ea07ad","dc892e511bb0ef68","efd27864228df666","59b23ff2e6c89f2b","c605e89fad0c66e8","37317cb5c65d9b11","6685d6900f66f81e","9181be8978d5a5fa","ae006302eb2fb579","fe9003ec86d460d1","f10db0c083645f7f","71067018c5352031","7ebe7ebb9ee0055d","b104c521f55b9c30","075c6e37d2e820c8","577d1c9ab8165d8e","3e6d3cba85d836ca","b1a960bf3102fa12","287a345ce436a5db","1d24528c48e0c525","4791d15a27a02943","5beea952aacd0b25","aa70aa37df9702f8"],
+        "gyroADC[2]": ["e2b909fc03d2db0f","357c2d344ec3dd74","0bc82a4117895a02","1e3e7c6c1b956d42","e68c221ff67f05e9","d36a64b7166cc955","b101778039ec2022","5e41c88b71f85b01","959632adb052cdc2","f8e889dda23cd52a","6038bdf34dcd38e0","8247f5f850ed789d","5e3f6552c2770f78","1516e622bdc18a78","a8547800bb018e6a","e55a286444f520e8","1a859e3d2c7d0367","ffc4397d3778cf30","ffb917b1be37dd2c","7d083da0df4b8689","137d782b12ae495c","467f51b6bce136d0","7ea59d450712a313","7e0f4e7612c424a2","33acfc0c13d7ee19","16dcd1212afe2622","a9082282120f4338","c49c6f3a0e7aea73","1ff8b9a204945f41","f2979bb6452c8e9b","bc616567edeb85d5","ffb612bc7837d582","619bb92b597a7a9c","83db7342c53ff739","801a461929766690","f40bf5793672a1af","e2a1bf34d9e4d855","fad460d24e4af457","c94eb8e5ace4ccd4","9a412feb3fe2fd8b","c52e147c8ca1887c","1c436daf56acbc66","a7901133bc44ac13","623b33e18a1641fe","69e2bce83a19cfbb","da82f1f1579535bc","6dcfbbfd8a87be9b","60ef44e278843594","fd95792f3f9401aa","e541d672c11605fc","f921a527075f8e26","48d9cfbde44bf04c","5b83ad65d9e415eb","f88cf7d6f6def6fd","87afc508fc79e670","c2abcfd2f9c5e45f","8a866c494e7d5cdd","70e7d6bfc6298d57","015ead9ae6392e7c","55d80ee930cf6f86","b48598da7e7947f8","d6b12607b82291a6","f0f9a894f948ab9c","046ae2c299009d19","abb6a1a65644fea8","80378858508d4ebb","b4e8064ababbe66f","0df4a3ccc2cb0854","d19483e12aa73cb7","b5d5f40e0a6ac057","39600f1da6dfaec8"],
+        "accSmooth[0]": ["20b127e6776c6945","50be3cb8dc305ebc","de41d812dbf909a3","e1cee03b08c40429","e0d66cb7dff74279","edda512cad317e89","af2b22c1ab9b695a","332f35ae6f84a54e","07cd45fbc9ff4e07","cadd1da206607927","d4dfb9a3f6c430e8","d1930338fcad3b22","0ad9d87e93227b45","cfb14d2eb7edc6e2","21b7d44376c43069","a8d688d97d11d0d5","60d38c07aa88f92a","e65e43c624a0d0f0","2a1fd463c0786b50","d384b833f835a2b4","1bbc540e86293208","c312a11db486af6c","cdf7cef518d2e19c","4cce4c4e764a8d81","fd386b3a382bc550","e810df145a8645bf","3f562f80e8305a25","f77e38393aa13deb","bef3764d9cf6c70a","b0a19636ddbe230e","4e0fc08430aefedd","ed02a75fa4b836bf","25a59532e74efd32","f67faaa6ea2a312c","9eb0dbc02caa9d09","390edafed7e172bf","980eb063d2e91925","982da5a4691079d8","685d4831ef55aee4","ed377c49bcc4c844","d0ee53fe2a88b624","0d5bddf39e25ba8d","06818e07d129e2c4","b52389673ccc995a","510ef19268d9e8f1","02896ef460bd0099","09c32674e46e8885","c1d618e7eca7d8c1","1aa279a75de97715","b65a4f7fdf110fd8","4096ae32efe7de7b","70b2de6c4dd884ae","b0e9439650093a5a","47d01a0c4d6c0574","3ab9b99d57eb091a","d35fe3c11f733f71","defb385cd72da5e6","4efe3ff1bdc22f8c","631a90b32d375e12","6ae15ac4cffe8000","c93fa88ada2455b5","fb2c58995ad44ecf","d9f5805071b2c1c4","b2bc95d108f8ac95","9adc71c0d0a312ad","abf28add589c5113","9da652367b33d98d","9dbd899d4c677ae7","ca9d371b0d4e2392","67f3dfdde79a236e","1cc1390c61481f97"],
+        "accSmooth[1]": ["0bfd463958220871","1574c1df2cac76a3","4e9674fa2656894c","c0045260ac889261","0d28d245dd142f61","51b4ae3b66283a80","67ce9324f78acc87","95772d45db5a4758","bd50b297ff3c88bd","1520513a097dacea","7e5491ab6a43a4e9","b3196507b71abbce","3661e11dd3858942","54d7cd960ed2c744","1dd02bceb3bd0fcf","6837600c1e012dde","ba36a36c134d4dfd","f6550aab59bdb047","c74e68c14aa76ec1","464faea83a11461d","3e5a8c4e5cf52620","428638598d6b8356","444c92d2373792de","e8f19922efe50d3d","33224511ff2def95","f2a7f5afc756b70c","67478aad2040f8c2","1bf29ae484877746","87088f443459b685","0d3ab439558542a0","f17ad02507a696b1","b095f12318346507","411245b6a564dc43","e6417eada0ef82b8","9683918dc3ea7e31","c37dbbaf00f812c8","05db550465653396","fbbbf2591d4fde7c","bffffe11ac95871c","63453fa879bdfa8c","86ca07f87f92fb59","033368fb3a661a00","4e2dd885f4fa14d1","2d5f193e5bb5dea1","1accc35bc362be80","78340441efe444d3","e712423297a8a121","8f7206a6c5ad03d6","925a56e3b8a4f3e8","5c27092ccadc1378","965b2eb852018892","9acd40c4bfd5ce90","3c11784fc37a0185","82018925298042f1","8ee6729f8c227017","393ecd4568e5513a","e3ad3d7960a79522","24b988857e6b108e","7b4f418708a3e538","f147296afb2aacdc","856d74b129c06b42","8842e9d040f18893","eb778f66422ca100","0e35d0d371cc8636","891ae76070a15c8b","f3767588faf497c1","3eef4cc5cf2603c7","dbb7c6fe55e1c254","fbd04681aee26829","f048647ade2e9eb5","d6a2efc26978b407"],
+        "accSmooth[2]": ["2e30418a4c09b1bb","33de83eb51d90363","61afb0fe68ae7e47","5dbaf318b80839e7","317d6fb61f610349","cf979d5888305e97","e5cff9da838dc4e7","dabcf46bf8931566","836c987704cb6424","b391374f73ad1a4b","e6dbfb083d932862","3beddfb66784e023","8f03301eb82ac8c3","8a146569fd9cb270","e66503d2d33b153c","bbd8eb567ddf07eb","97bc07a1131f2353","7b948635ac4d4e40","6952718884740088","1a5fd368bca07139","abfe1c9cae444723","734843548c25f17d","8a42f949793dd1c2","181196ae70e705c1","ed1082ec87c31c19","8b64b9151ed2356d","6a11a260a26c9941","b771bf802d1149b0","13d920328a9f50b6","2f3ed95d86102bb7","5aa78c0fed99d772","e78fa6001b0bb33f","bfe36f7db9b3cff6","d3e7685544d550f1","67103cf6818a278c","0d7998ed0fa7ae85","6407beb88fc412b8","e0f9959795549ef4","a30e0daf84e71187","b96f8a423c5d138b","3af8cbebc03bcadd","d6dfcd29c505b974","0b79a524b3044ce2","b8c62c0d3239d206","d9e508f3a3801dd8","c487387b9d49419c","d8f20ffe2dba1520","8f94fdfd38c8d587","4563432c53a27043","f65f1e7c3cbdd0cd","b47a71572383238b","dca5e3bf60684593","8cb077d0dde7fc63","f5fc4f0b110ba727","d0915a5ef8130c1f","1c7df817c6d4351b","0ecb3f00266b1149","693acef7ef8f39ac","4266204e4fa246a9","140dcd208216e4db","2c079892ab76d120","eaadeca2a19df8c3","8c5be16067009fd6","301529a387a09d26","66b918632161a458","526379b0456b6f37","480cf2dd2a468a99","ce642b8f8577dd8d","7fffe967965e293d","072085a30a47b988","b5297cb26050a27a"],
+        "motor[0]": ["bdc4ab3c8727109f","ce77bd0c4ca773cc","e17d7f1252f05186","0bb0701e77e00b34","ca68edaa0fc87247","1e56a8200d1dbb11","fa4de831223b7fc5","2da302adf8516f81","f834ee8a463c1cf0","fc5202275ba5d306","43035d733d8cdda2","92b8915b6350818c","d000ac8b99e56bed","42fb16043aadc938","1584147c708979fe","b3396e8777352634","be461d2d7de6e6ac","67111c0b6fc79625","921b5dc5adf442bd","aab3536f691ce809","64e7a2c99610fbfb","b9219d212866684f","1a3f67f2af0f8e05","c12796332406c80e","f5d615f5f18010c8","bf3b592dcba735b5","3c67217e82ce5edb","4fdf31dcb38434c3","cdbc643bc3db7cef","dd1212bf892086da","fc7f2b83683a3444","776e45b3d0db23c9","5f57cb269716ce62","f5798550f9709d9c","c84a7888c37e3932","a275249f5b2056db","c14d48a097eb74fe","cfc6312612105fd6","feed7fd418e4adf3","927e9c246869f42a","49043dabc3a9f45f","e62c0b98d5115ac8","26c6dd62fd4bda1f","12d53a4def7c1d98","1167f3e63352bb10","f5475ad06dc7a04a","62fb9dc381429f66","aa3499be1d0b83b7","4bcb282a80761a0e","855394dfe41163cb","ff2fb762f91335ef","7d4493f3d704dcac","2c1fd83ffb869254","5669df8d92988856","c7aa0ca03946ff7e","ce8a35cf2f91025a","3b1b60775e726a0e","fab83100df5bb475","11fca55e38634570","9e377cc1b8a56adb","43d92ec0a35f3418","282a4981082dece9","83d6073be5fc22ff","433de531762a2768","00810d0caa3739aa","e0ca73c7b5917515","81f090d462eb613a","7567808dcd43f2a6","ed80bde4a50c914e","d8bc0f035e2c0a5e","297694d3fbc78433"],
+        "motor[1]": ["fdcc1ae16ff6233d","8eceb111a0b45b93","6f858ff31f487593","88589998d8062fa1","69c3fd1c7c94c08d","cbeba8b125e9e34e","b87acb7148db4477","f35082ea850a3ca7","6e2d1b4ba6e860af","19cb6ef5fc093228","7c5e5e19b386410c","6d0ba6cfbf807396","945150a4a1140854","bf514e3fa010978c","adcf2642a901bd4f","9cede7526660a56d","a7a1d121ee651d8e","b355ba7214b58409","900e4e37a42728ae","7ba749eab4d24850","e07c0d7cf1185508","a478eb572dd249f0","c45a918d0f751621","e39fc77fcfbafe39","c5be481b9e1acff2","31493dfe1d12b243","8be46c957ab35ea3","bc5dfc7efc5c2e39","d12b763f6cfd1597","e116fa6ff3b17056","826a4b47893a3a6f","ad29873cf4f9be81","939dc253731f63e9","4146581662e26a3b","b97a9d6e5ee51456","b404ac1513b30bdf","263cbbf8b33bd382","50ff44b31984bfc6","21dc8fa33d8fabeb","e06b97f16c619ae2","215e23315161210b","6e38d91c3c493596","3bd9169614516f31","8f8a6387694a32dc","c0ec70796c9152d5","9c149af9ba86914f","0f8ffb981629159d","a0411e9c9a597bbd","cda81243d984a12f","935e618c00dc5de8","c820cf0a82aa3c9a","795401db63de7ad0","bf9cb1abb0adebf8","4788cefa66b0b127","235bf27df2b4b2de","360a7fabe22b6b3b","fc0cfb3c19dbb026","2af911f14fe4d17b","22584377144c9de6","97e2349fdac10c76","f43f7ebf8ff951a4","8bf8c7d94bbe74e1","950cd6d2082f17c7","b9129906d8856523","91b483052995ab23","bbd95a77fd89bbc9","5ffb00c1131d1791","ef08c98f09cfc5ec","5e7ecfb0222982a6","0e8c2435acf7b040","31b052fbfe6843c6"],
+        "motor[2]": ["6fdd378b9e38a506","31fe99ab4fe97da7","cf3ad5a333e81de2","e8e5d191ba87e70e","468f1c87327ba8c8","4214f6efa9fc0b52","bc88e28f5d3b1a3d","df2ea29450be3560","7ff69af3d3ed28f4","f5a5ae0ae0811d12","9adc3802bc301ca6","0550e0effda6cdfe","6884d63f0342e350","244cf56998801bcf","43c4944aa867a978","86555d95349a93c1","3599616839fe1b6a","a5500f4889b64234","1f3981caef68149c","428fdb30d1e3030b","584899b3eb42a63d","f0b7a854d14ad024","cc314870d54fdced","a5c4080d7426d40b","87a51d9efcc27a15","5ce3e06c4c79c6cf","5e4739e373b5cb56","dfa64ada631246f3","b1541ba0aa66b796","e310fc9a61cca4b7","760a9c86b8e7bc22","652e39abcb55eb06","da1511cb3fe71dc0","de59a4a037b0e263","4344b1204594be6b","171b6bbc37e33ee0","252b07f2b9b4fa6c","97f1a30584fab72f","687560fdf868f3bc","0ace4aa9f44190c7","01f1900d085583ed","1867a8f011370efa","a2d51c08e2bffeed","bbc818057ad1a13e","0c5adeeb872c7efc","899846697a843446","9ee70188be9cb0e7","d609a306c7b846c0","d958df48f3aa7119","2436bb550cc800ca","0853c1f94a2d5f1f","935e32eb984cbe02","3659dc62262550e6","043b7a67508845a1","c76223ea451f94db","902656776c5f8178","e61d21d6850f44fc","eedf564c5a2c9749","7381997147682b98","6f89e5b7dde2652e","dc62eb1441202c7e","a326f31e2907c711","ce444260610d261a","9239cc0828ee1fb3","16c8bfb19d18e496","b9bc133f8a790c86","8d1f708540086690","e1821746d8325db8","59247930c2e98454","451dad74f5bf96a0","73ed2eaa12c926fe"],
+        "motor[3]": ["dcbfbe529330cfcd","bcb2a12e6247c413","07357d56f0c992d5","5df5b4e415f4ca94","21f330ae6ad82e29","2518d04f3687906e","5adb2e7cdaac6f96","84a7b2aca515cd68","223d66ff651f892f","bd003058c64c5f33","1e271c7fa0084318","5b991169124742a0","b5e26f220b687ef8","6e685b223f9cec09","7593f95482efa789","32349d559da3356f","2430cf69be698e05","e2a8c3b914134768","d9f7c39b21f00320","955f9792c5e95352","6976a112ede4ffaf","c17ec3a4775ed17d","b34326c1f263e628","b95e4f9a4449726d","980a1a9de38b113a","4f5626d245adbd77","7d28b69bce7f5d82","d18d2d223c73a355","18ddd1d677b98f76","747ba6806b2b2c01","63b254311860c199","432c22069292e324","1402176b435a65cd","52a306a2a9f63205","c1445de3d88a9a31","557d021b00e2590b","589f9b46d5e4930d","c0bfd4b039062f37","fcf44cd2a0d4d9be","a3fba19563014982","e7fabf2c1661f379","bd21dd9a3012e0ed","41b63150215dee03","352acbe7574fd471","93f6670bef869715","e789f97447dec397","13f51f98af5798e5","91a4d56ce21bd6da","8301622f9e424c58","25be9566c00b94cf","c2cf8cf916ca06c6","b4ff40eec7c8eedc","716dd340e9d8c89b","159aafa5ed0598cc","aa8a34bf4de244d4","418ea71c2cc510f2","66c585f0b83f68b4","06dce435dc6cd004","13a74e396851c586","f49affa7aefe1d4d","8d7a4d11a25fe00d","4b1b50724b165f18","d4210fdc79db0995","2d7c25171cbe5314","203c1b6c3015a82d","4599935f142829e2","4a31da906a5e3b5b","e49888a9fff797c9","dfc47b9d9ee037f7","706a6af36c69dec2","d65212ab177aa039"]
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 18,
+        "digests": {
+          "(at)": ["c0c23b33b49cbae5"],
+          "flightModeFlags": ["5325c1fda4f23055"],
+          "stateFlags": ["ec32669a74fcae65"],
+          "failsafePhase": ["ec32669a74fcae65"],
+          "rxSignalReceived": ["908adb63a2154f45"],
+          "rxFlightChannelsValid": ["908adb63a2154f45"]
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 14,
+          "data": {"logIteration":12544,"currentTime":19936397}
+        },
+        {
+          "at": 1,
+          "event": 0,
+          "data": {"time":18247228}
+        },
+        {
+          "at": 1,
+          "event": 30,
+          "data": {"newFlags":524289,"lastFlags":268435459}
+        },
+        {
+          "at": 72455,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 72455,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":6}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 2858,
+      "first_time": 19652148,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": ["0d27f92a9d046325","0d27f92a9d046325","26904d625978b224"],
+        "loopIteration": ["f6a1a67683960825","26176617ac1d7625","33d7dea3d40834b5"],
+        "time": ["ba4745ef731f4827","01989c339b3bd51a","53584a929615ed13"],
+        "axisP[0]": ["21095794cbf0ad39","a4ada7abbcadb4f9","913eaf03e9864c2e"],
+        "axisP[1]": ["3225f0d97fcd233b","5a0caa70fda81186","762c589ca2719b96"],
+        "axisP[2]": ["00c14d017dd051d4","6b876648fcc9f4eb","99fb1db3cd443171"],
+        "axisI[0]": ["6cb855d7d2853271","35ae94695a861bfc","f5fd9e84dc2001db"],
+        "axisI[1]": ["4c67e536aeee1b40","0f4652ab301dd15a","e9a8b3e4d39a70a1"],
+        "axisI[2]": ["0bcc0ee283a87d7c","bee18cf36f4c9372","e81fac15e1bdd186"],
+        "axisD[0]": ["ce691c0521023c22","7aff321f0115dca8","94beb9924e25b08c"],
+        "axisD[1]": ["f1f7ba936678ed41","e7e894a5582cce83","6957db382c65e306"],
+        "axisF[0]": ["708bbaae82914a4d","4a97c213e701343a","09a62a72ea7001b9"],
+        "axisF[1]": ["04d460267939d45c","2bed3bee3d3bf071","b074cfa8432bfd65"],
+        "axisF[2]": ["b9d103fd6854a325","06cb4ab3223b9014","7283f7313e10192b"],
+        "rcCommand[0]": ["1020fda82f8743e1","f951ed71477583c1","f4d33b23d430c7c1"],
+        "rcCommand[1]": ["d7d3f0b1f0f8ea50","3349609c0aa85783","b074cfa8432bfd65"],
+        "rcCommand[2]": ["fd9866fa6c2efc0c","33f56227f66dc2e9","8029e5b9096536a2"],
+        "rcCommand[3]": ["8b64f4a810478aed","20b8e3e3cf1adabc","a5658078f3552233"],
+        "setpoint[0]": ["9701e456dffc7515","182d18bcbb7ac030","92efbbfddef3efa7"],
+        "setpoint[1]": ["3aba8ca6ddad6481","4ccf9066ea26fd7b","b074cfa8432bfd65"],
+        "setpoint[2]": ["b9d103fd6854a325","e6194690ab8430af","9086fb53be6b600d"],
+        "setpoint[3]": ["4691b3eb856198c6","992aa48b1f3a0c7a","fcbd36b6bfbba3a1"],
+        "vbatLatest": ["1a133643d5d9167c","0cd3624d37eb291f","1c6ec39b12b56b69"],
+        "amperageLatest": ["b9d103fd6854a325","b9d103fd6854a325","b074cfa8432bfd65"],
+        "rssi": ["eb3c860485391703","e68b673a50067a30","c0e95af775061325"],
+        "gyroADC[0]": ["ba141edb6b87de94","b9dec24de4a61272","4e90f59fc4f77e57"],
+        "gyroADC[1]": ["f70179e37f705fa4","230f72b5ea165d88","4dd2b82468fdd98d"],
+        "gyroADC[2]": ["ff198815647b545b","5aa71c0c09867bdb","76de3db775402e66"],
+        "accSmooth[0]": ["78679dccd6e985a6","eb65b14a6a328a2a","f64e3a70b6f2c8e1"],
+        "accSmooth[1]": ["0ddff5ef53e594d5","108c2313cb464b66","0763e97af8064547"],
+        "accSmooth[2]": ["96775835caa14453","5989238efdeade27","e3081c2b74185a71"],
+        "motor[0]": ["d398e0f3c85142d5","5ba6a213c1055da8","18b7b29e75a7191f"],
+        "motor[1]": ["d424264122aab601","043a8cc04e323e4b","f9d631c48f74db1f"],
+        "motor[2]": ["7942be096b0a1146","3410cd18b74599f1","4c6e785ca9d4ace1"],
+        "motor[3]": ["86518ce179a57a51","7507263c22ad05e6","ded0016e2dbcb5fb"]
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 1,
+        "digests": {
+          "(at)": ["89cd31291d2aefa4"],
+          "flightModeFlags": ["6e8052c08cb9216c"],
+          "stateFlags": ["a8c7f832281a39c5"],
+          "failsafePhase": ["a8c7f832281a39c5"],
+          "rxSignalReceived": ["89cd31291d2aefa4"],
+          "rxFlightChannelsValid": ["89cd31291d2aefa4"]
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 14,
+          "data": {"logIteration":5120,"currentTime":19652148}
+        },
+        {
+          "at": 1,
+          "event": 0,
+          "data": {"time":18885711}
+        },
+        {
+          "at": 1,
+          "event": 30,
+          "data": {"newFlags":524289,"lastFlags":268435459}
+        },
+        {
+          "at": 2858,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 2858,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 884,
+      "first_time": 67627896,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": ["c64ad04d60f123a5"],
+        "loopIteration": ["e16409eb57d025e5"],
+        "time": ["af6f058c10b1a53e"],
+        "axisP[0]": ["2a0be741cf59deba"],
+        "axisP[1]": ["e62bf3a2aa2c58c6"],
+        "axisP[2]": ["fec53e0a8dffaa60"],
+        "axisI[0]": ["a0a23ba631c35ba5"],
+        "axisI[1]": ["a0a23ba631c35ba5"],
+        "axisI[2]": ["a0a23ba631c35ba5"],
+        "axisD[0]": ["2841333cc58e1c6c"],
+        "axisD[1]": ["761cb1d64a52dcd8"],
+        "axisF[0]": ["c4a016b7f958ad34"],
+        "axisF[1]": ["a0a23ba631c35ba5"],
+        "axisF[2]": ["f988768198b16004"],
+        "rcCommand[0]": ["351b03ca7a3aee03"],
+        "rcCommand[1]": ["a0a23ba631c35ba5"],
+        "rcCommand[2]": ["c9563fcd7cad764c"],
+        "rcCommand[3]": ["b4238ff3f3e1de65"],
+        "setpoint[0]": ["fbbb9e02ecd9b8ad"],
+        "setpoint[1]": ["a0a23ba631c35ba5"],
+        "setpoint[2]": ["8166c9080872bb8d"],
+        "setpoint[3]": ["a0a23ba631c35ba5"],
+        "vbatLatest": ["697c8b5278b52908"],
+        "amperageLatest": ["a0a23ba631c35ba5"],
+        "rssi": ["f54b6a37e5119077"],
+        "gyroADC[0]": ["d9d2db3e430c67f7"],
+        "gyroADC[1]": ["a6671d1bfca1a8c8"],
+        "gyroADC[2]": ["04c5b70eb3885c5e"],
+        "accSmooth[0]": ["adeb6bc31f9ac343"],
+        "accSmooth[1]": ["7efafe77129113c2"],
+        "accSmooth[2]": ["aa5c7e3bfb46f616"],
+        "motor[0]": ["cf076c9ceb19a70e"],
+        "motor[1]": ["cdc75097f1a89153"],
+        "motor[2]": ["6689118367388223"],
+        "motor[3]": ["6024b0d1c76b1034"]
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 1,
+        "digests": {
+          "(at)": ["89cd31291d2aefa4"],
+          "flightModeFlags": ["6e8052c08cb9216c"],
+          "stateFlags": ["a8c7f832281a39c5"],
+          "failsafePhase": ["a8c7f832281a39c5"],
+          "rxSignalReceived": ["89cd31291d2aefa4"],
+          "rxFlightChannelsValid": ["89cd31291d2aefa4"]
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 14,
+          "data": {"logIteration":2560,"currentTime":67627896}
+        },
+        {
+          "at": 1,
+          "event": 0,
+          "data": {"time":67186726}
+        },
+        {
+          "at": 1,
+          "event": 30,
+          "data": {"newFlags":524289,"lastFlags":268435459}
+        },
+        {
+          "at": 884,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 884,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 694,
+      "first_time": 75970273,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": ["2da648a296a718e5"],
+        "loopIteration": ["091e23d3f88f9fb5"],
+        "time": ["cb76de3de3532954"],
+        "axisP[0]": ["5e2c9263d978197a"],
+        "axisP[1]": ["16e4fce108ebd6c4"],
+        "axisP[2]": ["2896c86d0ee443e8"],
+        "axisI[0]": ["bdb56fbc9aa744e5"],
+        "axisI[1]": ["bdb56fbc9aa744e5"],
+        "axisI[2]": ["bdb56fbc9aa744e5"],
+        "axisD[0]": ["eeffc1feebcfd351"],
+        "axisD[1]": ["ebbd99f01d49b1bb"],
+        "axisF[0]": ["a0c15950565e02a7"],
+        "axisF[1]": ["bdb56fbc9aa744e5"],
+        "axisF[2]": ["bdb56fbc9aa744e5"],
+        "rcCommand[0]": ["726eccc141e20b87"],
+        "rcCommand[1]": ["bdb56fbc9aa744e5"],
+        "rcCommand[2]": ["bdb56fbc9aa744e5"],
+        "rcCommand[3]": ["abf07f29ab105c85"],
+        "setpoint[0]": ["f88ae519f73cf34d"],
+        "setpoint[1]": ["bdb56fbc9aa744e5"],
+        "setpoint[2]": ["bdb56fbc9aa744e5"],
+        "setpoint[3]": ["bdb56fbc9aa744e5"],
+        "vbatLatest": ["ac3ec1619b13d3ed"],
+        "amperageLatest": ["bdb56fbc9aa744e5"],
+        "rssi": ["fa635abdbe8211bc"],
+        "gyroADC[0]": ["583654198ea8fbe2"],
+        "gyroADC[1]": ["55de4b019e532650"],
+        "gyroADC[2]": ["422b41841726e1f6"],
+        "accSmooth[0]": ["2742b7a21d3b0a11"],
+        "accSmooth[1]": ["c49384da339fb39c"],
+        "accSmooth[2]": ["5116cabf524727ef"],
+        "motor[0]": ["22dc7e32a37334f8"],
+        "motor[1]": ["99e77d8edca6207e"],
+        "motor[2]": ["e4e11d529b2a8960"],
+        "motor[3]": ["267bd2a02f6fad69"]
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 1,
+        "digests": {
+          "(at)": ["89cd31291d2aefa4"],
+          "flightModeFlags": ["6e8052c08cb9216c"],
+          "stateFlags": ["a8c7f832281a39c5"],
+          "failsafePhase": ["a8c7f832281a39c5"],
+          "rxSignalReceived": ["89cd31291d2aefa4"],
+          "rxFlightChannelsValid": ["89cd31291d2aefa4"]
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 14,
+          "data": {"logIteration":768,"currentTime":75970273}
+        },
+        {
+          "at": 1,
+          "event": 0,
+          "data": {"time":75753857}
+        },
+        {
+          "at": 1,
+          "event": 30,
+          "data": {"newFlags":524289,"lastFlags":268435459}
+        },
+        {
+          "at": 694,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 694,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":6}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 738,
+      "first_time": 61922397,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": ["f33a145900286a24"],
+        "loopIteration": ["d96f8598302d2bb5"],
+        "time": ["1b8406bf702493b8"],
+        "axisP[0]": ["c291709449709ed3"],
+        "axisP[1]": ["a796f61e882d487b"],
+        "axisP[2]": ["d21848cd285d6298"],
+        "axisI[0]": ["464ef72b2fdeb065"],
+        "axisI[1]": ["464ef72b2fdeb065"],
+        "axisI[2]": ["464ef72b2fdeb065"],
+        "axisD[0]": ["0eb63757f8f7626b"],
+        "axisD[1]": ["ae3645aae1837e7d"],
+        "axisF[0]": ["5d38258a88d5bc7d"],
+        "axisF[1]": ["464ef72b2fdeb065"],
+        "axisF[2]": ["464ef72b2fdeb065"],
+        "rcCommand[0]": ["7ed3a4a9405f59f9"],
+        "rcCommand[1]": ["464ef72b2fdeb065"],
+        "rcCommand[2]": ["464ef72b2fdeb065"],
+        "rcCommand[3]": ["9aaa89bf581a3b45"],
+        "setpoint[0]": ["122296f29a86c56f"],
+        "setpoint[1]": ["464ef72b2fdeb065"],
+        "setpoint[2]": ["464ef72b2fdeb065"],
+        "setpoint[3]": ["464ef72b2fdeb065"],
+        "vbatLatest": ["c3bd142e560f7cb9"],
+        "amperageLatest": ["464ef72b2fdeb065"],
+        "rssi": ["d598144545963600"],
+        "gyroADC[0]": ["d68d2231717d40cc"],
+        "gyroADC[1]": ["bcb176080bf4df6b"],
+        "gyroADC[2]": ["adb4f0de6cb901db"],
+        "accSmooth[0]": ["375feab8b25b60b9"],
+        "accSmooth[1]": ["40cce9532c4fa593"],
+        "accSmooth[2]": ["c92f903ff6b0296f"],
+        "motor[0]": ["17c1e46a7a6d50a1"],
+        "motor[1]": ["ea49e817ccd3ff1f"],
+        "motor[2]": ["c4ab3fb70b814a56"],
+        "motor[3]": ["a903bb19b8c3f73e"]
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 1,
+        "digests": {
+          "(at)": ["89cd31291d2aefa4"],
+          "flightModeFlags": ["6e8052c08cb9216c"],
+          "stateFlags": ["a8c7f832281a39c5"],
+          "failsafePhase": ["a8c7f832281a39c5"],
+          "rxSignalReceived": ["89cd31291d2aefa4"],
+          "rxFlightChannelsValid": ["89cd31291d2aefa4"]
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 14,
+          "data": {"logIteration":8192,"currentTime":61922397}
+        },
+        {
+          "at": 1,
+          "event": 0,
+          "data": {"time":60775593}
+        },
+        {
+          "at": 1,
+          "event": 30,
+          "data": {"newFlags":524289,"lastFlags":268435459}
+        },
+        {
+          "at": 738,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 738,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 654,
+      "first_time": 228688646,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": ["2d536c6900ddea24"],
+        "loopIteration": ["4b00d4d866892835"],
+        "time": ["7ed0c8a714e5607c"],
+        "axisP[0]": ["0f504c4e40e573af"],
+        "axisP[1]": ["03e94532b388f881"],
+        "axisP[2]": ["86480d3da0af4199"],
+        "axisI[0]": ["d86b545106130be5"],
+        "axisI[1]": ["d86b545106130be5"],
+        "axisI[2]": ["d86b545106130be5"],
+        "axisD[0]": ["2e1b54e0f18437be"],
+        "axisD[1]": ["d197f46b15f00f78"],
+        "axisF[0]": ["1edb5af984bfd8f7"],
+        "axisF[1]": ["d86b545106130be5"],
+        "axisF[2]": ["d86b545106130be5"],
+        "rcCommand[0]": ["aa2da4f1a87f2afc"],
+        "rcCommand[1]": ["d86b545106130be5"],
+        "rcCommand[2]": ["d86b545106130be5"],
+        "rcCommand[3]": ["2a21dbb889009205"],
+        "setpoint[0]": ["2d6d4c6259e5ea65"],
+        "setpoint[1]": ["d86b545106130be5"],
+        "setpoint[2]": ["d86b545106130be5"],
+        "setpoint[3]": ["d86b545106130be5"],
+        "vbatLatest": ["4b8f71f3d260d481"],
+        "amperageLatest": ["d86b545106130be5"],
+        "rssi": ["0bd79dee1b73f8d6"],
+        "gyroADC[0]": ["526e9b15fb368111"],
+        "gyroADC[1]": ["dcd37720b3cab2bc"],
+        "gyroADC[2]": ["e598560253bdb731"],
+        "accSmooth[0]": ["682ec7aaa8aab1a8"],
+        "accSmooth[1]": ["55ee0767859e17ca"],
+        "accSmooth[2]": ["f53327f00bb4c325"],
+        "motor[0]": ["941d2393df2f3e9a"],
+        "motor[1]": ["1130bd6db5898fa6"],
+        "motor[2]": ["5edddeb6ac488721"],
+        "motor[3]": ["33280fc8367259a4"]
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 1,
+        "digests": {
+          "(at)": ["89cd31291d2aefa4"],
+          "flightModeFlags": ["6e8052c08cb9216c"],
+          "stateFlags": ["a8c7f832281a39c5"],
+          "failsafePhase": ["a8c7f832281a39c5"],
+          "rxSignalReceived": ["89cd31291d2aefa4"],
+          "rxFlightChannelsValid": ["89cd31291d2aefa4"]
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 14,
+          "data": {"logIteration":28928,"currentTime":228688646}
+        },
+        {
+          "at": 1,
+          "event": 0,
+          "data": {"time":224952597}
+        },
+        {
+          "at": 1,
+          "event": 30,
+          "data": {"newFlags":524289,"lastFlags":268435459}
+        },
+        {
+          "at": 654,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 654,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 0,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 0,
+      "first_time": null,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": [],
+        "loopIteration": [],
+        "time": [],
+        "axisP[0]": [],
+        "axisP[1]": [],
+        "axisP[2]": [],
+        "axisI[0]": [],
+        "axisI[1]": [],
+        "axisI[2]": [],
+        "axisD[0]": [],
+        "axisD[1]": [],
+        "axisF[0]": [],
+        "axisF[1]": [],
+        "axisF[2]": [],
+        "rcCommand[0]": [],
+        "rcCommand[1]": [],
+        "rcCommand[2]": [],
+        "rcCommand[3]": [],
+        "setpoint[0]": [],
+        "setpoint[1]": [],
+        "setpoint[2]": [],
+        "setpoint[3]": [],
+        "vbatLatest": [],
+        "amperageLatest": [],
+        "rssi": [],
+        "gyroADC[0]": [],
+        "gyroADC[1]": [],
+        "gyroADC[2]": [],
+        "accSmooth[0]": [],
+        "accSmooth[1]": [],
+        "accSmooth[2]": [],
+        "motor[0]": [],
+        "motor[1]": [],
+        "motor[2]": [],
+        "motor[3]": []
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 0,
+        "digests": {
+          "(at)": [],
+          "flightModeFlags": [],
+          "stateFlags": [],
+          "failsafePhase": [],
+          "rxSignalReceived": [],
+          "rxFlightChannelsValid": []
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": []
+    }
+  ]
+}
