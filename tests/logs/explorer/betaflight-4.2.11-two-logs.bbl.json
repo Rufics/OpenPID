@@ -1,0 +1,191 @@
+{
+  "fixture": "betaflight-4.2.11-two-logs.bbl",
+  "explorer": "betaflight/blackbox-log-viewer e179902 (2026-10-25), 32-bit wrap of PR #862 restored",
+  "chunk": 1024,
+  "logs": [
+    {
+      "error": null,
+      "frames": 98,
+      "first_time": 33011567,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","BaroAlt","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": ["bfd75dd2d4610224"],
+        "loopIteration": ["5a9360beada85d35"],
+        "time": ["0ce97c09f56e4e1d"],
+        "axisP[0]": ["acce919f8e9b2065"],
+        "axisP[1]": ["16f07f7cf277b19c"],
+        "axisP[2]": ["913996d451e51585"],
+        "axisI[0]": ["acce919f8e9b2065"],
+        "axisI[1]": ["acce919f8e9b2065"],
+        "axisI[2]": ["acce919f8e9b2065"],
+        "axisD[0]": ["6203dcb7ebf70f67"],
+        "axisD[1]": ["8f23b61295c0310f"],
+        "axisF[0]": ["acce919f8e9b2065"],
+        "axisF[1]": ["acce919f8e9b2065"],
+        "axisF[2]": ["acce919f8e9b2065"],
+        "rcCommand[0]": ["acce919f8e9b2065"],
+        "rcCommand[1]": ["acce919f8e9b2065"],
+        "rcCommand[2]": ["2e6ceb1eebc0bda4"],
+        "rcCommand[3]": ["75718059cc619345"],
+        "setpoint[0]": ["acce919f8e9b2065"],
+        "setpoint[1]": ["acce919f8e9b2065"],
+        "setpoint[2]": ["acce919f8e9b2065"],
+        "setpoint[3]": ["acce919f8e9b2065"],
+        "vbatLatest": ["289b6cda4d7a00ef"],
+        "amperageLatest": ["d16a4ea5a8af8ce5"],
+        "BaroAlt": ["9cc9c83831122ec0"],
+        "rssi": ["1123177f906fc617"],
+        "gyroADC[0]": ["7676f1117fc9d145"],
+        "gyroADC[1]": ["4901bbdbfe47fc24"],
+        "gyroADC[2]": ["acce919f8e9b2065"],
+        "accSmooth[0]": ["1541abb218524f32"],
+        "accSmooth[1]": ["066bb48fe43b1dc0"],
+        "accSmooth[2]": ["2b5540ae20b8cd74"],
+        "motor[0]": ["16a59a2d9edb29b0"],
+        "motor[1]": ["6c07c75a61cd89a1"],
+        "motor[2]": ["40fe98b7ae19c1e2"],
+        "motor[3]": ["75ba3a673f8993fd"]
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 2,
+        "digests": {
+          "(at)": ["8a8fe7a997e39811"],
+          "flightModeFlags": ["392209f14dea4c24"],
+          "stateFlags": ["88201fb960ff6465"],
+          "failsafePhase": ["88201fb960ff6465"],
+          "rxSignalReceived": ["581cd0fa58d99645"],
+          "rxFlightChannelsValid": ["581cd0fa58d99645"]
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 1,
+          "event": 0,
+          "data": {"time":32887122}
+        },
+        {
+          "at": 85,
+          "event": 30,
+          "data": {"newFlags":0,"lastFlags":1}
+        },
+        {
+          "at": 98,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 98,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    },
+    {
+      "error": null,
+      "frames": 24893,
+      "first_time": 191882474,
+      "fields": ["loopIteration","time","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisF[0]","axisF[1]","axisF[2]","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","vbatLatest","amperageLatest","BaroAlt","rssi","gyroADC[0]","gyroADC[1]","gyroADC[2]","accSmooth[0]","accSmooth[1]","accSmooth[2]","motor[0]","motor[1]","motor[2]","motor[3]"],
+      "digests": {
+        "(intra)": ["0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","193d3ab84d6a8b45"],
+        "loopIteration": ["3954044cd9e4b625","84b2f244cfd9e225","08a6c4dbbda7f825","390b4a541d69a025","ae3041d839643a25","6cbaa22c9ca06e25","19e33244bc9d4c25","de912135549bf225","24e8f8e511d88e25","c3137e7d73f25225","948b795e8b9a7425","3cfafe246a367825","b99c2a9569d42b25","e7eeec874b666325","04e81edaaef92125","b494b365ad3ea325","fd04130074aa3f25","17ba971fd5cb6d25","9c0981bd15fe1925","5e77698f3f56ff25","8b9509dcc0438125","a6cd329da523a925","deb64416e246c725","462430de9c2b9725","eb78766e7682ebaa"],
+        "time": ["7b113abd4777658a","f17d8310c4e4ab13","cc76a018c91352e3","1ec371bc632c2d5a","17cf2817fbc9262f","0038a70ebfb3ee43","9b6ca7fb2fbcd5ce","8810ea9fe7928e26","455b6f0742e040b9","68ad4dc4c32e36da","1c3ab86098c5462d","f3f071bcfb1f38cd","d632c9b13d5eafbf","2fdaa360df6bbaa9","d4858a94ee8fb2b0","deff6af00a093c66","f6a30600c4406080","b412827dd8ae4aac","3e15f246780144ee","7675580c72d608b5","fc43f3bb07468206","9b82dec8ee7b8808","900f2562bf0708a3","666bf2d47a755cd0","1fdc9bf25c89b651"],
+        "axisP[0]": ["8d85bf97c1c5d90e","db8c95a45cfc11ec","6b2477a3ac2ebc9f","b5f9781a1a78c1f4","c8606ee1cd10f266","d3425f85b8fcc35b","e0c34dceabc68a47","c3216ee4ce265408","fa79a69fa8183436","a05ed8483477e8ea","d2b5c606e142c68c","c44bd15f1e012cd9","f02392887b45e8f2","73d0c66a0c3806c7","ee317897c546b286","adad5af9c4b385a4","0f2e35c6d3f5e077","75734d06eeb35d60","ca6cee68391ab632","470b97678451e976","dc6b930ce30df2fb","7f71455403cc05d5","fb1a288abf0bdfba","bb083d49864e5acd","59bd432411146660"],
+        "axisP[1]": ["4d16b6a77d18acc3","88d9f694f9335390","46fd41e550dde052","4b25dbd0913c2ea6","2a009eeffc4b54b1","b5ff5bbb1809648a","ce115d6cc1f10b00","d251d75b893d874b","604f90778945638f","119e198c04a3072e","59f8865e53ff9cb3","c55f2e37ace474a5","36a3da2ccdf4ffb9","caaeb5052d94eed9","86da4f9ccbdcd58e","8d7cf157f53d0039","f1131a730f7e3539","d907bd3b0e78b2e9","044b637797d70413","a993e282d780d217","d08f79597527918b","1b4ada5a690a64a9","25a956c9342fdb5b","4f6fe41f39e9df1c","3745013a43e9138a"],
+        "axisP[2]": ["799aaf440e0031cc","85d6c99c35169174","af51428fac7dce25","f2e940b8ec2f0812","7893a7580358bbbc","0e3c6ef3d210c316","23cb33d06f13855d","21186febec10d54b","abd6e9d124fffb03","44dd51b2108d7ff9","64accbebb49cd17d","fafe6a6358a13394","457cf781772b0c4b","6bf385199a42d010","b9c925dff5854173","6daf638f31669248","185c8e49f697c9e6","4dc54790ff82f244","89648ba04cd1082c","ab8f08bbc5533105","e51f1d90bc093ef1","5a5165e37d0ff84c","3d512f172605f0dc","4333dc7c2ed10bca","47fb18ac5216e309"],
+        "axisI[0]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","a555d97b36a41f45"],
+        "axisI[1]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","a555d97b36a41f45"],
+        "axisI[2]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","a555d97b36a41f45"],
+        "axisD[0]": ["9eeac2c8e7152f35","95458ca7ad4895a0","9597b4059a9b9feb","12ca91fc58820c9a","b434d060c091c05d","9e22e44d8e12e90e","481c724a15ffae4e","b2c61947d48048f2","fdea3dacccdfd83d","7a44650e3fd70bab","19af26d401cd5b7b","305c725ae30258ec","bdb324e4ea8f104b","aaab70d2b38293ac","0b9327cb21ea1fde","ea1d778941dd897f","176ad3e35df077d8","392d44bc4a90f243","1bac0ad4342246cf","83aa886fa3e2c470","9bf10f69d746dfe9","9bf49dbdebba167f","37a8b9a7f355e8da","809638ec9e6774e4","2250772528a468b6"],
+        "axisD[1]": ["69970a7fb5ed2584","022dfe7bc6f756ba","dd292e0366de48aa","076e80ac1a040ef0","41366ef78e41b6c7","745f8c38a52474d2","4eefe42db6c89b23","6f858dd0eefafd17","6fb230357ed329fd","61dc97be67100b04","d82db701eb7d7ace","f07a8d27cccb2d80","78e1ca617c9ed4e3","6c02ff45ed7e44af","0dc5bed5d7546075","920f71a4ab4e84c6","8d3f920b22dd4978","40c90fc4239238d1","23f61c2327ae6789","f01a6a7f34115795","b069e89e34cbc112","ac25d4a3816cd046","28b92b1b97d68dbd","1c3b30da84508bf4","a0457f6a24fe323e"],
+        "axisF[0]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","a555d97b36a41f45"],
+        "axisF[1]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","a555d97b36a41f45"],
+        "axisF[2]": ["b832620f2faebd7c","7b630e1e7f99db84","65ed80f19e819d6d","593c9871bc537b2c","b9d103fd6854a325","3bafdadf0d8ead05","b9d103fd6854a325","23703a53d250ee6d","4613c908513e9504","030093bc3d9add8d","b9d103fd6854a325","8b23036653146ef5","0af3c3d1f049724d","522ffd9d3c8643ec","7c660480e8f7c905","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","d14faaebb3178f24","b9d103fd6854a325","19f81a715d910eb4","b9d103fd6854a325","450827e252bbc78d","85035e00021d396d","126227b9156ccae4"],
+        "rcCommand[0]": ["9a6c6f1bd37e14a4","491eae3cc53cd005","31a4ba192da87464","6c3eb231c7b27a44","6e341817b8cc4324","1961945115052fa4","1c56340debd0a0c4","c91282516b8b5b44","31b460a4dbce3fe5","bd91b604031eaa85","8e901f0b02664f05","6dea9ecbbe479985","a48411c29cd8b345","fcc85461e0b31f05","71383f2e867cc5c5","e97bc2a1f2e1e1e5","a216c0ce99132ca4","af4ea5107ad9ef65","f494a1e18102a405","f5b0f4c1ff6ae0e4","3e88528218fe5324","d9ff8c42acf20584","2266d1a9d23667a5","ae9bf592a23ce9a5","a9308a66c2a17045"],
+        "rcCommand[1]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","a555d97b36a41f45"],
+        "rcCommand[2]": ["714d2f79d746ae44","b72090707b6039a6","72605dfd8dfb94e6","c390a75697c35aa6","95b82ceb732bf484","da85c6eb2d037826","352e9c8ce7b926a4","3ba09cba940a18c6","24fdd9550b47ee67","5a34e512a94b1ae4","a1e7cdb576a4af85","43c7dd34b58cfca7","c0b06bc64ed6c326","cf5e9a9ffaeeb806","217fbe850a129ce6","19707337ab3eaba4","d422db81c5337f64","5fed4055a9e8ff04","da94a77d61916e04","dce2c13a155487e5","df99fa34e2af1265","56e5b5fc584b1e65","10517d25eaa31ba5","6914e68772301844","be876bbf771a6465"],
+        "rcCommand[3]": ["4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","4866de98de066325","c6ec080eccfc2d1c"],
+        "setpoint[0]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","a555d97b36a41f45"],
+        "setpoint[1]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","a555d97b36a41f45"],
+        "setpoint[2]": ["ef9a16c8034acaa5","24fcaab68d095784","a09ba86d18c27624","a2684c2e73a479a4","b9d103fd6854a325","7fc630f8cb973ee5","b9d103fd6854a325","972dac33bd3e32e4","fcb83104ff6d7c84","5e47f56de91686e5","b9d103fd6854a325","02f9ac68ec503384","fe44cc8a2bf90264","e9a8f574634cd005","b68acdcbd7404cc4","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","def57988590dd144","b9d103fd6854a325","eac049e24aaf3684","b9d103fd6854a325","40d8c4457729f6e5","1c17d72d58953204","2bd6a1b30e6add04"],
+        "setpoint[3]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","a555d97b36a41f45"],
+        "vbatLatest": ["2c80c8f5179be8e1","f45878fbf17bad88","012eb0662e958d32","ef5c8ac8fbf78e38","d0f1d0fb2b4d17ce","aae53d9cac5dd85b","80d0e60984b30032","638a6c1eb0db923f","59445d8a6968b52b","3ab1f44e06530eb8","f705524146a44177","c89087e536c72f24","466dd57f3dd617c6","d48a56385432a1dd","717898b1029a8241","9fa4c72ba9e1d9c8","3bbed9f34312b8b6","65a94dcedeb105ac","efdb6000dfca00e7","ad34a558b73353a7","4128187699d87059","d666286192ce9747","55e3f2952c50abaa","918f7b58a5fd4a2e","c754461b888a7188"],
+        "amperageLatest": ["4e63416d8c611945","aac7f0c7fa20aa19","0805777a5faebe69","93c1710c16e09a01","2766b2c010ebe5c1","67c70406d7732e59","0bd0c35428cd21ee","3e2907809c9f9826","b19f7d0524cb91ce","64dd9f18a5d7ffd9","f7fbb47c3486d665","313c31208830092d","ac361820f56bd142","e1638a0fcff964e6","a18418ff8817ce15","56e318f723f6c255","6eb42b2bd0a9ded9","8f00acfe0c13c7dd","cc3a0d31104f814d","1c223d0814971e05","aabefa6dfd90e0cd","385336843391213a","84ac073b7389f766","43f16df6558377b9","532a20969c86ff55"],
+        "BaroAlt": ["283dd1cb7c9a6e05","a84ba871e5f42ee4","8241268a103ac972","76745d982b5a4734","7097625a4c5375fa","35f25a3423af77dd","296acc9593cfb61b","d34c330c11d7be7c","31f8e9c2d879b360","699b573a388df40e","da2792f73e0f0579","e11c6c19d1cf2eec","fe47e13139e0d602","3ddac502d2f35950","43cb87bda5e96464","b7cef442bf4fa6ce","bb96dc50594a84e2","445cf5a35172ae71","2cfdf90d49da3acc","448e4367e9e6dcf0","84826f526baef8f3","4f4805586af20dcd","20c6894a47336610","6ac473a17a4760be","260e6dfaffc236e1"],
+        "rssi": ["38cf831183537f28","3c7b43fb83c9f222","d01c7fd88709b990","1744b0df366f62d5","ebc75ece7f0591da","6970bf1b0e911c1d","efba70c449ad33a8","e7d5c8fee9b214ad","78002b686ee65e06","c3fe62ab4c44ead2","83dd498869cb1cad","83de99118c92ef2d","0e66aa422839b51d","3e542321a7f157c5","75ec3a5bb0714fa2","5b8515cf35d01e70","468e8de8cb8c940b","6a8e61d879ee588e","9011def16b4c1c37","3c657e6176b41204","76fd2182663ebf4a","d8016d9afd969878","a1c5c89320656c73","9a6d0f16e8d01d12","62a93b608e15416d"],
+        "gyroADC[0]": ["17b572abc813ea56","785c8836fe0184d8","269e7ef41657f1e6","1124fc6f8f7a0d37","311c0f661948daee","54afabbd3d91fd7e","5313c63b32169df7","7fdc63544bc3bde9","ea8e0f948e9a151d","211443c58681fbb5","72628ddd152f48db","89747d105ac09345","162927df93bdf074","42bdd05f16679c3f","3f8ee22116bfdbe8","add8d8b34b26b2c4","2e7040618ab1e2a6","43e98f0439fbdd64","8fe3c281da52123a","24c2a3b91a751524","b06aa5da4f668c11","3000daa12e1367af","f91e7cd05ffaa9e5","1889a546196f1111","b7d18f4674e2259c"],
+        "gyroADC[1]": ["771ebee3255b7829","16373c6244569d51","953016ab6073ade0","34644aa4e134e596","e91ddc9fb9bd7a71","412f86870311eb7f","8744e9f732984041","521b3158f9494cec","16b6104f1fdccf02","ba7193de55d121e5","924caaed88502b65","a8d01057031d6b1e","76c8def904bb73af","d61967ff59b3eea7","8e2334bd56737cac","89a55d0d01a13edc","e1eb58cc4ec91a15","46faf0843d26e9a1","834f509d23026142","a761b8e6a0324db8","f335574ee1600cb7","7966da364ac07e97","fe42f37192787a73","5034bbeb3dd4b566","170af66c090f5c5e"],
+        "gyroADC[2]": ["f69eae382d1cda05","60a8d47098e44033","bf085a4f17a81082","f31237e89f43459b","39ea5ef3cb31b090","ef3bd6d0511e204a","3e44014e841ce636","b1a77467a6ba6994","235e3ec38ef6f117","c01335d345e8e640","139dbc6fdae48ee8","56cca7de0a115e57","7a932b48a3481e76","a14c0c13d79177f3","6148f3ca38d4252f","35a713268d34ae84","d3f82b8c8e6fd932","0952c5d5f9128c8e","bb6bc60bf60bc5e1","6f00ffcf55464f67","424dcd2a20506b07","51ad37609ad462c8","819b0f313916590f","373130dcd4821ca5","0d48c142939928b7"],
+        "accSmooth[0]": ["574f050be711836c","55770b13856f58b9","76f62fb28a284ee3","e7e03516cb5e5149","19fb98420f47f7f1","fc750e26665e060d","aa1d4beccc5041ef","b1ad07e4814ecea4","0bf345a06973149f","f62a8f08d011e524","7fd03ed310cbbcea","25f8d1504ff057b7","d2031683d5e67f60","a94e478084936f5c","780b522adec32399","aacf32a74c8a3534","e5ec59a18abaf3ba","259121d4028e43c7","183e682a856fb4aa","910682cb09f0d716","075e0bbcbf6c1e8e","943c01fe5ea12b0b","9e70a4deb6927b82","c806867afb16794f","0020a28a4818f694"],
+        "accSmooth[1]": ["e5ef777dcf312d92","bc4f566320bb189d","d0221a8eddfcf073","3f7e3809ecdf8849","d41cb7d380813d86","34ba8e5e79c45336","47abf72b1f0e2e89","184327b1c965b2ed","1dbbb3fb4af3bc21","85ab95ac0a52ee14","cdb8e03cfe24862a","e1d13337126f4483","6cee1a2b1b3e81ea","9219b78207abd4e8","3bd3b71926b1c197","1a594aeb6e515414","0086f7f251f5e7a8","f6035c1535e35930","b67cb90e4e0c64be","aa53ce6044706d2c","23878bb47c7b53f0","f263276e5682ca8f","c698d4aac9f57a72","86cd48292ed5d698","a171634cbce75f01"],
+        "accSmooth[2]": ["14fb074d3dbee1e0","4330a90eb24ca9ab","be24055e3fd899a3","2ab01991dbc0a06e","f23d778d6a058b42","9a34829a3ec24590","f59027d412055690","963664a62edfc593","c4053439ff9a4d46","c54a15cb593c70fd","2f9b20beee3d7b3d","a3d3e1641e32658c","b23920015437bfc6","9de0f7e453f59421","50480b9474252b11","6091b185b955c412","d5e17cc7a693ac61","d09ac81318fe625e","46b3e9eab0cb8659","ddac8062f14b5c13","c45dcc29aa245f74","e437bd8a2fac0492","908d0e76fa6151e5","768fd4d6bb84c1a9","928dfd968f62fb22"],
+        "motor[0]": ["ec48ee24923d4d72","4b47cf448aede173","2fb4fb1fe497a37a","e15ecc91ed947f44","2a7ccf1a350a9e2a","c1daa38e2196ce1b","d2bff86d5cb91b23","4da38239219646ed","c274eb0c29bb5b70","2013719a00cf937c","1e662267a5fd2316","66c3b61b8893c500","ff4b39d80420bd9a","ad945e66bd956da0","f859509b05515db8","9ba1b08e3f8a762e","d862038a39d64fd4","1eee0333abb598cd","a39ba92f7dbc5dd6","3d56428f37dadba8","2dc7f7842acaee23","886dd13d83644624","3d6a0502189fb271","edc1fbb17a103426","d08c6334130ce881"],
+        "motor[1]": ["ca2f38026cefb3ca","85ae57dd844896f1","f293423b6be63a89","bcca131d8dbdda28","b7a14abd76991b01","92586588f851d2c6","d5713c599a00889f","9a7c1ad94206ce55","9709465e8200dc4f","30d2b8ade3a3049e","2a0423f6a090a411","4fc96032648bc07b","9e3aee2cdce58d27","8078b9d8ff43cbde","e0ce971f1fd9b6dc","20f24574f44ac05b","eae74a2e80268c61","2409d122ff21c82c","1474d9647425adeb","cb16c6402bc903f7","7c13306d48dc70c5","3fd758604ad1d417","b893e9fee297d6d9","09e538bd5683acb1","494b758e77a7929e"],
+        "motor[2]": ["ca618c50ffb2971d","7a94ba5000c923f0","5c752ada06ade400","d17d2f84c6978d61","5ac2a91faae47897","2f6fcbdb390ff82d","5705811bdbb8d100","ee14322678a39626","854fe0cfb0e30ca1","e54f94258792ecdf","1a8379e5ba700c6f","bb9bc2bd25cec908","8a8da8443bd046b8","55a21c2fdfdb42bb","398fbb7f38a8cdb7","2a013c9f584f1fd8","ef2541df7815fd71","49cad7421182e048","f5759df5b8dfb674","825dbf4247af88de","81d4779ca7563315","998ddd899f22eda7","9174f781fed1633b","59defcdfaccdc279","42b68ee5778a91aa"],
+        "motor[3]": ["09f25ff1f58cf502","cac9d8162c29df02","a326586f02de7bbe","b22de61d22858338","bba1507538b727a1","0174a36d2ea495c7","72dfaa14d0c13fbd","0bd323d4c680e904","c5b4ffc2801c50c1","3042e8f77aba6910","ba5e979dfa85113f","a6fec7b2117274dd","c6f4cb088d4a0789","bfe415ab6f6ad72a","4d8334439491f074","139f91ffe3424878","a5f08350e3564260","9872e1f5b7274cf7","93b5f4b234208bcb","5c5f7512de152b03","9be7c8c6d07a5866","01a7163ef0d3b1b2","87b792d658c72787","8498dd2cc8e58cdf","a27814bda9046079"]
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 8,
+        "digests": {
+          "(at)": ["74363a6b65866380"],
+          "flightModeFlags": ["ed91e15aa9075584"],
+          "stateFlags": ["b9b23f3a46fd0825"],
+          "failsafePhase": ["b9b23f3a46fd0825"],
+          "rxSignalReceived": ["0c8ca863b3f69fa5"],
+          "rxFlightChannelsValid": ["0c8ca863b3f69fa5"]
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 1,
+          "event": 0,
+          "data": {"time":191753984}
+        },
+        {
+          "at": 24879,
+          "event": 30,
+          "data": {"newFlags":0,"lastFlags":1}
+        },
+        {
+          "at": 24893,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 24893,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    }
+  ]
+}

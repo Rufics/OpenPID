@@ -1,0 +1,166 @@
+{
+  "fixture": "rotorflight-4.3.0-LOG246.TXT",
+  "explorer": "rotorflight/rotorflight-blackbox 74954d5 (2026-10-16)",
+  "chunk": 1024,
+  "logs": [
+    {
+      "error": null,
+      "frames": 9390,
+      "first_time": 17442123,
+      "fields": ["loopIteration","time","rcCommand[0]","rcCommand[1]","rcCommand[2]","rcCommand[3]","rcCommand[4]","setpoint[0]","setpoint[1]","setpoint[2]","setpoint[3]","mixer[0]","mixer[1]","mixer[2]","mixer[3]","axisP[0]","axisP[1]","axisP[2]","axisI[0]","axisI[1]","axisI[2]","axisD[0]","axisD[1]","axisD[2]","axisF[0]","axisF[1]","axisF[2]","attitude[0]","attitude[1]","attitude[2]","gyroADC[0]","gyroADC[1]","gyroADC[2]","Vbat","Ibat","headspeed","tailspeed","motor[0]","motor[1]","debug[0]","debug[1]","debug[2]","debug[3]","debug[4]","debug[5]","debug[6]","debug[7]"],
+      "digests": {
+        "(intra)": ["0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","0d27f92a9d046325","69a306298acf5c24"],
+        "loopIteration": ["7598d2306e0e3e25","4e5ea11fc4ecfa25","678a4ba7eb152225","df6542a52a405025","7428067d2c1e8425","9c2c9072eb163825","b4c08f14c6d31825","27ee5984d8285625","5bb703d7f7857a25","0d69e58382e196f1"],
+        "time": ["d4e4486fdfc50b30","57aa5c74a52976c5","12e7110cdaf0ef35","d2d70aedcf4a42c9","8efda7160748b3cd","ad563925c9329ddf","115850623a02de6d","88d816cab29b3fa0","eeb9a8bc8d258b33","39217afd64013084"],
+        "rcCommand[0]": ["2abb4fc40c597f15","919529406f90d44d","daddbf479f8e7275","c59dde58a3be75c5","c70a3dca392db5e5","b9c9635437069384","1ee60a45d134f81d","004b4b9ec3785db1","b28759ed4ce07e5f","486f1b0846765fe5"],
+        "rcCommand[1]": ["c42162c2df480ea4","7e8a9cd4553ba57d","b9d103fd6854a325","7a23630e871be404","23ccbaed7949045d","b9d103fd6854a325","0ff3ea01081e9f05","d7bee6429e315721","832ea662f18acec2","2dbb815c6c795ba5"],
+        "rcCommand[2]": ["545d4e887d20dfa5","05bbc921246401a5","5b064bc18e7486a5","124c69a4ace01425","545e9f91049dd965","8c24ac6dab4ad96d","db34e4a96d261b1d","17c34aae9404b1ef","2c607ba7b0d09727","f040ab83f1e43fe5"],
+        "rcCommand[3]": ["3981b10a0139b244","15a57ec46dff9da5","a072d7c3eaee81e7","ebe74df55c9ad584","0f8d37931866e2a4","6a7051843389152f","71a793ce489947b4","8892e53714f4d9f0","2489f31827c089e4","b6c571247663d614"],
+        "rcCommand[4]": ["f5b4426e2b3e0d7c","a62b8a2ed6003d67","3456562c40b57aa1","da88f2684ae3228b","d3017052dccc4b57","dcfd9bcfe458e80f","f6ab962f45941e0e","e57c88042753747e","0f9c6d608ba53a87","4ac42b6043495f2d"],
+        "setpoint[0]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","91c4b48270c4838d","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","f938c1513a6241e7","86c297239804d9f2","486f1b0846765fe5"],
+        "setpoint[1]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","be37cfe25189f1f4","3936dc755073d012","486f1b0846765fe5"],
+        "setpoint[2]": ["0b0074fc020c2225","ef15efa4fa3e6bc5","40af689e13df4544","767d956a23dab6a5","65b9d7e4896e5c85","7866f458a9917c28","4c7de39e4d7b9256","1f9c9f597d64560f","4b5c2462bbb470e4","b2118dade97c6524"],
+        "setpoint[3]": ["67028f2dc5ad9d45","da18e6e9e9ce44e1","212ac2620b6cfbe7","3ee25eb96a4185a6","7c5c8fa34593faa7","fbfa61838e355ff7","b3f46f6a075f4658","fa22dd5558c755f1","36f08634e910b469","2c64a9f487f85765"],
+        "mixer[0]": ["85b6e726d5580c7d","aed49aa452e20838","2579931e48eed59d","2e70f303ddacbd0c","374f8684bf89b9dd","d5aa269dc927e892","e478b47b5bae6442","d08f6099c1f74f95","9e57f3bed4dcb8fe","4c4ca029df3dc9f5"],
+        "mixer[1]": ["886354ef25b5c366","6795add9c116e191","f77d2c47b073eec5","d7aabbd4d886a834","bbc04902e065a065","57a59bd6508c7eef","42225ce5b4e0a2cc","5e052b45a682e4ef","a32428e83e70a787","d1041b33ebf9afda"],
+        "mixer[2]": ["356c75dec66a141f","ee2ba028408eee13","caa1ab6e8db9e325","126d21952f3398e2","9e2415f20ca8252a","455a8777e2298a70","caa1ab6e8db9e325","caa1ab6e8db9e325","caa1ab6e8db9e325","b2797cee1d53cca5"],
+        "mixer[3]": ["67028f2dc5ad9d45","da18e6e9e9ce44e1","212ac2620b6cfbe7","3ee25eb96a4185a6","7c5c8fa34593faa7","fbfa61838e355ff7","b3f46f6a075f4658","fa22dd5558c755f1","36f08634e910b469","2c64a9f487f85765"],
+        "axisP[0]": ["dfc8e1ba800e2fa4","71fa4fb70b656323","55b3bc2087b54467","a3f1048c5f59891f","45d8dcda44e758ed","45a347fe3678aa27","8e4750aeb9898351","45f5d3bb12a49092","3ff474d259773890","009829ed413ff244"],
+        "axisP[1]": ["4ab84f6cfad2ae85","7d0c940084bd227b","04b060e76bf2f196","d7179fac86de724e","719ccd265a90cd55","12a15aa75c3c26cd","a37dd115d9990756","71be65dd50d6a19f","d28e96074ef1974d","7ab48a361665ee9c"],
+        "axisP[2]": ["ee0b78d7cba23051","c48e22abcd2b4e9c","6b4dda0e19f29be4","4c676388dc237338","428f0d1ede4ba153","dc4e43257aa6208a","2fe62950e7d1ecce","99839845269001d3","e12cd1ddf15df5bc","8c2e2b1c99302b14"],
+        "axisI[0]": ["d21f4bbdcfe5819c","0f9f620557316943","5ac9d90dc7c6c574","dec16a8a3762a885","6399750d577c0bc9","ba34fe8935a722eb","64059759bc71addb","12037d8a14370d35","99749ac55441dfd2","49631fc865f78d40"],
+        "axisI[1]": ["c20b2065e0dfab78","48de0003974dc1f5","1002f5af8ad57fca","c23c1f4d9f66fb96","5204b4434bef285d","69de096da0e5fbb1","ab077a28ec719e06","c7467994140a41ce","a3239d98246d0bf4","c86b9ad00105a454"],
+        "axisI[2]": ["f40d6f9ee10343ad","a95b3fef7a02b79c","cbf706e70bf1bfe8","ca424fa57aead6cd","4d790563715b3641","833ac16a9bcdfd84","eafb32faded9def8","51b34a37109ea987","04d1b0e80409725b","591b9111e0f25a3c"],
+        "axisD[0]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","486f1b0846765fe5"],
+        "axisD[1]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","486f1b0846765fe5"],
+        "axisD[2]": ["63b29e8eb2d69a07","cccf0a21a12fae4e","a96272f10a015128","4deb443c13a65f83","775394934c48fd29","07f0d5f2208163f9","4904b1eb1c42f608","daccb87b722ee723","aeddf2e2f0912f51","8e1f8f96a193b8c9"],
+        "axisF[0]": ["b9d103fd6854a325","76f288f02051a58d","b9d103fd6854a325","4e1ed50433510f95","b9d103fd6854a325","db4465cf21c79d05","b9d103fd6854a325","79dfcaee2deb9489","fb334163bb8a2ff9","486f1b0846765fe5"],
+        "axisF[1]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","91d66411a50194cb","3749f6f8fcba9651","486f1b0846765fe5"],
+        "axisF[2]": ["5ea300f893c50591","58f77d828229daac","e3da4fef12a6c846","9756a2afe7944d8a","1d6ef28f734688c4","fe17d4dc16b37dca","ba18c730fb169471","aedee44d24406f88","0f782b5034f82d90","1d5d2ba6d0d37e24"],
+        "attitude[0]": ["b4ceabc9534eb1f3","68c9dd2c1dc2be78","cc895b4e4c7326c5","059b721162163ed9","4c3708bbef524d60","84f1f78457661bca","109c6dfbdbf99b58","3990c46a578652cd","49976abf9dd4e9cf","8921b3e3de2be5e7"],
+        "attitude[1]": ["61c49598f7f5b95d","24b6fb7194c50ad8","1812de152da0758e","84ca65a10feab547","f92bf5a4949306f9","ea45a4ed11a810b1","f60fd5c882122f2f","15e238b1aff7a6e7","4a0e85007faaa227","6eecd802f696fd84"],
+        "attitude[2]": ["ba5e6322ce9ba624","cfe365f7bc7d1aaf","355297d9f450f561","7dd0fd86902689f3","3c2c55b9441a9378","65b4b822fa1e20a8","356ea1dd4e8c7471","3452ef568102dbbe","78d5c1c777b7d0d2","793a19e68a6f5f01"],
+        "gyroADC[0]": ["8deac0640c086acf","79b22358737a86ee","f05a2339223aa12a","99267f37fad2fd66","de38327179683da6","d09b91798e04aa73","f02687f554f6a40b","5c4993183778b689","9eabb9c39cd1b033","adbf5c40916c9227"],
+        "gyroADC[1]": ["d8762302056b3806","7acbb036d35f6c5f","dddb4978f32911c8","db2414ddfaf25039","c08873b0eec0c7a7","ee94aef75dd8350f","938541fb696e9edf","d06b976cde7362f5","7c5e81c99fc45225","36f79dd84ae372a3"],
+        "gyroADC[2]": ["58aff21ee1c66505","e111c1e8f2ddb9c7","494d9edccddcfdc9","33f98409f02a6ba1","71f13dbbbd96c7a6","91dd6bb91abac0cf","a22e88dc32618bf1","e52de6d21eaa6cf6","1105da47af72abaf","a76098ad35a0f456"],
+        "Vbat": ["922f899f0d0ab0ac","5b312e179b070134","23c25fd0f2acfc9e","30096d177a913df1","fd2930efcc790c18","11b0432d3223e665","03839f79ddac6bdc","78eddb248f090d06","6403f05a47687f9c","13249cf84c1b21d2"],
+        "Ibat": ["b1bd892da97ebf60","3dfb8e6f2d314193","c15bdfedebc5bcd7","bb7a56ca351d1b30","fd1ca0a7f76b3094","2e5006623b0a5c4e","7784213586445a9e","6ac3481ac64a3bd1","692aa5be5e2fb68d","e5a2e039a4c97fd7"],
+        "headspeed": ["90c6ef8d2ea1475f","0527617f6cff4392","c890e0fad1eb9010","62f0bc661cb65be9","6232ebd661aa5dd6","b5955bd99a36417d","0b06638769a106ef","f2be2d4e279651b6","e210b59525ab9120","d79a479c1d42f90a"],
+        "tailspeed": ["5ff040ab7632a01b","5c546cc99c8c58d7","e2d62a070d2fd7ce","649f4f41b6692e6a","3e2bceebc1594d9e","68ad51e936d3a574","3464267791c9f65e","e52a005c020fa232","db706f09a7cf366c","e4e3d21ff57013af"],
+        "motor[0]": ["e6cab1d7be1c6fff","2858c80e7ccae6ef","15fa2a4f2a0cc86b","5bd1e53ab9387a9c","7da1b56275773c38","5d2ced983ee1f24d","fe222a079445d0c6","085919d69b7161fc","fef7ee41d3b22815","c8cd60039b7aae9d"],
+        "motor[1]": ["356c75dec66a141f","ee2ba028408eee13","caa1ab6e8db9e325","126d21952f3398e2","9e2415f20ca8252a","455a8777e2298a70","caa1ab6e8db9e325","caa1ab6e8db9e325","caa1ab6e8db9e325","b2797cee1d53cca5"],
+        "debug[0]": ["6f687141d3f3793b","079dd72d324bc940","87f24cb14bf0d5d0","bc2a7bfd5abfc84f","5e6fd897461fb5da","ddd5b1d04bb01446","f083bbfe8c212d4c","8a71602ac011e1d8","f9be9872f91ed9dd","7630f2cbe07b6f8d"],
+        "debug[1]": ["44f6864d41b06e69","c86aa9b2a880cc6d","54987f28a5c637c2","43e8665526e3489d","989b4e9452841526","7443b323791d7d42","2567dd3de1bc3a5c","2f108724c402be88","2cd869da6200c0f8","30b34373b6c93113"],
+        "debug[2]": ["2410134290c9806a","35ea2d51963584f3","0e0b50e46ec4f80a","d62d7c0a7e29440e","5ce664e7a0466b3a","95c9680fbdde3f5f","cd77e8ebacad37e7","f01efe3a23fff779","6dd4515bf7256245","9acd96b044a6342c"],
+        "debug[3]": ["4ad4e9bc0a62838e","10827504bcea61bb","961286231b651cfc","8c2bbb24fc94930d","3731ab25761d3a72","fd47336c06de6ed7","e2e5c973c5c4fe12","94596df37067d0a4","2d86f9c8ed64ac6c","d339dbb25fc8805a"],
+        "debug[4]": ["8ce5ce6d796b49ac","3cf78e631e3797e6","1854160081c897f2","3f9aaea1841e566b","5e83507bdeebbd71","582f8e27bbba0edd","bfb1e76158b24317","87374a9c5005e27e","4cb24335ce8b18c2","b5fa4825bcd6ac71"],
+        "debug[5]": ["591901df579ff7be","5860042b5e5fa678","5b808460df451b57","239469256ad43a88","33e0c810fa855c86","4e917e9fd86b829b","820c89bae4a6be45","b6c8c8cd72a9686a","24fbb5206f318060","608ad7f690df85a4"],
+        "debug[6]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","486f1b0846765fe5"],
+        "debug[7]": ["b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","b9d103fd6854a325","486f1b0846765fe5"]
+      },
+      "slow": {
+        "fields": ["flightModeFlags","stateFlags","failsafePhase","rxSignalReceived","rxFlightChannelsValid"],
+        "rows": 5,
+        "digests": {
+          "(at)": ["70dc99beb59d61f8"],
+          "flightModeFlags": ["289f417d7c8fe0f7"],
+          "stateFlags": ["40d69e0cf0f65c45"],
+          "failsafePhase": ["40d69e0cf0f65c45"],
+          "rxSignalReceived": ["b0eeedac6bd5e5e4"],
+          "rxFlightChannelsValid": ["b0eeedac6bd5e5e4"]
+        }
+      },
+      "gps": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "gps_home": {
+        "fields": [],
+        "rows": 0,
+        "digests": {
+          "(at)": []
+        }
+      },
+      "events": [
+        {
+          "at": 0,
+          "event": 0,
+          "data": {"time":17296041}
+        },
+        {
+          "at": 95,
+          "event": 50,
+          "data": {"govState":1}
+        },
+        {
+          "at": 747,
+          "event": 50,
+          "data": {"govState":2}
+        },
+        {
+          "at": 1697,
+          "event": 50,
+          "data": {"govState":4}
+        },
+        {
+          "at": 3796,
+          "event": 50,
+          "data": {"govState":1}
+        },
+        {
+          "at": 3859,
+          "event": 50,
+          "data": {"govState":0}
+        },
+        {
+          "at": 4138,
+          "event": 50,
+          "data": {"govState":1}
+        },
+        {
+          "at": 4192,
+          "event": 50,
+          "data": {"govState":2}
+        },
+        {
+          "at": 4193,
+          "event": 50,
+          "data": {"govState":4}
+        },
+        {
+          "at": 5829,
+          "event": 52,
+          "data": {"airborneState":1}
+        },
+        {
+          "at": 9372,
+          "event": 30,
+          "data": {"newFlags":131072,"lastFlags":131073}
+        },
+        {
+          "at": 9372,
+          "event": 50,
+          "data": {"govState":5}
+        },
+        {
+          "at": 9372,
+          "event": 52,
+          "data": {"airborneState":0}
+        },
+        {
+          "at": 9390,
+          "event": 15,
+          "data": {"reason":4}
+        },
+        {
+          "at": 9390,
+          "event": 255,
+          "data": {}
+        }
+      ]
+    }
+  ]
+}

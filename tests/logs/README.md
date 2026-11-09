@@ -31,3 +31,17 @@ already copied them.
 
 The project owner's own logs are reserved for final verification and are not
 part of this directory.
+
+## Reference data from Blackbox Explorer
+
+`explorer/<fixture>.json` is the output of Blackbox Explorer's parser for a
+Blackbox fixture: every flight log in the file, with per-field digests of its
+main, slow, GPS and GPS-home frames and its events in full. Betaflight's
+Explorer decodes the Betaflight, INAV and EmuFlight fixtures, Rotorflight's
+fork the Rotorflight one; each file names the Explorer commit. They are made by
+`sh tools/blackbox-explorer/run.sh <blackbox-log-viewer checkout>
+<rotorflight-blackbox checkout>` and checked by
+`crates/openpid-cli/tests/explorer_conformance.rs`, the decoder's regression
+reference (ADR-0005). Every Blackbox fixture must have one; regenerate them
+when a fixture is added. See `tools/blackbox-explorer/README.md`, also for the
+one Explorer line that is reverted while loading it.
