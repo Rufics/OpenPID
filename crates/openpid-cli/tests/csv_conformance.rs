@@ -9,14 +9,15 @@
 //! - `tests/logs/blackbox_decode.skip`: fixtures the official decoder cannot
 //!   process (it hangs or writes nothing), `<fixture>\t<reason>` per line.
 //!
-//! The official decoder deviates from the firmware in three known ways
-//! (checked in its `src/parser.c`, see `tests/logs/README.md`); the test
-//! models them on top of our decode instead of hiding them:
+//! The official decoder lags behind the format the firmware writes in three
+//! known ways (checked in its `src/parser.c`, see `tests/logs/README.md`);
+//! the test models them on top of our decode instead of hiding them:
 //!
 //! 1. an event it does not parse (anything but sync beep, in-flight
 //!    adjustment, logging resume and log end: e.g. flight mode, disarm, the
 //!    Rotorflight events) leaves its payload unread, so the stream is invalid
-//!    and the P frames until the next I frame are dropped;
+//!    and the P frames until the next I frame are dropped
+//!    (betaflight/blackbox-tools#73);
 //! 2. `P interval` is read only as `num/denom`; the Betaflight form `P
 //!    interval:N` leaves 1/1, so `loopIteration` of P frames is wrong there
 //!    and is compared on I frames only;

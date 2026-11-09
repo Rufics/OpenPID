@@ -49,23 +49,33 @@ splitter finds must have a reference unless its fixture is in the skip list.
 
 ### Known deviations of the official decoder
 
-Checked in `src/parser.c` of `betaflight/blackbox-tools` d89f96b; our decoder
-follows the firmware, and the test models the three deviations on top of our
-decode instead of skipping the affected logs:
+`blackbox_decode` lags behind the format the firmware writes: its last release
+is v0.4.3 (2017), and the event and header handling below predates the
+Betaflight 4.x additions. Blackbox Explorer (`betaflight/blackbox-log-viewer`),
+the actively developed tool, handles all three cases the way the firmware
+writes them, and so does our decoder. The deviations were checked in
+`src/parser.c` of `betaflight/blackbox-tools` d89f96b; the test models them
+on top of our decode instead of skipping the affected logs:
 
 1. **Events it does not parse.** `parseEventFrame` knows only sync beep (0),
    in-flight adjustment (13), logging resume (14) and log end (255). For any
    other event (flight mode 30, disarm 15, the Rotorflight events 50–101) it
    leaves the payload unread, the stream becomes invalid, and every P frame up
    to the next I frame is dropped. On the fixtures that is 258 frames; the
-   frames it keeps are identical to ours.
+   frames it keeps are identical to ours. Reported upstream as
+   [betaflight/blackbox-tools#73](https://github.com/betaflight/blackbox-tools/issues/73)
+   (open, no response yet).
 2. **`P interval:N`.** The header is parsed only in the `num/denom` form
    (INAV, old Betaflight). Betaflight 4.x and Rotorflight write an integer,
    which leaves 1/1, so `loopIteration` of P frames counts up by 1 instead of
-   by the logging interval. The test compares `loopIteration` on I frames only
-   for these logs; every other field of the P frames matches.
+   by the logging interval (Blackbox Explorer reads `N` as `1/N`). The test
+   compares `loopIteration` on I frames only for these logs; every other field
+   of the P frames matches.
 3. **A frame cut by the end of the file is accepted.** The "next byte starts a
    frame" check tests the marker of the frame just parsed, so it always passes;
-   the missing bytes read as zero. The two truncated INAV fixtures have one
+   the missing bytes read as zero. The check took this form in the 2018
+   restructuring of the parser loop (20b3f3c); Blackbox Explorer still looks
+   at the byte after the frame and rejects the cut frame. The two truncated
+   INAV fixtures have one
    frame more in the reference than in our decode; the test allows that one
    frame only for a log without "End of log".
