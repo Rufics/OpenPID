@@ -150,22 +150,33 @@ filters.
 
 ## 4. Spectrum
 
-Welch PSD of the chosen channel (DESIGN §6.3). **Channel** is any channel, the
-axis buttons put `gyro.filtered.<axis>`; **segment** is the segment length
-(longer = finer frequency grid, less averaging), **max** limits the frequency
-axis, **dB** switches the scale.
+Welch PSD (DESIGN §6.3) of roll, pitch and yaw at once, one row per axis, each
+with two plots: the **full spectrum** (0 … Nyquist) on the left and **below
+100 Hz** on the right, computed with 1 s segments (1 Hz bins) so the
+propwash and frame range is readable. Every log is drawn in its colour; for the
+gyro the unfiltered gyro (prefilt) is dotted beside the filtered one: the gap
+between them is the work of the filters, what is left in the solid line reaches
+the PIDs. The x axes of a column move together; a double click resets them.
 
+The control panel on the right:
+
+- **channel**: Gyro (default), D-term, P-term, PID sum, PID error, Setpoint;
+  **prefilt (dotted)** (on by default; the gyro only).
+- **smoothing**: off / low / low-med / **medium** (default) / med-high / high,
+  a moving average of the power over 0 / 2 / 4 / 8 / 16 / 32 Hz.
+- **dB**, **log frequency** (a logarithmic axis on the full spectrum),
+  **Y min** / **Y max**: automatic by default (the drawn data above 2 Hz, the
+  same for every plot so the rows compare); click **auto** to fix an end, the
+  small **auto** next to a value returns to automatic.
 - **peaks** / **prominence**: automatic markers on the N most prominent peaks
-  (prominence in dB above the surroundings); the label shows the frequency and
-  level.
-- A click on the plot places a manual marker (snapped to the nearest bin); the
-  line under the controls lists the marker frequencies and the Δ between the
-  last two, **Clear markers** removes them. Manual markers are mirrored as
-  horizontal lines on both heatmaps, handy for matching a spectrum peak with a
-  motor harmonic.
-
-Compare `gyro.raw` and `gyro.filtered` of one log: the difference is the work
-of the filters; the peaks left in filtered are what reaches the PIDs.
+  from 20 Hz up (below is the flying, not noise) on each solid line; the panel
+  lists each log's top peak per axis ("A top peak: R 156 Hz · P 460 Hz").
+- A click on any plot places a manual marker (snapped to the nearest bin); the
+  panel lists the markers and the Δ between the last two, **Clear markers**
+  removes them. Manual markers are mirrored as horizontal lines on both
+  heatmaps, handy for matching a spectrum peak with a motor harmonic.
+- **segment**: the segment length of the full spectrum (longer = finer
+  frequency grid, less averaging).
 
 ## 5. Freq × throttle
 

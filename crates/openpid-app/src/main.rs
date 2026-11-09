@@ -10,6 +10,7 @@ mod export;
 mod i18n;
 mod prefs;
 mod shortcuts;
+mod spectrum_tab;
 mod surface;
 #[cfg(test)]
 mod tests;

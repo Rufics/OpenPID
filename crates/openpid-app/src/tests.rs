@@ -523,26 +523,63 @@ fn analysis_errors_are_shown_not_swallowed() {
 fn spectrum_and_heatmap_controls_change_parameters() {
     let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Spectrum));
     run_until(&mut h, idle);
+    h.run_steps(2);
+    // docs/design/spectrum-tab (V1): roll, pitch and yaw at once, each with the
+    // full range and below 100 Hz, gyro solid and its prefilt dotted
+    let psd_jobs = |a: &App| a.cache.keys().filter(|k| k.kind == "psd").count();
+    assert_eq!(psd_jobs(app(&h)), 12, "3 axes × gyro/prefilt × full/low");
+    assert!(has_label_containing(&h, "A Gyro"));
+    assert!(has_label_containing(&h, "A prefilt"));
+    assert_eq!(app(&h).tools.spectrum_display.smoothing, 3, "medium");
     assert!(app(&h).tools.psd_db);
     h.get_by_role_and_label(Role::CheckBox, "dB").click();
     h.step();
     assert!(!app(&h).tools.psd_db);
-    h.get_by_label("pitch").click();
+    h.get_by_role_and_label(Role::CheckBox, "dB").click();
     h.step();
-    assert_eq!(app(&h).tools.axis, Axis::Pitch);
+    // prefilt off: half the jobs are drawn
+    h.get_by_role_and_label(Role::CheckBox, "prefilt (dotted)")
+        .click();
+    h.run_steps(2);
+    assert!(!app(&h).tools.spectrum_display.prefilt);
+    assert!(!has_label_containing(&h, "A prefilt"));
+    // another quantity: D-term, no prefilt counterpart
+    app_mut(&mut h).tools.spectrum_channel =
+        crate::spectrum_tab::Quantity::DTerm.channel(Axis::Roll);
+    app_mut(&mut h).tools.spectrum_display.prefilt = true;
     run_until(&mut h, idle);
+    h.run_steps(2);
+    assert!(has_label_containing(&h, "A D-term"));
+    assert!(!has_label_containing(&h, "A prefilt"));
+    app_mut(&mut h).tools.spectrum_channel =
+        crate::spectrum_tab::Quantity::Gyro.channel(Axis::Roll);
+    // log frequency and fixed Y ends
+    app_mut(&mut h).tools.spectrum_display.log_freq = true;
+    app_mut(&mut h).tools.spectrum_display.y_min = Some(-50.0);
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    let (x0, x1) = app(&h).spectrum.x_bounds.unwrap();
+    assert!(
+        x0 >= 1.0 && x1 > 400.0,
+        "log axis read back in Hz: {x0}..{x1}"
+    );
+    h.get_by_label("auto").click();
+    h.step();
+    assert_eq!(app(&h).tools.spectrum_display.y_min, None);
+    app_mut(&mut h).tools.spectrum_display.log_freq = false;
+    h.run_steps(2);
     // automatic peaks: with a 3 dB prominence floor the gyro spectrum of a real log has some
     app_mut(&mut h).spectrum.min_prominence_db = 3.0;
     h.run_steps(2);
     let peaks = app(&h).spectrum.peaks.clone();
     assert!(
-        peaks.iter().any(|(s, p)| *s == Slot::A && !p.is_empty()),
+        peaks.iter().any(|(s, _, p)| *s == Slot::A && !p.is_empty()),
         "{peaks:?}"
     );
     assert!(has_label_containing(&h, "A top peak"));
     app_mut(&mut h).spectrum.auto_peaks = 0;
     h.run_steps(2);
-    assert!(app(&h).spectrum.peaks.iter().all(|(_, p)| p.is_empty()));
+    assert!(app(&h).spectrum.peaks.iter().all(|(_, _, p)| p.is_empty()));
     // manual markers: click the plot twice, read the delta, clear
     let frame = app(&h).spectrum.plot_frame.expect("psd plot drawn");
     let (x0, x1) = app(&h).spectrum.x_bounds.unwrap();

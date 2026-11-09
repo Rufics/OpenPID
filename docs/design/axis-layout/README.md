@@ -74,7 +74,7 @@ off / low / medium / high (0 / 10 / 20 / 40 ms), latency shown as "SR latency"
 height), then the analysis parameters (window, cutoff, min input, high input).
 The Advice line stays under the rows.
 
-**Spectrum.** Three rows × two columns: full spectrum (0 … Nyquist) and
+**Spectrum** (implemented: [spectrum-tab](../spectrum-tab/README.md)). Three rows × two columns: full spectrum (0 … Nyquist) and
 sub-100 Hz. Per log the chosen channel solid and, when the log has it, its
 unfiltered counterpart dotted (gyro → gyro prefilt, D-term → D-term prefilt;
 "show prefilt", default on). Panel: channel, smoothing off / low / low-med /

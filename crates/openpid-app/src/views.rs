@@ -9,8 +9,7 @@ use crate::shortcuts::{self, Action};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{
-    Bar, BarChart, HLine, Heatmap, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, Text,
-    VLine,
+    Bar, BarChart, HLine, Heatmap, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, VLine,
 };
 use openpid_analysis::{
     Epoch, FilterOverrides, Fitness, FitnessLevel, RpmOverlay, TargetPreset, Verdict, VerdictLevel,
@@ -136,8 +135,8 @@ pub struct SpectrumState {
     pub auto_peaks: usize,
     /// Minimum prominence (dB) for an automatic peak.
     pub min_prominence_db: f64,
-    /// Peaks found on the last frame, per slot (for the read-out and tests).
-    pub peaks: Vec<(Slot, Vec<Peak>)>,
+    /// Peaks found on the last frame, per slot and axis (for the read-out and tests).
+    pub peaks: Vec<(Slot, Axis, Vec<Peak>)>,
     /// Screen rectangle of the plot area last frame.
     pub plot_frame: Option<egui::Rect>,
     /// Plot x range (Hz) last frame.
@@ -215,7 +214,7 @@ pub(crate) fn nearest_column(x: &[f64], t: f64) -> Option<usize> {
 }
 
 /// `123 Hz` / `1.23 kHz`.
-fn hz(f: f64) -> String {
+pub(crate) fn hz(f: f64) -> String {
     if f >= 1000.0 {
         format!("{:.2} kHz", f / 1000.0)
     } else {
@@ -224,7 +223,7 @@ fn hz(f: f64) -> String {
 }
 
 /// Frequency bin of `freq` closest to `x`.
-fn nearest_bin(freq: &[f64], x: f64) -> Option<usize> {
+pub(crate) fn nearest_bin(freq: &[f64], x: f64) -> Option<usize> {
     freq.iter()
         .enumerate()
         .min_by(|a, b| (a.1 - x).abs().total_cmp(&(b.1 - x).abs()))
@@ -1489,174 +1488,6 @@ pub(crate) fn verdict_color(level: VerdictLevel) -> Color32 {
     }
 }
 
-pub fn spectrum(app: &mut App, ui: &mut Ui) {
-    ui.separator();
-    let session_a = app
-        .first_loaded()
-        .and_then(|s| app.loaded(s))
-        .and_then(|l| l.current().cloned());
-    ui.horizontal_wrapped(|ui| {
-        channel_picker(
-            ui,
-            "psd_channel",
-            session_a.as_deref(),
-            &mut app.tools.spectrum_channel,
-        );
-        if axis_selector(ui, &mut app.tools.axis) {
-            app.tools.spectrum_channel = ChannelId::Gyro {
-                axis: app.tools.axis,
-                stage: GyroStage::Filtered,
-            };
-        }
-        let l = ui.label(tr("segment"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.psd.segment_s)
-                .speed(0.01)
-                .range(0.02..=2.0)
-                .suffix(" s"),
-        )
-        .labelled_by(l.id);
-        ui.label(tr("max"));
-        let mut max = app.tools.psd.max_hz.unwrap_or(0.0);
-        if ui
-            .add(
-                egui::DragValue::new(&mut max)
-                    .speed(10.0)
-                    .range(0.0..=8000.0)
-                    .suffix(" Hz"),
-            )
-            .changed()
-        {
-            app.tools.psd.max_hz = if max > 0.0 { Some(max) } else { None };
-        }
-        ui.checkbox(&mut app.tools.psd_db, "dB");
-        ui.separator();
-        let l = ui.label(tr("peaks"));
-        ui.add(egui::DragValue::new(&mut app.spectrum.auto_peaks).range(0..=10))
-            .labelled_by(l.id);
-        let l = ui.label(tr("prominence"));
-        ui.add(
-            egui::DragValue::new(&mut app.spectrum.min_prominence_db)
-                .speed(0.5)
-                .range(0.0..=60.0)
-                .suffix(" dB"),
-        )
-        .labelled_by(l.id);
-        if !app.spectrum.markers.is_empty() && ui.button(tr("Clear markers")).clicked() {
-            app.spectrum.markers.clear();
-        }
-    });
-    app.tools.psd.channel = app.tools.spectrum_channel.clone();
-    let params = app.tools.psd.clone();
-    let mut outputs: Vec<(Slot, Arc<Output>)> = Vec::new();
-    for slot in app.visible_slots() {
-        match app.result(slot, Kind::Psd(params.clone())) {
-            Some(Ok(o)) => outputs.push((slot, o)),
-            Some(Err(e)) => show_error(ui, slot, &e),
-            None => {}
-        }
-    }
-    let db = app.tools.psd_db;
-    // automatic peaks per trace (prominence is always judged in dB)
-    let peaks: Vec<(Slot, Vec<Peak>)> = outputs
-        .iter()
-        .filter_map(|(slot, o)| match o.as_ref() {
-            Output::Psd(p) => Some((
-                *slot,
-                p.peaks(app.spectrum.auto_peaks, app.spectrum.min_prominence_db),
-            )),
-            _ => None,
-        })
-        .collect();
-    if let Some(txt) = marker_readout(&app.spectrum.markers, &peaks) {
-        ui.label(RichText::new(txt).monospace());
-    }
-    let markers = app.spectrum.markers.clone();
-    let mut clicked_at: Option<f64> = None;
-    let mut frame = None;
-    let mut x_bounds = None;
-    let h = ui.available_height();
-    Plot::new("psd")
-        .legend(Legend::default())
-        .x_axis_label("frequency (Hz)")
-        .y_axis_label(if db { "dB" } else { "power / Hz" })
-        .height(h)
-        .show(ui, |pu| {
-            for (slot, o) in &outputs {
-                let Output::Psd(p) = o.as_ref() else { continue };
-                let ys = if db { &p.power_db } else { &p.power };
-                let pts: Vec<[f64; 2]> = p.freq.iter().zip(ys).map(|(f, y)| [*f, *y]).collect();
-                pu.line(
-                    Line::new(
-                        format!(
-                            "{} {} ({}², {} seg)",
-                            slot.name(),
-                            p.channel.key(),
-                            p.unit,
-                            p.segments
-                        ),
-                        PlotPoints::from(pts),
-                    )
-                    .color(slot_color(*slot))
-                    .width(1.5),
-                );
-                let Some((_, pk)) = peaks.iter().find(|(s, _)| s == slot) else {
-                    continue;
-                };
-                for peak in pk {
-                    let y = ys.get(peak.index).copied().unwrap_or(peak.y);
-                    pu.vline(
-                        VLine::new(format!("{} peak {}", slot.name(), hz(peak.x)), peak.x)
-                            .color(slot_color(*slot).gamma_multiply(0.6))
-                            .style(LineStyle::dashed_loose())
-                            .width(1.0),
-                    );
-                    pu.text(
-                        Text::new(
-                            format!("{} peak label {}", slot.name(), hz(peak.x)),
-                            PlotPoint::new(peak.x, y),
-                            format!("{} {:+.1} dB", hz(peak.x), peak.y),
-                        )
-                        .color(slot_color(*slot))
-                        .anchor(egui::Align2::LEFT_BOTTOM),
-                    );
-                }
-            }
-            for (i, m) in markers.iter().enumerate() {
-                pu.vline(
-                    VLine::new(format!("marker {}", i + 1), *m)
-                        .color(ACCENT)
-                        .width(1.5),
-                );
-            }
-            let resp = pu.response();
-            if resp.clicked()
-                && let Some(p) = pu.pointer_coordinate()
-            {
-                clicked_at = Some(p.x);
-            }
-            let b = pu.plot_bounds();
-            x_bounds = Some((b.min()[0], b.max()[0]));
-            frame = Some(*pu.transform().frame());
-        });
-    app.spectrum.peaks = peaks;
-    app.spectrum.plot_frame = frame;
-    app.spectrum.x_bounds = x_bounds;
-    if let Some(x) = clicked_at
-        && x >= 0.0
-    {
-        // snap to the nearest bin of the first trace so the read-out shows a real value
-        let snapped = outputs
-            .iter()
-            .find_map(|(_, o)| match o.as_ref() {
-                Output::Psd(p) => nearest_bin(&p.freq, x).map(|i| p.freq[i]),
-                _ => None,
-            })
-            .unwrap_or(x);
-        app.spectrum.markers.push(snapped);
-    }
-}
-
 /// Manual spectrum markers as horizontal lines on a frequency-axis heatmap.
 fn marker_hlines(pu: &mut egui_plot::PlotUi<'_>, markers: &[f64]) {
     for (i, m) in markers.iter().enumerate() {
@@ -1667,32 +1498,6 @@ fn marker_hlines(pu: &mut egui_plot::PlotUi<'_>, markers: &[f64]) {
                 .width(1.5),
         );
     }
-}
-
-/// Text line listing manual markers (with the delta of the last two) and the top peak per slot.
-fn marker_readout(markers: &[f64], peaks: &[(Slot, Vec<Peak>)]) -> Option<String> {
-    let mut parts = Vec::new();
-    if !markers.is_empty() {
-        let list: Vec<String> = markers.iter().map(|m| hz(*m)).collect();
-        let delta = if let [.., a, b] = markers {
-            format!("  Δ {}", hz((b - a).abs()))
-        } else {
-            String::new()
-        };
-        parts.push(format!("markers: {}{delta}", list.join(", ")));
-    }
-    for (slot, pk) in peaks {
-        if let Some(top) = pk.first() {
-            parts.push(format!(
-                "{} top peak {} ({:+.1} dB, prominence {:.1} dB)",
-                slot.name(),
-                hz(top.x),
-                top.y,
-                top.prominence
-            ));
-        }
-    }
-    (!parts.is_empty()).then(|| parts.join("   ·   "))
 }
 
 pub(crate) fn heatmap_controls(app: &mut App, ui: &mut Ui) {
