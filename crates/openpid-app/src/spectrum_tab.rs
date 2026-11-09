@@ -218,141 +218,162 @@ fn log_grid(input: GridInput) -> Vec<GridMark> {
     out
 }
 
+/// What the rows are drawn with, read once per frame.
+struct Setup {
+    quantity: Quantity,
+    display: SpectrumDisplay,
+    db: bool,
+    width_hz: f64,
+    base: PsdParams,
+}
+
 /// The Spectrum tab.
 pub fn spectrum(app: &mut App, ui: &mut Ui) {
     control_panel(app, ui, "spectrum-panel", controls);
     let full_w = ui.available_width();
     ui.separator();
-    let quantity = Quantity::of(&app.tools.spectrum_channel);
     let display = app.tools.spectrum_display.clone();
-    let db = app.tools.psd_db;
-    let width_hz = SMOOTHING[display.smoothing.min(SMOOTHING.len() - 1)].1;
-    let base = app.tools.psd.clone();
+    let setup = Setup {
+        quantity: Quantity::of(&app.tools.spectrum_channel),
+        width_hz: SMOOTHING[display.smoothing.min(SMOOTHING.len() - 1)].1,
+        display,
+        db: app.tools.psd_db,
+        base: app.tools.psd.clone(),
+    };
     // the export and the project keep the channel of the selected axis
-    app.tools.psd.channel = quantity.channel(app.tools.axis);
-    let mut rows: Vec<(Axis, AxisTraces)> = Vec::new();
-    for axis in Axis::ALL {
-        let mut t = AxisTraces::default();
-        for slot in app.visible_slots() {
-            let Some(session) = app.loaded(slot).and_then(|l| l.current().cloned()) else {
-                continue;
-            };
-            let mut channels = vec![(quantity.channel(axis), false)];
-            if display.prefilt
-                && let Some(p) = quantity.prefilt(axis)
-            {
-                channels.push((p, true));
-            }
-            for (channel, prefilt) in channels {
-                if !has(&session, &channel) {
-                    continue;
-                }
-                let full = PsdParams {
-                    channel: channel.clone(),
-                    ..base.clone()
-                };
-                let low = PsdParams {
-                    channel,
-                    segment_s: base.segment_s.max(LOW_SEGMENT_S),
-                    max_hz: Some(LOW_MAX_HZ),
-                    ..base.clone()
-                };
-                for (params, into) in [(full, &mut t.full), (low, &mut t.low)] {
-                    match app.result(slot, Kind::Psd(params)) {
-                        Some(Ok(o)) => {
-                            if let Some(tr) = trace(slot, prefilt, o, db, width_hz) {
-                                into.push(tr);
-                            }
-                        }
-                        Some(Err(e)) => show_error(ui, slot, &e),
-                        None => {}
-                    }
-                }
-            }
-        }
-        rows.push((axis, t));
-    }
-    // automatic peaks of every solid full-range trace
-    let peaks: Vec<(Slot, Axis, Vec<Peak>)> = rows
-        .iter()
-        .flat_map(|(axis, t)| {
-            t.full.iter().filter(|tr| !tr.prefilt).filter_map(|tr| {
-                let Output::Psd(p) = tr.out.as_ref() else {
-                    return None;
-                };
-                let n = app.spectrum.auto_peaks;
-                let mut pk: Vec<Peak> = p
-                    .peaks(n + 8, app.spectrum.min_prominence_db)
-                    .into_iter()
-                    .filter(|k| k.x >= PEAK_MIN_HZ)
-                    .collect();
-                pk.truncate(n);
-                Some((tr.slot, *axis, pk))
-            })
-        })
+    app.tools.psd.channel = setup.quantity.channel(app.tools.axis);
+    let rows: Vec<(Axis, AxisTraces)> = Axis::ALL
+        .into_iter()
+        .map(|axis| (axis, axis_traces(app, ui, &setup, axis)))
         .collect();
-    let (y_lo, y_hi) = y_range(&rows, &display, db);
-    legend(app, ui, quantity, &display, full_w);
+    let peaks = auto_peaks(app, &rows);
+    let y = y_range(&rows, &setup.display, setup.db);
+    legend(app, ui, setup.quantity, &setup.display, full_w);
     // the last row also carries the frequency label: every plot area the same height
     let h = row_height(ui, 3, X_LABEL_H / 3.0);
     let markers = app.spectrum.markers.clone();
     let mut clicked_at: Option<f64> = None;
     for (i, (axis, t)) in rows.iter().enumerate() {
         let last = i == 2;
+        let h = if last { h + X_LABEL_H } else { h };
         ui.horizontal(|ui| {
             let gap = ui.spacing().item_spacing.x;
             let wf = (full_w * FULL_SHARE - gap).max(200.0);
             let wl = (full_w - wf - gap).max(120.0);
-            let full = column_plot(ColumnPlot {
+            let full = column_plot(
                 ui,
-                id: ("spec-full", *axis),
-                axis: *axis,
-                traces: &t.full,
-                peaks: &peaks,
-                markers: &markers,
-                log: display.log_freq,
-                low: false,
-                y: (y_lo, y_hi),
-                db,
-                size: egui::vec2(wf, if last { h + X_LABEL_H } else { h }),
-                last,
-            });
+                ColumnPlot {
+                    id: ("spec-full", *axis),
+                    axis: *axis,
+                    traces: &t.full,
+                    peaks: &peaks,
+                    markers: &markers,
+                    log: setup.display.log_freq,
+                    low: false,
+                    y,
+                    db: setup.db,
+                    size: egui::vec2(wf, h),
+                    last,
+                },
+            );
             if *axis == Axis::Roll {
                 app.spectrum.plot_frame = Some(full.frame);
                 app.spectrum.x_bounds = Some(full.x_bounds);
             }
-            let low = column_plot(ColumnPlot {
+            let low = column_plot(
                 ui,
-                id: ("spec-low", *axis),
-                axis: *axis,
-                traces: &t.low,
-                peaks: &[],
-                markers: &markers,
-                log: false,
-                low: true,
-                y: (y_lo, y_hi),
-                db,
-                size: egui::vec2(wl, if last { h + X_LABEL_H } else { h }),
-                last,
-            });
+                ColumnPlot {
+                    id: ("spec-low", *axis),
+                    axis: *axis,
+                    traces: &t.low,
+                    peaks: &[],
+                    markers: &markers,
+                    log: false,
+                    low: true,
+                    y,
+                    db: setup.db,
+                    size: egui::vec2(wl, h),
+                    last,
+                },
+            );
             clicked_at = clicked_at.or(full.clicked).or(low.clicked);
         });
     }
     app.spectrum.peaks = peaks;
-    if let Some(x) = clicked_at
-        && x >= 0.0
-    {
-        // snap to the nearest bin of the first trace so the read-out shows a real value
-        let snapped = rows
-            .first()
-            .and_then(|(_, t)| t.full.first())
-            .and_then(|tr| match tr.out.as_ref() {
-                Output::Psd(p) => nearest_bin(&p.freq, x).map(|i| p.freq[i]),
-                _ => None,
-            })
-            .unwrap_or(x);
+    if let Some(x) = clicked_at.filter(|x| *x >= 0.0) {
+        let snapped = snap(&rows, x);
         app.spectrum.markers.push(snapped);
     }
+}
+
+/// Both columns of one axis for every visible log: the quantity and, when
+/// shown and logged, its prefilt counterpart.
+fn axis_traces(app: &mut App, ui: &mut Ui, s: &Setup, axis: Axis) -> AxisTraces {
+    let mut t = AxisTraces::default();
+    for slot in app.visible_slots() {
+        let Some(session) = app.loaded(slot).and_then(|l| l.current().cloned()) else {
+            continue;
+        };
+        let prefilt = s
+            .quantity
+            .prefilt(axis)
+            .filter(|_| s.display.prefilt)
+            .map(|p| (p, true));
+        let channels = std::iter::once((s.quantity.channel(axis), false)).chain(prefilt);
+        for (channel, prefilt) in channels.filter(|(c, _)| has(&session, c)) {
+            let full = PsdParams {
+                channel: channel.clone(),
+                ..s.base.clone()
+            };
+            let low = PsdParams {
+                channel,
+                segment_s: s.base.segment_s.max(LOW_SEGMENT_S),
+                max_hz: Some(LOW_MAX_HZ),
+                ..s.base.clone()
+            };
+            for (params, into) in [(full, &mut t.full), (low, &mut t.low)] {
+                match app.result(slot, Kind::Psd(params)) {
+                    Some(Ok(o)) => into.extend(trace(slot, prefilt, o, s.db, s.width_hz)),
+                    Some(Err(e)) => show_error(ui, slot, &e),
+                    None => {}
+                }
+            }
+        }
+    }
+    t
+}
+
+/// The automatic peaks of every solid full-range trace, from `PEAK_MIN_HZ` up.
+fn auto_peaks(app: &App, rows: &[(Axis, AxisTraces)]) -> Vec<(Slot, Axis, Vec<Peak>)> {
+    let n = app.spectrum.auto_peaks;
+    let prominence = app.spectrum.min_prominence_db;
+    let mut out = Vec::new();
+    for (axis, t) in rows {
+        for tr in t.full.iter().filter(|tr| !tr.prefilt) {
+            if let Output::Psd(p) = tr.out.as_ref() {
+                let mut pk: Vec<Peak> = p
+                    .peaks(n + 8, prominence)
+                    .into_iter()
+                    .filter(|k| k.x >= PEAK_MIN_HZ)
+                    .collect();
+                pk.truncate(n);
+                out.push((tr.slot, *axis, pk));
+            }
+        }
+    }
+    out
+}
+
+/// `x` snapped to the nearest bin of the first trace, so the read-out shows
+/// a real value.
+fn snap(rows: &[(Axis, AxisTraces)], x: f64) -> f64 {
+    rows.first()
+        .and_then(|(_, t)| t.full.first())
+        .and_then(|tr| match tr.out.as_ref() {
+            Output::Psd(p) => nearest_bin(&p.freq, x).map(|i| p.freq[i]),
+            _ => None,
+        })
+        .unwrap_or(x)
 }
 
 fn has(session: &FlightSession, channel: &ChannelId) -> bool {
@@ -465,8 +486,7 @@ fn swatch(ui: &mut Ui, c: Color32, dotted: bool) {
 }
 
 /// Everything one plot of the grid needs.
-struct ColumnPlot<'a, 'u> {
-    ui: &'u mut Ui,
+struct ColumnPlot<'a> {
     id: (&'static str, Axis),
     axis: Axis,
     traces: &'a [Trace],
@@ -487,21 +507,28 @@ struct Drawn {
     clicked: Option<f64>,
 }
 
-fn column_plot(c: ColumnPlot<'_, '_>) -> Drawn {
-    let tx = |f: f64| if c.log { f.max(LOG_MIN_HZ).log10() } else { f };
-    let fx = move |x: f64| if c.log { 10f64.powf(x) } else { x };
-    let nyq = c
-        .traces
-        .iter()
-        .filter_map(|t| t.x.last().copied())
-        .fold(0.0_f64, f64::max);
-    let (x0, x1) = if c.low {
-        (0.0, LOW_MAX_HZ)
-    } else if c.log {
-        (tx(LOG_MIN_HZ), tx(nyq.max(10.0)))
-    } else {
-        (0.0, nyq.max(10.0))
-    };
+/// Frequency (Hz) to plot x and back: identity, or log10 on a log axis.
+#[derive(Clone, Copy)]
+struct FreqAxis {
+    log: bool,
+}
+
+impl FreqAxis {
+    fn to_x(self, f: f64) -> f64 {
+        if self.log {
+            f.max(LOG_MIN_HZ).log10()
+        } else {
+            f
+        }
+    }
+
+    fn to_hz(self, x: f64) -> f64 {
+        if self.log { 10f64.powf(x) } else { x }
+    }
+}
+
+/// The plot of one cell with its labels, links and axis format.
+fn cell_plot<'p>(c: &ColumnPlot<'_>, fa: FreqAxis) -> Plot<'p> {
     let unit = if c.db { "dB" } else { "power / Hz" };
     let mut plot = Plot::new(c.id)
         .width(c.size.x)
@@ -515,84 +542,109 @@ fn column_plot(c: ColumnPlot<'_, '_>) -> Drawn {
                 HoverPosition::NearDataPoint { position, .. }
                 | HoverPosition::Elsewhere { position } => position,
             };
-            Some(format!("{}\n{:.1} {unit}", hz(fx(p.x)), p.y))
+            Some(format!("{}\n{:.1} {unit}", hz(fa.to_hz(p.x)), p.y))
         });
     if !c.low {
         plot = plot.y_axis_label(format!("{} ({unit})", c.axis.name()));
     }
     if c.last {
-        plot = plot.x_axis_label(if c.log {
+        plot = plot.x_axis_label(if fa.log {
             tr("frequency (Hz, log)")
         } else {
             tr("frequency (Hz)")
         });
     }
-    if c.log {
+    if fa.log {
         plot = plot
             .x_grid_spacer(log_grid)
             .x_axis_formatter(|m, _| format!("{:.0}", 10f64.powf(m.value)));
     }
+    plot
+}
+
+/// The x range a cell resets to: 0–100 Hz, or 0 (2 Hz on a log axis) to Nyquist.
+fn home_x(c: &ColumnPlot<'_>, fa: FreqAxis) -> (f64, f64) {
+    let nyq = c
+        .traces
+        .iter()
+        .filter_map(|t| t.x.last().copied())
+        .fold(0.0_f64, f64::max)
+        .max(10.0);
+    if c.low {
+        (0.0, LOW_MAX_HZ)
+    } else if fa.log {
+        (fa.to_x(LOG_MIN_HZ), fa.to_x(nyq))
+    } else {
+        (0.0, nyq)
+    }
+}
+
+fn draw_traces(pu: &mut egui_plot::PlotUi<'_>, traces: &[Trace], fa: FreqAxis) {
+    for t in traces {
+        let pts: Vec<[f64; 2]> =
+            t.x.iter()
+                .zip(&t.y)
+                .filter(|(f, _)| !fa.log || **f >= LOG_MIN_HZ)
+                .map(|(f, y)| [fa.to_x(*f), *y])
+                .collect();
+        let line = Line::new("", PlotPoints::from(pts)).color(slot_color(t.slot));
+        pu.line(if t.prefilt {
+            line.style(LineStyle::dotted_dense()).width(1.2)
+        } else {
+            line.width(1.6)
+        });
+    }
+}
+
+/// Dashed lines and frequency labels on this axis's automatic peaks.
+fn draw_peaks(pu: &mut egui_plot::PlotUi<'_>, c: &ColumnPlot<'_>, fa: FreqAxis) {
+    for (slot, _, pk) in c.peaks.iter().filter(|p| p.1 == c.axis) {
+        let colour = slot_color(*slot);
+        let trace = c.traces.iter().find(|t| t.slot == *slot && !t.prefilt);
+        for peak in pk {
+            let y = trace
+                .and_then(|t| t.y.get(peak.index).copied())
+                .unwrap_or(peak.y)
+                .clamp(c.y.0, c.y.1);
+            pu.vline(
+                VLine::new("", fa.to_x(peak.x))
+                    .color(colour.gamma_multiply(0.5))
+                    .style(LineStyle::dashed_loose())
+                    .width(1.0),
+            );
+            pu.text(
+                Text::new("", PlotPoint::new(fa.to_x(peak.x), y), hz(peak.x))
+                    .color(colour)
+                    .anchor(egui::Align2::LEFT_BOTTOM),
+            );
+        }
+    }
+}
+
+fn column_plot(ui: &mut Ui, c: ColumnPlot<'_>) -> Drawn {
+    let fa = FreqAxis {
+        log: c.log && !c.low,
+    };
+    let (x0, x1) = home_x(&c, fa);
     let mut clicked = None;
     let mut frame = egui::Rect::NOTHING;
     let mut bounds = (x0, x1);
-    plot.show(c.ui, |pu| {
+    let plot = cell_plot(&c, fa);
+    plot.show(ui, |pu| {
         pu.set_plot_bounds_y(c.y.0..=c.y.1);
         if pu.response().double_clicked() || !pu.plot_bounds().is_valid_x() {
             pu.set_plot_bounds_x(x0..=x1);
         }
-        for t in c.traces {
-            let pts: Vec<[f64; 2]> =
-                t.x.iter()
-                    .zip(&t.y)
-                    .filter(|(f, _)| !c.log || **f >= LOG_MIN_HZ)
-                    .map(|(f, y)| [tx(*f), *y])
-                    .collect();
-            let colour = slot_color(t.slot);
-            let mut line = Line::new("", PlotPoints::from(pts)).color(colour);
-            line = if t.prefilt {
-                line.style(LineStyle::dotted_dense()).width(1.2)
-            } else {
-                line.width(1.6)
-            };
-            pu.line(line);
+        draw_traces(pu, c.traces, fa);
+        draw_peaks(pu, &c, fa);
+        for m in c.markers.iter().filter(|m| !c.low || **m <= LOW_MAX_HZ) {
+            pu.vline(VLine::new("", fa.to_x(*m)).color(ACCENT).width(1.5));
         }
-        for (slot, axis, pk) in c.peaks {
-            if *axis != c.axis {
-                continue;
-            }
-            let colour = slot_color(*slot);
-            let trace = c.traces.iter().find(|t| t.slot == *slot && !t.prefilt);
-            for peak in pk {
-                let y = trace
-                    .and_then(|t| t.y.get(peak.index).copied())
-                    .unwrap_or(peak.y)
-                    .clamp(c.y.0, c.y.1);
-                pu.vline(
-                    VLine::new("", tx(peak.x))
-                        .color(colour.gamma_multiply(0.5))
-                        .style(LineStyle::dashed_loose())
-                        .width(1.0),
-                );
-                pu.text(
-                    Text::new("", PlotPoint::new(tx(peak.x), y), hz(peak.x))
-                        .color(colour)
-                        .anchor(egui::Align2::LEFT_BOTTOM),
-                );
-            }
-        }
-        for m in c.markers {
-            if c.low && *m > LOW_MAX_HZ {
-                continue;
-            }
-            pu.vline(VLine::new("", tx(*m)).color(ACCENT).width(1.5));
-        }
-        if pu.response().clicked()
-            && let Some(p) = pu.pointer_coordinate()
-        {
-            clicked = Some(fx(p.x));
+        if pu.response().clicked() {
+            clicked = pu.pointer_coordinate().map(|p| fa.to_hz(p.x));
         }
         let b = pu.plot_bounds();
-        bounds = (fx(b.min()[0]), fx(b.max()[0]));
+        bounds = (fa.to_hz(b.min()[0]), fa.to_hz(b.max()[0]));
         frame = *pu.transform().frame();
     });
     Drawn {
