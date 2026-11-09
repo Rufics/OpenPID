@@ -1034,23 +1034,23 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
         }
         // fields
         let l = ui.label(tr("start"));
-        let a = ui
-            .add(
-                egui::DragValue::new(&mut e.start_s)
-                    .speed(0.1)
-                    .range(0.0..=duration)
-                    .suffix(" s"),
-            )
-            .labelled_by(l.id);
+        let a = crate::panel::with_unit(
+            ui,
+            egui::DragValue::new(&mut e.start_s)
+                .speed(0.1)
+                .range(0.0..=duration),
+            " s",
+        )
+        .labelled_by(l.id);
         let l = ui.label(tr("end"));
-        let b = ui
-            .add(
-                egui::DragValue::new(&mut e.end_s)
-                    .speed(0.1)
-                    .range(0.0..=duration)
-                    .suffix(" s"),
-            )
-            .labelled_by(l.id);
+        let b = crate::panel::with_unit(
+            ui,
+            egui::DragValue::new(&mut e.end_s)
+                .speed(0.1)
+                .range(0.0..=duration),
+            " s",
+        )
+        .labelled_by(l.id);
         if a.changed() || b.changed() {
             update = Some((
                 Some(Epoch {
@@ -2010,27 +2010,30 @@ pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
     heatmap_controls(app, ui);
     ui.horizontal_wrapped(|ui| {
         let l = ui.label(tr("segment"));
-        ui.add(
+        crate::panel::with_unit(
+            ui,
             egui::DragValue::new(&mut app.tools.throttle.segment_s)
                 .speed(0.01)
-                .range(0.05..=1.0)
-                .suffix(" s"),
+                .range(0.05..=1.0),
+            " s",
         )
         .labelled_by(l.id);
         let l = ui.label(tr("throttle window ±"));
-        ui.add(
+        crate::panel::with_unit(
+            ui,
             egui::DragValue::new(&mut app.tools.throttle.half_window)
                 .speed(0.5)
-                .range(0.0..=25.0)
-                .suffix(" %"),
+                .range(0.0..=25.0),
+            " %",
         )
         .labelled_by(l.id);
         let l = ui.label(tr("max"));
-        ui.add(
+        crate::panel::with_unit(
+            ui,
             egui::DragValue::new(&mut app.tools.throttle.max_hz)
                 .speed(10.0)
-                .range(50.0..=8000.0)
-                .suffix(" Hz"),
+                .range(50.0..=8000.0),
+            " Hz",
         )
         .labelled_by(l.id);
         let l = ui.label(tr("min segments"));
@@ -2164,23 +2167,25 @@ pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
     heatmap_controls(app, ui);
     ui.horizontal_wrapped(|ui| {
         let l = ui.label(tr("segment"));
-        ui.add(
+        crate::panel::with_unit(
+            ui,
             egui::DragValue::new(&mut app.tools.stft.segment_s)
                 .speed(0.01)
-                .range(0.02..=1.0)
-                .suffix(" s"),
+                .range(0.02..=1.0),
+            " s",
         )
         .labelled_by(l.id);
         let mut max = app.tools.stft.max_hz.unwrap_or(0.0);
-        ui.label(tr("max"));
-        if ui
-            .add(
-                egui::DragValue::new(&mut max)
-                    .speed(10.0)
-                    .range(0.0..=8000.0)
-                    .suffix(" Hz"),
-            )
-            .changed()
+        let l = ui.label(tr("max"));
+        if crate::panel::with_unit(
+            ui,
+            egui::DragValue::new(&mut max)
+                .speed(10.0)
+                .range(0.0..=8000.0),
+            " Hz",
+        )
+        .labelled_by(l.id)
+        .changed()
         {
             app.tools.stft.max_hz = if max > 0.0 { Some(max) } else { None };
         }
@@ -2388,11 +2393,12 @@ fn player_controls(
             pos = step(pos, 1);
         }
         let l = ui.label(tr("speed"));
-        ui.add(
+        crate::panel::with_unit(
+            ui,
             egui::DragValue::new(&mut p.speed)
                 .speed(0.1)
-                .range(0.1..=16.0)
-                .suffix("×"),
+                .range(0.1..=16.0),
+            "×",
         )
         .labelled_by(l.id);
         let l = ui.label(tr("position"));
@@ -2732,38 +2738,42 @@ pub fn advice(app: &mut App, ui: &mut Ui) {
     ui.separator();
     ui.horizontal_wrapped(|ui| {
         let l = ui.label(tr("overshoot limit"));
-        ui.add(
+        crate::panel::with_unit(
+            ui,
             egui::DragValue::new(&mut app.tools.recommend.targets.overshoot_warn_pct)
                 .speed(1.0)
-                .range(1.0..=100.0)
-                .suffix(" %"),
+                .range(1.0..=100.0),
+            " %",
         )
         .labelled_by(l.id)
         .on_hover_text(tr(
             "the same target as on the Step tab (Settings → Targets)",
         ));
         let l = ui.label(tr("D step"));
-        ui.add(
+        crate::panel::with_unit(
+            ui,
             egui::DragValue::new(&mut app.tools.recommend.d_step_pct)
                 .speed(1.0)
-                .range(1.0..=50.0)
-                .suffix(" %"),
+                .range(1.0..=50.0),
+            " %",
         )
         .labelled_by(l.id);
         let l = ui.label(tr("peak prominence"));
-        ui.add(
+        crate::panel::with_unit(
+            ui,
             egui::DragValue::new(&mut app.tools.recommend.peak_min_prominence_db)
                 .speed(0.5)
-                .range(1.0..=40.0)
-                .suffix(" dB"),
+                .range(1.0..=40.0),
+            " dB",
         )
         .labelled_by(l.id);
         let l = ui.label(tr("LPF headroom"));
-        ui.add(
+        crate::panel::with_unit(
+            ui,
             egui::DragValue::new(&mut app.tools.recommend.lpf_headroom_db)
                 .speed(0.5)
-                .range(1.0..=40.0)
-                .suffix(" dB"),
+                .range(1.0..=40.0),
+            " dB",
         )
         .labelled_by(l.id);
     });
@@ -3200,14 +3210,12 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                  range: std::ops::RangeInclusive<f64>,
                                  suffix: &str| {
                     let l = ui.label(tr(label));
-                    let r = ui
-                        .add(
-                            egui::DragValue::new(v)
-                                .speed(speed)
-                                .range(range)
-                                .suffix(suffix),
-                        )
-                        .labelled_by(l.id);
+                    let r = crate::panel::with_unit(
+                        ui,
+                        egui::DragValue::new(v).speed(speed).range(range),
+                        suffix,
+                    )
+                    .labelled_by(l.id);
                     targets_changed |= r.changed();
                     ui.end_row();
                 };
@@ -3331,15 +3339,11 @@ fn whatif_value(
     let colour = if value.is_some() { ACCENT } else { MUTED };
     let l = ui.label(RichText::new(label).color(colour));
     let mut v = value.unwrap_or(log_value);
-    let mut w = egui::DragValue::new(&mut v)
-        .speed(speed)
-        .range(range)
-        .suffix(suffix);
+    let mut w = egui::DragValue::new(&mut v).speed(speed).range(range);
     if integer {
         w = w.max_decimals(0);
     }
-    if ui
-        .add(w)
+    if crate::panel::with_unit(ui, w, suffix)
         .labelled_by(l.id)
         .on_hover_text(format!("log: {log_value}"))
         .changed()
@@ -3558,23 +3562,25 @@ pub fn filter_sim(app: &mut App, ui: &mut Ui) {
         app.tools.filter_sim.axis = app.tools.axis;
         ui.separator();
         let l = ui.label(tr("segment"));
-        ui.add(
+        crate::panel::with_unit(
+            ui,
             egui::DragValue::new(&mut app.tools.filter_sim.segment_s)
                 .speed(0.01)
-                .range(0.02..=2.0)
-                .suffix(" s"),
+                .range(0.02..=2.0),
+            " s",
         )
         .labelled_by(l.id);
-        ui.label(tr("max"));
+        let l = ui.label(tr("max"));
         let mut max = app.tools.filter_sim.max_hz.unwrap_or(0.0);
-        if ui
-            .add(
-                egui::DragValue::new(&mut max)
-                    .speed(10.0)
-                    .range(0.0..=8000.0)
-                    .suffix(" Hz"),
-            )
-            .changed()
+        if crate::panel::with_unit(
+            ui,
+            egui::DragValue::new(&mut max)
+                .speed(10.0)
+                .range(0.0..=8000.0),
+            " Hz",
+        )
+        .labelled_by(l.id)
+        .changed()
         {
             app.tools.filter_sim.max_hz = if max > 0.0 { Some(max) } else { None };
         }
@@ -3764,11 +3770,12 @@ pub fn motor_noise(app: &mut App, ui: &mut Ui) {
         }
         ui.separator();
         let l = ui.label(tr("segment"));
-        ui.add(
+        crate::panel::with_unit(
+            ui,
             egui::DragValue::new(&mut app.tools.motor_noise.segment_s)
                 .speed(0.01)
-                .range(0.05..=2.0)
-                .suffix(" s"),
+                .range(0.05..=2.0),
+            " s",
         )
         .labelled_by(l.id);
         let l = ui.label(tr("harmonics"));

@@ -712,6 +712,7 @@ fn controls(app: &mut App, ui: &mut Ui) {
         tr("lower end of the power axis; auto follows the drawn data"),
         &mut d.y_min,
         -50.0,
+        if app.tools.psd_db { "dB" } else { "" },
     );
     panel::optional(
         ui,
@@ -719,6 +720,7 @@ fn controls(app: &mut App, ui: &mut Ui) {
         tr("upper end of the power axis; auto follows the drawn data"),
         &mut d.y_max,
         20.0,
+        if app.tools.psd_db { "dB" } else { "" },
     );
     panel::section(ui, tr("Peaks"));
     panel::drag_usize(

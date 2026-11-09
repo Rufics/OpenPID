@@ -54,6 +54,10 @@ Rules shared by every topic of the sprint:
   - **sections** with a small upper-case muted title (DISPLAY, ANALYSIS…);
   - labels in sentence case ("Cut-off", "Min input"); option values without
     repeating the label ("medium", not "smoothing medium");
+  - **units beside the number, not inside it** (`panel::with_unit`, in a
+    column of `panel::UNIT_W`): a `DragValue` suffix disappears while the
+    value is typed, the unit beside it stays; this holds for every number
+    field of the app, panels or not;
   - **every field explains itself on hover**, over the label and over the value:
     what it changes and, where it matters, the default and the trade-off;
   - built only with `crates/openpid-app/src/panel.rs` (`section`, `row`, `drag`,

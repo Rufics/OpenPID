@@ -10,8 +10,57 @@ use eframe::egui::{self, Response, RichText, Ui};
 
 /// Width of the value column: combo boxes are this wide, numbers right-align in it.
 pub const VALUE_W: f32 = 112.0;
+/// Width of the unit column beside panel numbers, so the numbers line up.
+pub const UNIT_W: f32 = 30.0;
 /// Height of a row.
 const ROW_H: f32 = 24.0;
+
+/// A number with its unit beside it, not inside: the unit stays in view
+/// while the value is typed (`DragValue::suffix` disappears in edit mode).
+/// Follows the direction of the enclosing layout.
+pub fn with_unit(ui: &mut Ui, value: egui::DragValue<'_>, unit: &str) -> Response {
+    unit_pair(ui, value, unit, None)
+}
+
+/// [`with_unit`] with the unit in a column `w` wide (empty units included),
+/// so the numbers of a panel end at the same x.
+fn unit_pair(ui: &mut Ui, value: egui::DragValue<'_>, unit: &str, w: Option<f32>) -> Response {
+    let rtl = ui.layout().prefer_right_to_left();
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        if rtl {
+            unit_label(ui, unit.trim(), w);
+            ui.add(value)
+        } else {
+            let r = ui.add(value);
+            unit_label(ui, unit.trim(), w);
+            r
+        }
+    })
+    .inner
+}
+
+fn unit_label(ui: &mut Ui, unit: &str, w: Option<f32>) {
+    let text = RichText::new(unit).color(MUTED);
+    match w {
+        Some(w) => {
+            ui.allocate_ui_with_layout(
+                egui::vec2(w, ROW_H),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.set_min_width(w);
+                    if !unit.is_empty() {
+                        ui.label(text);
+                    }
+                },
+            );
+        }
+        None if !unit.is_empty() => {
+            ui.label(text);
+        }
+        None => {}
+    }
+}
 
 /// A section title: small, upper case, muted, with room above it.
 pub fn section(ui: &mut Ui, title: &str) {
@@ -62,11 +111,11 @@ pub fn drag(
     suffix: &str,
 ) -> Response {
     row(ui, label, hint, |ui| {
-        ui.add(
-            egui::DragValue::new(value)
-                .speed(speed)
-                .range(range)
-                .suffix(suffix),
+        unit_pair(
+            ui,
+            egui::DragValue::new(value).speed(speed).range(range),
+            suffix,
+            Some(UNIT_W),
         )
     })
 }
@@ -80,7 +129,12 @@ pub fn drag_usize(
     range: std::ops::RangeInclusive<usize>,
 ) -> Response {
     row(ui, label, hint, |ui| {
-        ui.add(egui::DragValue::new(value).range(range))
+        unit_pair(
+            ui,
+            egui::DragValue::new(value).range(range),
+            "",
+            Some(UNIT_W),
+        )
     })
 }
 
@@ -137,6 +191,7 @@ pub fn optional(
     hint: &str,
     value: &mut Option<f64>,
     start: f64,
+    unit: &str,
 ) -> Response {
     row(ui, label, hint, |ui| {
         if let Some(mut v) = *value {
@@ -144,7 +199,12 @@ pub fn optional(
                 .small_button(tr("auto"))
                 .on_hover_text(tr("back to the automatic range"))
                 .clicked();
-            let r = ui.add(egui::DragValue::new(&mut v).speed(1.0));
+            let r = unit_pair(
+                ui,
+                egui::DragValue::new(&mut v).speed(1.0),
+                unit,
+                Some(UNIT_W),
+            );
             *value = if back { None } else { Some(v) };
             r
         } else {

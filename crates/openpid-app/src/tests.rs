@@ -2829,11 +2829,23 @@ fn panel_rows_put_values_in_one_column_and_explain_on_hover() {
         let label = h.get_by_role_and_label(Role::Label, f).rect();
         assert!(label.right() < *r - 40.0, "{f}: label left, value right");
     }
+    // the units sit beside the numbers, in a column of their own up to the
+    // panel's edge, where the combo boxes end
     let combo = h.get_by_role_and_label(Role::ComboBox, "Smoothing").rect();
+    let unit_col = combo.right() - rights[0];
     assert!(
-        (combo.right() - rights[0]).abs() <= 1.0,
-        "combos share the column"
+        (crate::panel::UNIT_W..=crate::panel::UNIT_W + 8.0).contains(&unit_col),
+        "unit column {unit_col}"
     );
+    // a unit stays in view while the number is typed
+    h.get_by_role_and_label(Role::SpinButton, "Cut-off").click();
+    h.run_steps(2);
+    assert!(
+        h.query_by_label("Hz").is_some(),
+        "unit beside the field in edit mode"
+    );
+    h.key_press(Key::Escape);
+    h.run_steps(2);
     // a hint on hover over the label and over the value
     h.get_by_role_and_label(Role::Label, "Cut-off").hover();
     h.run_steps(3);
@@ -2848,7 +2860,7 @@ fn panel_rows_put_values_in_one_column_and_explain_on_hover() {
     h.run_steps(2);
     let seg = h.get_by_role_and_label(Role::SpinButton, "Segment").rect();
     let ch = h.get_by_role_and_label(Role::ComboBox, "Channel").rect();
-    assert!((seg.right() - ch.right()).abs() <= 1.0);
+    assert!((ch.right() - seg.right() - crate::panel::UNIT_W).abs() <= 8.0);
     h.get_by_role_and_label(Role::Label, "Prominence").hover();
     h.run_steps(3);
     assert!(has_label_containing(&h, "stand above its surroundings"));
