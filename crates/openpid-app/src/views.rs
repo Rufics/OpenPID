@@ -698,7 +698,7 @@ pub(crate) fn paint_mark(p: &egui::Painter, c: egui::Pos2, level: FitnessLevel, 
 }
 
 /// A pill: rounded tinted background, the text and the level's mark in its
-/// colour (fitness badges); read out as "raw [ok]".
+/// colour (fitness badges); read out as `raw [ok]`.
 fn pill(ui: &mut Ui, text: &str, level: FitnessLevel) -> egui::Response {
     let colour = level_color(level);
     let galley =
