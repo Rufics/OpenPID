@@ -58,6 +58,12 @@ Rules shared by every topic of the sprint:
     column of `panel::UNIT_W`): a `DragValue` suffix disappears while the
     value is typed, the unit beside it stays; this holds for every number
     field of the app, panels or not;
+- **Plot grids** (owner's remark of 2026-11-09 on a trimmed epoch): every plot
+  of the reworked tabs steps its grid on the 1–2–5 series with nested steps
+  and labels with the decimals its step needs (`grid.rs`: `spacer_x`,
+  `spacer_y`, `label`); egui_plot's powers of ten left narrow axes with one
+  label and printed 1.5 as "2". Heatmaps fill their frame (no margin around
+  the data), and a plot with nothing to draw says why inside it.
   - **every field explains itself on hover**, over the label and over the value:
     what it changes and, where it matters, the default and the trade-off;
   - built only with `crates/openpid-app/src/panel.rs` (`section`, `row`, `drag`,

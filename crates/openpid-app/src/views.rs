@@ -2092,6 +2092,13 @@ pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
                             let mut hover = None;
                             ui.horizontal(|ui| {
                                 Plot::new(("stft", slot.name()))
+                                    // the map fills the frame: no blank
+                                    // margin around the epoch
+                                    .set_margin_fraction(egui::Vec2::ZERO)
+                                    .x_grid_spacer(crate::grid::spacer_x())
+                                    .x_axis_formatter(crate::grid::label)
+                                    .y_grid_spacer(crate::grid::spacer_y())
+                                    .y_axis_formatter(crate::grid::label)
                                     .x_axis_label("time (s)")
                                     .y_axis_label("frequency (Hz)")
                                     .width(plot_w)

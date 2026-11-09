@@ -54,11 +54,13 @@ on this log, so the decision adds a throttle range that follows the data.
   the largest across logs; a fixed "Colour max" wins. `App::colour_scales`
   records one value per log.
 - **Throttle range**: from the first to the last bin with at least
-  "Min segments" segments in any visible map, one bin of margin, applied when
-  it changes and on a double click; "Full throttle range" shows 0–100 %. All
-  cells link x and y.
-- **Grid labels on the 1–2–5 series** (`steps_125`): egui_plot's default spacer
-  steps by powers of ten and left a 0–55 % axis with the single label "0".
+  "Min segments" segments in any visible map, to the edges of those bins (a
+  margin would only add greyed, unsampled bins at both edges: the owner saw
+  them on a trimmed epoch), applied when it changes and on a double click;
+  "Full throttle range" shows 0–100 %. All cells link x and y.
+- **Grid labels on the 1–2–5 series** (`grid.rs`, shared by every plot of
+  the reworked tabs): egui_plot's default spacer steps by powers of ten and
+  left a 0–55 % axis with the single label "0".
 - Overlays (RPM harmonics per motor, notches), manual spectrum markers and the
   hover read-out as before. The segments-per-bin strip is gone: the dimmed
   bins and the line "A: 76 of 101 throttle bins have fewer than 3 segments

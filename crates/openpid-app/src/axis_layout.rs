@@ -240,6 +240,14 @@ fn step_controls(app: &mut App, ui: &mut Ui) {
     );
 }
 
+/// What a response plot draws: each log's mean, its PID label, and the
+/// reason when no log has a response on the axis.
+type Curves<'a> = (
+    &'a [(Slot, Arc<Output>)],
+    &'a [(Slot, Option<String>)],
+    Option<&'a str>,
+);
+
 /// The result of one axis of one log.
 type AxisResult = (Axis, Slot, Option<Result<Arc<Output>, String>>);
 
@@ -305,10 +313,29 @@ pub fn step(app: &mut App, ui: &mut Ui) {
                 (*s, pid)
             })
             .collect();
+        // an axis without a response says why inside its plot (e.g. an epoch
+        // with no stick movement on it), instead of an empty frame
+        let why: Vec<String> = rows
+            .iter()
+            .filter(|(a, _, _)| *a == axis)
+            .filter_map(|(_, s, r)| match r {
+                Some(Err(e)) => Some(format!("{}: {e}", s.name())),
+                _ => None,
+            })
+            .collect();
+        let note = (outputs.is_empty() && !why.is_empty()).then(|| why.join("\n"));
         ui.horizontal(|ui| {
             let w = (full_w - 2.0 * (SIDE_PLOT_W + ui.spacing().item_spacing.x)).max(200.0);
             response_plot(
-                ui, axis, &outputs, &pids, &display, &targets, band, end_ms, w, h,
+                ui,
+                axis,
+                (&outputs, &pids, note.as_deref()),
+                &display,
+                &targets,
+                band,
+                end_ms,
+                w,
+                h,
             );
             peak_plot(ui, axis, &outputs, &display, w.min(SIDE_PLOT_W), h);
             latency_plot(ui, axis, &outputs, &display, h);
@@ -570,8 +597,7 @@ fn advice_line(app: &mut App, ui: &mut Ui) {
 fn response_plot(
     ui: &mut Ui,
     axis: Axis,
-    outputs: &[(Slot, Arc<Output>)],
-    pids: &[(Slot, Option<String>)],
+    (outputs, pids, note): Curves<'_>,
     display: &StepDisplay,
     targets: &StepTargets,
     band: (f64, f64, f64),
@@ -582,6 +608,10 @@ fn response_plot(
     let warn_line = 1.0 + targets.overshoot_warn_pct / 100.0;
     let fail_line = 1.0 + targets.overshoot_fail_pct / 100.0;
     Plot::new(format!("step-{}", axis.name()))
+        .x_grid_spacer(crate::grid::spacer_x())
+        .x_axis_formatter(crate::grid::label)
+        .y_grid_spacer(crate::grid::spacer_y())
+        .y_axis_formatter(crate::grid::label)
         .legend(Legend::default())
         .x_axis_label(tr("time (ms)"))
         .y_axis_label(format!("{} {}", axis.name(), tr("response")))
@@ -595,6 +625,16 @@ fn response_plot(
         .default_y_bounds(0.0, display.y_max)
         .default_x_bounds(0.0, end_ms)
         .show(ui, |pu| {
+            if let Some(note) = note {
+                pu.text(
+                    egui_plot::Text::new(
+                        "",
+                        egui_plot::PlotPoint::new(end_ms / 2.0, display.y_max / 2.0),
+                        RichText::new(note).size(13.0),
+                    )
+                    .color(crate::colormap::MUTED),
+                );
+            }
             pu.polygon(
                 egui_plot::Polygon::new(
                     // reference marks stay out of the legend (empty names)
@@ -734,6 +774,10 @@ fn peak_plot(
         })
         .collect();
     Plot::new(format!("step-peak-{}", axis.name()))
+        .x_grid_spacer(crate::grid::spacer_x())
+        .x_axis_formatter(crate::grid::label)
+        .y_grid_spacer(crate::grid::spacer_y())
+        .y_axis_formatter(crate::grid::label)
         .width(SIDE_PLOT_W)
         .height(height)
         .y_axis_label(format!("{} {}", axis.name(), tr("peak")))
@@ -776,6 +820,10 @@ fn latency_plot(
         })
         .collect();
     Plot::new(format!("step-latency-{}", axis.name()))
+        .x_grid_spacer(crate::grid::spacer_x())
+        .x_axis_formatter(crate::grid::label)
+        .y_grid_spacer(crate::grid::spacer_y())
+        .y_axis_formatter(crate::grid::label)
         .width(SIDE_PLOT_W)
         .height(height)
         .y_axis_label(format!("{} {}", axis.name(), tr("latency (ms)")))

@@ -29,26 +29,6 @@ const TITLE_H: f32 = 18.0;
 /// Height of the frequency label under the last row.
 const X_LABEL_H: f32 = 18.0;
 
-/// The next step of the 1–2–5 series at or above `x` (x > 0).
-fn nice_at_least(x: f64) -> f64 {
-    let decade = 10f64.powf(x.log10().floor());
-    [1.0, 2.0, 5.0, 10.0]
-        .into_iter()
-        .map(|m| m * decade)
-        .find(|s| *s >= x * (1.0 - 1e-9))
-        .unwrap_or(10.0 * decade)
-}
-
-/// Grid steps on the 1–2–5 series. `egui_plot`'s default spacer steps by
-/// powers of ten, which on a narrow heatmap leaves a 0–55 % axis with a
-/// single label.
-fn steps_125(input: egui_plot::GridInput) -> [f64; 3] {
-    let s0 = nice_at_least(input.base_step_size.max(1e-9));
-    let s1 = nice_at_least(s0 * 1.5);
-    let s2 = nice_at_least(s1 * 1.5);
-    [s0, s1, s2]
-}
-
 /// Display options of the tab (not analysis parameters).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThrottleDisplay {
@@ -242,8 +222,9 @@ fn scales(app: &mut App, logs: &mut [LogColumn]) {
 }
 
 /// The throttle range to show: from the first to the last bin with at least
-/// `min_segments` segments in any heatmap, one bin of margin; 0–100 % when
-/// asked for or when nothing is sampled.
+/// `min_segments` segments in any heatmap, to the edges of those bins (a
+/// wider margin would only add greyed, unsampled bins); 0–100 % when asked
+/// for or when nothing is sampled.
 fn throttle_range(logs: &[LogColumn], min_segments: usize, full: bool) -> (f64, f64) {
     if full {
         return (0.0, 100.0);
@@ -261,8 +242,8 @@ fn throttle_range(logs: &[LogColumn], min_segments: usize, full: bool) -> (f64, 
         };
         for (x, c) in t.grid.x.iter().zip(&t.counts) {
             if *c >= min_segments {
-                lo = lo.min(x - dx);
-                hi = hi.max(x + dx);
+                lo = lo.min(x - dx / 2.0);
+                hi = hi.max(x + dx / 2.0);
             }
         }
     }
@@ -367,8 +348,10 @@ fn heat_cell(
         .allow_scroll(false)
         .show_x(false)
         .show_y(false)
-        .x_grid_spacer(egui_plot::uniform_grid_spacer(steps_125))
-        .y_grid_spacer(egui_plot::uniform_grid_spacer(steps_125));
+        .x_grid_spacer(crate::grid::spacer_x())
+        .x_axis_formatter(crate::grid::label)
+        .y_grid_spacer(crate::grid::spacer_y())
+        .y_axis_formatter(crate::grid::label);
     if first {
         plot = plot.y_axis_label(format!("{} (Hz)", axis.name()));
     }
@@ -546,22 +529,4 @@ fn overlay_rows(app: &mut App, ui: &mut Ui) {
         tr("Notches"),
         tr("the static notches, the dynamic-notch band and the RPM filter minimum"),
     );
-}
-
-#[cfg(test)]
-mod unit {
-    use super::*;
-
-    #[test]
-    fn grid_steps_follow_one_two_five() {
-        assert_eq!(nice_at_least(3.0), 5.0);
-        assert_eq!(nice_at_least(5.0), 5.0);
-        assert_eq!(nice_at_least(7.0), 10.0);
-        assert_eq!(nice_at_least(0.03), 0.05);
-        let s = steps_125(egui_plot::GridInput {
-            bounds: (0.0, 55.0),
-            base_step_size: 1.3,
-        });
-        assert_eq!(s, [2.0, 5.0, 10.0]);
-    }
 }

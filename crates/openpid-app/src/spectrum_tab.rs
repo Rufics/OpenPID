@@ -555,11 +555,16 @@ fn cell_plot<'p>(c: &ColumnPlot<'_>, fa: FreqAxis) -> Plot<'p> {
             tr("frequency (Hz)")
         });
     }
-    if fa.log {
-        plot = plot
-            .x_grid_spacer(log_grid)
-            .x_axis_formatter(|m, _| format!("{:.0}", 10f64.powf(m.value)));
-    }
+    plot = plot
+        .y_grid_spacer(crate::grid::spacer_y())
+        .y_axis_formatter(crate::grid::label);
+    plot = if fa.log {
+        plot.x_grid_spacer(log_grid)
+            .x_axis_formatter(|m, _| format!("{:.0}", 10f64.powf(m.value)))
+    } else {
+        plot.x_grid_spacer(crate::grid::spacer_x())
+            .x_axis_formatter(crate::grid::label)
+    };
     plot
 }
 

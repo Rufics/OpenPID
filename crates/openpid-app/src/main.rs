@@ -7,6 +7,7 @@ mod app;
 mod axis_layout;
 mod colormap;
 mod export;
+mod grid;
 mod i18n;
 mod panel;
 mod prefs;
