@@ -126,5 +126,14 @@ before the next one starts.
   plots (`StepSpread` in `openpid-analysis`: mean and standard deviation of each
   window's peak and time to 50 %); the legend lists the logs only. Test:
   `step_tab_stacks_the_axes_and_the_panel_collapses`.
+- **Step response, details** (owner's remark of 2026-11-09: the verdict table
+  above the plots grew with every log): the table moves under the plots, in a
+  bottom panel of the tab, closed by default. Closed, one line: a "Details"
+  toggle, a pill per log ("A 3/3 axes", coloured and marked by its worst
+  verdict; hover lists the axes without enough data) and the Advice line with
+  "Go to Advice". Open, the table takes at most 45 % of the tab's height and
+  scrolls. `StepDisplay::details`; the tests `step_tab_judges_three_axes_and_targets_change_badges_without_new_jobs`, `too_few_windows_grey_out_the_verdicts` and `step_results_are_cached_per_parameters_and_epoch` open it.
 
 ![Step response, btfl_027, 1280 × 800](step-panel-open.png)
+
+![Step response with three logs and the details open](step-details-open.png)

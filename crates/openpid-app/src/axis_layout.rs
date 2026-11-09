@@ -9,7 +9,7 @@ use crate::views::{grid_heatmap, show_error, slot_color, verdict_color};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{HLine, Legend, Line, LineStyle, Plot, PlotPoints, Points};
-use openpid_analysis::{StepParams, StepTargets, VerdictLevel, verdicts};
+use openpid_analysis::{FitnessLevel, StepParams, StepTargets, VerdictLevel, verdicts};
 use openpid_core::Axis;
 use openpid_core::settings::PidGains;
 use std::sync::Arc;
@@ -134,6 +134,8 @@ pub struct StepDisplay {
     pub expand: bool,
     /// What the Latency plot shows.
     pub latency: LatencyShown,
+    /// The verdict table under the plots is open.
+    pub details: bool,
 }
 
 impl Default for StepDisplay {
@@ -143,6 +145,7 @@ impl Default for StepDisplay {
             raw: false,
             expand: false,
             latency: LatencyShown::HalfRise,
+            details: false,
         }
     }
 }
@@ -281,8 +284,7 @@ pub fn step(app: &mut App, ui: &mut Ui) {
             rows.push((axis, slot, app.result(slot, Kind::Step(p))));
         }
     }
-    verdict_table(app, ui, &rows, &targets);
-    advice_line(app, ui);
+    details_panel(app, ui, &rows, &targets);
     let axes: Vec<Axis> = if display.expand {
         vec![app.tools.axis]
     } else {
@@ -326,9 +328,150 @@ pub fn step(app: &mut App, ui: &mut Ui) {
     }
 }
 
-fn verdict_table(app: &mut App, ui: &mut Ui, rows: &[AxisResult], targets: &StepTargets) {
+/// The verdicts of every visible log and axis, kept for the table, the
+/// summary and the tests (`StepViewState::rows`).
+fn judge(app: &mut App, rows: &[AxisResult], targets: &StepTargets) {
     app.step_view.rows.clear();
+    for (axis, slot, result) in rows {
+        if let Some(Ok(o)) = result
+            && let Output::Step(st) = o.as_ref()
+        {
+            let v = verdicts(&st.metrics, st.windows_used, targets);
+            app.step_view.rows.push((*slot, *axis, v));
+        }
+    }
+}
+
+/// The worst level of a log's verdicts as a log-check level, for its pill.
+fn worst(levels: impl Iterator<Item = VerdictLevel>) -> FitnessLevel {
+    levels.fold(FitnessLevel::Ok, |w, l| match (w, l) {
+        (FitnessLevel::Fail, _) | (_, VerdictLevel::Fail) => FitnessLevel::Fail,
+        (FitnessLevel::Warn, _) | (_, VerdictLevel::Warn) => FitnessLevel::Warn,
+        _ => FitnessLevel::Ok,
+    })
+}
+
+/// The details at the bottom of the Step tab (docs/design/axis-layout):
+/// one line that is always shown (the "Details" toggle, a pill per log with
+/// how many axes had enough data and its worst verdict, the Advice line)
+/// and, when opened, the verdict table. Closed by default, so the table no
+/// longer grows above the plots with every log.
+fn details_panel(app: &mut App, ui: &mut Ui, rows: &[AxisResult], targets: &StepTargets) {
+    judge(app, rows, targets);
+    let max_table = ui.available_height() * 0.45;
+    egui::Panel::bottom("step-details")
+        .resizable(false)
+        .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 6)))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                details_toggle(app, ui);
+                for slot in app.visible_slots() {
+                    let mine: Vec<&AxisResult> = rows.iter().filter(|r| r.1 == slot).collect();
+                    let judged: Vec<_> =
+                        app.step_view.rows.iter().filter(|r| r.0 == slot).collect();
+                    let level = if judged.is_empty() {
+                        FitnessLevel::Fail
+                    } else {
+                        worst(judged.iter().flat_map(|r| r.2.iter().map(|v| v.level)))
+                    };
+                    let hover: Vec<String> = mine
+                        .iter()
+                        .map(|(axis, _, r)| {
+                            let state = match r {
+                                Some(Ok(_)) => tr("judged").to_string(),
+                                Some(Err(e)) => e.clone(),
+                                None => tr("running").to_string(),
+                            };
+                            format!("{} {}: {state}", slot.name(), axis.name())
+                        })
+                        .collect();
+                    crate::views::pill(
+                        ui,
+                        &format!(
+                            "{} {}/{} {}",
+                            slot.name(),
+                            judged.len(),
+                            mine.len(),
+                            tr("axes")
+                        ),
+                        level,
+                    )
+                    .on_hover_text(hover.join("\n"));
+                }
+                advice_line(app, ui);
+            });
+            if app.tools.step_display.details {
+                // a bottom panel keeps last frame's height: ask for the
+                // table's own height (header + one row per log and axis)
+                let row = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
+                let want = ((rows.len() + 1) as f32 * row).min(max_table);
+                egui::ScrollArea::vertical()
+                    .id_salt("step-details-table")
+                    .min_scrolled_height(want)
+                    .max_height(max_table)
+                    .show(ui, |ui| verdict_table(app, ui, rows));
+            }
+        });
+}
+
+/// The "Details" toggle: a painted disclosure triangle and the word.
+fn details_toggle(app: &mut App, ui: &mut Ui) {
+    let open = app.tools.step_display.details;
+    let text = tr("Details");
+    let galley = ui.painter().layout_no_wrap(
+        text.to_string(),
+        egui::FontId::proportional(13.0),
+        ui.visuals().strong_text_color(),
+    );
+    let size = egui::vec2(galley.size().x + 30.0, 22.0);
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, open, text));
+    let v = ui.visuals();
+    let fill = if resp.hovered() {
+        v.widgets.hovered.weak_bg_fill
+    } else {
+        v.widgets.inactive.weak_bg_fill
+    };
+    let p = ui.painter();
+    p.rect_filled(rect, 6.0, fill);
+    let c = egui::pos2(rect.left() + 12.0, rect.center().y);
+    let tri = if open {
+        vec![
+            c + egui::vec2(-4.0, -2.0),
+            c + egui::vec2(4.0, -2.0),
+            c + egui::vec2(0.0, 3.0),
+        ]
+    } else {
+        vec![
+            c + egui::vec2(-2.0, -4.0),
+            c + egui::vec2(3.0, 0.0),
+            c + egui::vec2(-2.0, 4.0),
+        ]
+    };
+    p.add(egui::Shape::convex_polygon(
+        tri,
+        v.strong_text_color(),
+        egui::Stroke::NONE,
+    ));
+    let gy = rect.center().y - galley.size().y / 2.0;
+    p.galley(
+        egui::pos2(rect.left() + 22.0, gy),
+        galley,
+        v.strong_text_color(),
+    );
+    if resp
+        .on_hover_text(tr(
+            "the verdict table: every log and axis against the targets",
+        ))
+        .clicked()
+    {
+        app.tools.step_display.details = !open;
+    }
+}
+
+fn verdict_table(app: &mut App, ui: &mut Ui, rows: &[AxisResult]) {
     let mut switch_to: Option<Axis> = None;
+    let judged = app.step_view.rows.clone();
     egui::Grid::new("step-verdicts")
         .striped(true)
         .show(ui, |ui| {
@@ -351,17 +494,18 @@ fn verdict_table(app: &mut App, ui: &mut Ui, rows: &[AxisResult], targets: &Step
                     switch_to = Some(*axis);
                 }
                 match result {
-                    Some(Ok(o)) => {
-                        if let Output::Step(st) = o.as_ref() {
-                            let v = verdicts(&st.metrics, st.windows_used, targets);
-                            for vd in &v {
-                                ui.label(
-                                    RichText::new(format!("{} {}", vd.value, vd.level.marker()))
-                                        .color(verdict_color(vd.level)),
-                                )
-                                .on_hover_text(&vd.note);
-                            }
-                            app.step_view.rows.push((*slot, *axis, v));
+                    Some(Ok(_)) => {
+                        let v = judged
+                            .iter()
+                            .find(|(s, a, _)| s == slot && a == axis)
+                            .map(|r| r.2.as_slice())
+                            .unwrap_or_default();
+                        for vd in v {
+                            ui.label(
+                                RichText::new(format!("{} {}", vd.value, vd.level.marker()))
+                                    .color(verdict_color(vd.level)),
+                            )
+                            .on_hover_text(&vd.note);
                         }
                     }
                     Some(Err(e)) => {
@@ -419,14 +563,15 @@ fn advice_line(app: &mut App, ui: &mut Ui) {
     };
     let line = format!("{}: {first}", tr("Advice"));
     app.step_view.advice = Some(line.clone());
-    ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new(line).color(crate::colormap::ACCENT));
-        if lines.len() > 1 {
-            ui.label(format!("(+{})", lines.len() - 1));
-        }
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if ui.button(tr("Go to Advice")).clicked() {
             app.tab = crate::app::Tab::Advice;
         }
+        if lines.len() > 1 {
+            ui.label(format!("(+{})", lines.len() - 1));
+        }
+        ui.add(egui::Label::new(RichText::new(line).color(crate::colormap::ACCENT)).truncate())
+            .on_hover_text(lines.join("\n"));
     });
 }
 

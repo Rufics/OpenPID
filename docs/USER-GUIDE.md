@@ -96,11 +96,15 @@ parameters is computed once on the worker thread, so switching tabs is instant.
 
 ## 3. Step response
 
-Above the plot is the **verdict table**: one row per axis (roll / pitch / yaw)
-of every slot, columns windows · rise · delay · latency · overshoot · settling
+Roll, pitch and yaw are stacked, each with its Peak and Latency plots; the
+controls are in the panel on the right. Under the plots, one line: **Details**,
+a pill per log ("A 3/3 axes" with its worst mark; hover for the axes without
+enough data) and the Advice line. **Details** opens the **verdict table** (closed
+by default, so it does not push the plots down as logs are added): one row per
+axis (roll / pitch / yaw) of every slot, columns windows · rise · delay · latency · overshoot · settling
 · final. A cell is the value plus a mark: green `ok`, yellow `!`, red `x`, grey
 `?` (not measured, or too few windows). Hover for the threshold and the
-explanation. A click on a row switches the plotted axis. All three axes are
+explanation. A click on a row shows that axis alone at full height. All three axes are
 computed at once (cached), so the switch is instant.
 
 The thresholds (**Settings → Targets**, presets Freestyle / Racing / Cinematic
@@ -112,7 +116,7 @@ thresholds changes the marks without recomputing anything.
 On the plot: the green **target band** 1 ± tol from the settling threshold to
 the end of the response, and dashed overshoot warn (yellow) and fail (red)
 lines. When Advice has a PID proposal for this axis, a line "Advice: A roll D
-40 -> 44 (…)" with a **Go to Advice** button appears under the table.
+40 -> 44 (…)" with a **Go to Advice** button appears in the line under the plots.
 
 ![Step response](screenshots/step.png)
 

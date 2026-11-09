@@ -113,6 +113,7 @@ static UA: &[(&str, &str)] = &[
     ("Custom", "Власні"),
     ("D step", "крок D"),
     ("Dark", "Темна"),
+    ("Details", "Деталі"),
     ("Diagnostics", "Діагностика"),
     ("Done", "Готово"),
     ("Drop a log here, or", "Перетягніть лог сюди або"),
@@ -240,6 +241,7 @@ static UA: &[(&str, &str)] = &[
         "a synthetic 30 s flight: no file needed",
         "синтетичний політ 30 с, файл не потрібен",
     ),
+    ("axes", "осі"),
     ("axis", "вісь"),
     ("channel", "канал"),
     (
@@ -286,6 +288,7 @@ static UA: &[(&str, &str)] = &[
         "into the first empty slot, or a new one",
         "у перший порожній слот або в новий",
     ),
+    ("judged", "оцінено"),
     (
         "keys: Right / Enter, Left, Esc",
         "клавіші: → / Enter, ←, Esc",
@@ -337,6 +340,7 @@ static UA: &[(&str, &str)] = &[
     ("rise", "підйом"),
     ("rise max", "підйом макс"),
     ("rpm", "об/хв"),
+    ("running", "рахується"),
     ("samples", "семпли"),
     ("segment", "сегмент"),
     ("session", "сесія"),
@@ -357,6 +361,10 @@ static UA: &[(&str, &str)] = &[
     (
         "the same target as on the Step tab (Settings → Targets)",
         "той самий поріг, що на вкладці Step (Settings → Targets)",
+    ),
+    (
+        "the verdict table: every log and axis against the targets",
+        "таблиця вердиктів: кожен лог і вісь проти цілей",
     ),
     (
         "throttle bins with fewer segments are greyed out: they are unsampled, not quiet",

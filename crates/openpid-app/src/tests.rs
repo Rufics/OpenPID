@@ -474,6 +474,8 @@ fn step_results_are_cached_per_parameters_and_epoch() {
     run_until(&mut h, idle);
     // the verdict table judges all three axes, plus the Advice line's recommender
     assert_eq!(app(&h).cache.len(), 4);
+    app_mut(&mut h).tools.step_display.details = true;
+    h.run_steps(2);
     assert!(h.query_by_label("windows").is_some());
     // the same parameters hit the cache: no new job
     h.run_steps(3);
@@ -1487,6 +1489,12 @@ fn step_tab_judges_three_axes_and_targets_change_badges_without_new_jobs() {
     assert_eq!(level(Axis::Pitch, "overshoot"), VerdictLevel::Fail, "37 %");
     assert_eq!(level(Axis::Yaw, "overshoot"), VerdictLevel::Warn, "25 %");
     assert_eq!(level(Axis::Roll, "windows"), VerdictLevel::Ok, "48 windows");
+    // the table sits closed under the plots: a pill per log, then the table
+    assert!(!has_label_containing(&h, "35 % x"), "closed by default");
+    assert!(has_label_containing(&h, "A 3/3 axes"));
+    h.get_by_label("Details").click();
+    h.run_steps(2);
+    assert!(app(&h).tools.step_display.details);
     assert!(has_label_containing(&h, "35 % x"), "value and ASCII marker");
     assert!(has_label_containing(&h, "25 % !"));
     assert!(h.query_by_label("overshoot").is_some(), "column header");
@@ -1575,6 +1583,8 @@ fn too_few_windows_grey_out_the_verdicts() {
         roll[1..].iter().all(|v| v.level == VerdictLevel::Unknown),
         "{roll:?}"
     );
+    app_mut(&mut h).tools.step_display.details = true;
+    h.run_steps(2);
     assert!(has_label_containing(&h, " ?"), "grey question marks");
 }
 
