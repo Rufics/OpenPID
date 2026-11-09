@@ -215,6 +215,22 @@ fn weighted_mean(rows: &[(f64, Vec<f64>)], len: usize) -> Option<Vec<f64>> {
 }
 
 /// Mean of the settled tail (last quarter) of a step response.
+/// `step` when it settles within `p.settle_range` (Y-offset applied when
+/// asked), `None` for a failed deconvolution.
+fn settled(mut step: Vec<f64>, p: &StepParams) -> Option<Vec<f64>> {
+    let tail = tail_mean(&step);
+    if !(p.settle_range.0..=p.settle_range.1).contains(&tail) {
+        return None;
+    }
+    // a response that never settles (only with a wide settle_range) stays as it is
+    if p.y_offset && tail.abs() > 0.2 {
+        for v in &mut step {
+            *v /= tail;
+        }
+    }
+    Some(step)
+}
+
 fn tail_mean(step: &[f64]) -> f64 {
     let n = step.len();
     let tail = &step[n - n / 4..];
@@ -356,21 +372,10 @@ impl Analysis for StepAnalysis {
             if peak >= p.min_input && valid_in * 20 >= win * 19 && valid_out * 20 >= win * 19 {
                 let h = impulse_response(&fft, seg_in, seg_out, fs, resp_len, &dp)
                     .map_err(|e| AnalysisError::InvalidParams(e.to_string()))?;
-                let mut step = step_from_impulse(&h);
-                let settled = tail_mean(&step);
-                if !(p.settle_range.0..=p.settle_range.1).contains(&settled) {
-                    rejected += 1;
-                    start += hop;
-                    continue;
+                match settled(step_from_impulse(&h), p) {
+                    Some(step) => rows.push((peak, step)),
+                    None => rejected += 1,
                 }
-                // a window whose response never settles (only with a wide
-                // settle_range) stays as it is
-                if p.y_offset && settled.abs() > 0.2 {
-                    for v in &mut step {
-                        *v /= settled;
-                    }
-                }
-                rows.push((peak, step));
             }
             start += hop;
         }
