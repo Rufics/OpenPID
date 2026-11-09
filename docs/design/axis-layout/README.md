@@ -86,7 +86,7 @@ medium / med-high / high (default medium, a moving average over 0 / 2 / 4 / 8 /
 our PSD is in (°/s)²/Hz and does not share PTB's dB level, #33), the peaks and
 markers controls, segment length.
 
-**Freq × throttle.** Three rows × columns: the chosen channel and, when the log
+**Freq × throttle** (implemented: [throttle-tab](../throttle-tab/README.md)). Three rows × columns: the chosen channel and, when the log
 has it, its unfiltered counterpart (two columns, as PTB's preset 1 has gyro
 prefilt | gyro); per panel "mean" and "peak" of the amplitude. Panel: channel,
 colour max per tab (default automatic; "link scales" as now), the colour-scale

@@ -187,27 +187,36 @@ The control panel on the right (hover any field for its explanation):
 
 ![Freq × throttle](screenshots/throttle.png)
 
-A heatmap of the spectrum amplitude against throttle (DESIGN §6.4): the epoch
-is cut into segments (**segment**, s), each gets a spectrum and a mean
-throttle; for every throttle bin 0…100 % the segments within **throttle window
-±** % are averaged. **max** is the top frequency, **colour max** the ceiling of
-the colour scale (0 = automatic, the 99th percentile without the rows below
-20 Hz). Right of every map is a **colour bar** with ticks and the unit; under
-the map the value of the cell under the pointer ("37 %, 172 Hz: 0.45 deg/s").
-With several logs, **link scales** (on by default) gives every panel the same
-ceiling, the largest of the automatic ones, so the same colour means the same
-value; switch it off for a scale per map. The same on Freq × time and Surface
-3D.
+Heatmaps of the spectrum amplitude against throttle (DESIGN §6.4), roll, pitch
+and yaw stacked. Every log gets two columns: the unfiltered gyro (**prefilt**)
+and the chosen quantity, on one colour scale, so the work of the filters reads
+as a darker map; the colour bar on the right of each log has ticks and the
+unit. The epoch is cut into segments, each gets a spectrum and a mean
+throttle; for every throttle bin the segments within **Throttle window ±** %
+are averaged. The throttle axis starts on the range the logs flew (one bin of
+margin either side); **Full throttle range** shows 0–100 %. All maps move and
+zoom together; a double click resets them. Under the maps: per log how many
+throttle bins have too few segments, and the value under the pointer
+("23 %, 128 Hz: 0.13 deg/s"). With more than two logs the columns scroll
+sideways.
 
-- Under the map is the **segments per bin** strip: how many segments fell into
-  each throttle bin. Bins with fewer than **min segments** are dimmed: there is
-  no data there, not silence.
+The control panel on the right (hover any field for its explanation):
+
+- **Channel**: Gyro (default), D-term, P-term, PID sum, PID error, Setpoint;
+  **Prefilt beside it** (the gyro only).
+- **Colour max**: auto (the 99th percentile without the rows below 20 Hz) or a
+  fixed ceiling; **Link scales** (on by default with several logs) gives every
+  log the same ceiling, the largest of the automatic ones, so the same colour
+  means the same value. The same on Freq × time and Surface 3D.
 - **RPM overlay** (when the log has eRPM): the harmonic lines `k·rpm/60` of
-  every motor (colours per motor, M1…Mn toggles, **harmonics** = how many to
-  draw, 0 = as many as the RPM filter removes), the static notch bands, the
-  dynamic notch band and the RPM filter minimum (**notches**). The noise ridge
-  should sit on the fundamental line; if it is above or below, `motor_poles` or
-  `rpm_min` is set wrong.
+  every motor (colours per motor, M1…Mn toggles, **Harmonics** = how many to
+  draw, 0 = as many as the RPM filter removes) and **Notches**: the static
+  notch bands, the dynamic notch band and the RPM filter minimum. The noise
+  ridge should sit on the fundamental line; if it is above or below,
+  `motor_poles` or `rpm_min` is set wrong.
+- **Segment**, **Throttle window ±**, **Max frequency**, **Min segments**:
+  throttle bins with fewer segments than the minimum are dimmed: there is no
+  data there, not silence.
 
 ### Surface 3D
 

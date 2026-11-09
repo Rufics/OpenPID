@@ -8,9 +8,7 @@ use crate::prefs::{AccUnit, Prefs, RateUnit, Theme};
 use crate::shortcuts::{self, Action};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
-use egui_plot::{
-    Bar, BarChart, HLine, Heatmap, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, VLine,
-};
+use egui_plot::{HLine, Heatmap, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, VLine};
 use openpid_analysis::{
     Epoch, FilterOverrides, Fitness, FitnessLevel, RpmOverlay, TargetPreset, Verdict, VerdictLevel,
 };
@@ -1489,7 +1487,7 @@ pub(crate) fn verdict_color(level: VerdictLevel) -> Color32 {
 }
 
 /// Manual spectrum markers as horizontal lines on a frequency-axis heatmap.
-fn marker_hlines(pu: &mut egui_plot::PlotUi<'_>, markers: &[f64]) {
+pub(crate) fn marker_hlines(pu: &mut egui_plot::PlotUi<'_>, markers: &[f64]) {
     for (i, m) in markers.iter().enumerate() {
         pu.hline(
             HLine::new(format!("marker {}", i + 1), *m)
@@ -1649,7 +1647,7 @@ pub(crate) fn colour_bar(ui: &mut Ui, max: f64, unit: &str, height: f32) -> egui
 }
 
 /// The grid cell under the plot pointer: `(slot, x, y, value)`.
-fn heatmap_hover(
+pub(crate) fn heatmap_hover(
     pu: &egui_plot::PlotUi<'_>,
     slot: Slot,
     g: &Grid2D,
@@ -1660,7 +1658,12 @@ fn heatmap_hover(
 }
 
 /// Read-out of the hovered cell under a heatmap (`x` in percent or seconds).
-fn hover_label(ui: &mut Ui, hover: Option<(Slot, f64, f64, f64)>, unit: &str, x_is_time: bool) {
+pub(crate) fn hover_label(
+    ui: &mut Ui,
+    hover: Option<(Slot, f64, f64, f64)>,
+    unit: &str,
+    x_is_time: bool,
+) {
     let text = match hover {
         Some((_, x, y, z)) if x_is_time => format!("{x:.2} s, {y:.0} Hz: {z:.3} {unit}"),
         Some((_, x, y, z)) => format!("{x:.0} %, {y:.0} Hz: {z:.3} {unit}"),
@@ -1669,17 +1672,14 @@ fn hover_label(ui: &mut Ui, hover: Option<(Slot, f64, f64, f64)>, unit: &str, x_
     ui.label(RichText::new(text).color(MUTED));
 }
 
-/// Height of the segments-per-bin bar under the freq × throttle heatmap.
-const COUNT_BAR_HEIGHT: f32 = 56.0;
-
 /// Textures kept before the cache is emptied (one per result and colour scale).
-const MAX_HEATMAP_TEXTURES: usize = 32;
+const MAX_HEATMAP_TEXTURES: usize = 96;
 
 /// A heatmap grid as a texture, rasterised once per result and colour scale
 /// and redrawn as one image instead of a cell mesh every frame. `owner` is
 /// the result the grid belongs to (its address keys the texture while it is
 /// cached). Returns the image item positioned over the grid.
-fn grid_image(
+pub(crate) fn grid_image(
     app: &mut App,
     ctx: &egui::Context,
     owner: &Arc<Output>,
@@ -1824,7 +1824,7 @@ pub(crate) fn overlay_harmonics(
 }
 
 /// The motor harmonics and notch bands of `o` over a heatmap whose frequency axis ends at `y_max`.
-fn draw_rpm_overlay(
+pub(crate) fn draw_rpm_overlay(
     pu: &mut egui_plot::PlotUi<'_>,
     o: &RpmOverlay,
     x: &[f64],
@@ -1937,7 +1937,7 @@ fn draw_rpm_overlay(
 
 /// Grey columns over the throttle bins with fewer than `min_segments`
 /// segments, so an unsampled bin does not read as a quiet one.
-fn sparse_bins(
+pub(crate) fn sparse_bins(
     g: &Grid2D,
     counts: &[usize],
     min_segments: usize,
@@ -1962,203 +1962,6 @@ fn sparse_bins(
             .stroke(egui::Stroke::NONE)
         })
         .collect()
-}
-
-/// Thin bar chart of the segment count per throttle bin, x-linked to the heatmap.
-fn segment_count_bar(
-    ui: &mut Ui,
-    slot: Slot,
-    link: egui::Id,
-    g: &Grid2D,
-    counts: &[usize],
-    min_segments: usize,
-    width: f32,
-) {
-    let dx = if g.x.len() >= 2 { g.x[1] - g.x[0] } else { 1.0 };
-    let bars: Vec<Bar> =
-        g.x.iter()
-            .zip(counts)
-            .map(|(&x, &c)| {
-                Bar::new(x, c as f64).width(dx).fill(if c < min_segments {
-                    Color32::GRAY
-                } else {
-                    slot_color(slot)
-                })
-            })
-            .collect();
-    Plot::new(("thr-count", slot.name()))
-        .x_axis_label("throttle (%)")
-        .y_axis_label("segments")
-        .link_axis(link, [true, false])
-        .width(width)
-        .height(COUNT_BAR_HEIGHT)
-        .include_y(0.0)
-        .allow_zoom([true, false])
-        .allow_drag([true, false])
-        .show(ui, |pu| {
-            pu.bar_chart(
-                BarChart::new("segments per bin", bars).element_formatter(Box::new(|b, _| {
-                    format!("throttle {:.0} %: {} segments", b.argument, b.value)
-                })),
-            );
-        });
-}
-
-pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
-    let markers = app.spectrum.markers.clone();
-    ui.separator();
-    heatmap_controls(app, ui);
-    ui.horizontal_wrapped(|ui| {
-        let l = ui.label(tr("segment"));
-        crate::panel::with_unit(
-            ui,
-            egui::DragValue::new(&mut app.tools.throttle.segment_s)
-                .speed(0.01)
-                .range(0.05..=1.0),
-            " s",
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("throttle window ±"));
-        crate::panel::with_unit(
-            ui,
-            egui::DragValue::new(&mut app.tools.throttle.half_window)
-                .speed(0.5)
-                .range(0.0..=25.0),
-            " %",
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("max"));
-        crate::panel::with_unit(
-            ui,
-            egui::DragValue::new(&mut app.tools.throttle.max_hz)
-                .speed(10.0)
-                .range(50.0..=8000.0),
-            " Hz",
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("min segments"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.min_segments)
-                .speed(1.0)
-                .range(1..=1000),
-        )
-        .on_hover_text(tr(
-            "throttle bins with fewer segments are greyed out: they are unsampled, not quiet",
-        ))
-        .labelled_by(l.id);
-    });
-    app.tools.throttle.channel = app.tools.heatmap_channel.clone();
-    let params = app.tools.throttle.clone();
-    let max = app.tools.heatmap_max;
-    let min_segments = app.tools.min_segments;
-    let slots: Vec<Slot> = app.visible_slots();
-    let results: Vec<SlotResult> = slots
-        .iter()
-        .map(|slot| (*slot, app.result(*slot, Kind::Throttle(params.clone()))))
-        .collect();
-    overlay_controls(app, ui, &results);
-    let overlay = app.overlay.clone();
-    let grids: Vec<(Slot, &Grid2D)> = results
-        .iter()
-        .filter_map(|(s, r)| match r {
-            Some(Ok(o)) => match o.as_ref() {
-                Output::Throttle(t) => Some((*s, &t.grid)),
-                _ => None,
-            },
-            _ => None,
-        })
-        .collect();
-    let scales = linked_scales(app, &grids, 20.0);
-    app.heatmap_hover = None;
-    let w = panel_width(ui, slots.len());
-    let h = ui.available_height();
-    egui::ScrollArea::horizontal()
-        .id_salt("thr-panels")
-        .show(ui, |ui| {
-    ui.horizontal(|ui| {
-        for (slot, result) in results {
-            ui.vertical(|ui| {
-                ui.set_width(w - 8.0);
-                match result {
-                    Some(Ok(o)) => {
-                        if let Output::Throttle(t) = o.as_ref() {
-                            ui.label(
-                                RichText::new(format!(
-                                    "{}: {} ({}), {} segments",
-                                    slot.name(),
-                                    t.channel.key(),
-                                    t.unit,
-                                    t.segments
-                                ))
-                                .color(slot_color(slot)),
-                            );
-                            let link = ui.scope_id().with(("thr-link", slot.name()));
-                            let y_max = t.grid.y.last().copied().unwrap_or(0.0);
-                            let scale = scales.get(&slot).copied().unwrap_or(max);
-                            let image = grid_image(app, ui.ctx(), &o, &t.grid, scale, 20.0);
-                            let plot_h = h - 24.0 - COUNT_BAR_HEIGHT - 48.0;
-                            let plot_w = ui.available_width() - BAR_W;
-                            let mut hover = None;
-                            let mut frame = None;
-                            ui.horizontal(|ui| {
-                                Plot::new(("thr", slot.name()))
-                                    .legend(Legend::default())
-                                    .y_axis_label("frequency (Hz)")
-                                    .link_axis(link, [true, false])
-                                    .width(plot_w)
-                                    .height(plot_h)
-                                    .show(ui, |pu| {
-                                        if let Some(img) = image {
-                                            pu.image(img);
-                                        }
-                                        for poly in sparse_bins(&t.grid, &t.counts, min_segments) {
-                                            pu.polygon(poly);
-                                        }
-                                        if let Some(o) = &t.overlay {
-                                            draw_rpm_overlay(pu, o, &t.grid.x, y_max, &overlay);
-                                        }
-                                        marker_hlines(pu, &markers);
-                                        hover = heatmap_hover(pu, slot, &t.grid);
-                                        frame = Some(*pu.transform().frame());
-                                    });
-                                colour_bar(ui, scale, &t.unit, plot_h);
-                            });
-                            if hover.is_some() {
-                                app.heatmap_hover = hover;
-                            }
-                            if let Some(f) = frame {
-                                app.heatmap_frames.insert(slot, f);
-                            }
-                            segment_count_bar(ui, slot, link, &t.grid, &t.counts, min_segments, plot_w);
-                            let below = t.counts.iter().filter(|&&c| c < min_segments).count();
-                            ui.horizontal_wrapped(|ui| {
-                                ui.label(
-                                    RichText::new(if below > 0 {
-                                        format!(
-                                            "{below} of {} throttle bins have fewer than {min_segments} segments (greyed)",
-                                            t.counts.len()
-                                        )
-                                    } else {
-                                        format!(
-                                            "every throttle bin has at least {min_segments} segments"
-                                        )
-                                    })
-                                    .color(MUTED),
-                                );
-                                ui.separator();
-                                hover_label(ui, hover, &t.unit, false);
-                            });
-                        }
-                    }
-                    Some(Err(e)) => show_error(ui, slot, &e),
-                    None => {
-                        ui.spinner();
-                    }
-                }
-            });
-        }
-    });
-        });
 }
 
 pub fn time_heatmap(app: &mut App, ui: &mut Ui) {

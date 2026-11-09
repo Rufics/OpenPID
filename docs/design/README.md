@@ -72,4 +72,5 @@ Rules shared by every topic of the sprint:
 | R/P/Y stacked, collapsible control panel | [axis-layout](axis-layout/README.md) |
 | Top bar, log chips, timeline dock, look | [app-shell](app-shell/README.md) |
 | Spectrum: R/P/Y × (full \| below 100 Hz), prefilt, smoothing | [spectrum-tab](spectrum-tab/README.md) |
+| Freq × throttle: R/P/Y × (prefilt \| gyro) per log, flown range | [throttle-tab](throttle-tab/README.md) |
 

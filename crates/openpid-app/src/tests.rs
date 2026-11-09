@@ -364,7 +364,7 @@ fn many_slots_have_colours_visibility_solo_and_stable_letters() {
     select_tab(&mut h, Tab::ThrottleHeatmap);
     run_until(&mut h, idle);
     h.run_steps(2);
-    assert!(has_label_containing(&h, "C: gyro"));
+    assert!(has_label_containing(&h, "C Gyro"));
     // closing B keeps C's letter; the next log reuses the free letter B
     app_mut(&mut h).close_slot(Slot::B);
     h.step();
@@ -603,18 +603,21 @@ fn spectrum_and_heatmap_controls_change_parameters() {
     assert!(app(&h).spectrum.markers.is_empty());
     select_tab(&mut h, Tab::ThrottleHeatmap);
     run_until(&mut h, idle);
-    assert!(has_label_containing(&h, "throttle window"));
-    // the grid is rasterised once and reused frame after frame
+    assert!(has_label_containing(&h, "Throttle window"));
+    // every grid (3 axes × gyro and prefilt) is rasterised once and reused
+    // frame after frame
+    // (scales settle while the six jobs come in, so earlier textures remain)
     h.run_steps(2);
-    assert_eq!(app(&h).heatmap_textures.len(), 1);
+    let settled = app(&h).heatmap_textures.len();
+    assert!(settled >= 6, "{settled}");
     h.run_steps(2);
-    assert_eq!(app(&h).heatmap_textures.len(), 1, "no re-upload");
+    assert_eq!(app(&h).heatmap_textures.len(), settled, "no re-upload");
     app_mut(&mut h).tools.heatmap_max = 5.0;
     h.run_steps(2);
     assert_eq!(
         app(&h).heatmap_textures.len(),
-        2,
-        "a new colour scale is a new texture"
+        settled + 6,
+        "a new colour scale is a new texture per grid"
     );
     // segments per bin: the hint names the bins below the minimum
     let counts: Vec<usize> = app(&h)
@@ -631,7 +634,7 @@ fn spectrum_and_heatmap_controls_change_parameters() {
     assert!(counts.iter().sum::<usize>() > 0);
     let min = app(&h).tools.min_segments;
     let below = counts.iter().filter(|&&c| c < min).count();
-    assert!(has_label_containing(&h, "min segments"));
+    assert!(has_label_containing(&h, "Min segments"));
     if below > 0 {
         assert!(has_label_containing(
             &h,
@@ -2143,13 +2146,13 @@ fn rpm_overlay_on_the_throttle_heatmap_has_per_motor_toggles() {
         .click();
     h.step();
     assert!(!app(&h).overlay.show);
-    h.get_by_role_and_label(Role::CheckBox, "notches").click();
+    h.get_by_role_and_label(Role::CheckBox, "Notches").click();
     h.step();
     assert!(!app(&h).overlay.notches);
     assert_eq!(
         app(&h).cache.len(),
-        1,
-        "the overlay is drawn from the cached result"
+        6,
+        "3 axes × gyro and prefilt; the overlay is drawn from the cached results"
     );
     // a log without rpm has no overlay controls
     let mut h2 = harness(vec![LOG_4_2.into()], Some(Tab::ThrottleHeatmap));
@@ -2864,4 +2867,38 @@ fn panel_rows_put_values_in_one_column_and_explain_on_hover() {
     h.get_by_role_and_label(Role::Label, "Prominence").hover();
     h.run_steps(3);
     assert!(has_label_containing(&h, "stand above its surroundings"));
+}
+
+#[test]
+fn throttle_tab_stacks_the_axes_with_prefilt_and_zooms_to_the_flown_range() {
+    // docs/design/throttle-tab (T1): R/P/Y × (prefilt | gyro) per log, one
+    // colour scale per log, the throttle axis on the range the log flew
+    let mut h = harness(vec![LOG_2025.into()], Some(Tab::ThrottleHeatmap));
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    let thr_jobs = |a: &App| a.cache.keys().filter(|k| k.kind == "thr").count();
+    assert_eq!(thr_jobs(app(&h)), 6, "3 axes × gyro and prefilt");
+    assert!(has_label_containing(&h, "A prefilt"));
+    assert!(has_label_containing(&h, "A Gyro"));
+    assert_eq!(
+        app(&h).colour_scales.len(),
+        1,
+        "prefilt and gyro share a scale"
+    );
+    // btfl_027 flew 10–34 % throttle: the axis follows, with a bin of margin
+    let (lo, hi) = app(&h).throttle_view.x_range.expect("range applied");
+    assert!(
+        (8.0..=10.0).contains(&lo) && (34.0..=36.0).contains(&hi),
+        "{lo}..{hi}"
+    );
+    h.get_by_role_and_label(Role::CheckBox, "Full throttle range")
+        .click();
+    h.run_steps(2);
+    assert_eq!(app(&h).throttle_view.x_range, Some((0.0, 100.0)));
+    // prefilt off: the gyro alone
+    h.get_by_role_and_label(Role::CheckBox, "Prefilt beside it")
+        .click();
+    h.run_steps(2);
+    assert!(!has_label_containing(&h, "A prefilt"));
+    assert!(has_label_containing(&h, "A Gyro"));
 }
