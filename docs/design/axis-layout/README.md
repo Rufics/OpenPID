@@ -113,4 +113,17 @@ cursor controls move to the panel.
 
 ## Implementation
 
-(Filled in as each tab lands.)
+Each tab lands as its own commit and is shown to the owner for approval
+before the next one starts.
+
+- **Shared** (`crates/openpid-app/src/axis_layout.rs`): `control_panel` (drawn
+  first, so it keeps the right edge at full height), `row_height`,
+  `Prefs::panel_open`, `Action::TogglePanel` (Ctrl+.). The slot header row no
+  longer runs past the window (the epoch summary truncates); before, it
+  stretched every tab and pushed right-hand panels off screen.
+- **Step response**: three rows with the response and per-log Peak / Latency
+  plots (`StepSpread` in `openpid-analysis`: mean and standard deviation of each
+  window's peak and time to 50 %); the legend lists the logs only. Test:
+  `step_tab_stacks_the_axes_and_the_panel_collapses`.
+
+![Step response, btfl_027, 1280 × 800](step-panel-open.png)
