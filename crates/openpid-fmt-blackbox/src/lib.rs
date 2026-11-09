@@ -2,8 +2,8 @@
 //! flight controllers (Betaflight, `EmuFlight`, Rotorflight, INAV).
 //!
 //! The format is documented in Betaflight's "Blackbox Internals". This crate
-//! implements it from that description; the official `blackbox_decode` and the
-//! `blackbox-log` crate are used only as test oracles.
+//! implements it from that description; the parser of Blackbox Explorer and the
+//! `blackbox-log` crate are used only as test oracles (ADR-0005).
 //!
 //! Layers, lowest first:
 //! - [`reader`] / [`encoding`]: bytes and bits into integers;

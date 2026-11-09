@@ -91,7 +91,7 @@ openpid/
 │  ├─ openpid-analysis/       # analyses on top of core + dsp
 │  ├─ openpid-sim/            # filter simulation, signal generator
 │  ├─ openpid-fmt-blackbox/   # own binary Blackbox decoder
-│  ├─ openpid-fmt-csv/        # CSV from blackbox_decode (tests / compatibility)
+│  ├─ openpid-fmt-csv/        # CSV from blackbox_decode (compatibility)
 │  ├─ openpid-cli/            # the `openpid` binary
 │  └─ openpid-app/            # the `openpid-gui` binary
 ├─ tests/
@@ -252,7 +252,7 @@ We follow the principles, not the inheritance syntax:
 
 ## 5. The Blackbox decoder (`openpid-fmt-blackbox`)
 
-An own implementation from the public specification (Betaflight "Blackbox Logging Internals"; the reference implementations are `blackbox-tools/parser.c` and `blackbox-log-viewer/flightlog_parser.js`).
+An own implementation from the public specification (Betaflight "Blackbox Logging Internals"; the reference implementation is Blackbox Explorer's `flightlog_parser.js`, the test oracle of ADR-0005).
 
 - **Input**: `&[u8]` (through `memmap2` for big files, or read whole), zero-copy, no intermediate strings.
 - **Container**: one file → N logs, separated by the header marker `H Product:Blackbox flight data recorder by Nicholas Sherlock`. Supports `.BBL/.BFL/.TXT` and SD-card dumps with garbage between the logs.
@@ -264,7 +264,7 @@ An own implementation from the public specification (Betaflight "Blackbox Loggin
 
 Profiles (`openpid-fmt-blackbox::profiles`): `betaflight` (4.0–4.6+, the various debug modes), `emuflight`, `rotorflight` (delegating to BF with overrides), `inav` (other gyro scales, other names). The profile is chosen by `Firmware revision`, because `Firmware type` is always `Cleanflight`.
 
-The separate crate `openpid-fmt-csv` reads the CSV of the official `blackbox_decode`; it is used for the **conformance tests** of our decoder (the same log → the same values) and as a fallback for exotic logs.
+The separate crate `openpid-fmt-csv` reads CSV exports in the `blackbox_decode` column layout, as a fallback for exotic logs; `openpid decode` writes the same layout.
 
 ---
 
@@ -418,7 +418,7 @@ Dev only: `proptest`, `criterion`, `insta` (snapshots); `cargo-fuzz` with `libfu
 
 - **Unit**: the blackbox encodings (round trip), predictors, windows, the FFT wrapper, filters (frequency response against the analytic formulas).
 - **Reference**: `tools/reference/*.py` generates fixtures (JSON) for step / PSD / heatmap on synthetic signals and on the reference logs; the Rust tests compare with tolerances.
-- **Conformance**: our decoder against the `blackbox_decode` CSV on `tests/logs/*` (every channel, every frame).
+- **Conformance**: our decoder against the parser of Blackbox Explorer on `tests/logs/*` (every flight log in full: every frame, table and event; ADR-0005).
 - **Golden**: the CLI output on the reference logs is pinned in `tests/golden`; an algorithm change is a deliberate golden update described in the PR.
 - **Fuzz**: every decoder entry point with cargo-fuzz / libFuzzer (`fuzz/`, ADR-0013): weekly with a time budget and for a minute on decoder PRs (`fuzz.yml`), with dictionaries of the format tokens.
 - **Bench**: `criterion` for the decoder (MB/s) and for step / heatmap (ms per 60 s of log at 8 kHz).
@@ -431,8 +431,8 @@ Dev only: `proptest`, `criterion`, `insta` (snapshots); `cargo-fuzz` with `libfu
 
 | Phase | Content | Done when |
 |-------|---------|-----------|
-| 0 — Foundation ✅ | workspace, the `core` model and traits, `fmt-blackbox` (BF/Emu/RF), `fmt-csv`, `cli info/decode`, conformance and robustness tests, CI | Conformance with the independent `blackbox-log` decoder on every test log; CSV conformance with `blackbox_decode` switches on as soon as CSV fixtures exist |
-| 1 — PTB (free) parity ✅ | the `dsp` basis, step, PSD, heatmaps, a GUI with 7 tabs, A/B, touch, the PID slider tool (Betaflight simplified tuning, checked on 4.5 and 2025.12 logs). Audit 2026-11-05, moved to the backlog (milestone v0.4 unless stated otherwise): projects (#31), PNG/CSV export (#32), PTB default comparison (#33), touch gestures §7.2 (#35), theme / localisation (#34), the Settings tab and saved Prefs (#53), frequency markers in the spectrum (#51), dragging the epoch bounds on the plot (#52), the segment counter on the heatmap (#54), Y-offset / latency in the step response (#50), deconvolution property tests (#55, v0.3), `blackbox_decode` CSV fixtures from phase 0 (#49, v0.2) | The user reproduces the whole usual PTB workflow in OpenPID |
+| 0 — Foundation ✅ | workspace, the `core` model and traits, `fmt-blackbox` (BF/Emu/RF), `fmt-csv`, `cli info/decode`, conformance and robustness tests, CI | Conformance with the independent `blackbox-log` decoder on every test log; since 2026-11-09 also whole-log conformance with Blackbox Explorer (#137) |
+| 1 — PTB (free) parity ✅ | the `dsp` basis, step, PSD, heatmaps, a GUI with 7 tabs, A/B, touch, the PID slider tool (Betaflight simplified tuning, checked on 4.5 and 2025.12 logs). Audit 2026-11-05, moved to the backlog (milestone v0.4 unless stated otherwise): projects (#31), PNG/CSV export (#32), PTB default comparison (#33), touch gestures §7.2 (#35), theme / localisation (#34), the Settings tab and saved Prefs (#53), frequency markers in the spectrum (#51), dragging the epoch bounds on the plot (#52), the segment counter on the heatmap (#54), Y-offset / latency in the step response (#50), deconvolution property tests (#55, v0.3), `blackbox_decode` CSV fixtures from phase 0 (#49, v0.2; replaced by the Blackbox Explorer reference, #137) | The user reproduces the whole usual PTB workflow in OpenPID |
 | 2 — Pro parity ✅ | filters / sim (ADR-0012), notch / RPM overlay 2D and the 3D surface, the RPM estimator, the generator (`openpid gen`), motor noise, the spectrum player, benchmarks (#36), fuzzing (ADR-0013), touch gestures, UA/EN localisation, the user guide; the ArduPilot (ADR-0010) and INAV formats done, KISS/Fettec/QuickSilver wait for sample logs (#18) | Every row of the §2 table is "yes" (except the formats without samples) |
 | 3 — Extensions ✅ | a `Recommender` with three rules and evidence, the Advice tab, `openpid run recommend --cli`, `openpid diff`, the Betaflight CLI exporter; MSP postponed (ADR-0014) | The first recommendation a user really applies: the `set …` text from the Advice tab |
 
@@ -442,7 +442,7 @@ Dev only: `proptest`, `criterion`, `insta` (snapshots); `cargo-fuzz` with `libfu
 
 | Risk | Mitigation |
 |------|------------|
-| Format details between firmware versions (field names, scales, debug modes) | Profiles plus conformance with `blackbox_decode`; collect a library of test logs from the community |
+| Format details between firmware versions (field names, scales, debug modes) | Profiles plus conformance with Blackbox Explorer; collect a library of test logs from the community |
 | No public specification for KISS/Fettec/QuickSilver/ArduPilot | Separate `fmt-*` crates, each after samples arrive; ArduPilot (the self-describing DataFlash `FMT`) is the best documented |
 | Our plots differ from PTB "by eye" because of other smoothing parameters | The parameters are in the UI with PTB-compatible defaults; the difference is documented |
 | egui performance on large point arrays | Decimation (min/max per pixel) for line plots, textures for heatmaps |

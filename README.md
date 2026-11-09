@@ -37,8 +37,8 @@ written in Rust, MIT licensed.
 
 OpenPID is inspired by the PIDtoolbox workflow but shares no code with it:
 the decoder, DSP and analyses are written from the published format and
-algorithm descriptions and validated against NumPy/SciPy references and the
-official `blackbox_decode` output.
+algorithm descriptions and validated against NumPy/SciPy references and, log by log, against the parser
+of Blackbox Explorer.
 
 ## Supported logs
 
