@@ -24,25 +24,31 @@ XVFB=$!
 trap 'kill $XVFB 2>/dev/null || true' EXIT
 sleep 1
 export DISPLAY=":$DISPLAY_NO"
-# the app reads prefs from this directory: a clean one keeps the dark theme
+# the app reads prefs from this directory: a clean one keeps the dark theme;
+# the first-run tour is marked as seen so it does not cover the tabs
 export OPENPID_CONFIG_DIR="$(mktemp -d)"
+printf '{"tour_done":true,"show_tour":false}' > "$OPENPID_CONFIG_DIR/prefs.json"
 
-for tab in log step spectrum throttle time surface filter motors advice sliders diagnostics settings; do
-  "$BIN" "$LOG" --tab "$tab" >/dev/null 2>&1 &
+shot() { # shot <out.png> <args...>
+  out="$1"; shift
+  "$BIN" "$@" >/dev/null 2>&1 &
   APP=$!
   sleep "$WAIT"
-  import -display "$DISPLAY" -window root "$OUT/$tab.png"
+  import -display "$DISPLAY" -window root "$out"
   kill $APP 2>/dev/null || true
   wait $APP 2>/dev/null || true
-  echo "$OUT/$tab.png"
+  echo "$out"
+}
+
+# the start screen (no log), and three logs compared on the step tab
+shot "$OUT/start.png"
+shot "$OUT/slots-step.png" "$LOG" tests/logs/betaflight-4.5.1-two-sessions.bbl \
+  tests/logs/betaflight-4.2.0.BFL --tab step
+
+for tab in log step spectrum throttle time surface filter motors advice sliders diagnostics settings; do
+  shot "$OUT/$tab.png" "$LOG" --tab "$tab"
 done
 
 # the log viewer once more in Ukrainian (Settings → Language), for the README
-printf '{"lang":"ua"}' > "$OPENPID_CONFIG_DIR/prefs.json"
-"$BIN" "$LOG" --tab log >/dev/null 2>&1 &
-APP=$!
-sleep "$WAIT"
-import -display "$DISPLAY" -window root "$OUT/log-ua.png"
-kill $APP 2>/dev/null || true
-wait $APP 2>/dev/null || true
-echo "$OUT/log-ua.png"
+printf '{"lang":"ua","tour_done":true,"show_tour":false}' > "$OPENPID_CONFIG_DIR/prefs.json"
+shot "$OUT/log-ua.png" "$LOG" --tab log
