@@ -157,12 +157,34 @@ fn validation_and_variants() {
         ),
         Err(AnalysisError::NotEnoughData(_))
     ));
-    // smoothing and a low high-input threshold populate both groups
+    // the settle range must be a range
+    assert!(bad(StepAnalysis.run(
+        &ctx,
+        &StepParams {
+            settle_range: (1.5, 0.5),
+            ..Default::default()
+        }
+    )));
+    // a settle range no response can meet rejects every window, and says so
+    match StepAnalysis.run(
+        &ctx,
+        &StepParams {
+            min_input: 20.0,
+            settle_range: (10.0, 11.0),
+            ..Default::default()
+        },
+    ) {
+        Err(AnalysisError::NotEnoughData(m)) => assert!(m.contains("settled"), "{m}"),
+        other => panic!("expected NotEnoughData, got {other:?}"),
+    }
+    // smoothing and a low high-input threshold populate both groups (this
+    // log has gentle stick inputs: the default threshold would drop them)
     let out = StepAnalysis
         .run(
             &ctx,
             &StepParams {
                 axis: Axis::Roll,
+                min_input: 20.0,
                 smooth_ms: 5.0,
                 high_input: 100.0,
                 ..Default::default()

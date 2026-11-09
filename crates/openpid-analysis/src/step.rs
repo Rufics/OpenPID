@@ -28,8 +28,15 @@ pub struct StepParams {
     pub superpos: usize,
     /// Deconvolution cut-off (Hz).
     pub cutoff_hz: f64,
-    /// Windows whose peak setpoint is below this (deg/s) are ignored (PTB: 20).
+    /// Windows whose peak setpoint is below this (deg/s) are ignored. 80
+    /// matches the window counts and curves of `PIDtoolbox` Pro 0.9 on the
+    /// committed fixtures (#33, `docs/DESIGN.md` §6.2); gentle stick
+    /// movements give a deconvolution dominated by noise.
     pub min_input: f64,
+    /// A window whose response settles (mean of the last quarter) outside
+    /// this range is dropped as a failed deconvolution: a gyro that ends at
+    /// half or one and a half times the setpoint is not a step response.
+    pub settle_range: (f64, f64),
     /// Boundary between the "low" and "high" input groups (deg/s; PID-Analyzer: 500).
     pub high_input: f64,
     /// Length of the response in seconds (0.5).
@@ -53,7 +60,8 @@ impl Default for StepParams {
             window_s: 2.0,
             superpos: 16,
             cutoff_hz: 25.0,
-            min_input: 20.0,
+            min_input: 80.0,
+            settle_range: (0.5, 1.5),
             high_input: 500.0,
             response_s: 0.5,
             smooth_ms: 0.0,
@@ -125,16 +133,21 @@ pub struct StepOutput {
     pub metrics: StepMetrics,
     /// Windows examined.
     pub windows_total: usize,
-    /// Windows with enough stick input to be used.
+    /// Windows with enough stick input that went into the mean.
     pub windows_used: usize,
+    /// Windows with enough stick input dropped because their response did not
+    /// settle within `settle_range`.
+    #[serde(default)]
+    pub windows_rejected: usize,
     /// 2-D histogram of the individual responses: x = time (ms), y = amplitude, z = weight.
     pub histogram: Grid2D,
 }
 
 /// How many step windows `axis` would contribute with `p`: `(used, total)`.
-/// The same selection as [`StepAnalysis::run`] (peak input at or above
+/// The same input selection as [`StepAnalysis::run`] (peak input at or above
 /// `min_input`, at least 95 % valid samples) without the deconvolution, so
-/// a fitness check can judge the stick activity cheaply.
+/// a fitness check can judge the stick activity cheaply; the settle check
+/// of `run` can still drop some of these.
 pub fn count_windows(
     ctx: &AnalysisCtx<'_>,
     axis: Axis,
@@ -284,9 +297,12 @@ impl Analysis for StepAnalysis {
             || p.response_s <= 0.0
             || p.response_s >= p.window_s
             || p.hist_bins < 2
+            || p.settle_range.0.is_nan()
+            || p.settle_range.0 >= p.settle_range.1
         {
             return Err(AnalysisError::InvalidParams(
-                "window_s > response_s > 0, superpos >= 1, hist_bins >= 2".into(),
+                "window_s > response_s > 0, superpos >= 1, hist_bins >= 2, settle_range lo < hi"
+                    .into(),
             ));
         }
         let sp = prepare(
@@ -322,6 +338,7 @@ impl Analysis for StepAnalysis {
         };
         let mut rows: Vec<(f64, Vec<f64>)> = Vec::new(); // (peak input, response)
         let mut total = 0usize;
+        let mut rejected = 0usize;
         let mut start = 0;
         while start + win <= input.len() {
             total += 1;
@@ -340,13 +357,17 @@ impl Analysis for StepAnalysis {
                 let h = impulse_response(&fft, seg_in, seg_out, fs, resp_len, &dp)
                     .map_err(|e| AnalysisError::InvalidParams(e.to_string()))?;
                 let mut step = step_from_impulse(&h);
-                if p.y_offset {
-                    let tail = tail_mean(&step);
-                    // a window whose response never settles stays as it is
-                    if tail.abs() > 0.2 {
-                        for v in &mut step {
-                            *v /= tail;
-                        }
+                let settled = tail_mean(&step);
+                if !(p.settle_range.0..=p.settle_range.1).contains(&settled) {
+                    rejected += 1;
+                    start += hop;
+                    continue;
+                }
+                // a window whose response never settles (only with a wide
+                // settle_range) stays as it is
+                if p.y_offset && settled.abs() > 0.2 {
+                    for v in &mut step {
+                        *v /= settled;
                     }
                 }
                 rows.push((peak, step));
@@ -354,10 +375,18 @@ impl Analysis for StepAnalysis {
             start += hop;
         }
         if rows.is_empty() {
-            return Err(AnalysisError::NotEnoughData(format!(
-                "none of {total} windows had stick input above {} deg/s",
-                p.min_input
-            )));
+            return Err(AnalysisError::NotEnoughData(if rejected > 0 {
+                format!(
+                    "{rejected} of {total} windows had stick input above {} deg/s, but none \
+                     settled between {} and {}",
+                    p.min_input, p.settle_range.0, p.settle_range.1
+                )
+            } else {
+                format!(
+                    "none of {total} windows had stick input above {} deg/s",
+                    p.min_input
+                )
+            }));
         }
         let smooth = |v: Vec<f64>| {
             if p.smooth_ms > 0.0 {
@@ -415,6 +444,7 @@ impl Analysis for StepAnalysis {
             metrics,
             windows_total: total,
             windows_used: rows.len(),
+            windows_rejected: rejected,
             histogram,
         })
     }

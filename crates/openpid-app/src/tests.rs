@@ -42,6 +42,12 @@ const LOG_2025: &str = concat!(
     "/../../tests/logs/betaflight-2025.12.2-btfl_027.bbl"
 );
 
+/// Step-response input threshold for the tests. The main fixture
+/// (`betaflight-4.2.0.BFL`) has only gentle stick inputs, none above the
+/// default 80 deg/s, so the default would give "not enough data" on it;
+/// `step_tab_default_threshold_needs_sharp_stick_inputs` tests the default.
+const GENTLE_STEP_INPUT: f64 = 20.0;
+
 /// The app is built lazily inside the ui closure so its worker wakes the
 /// harness's own context.
 type H = Harness<'static, Option<App>>;
@@ -65,6 +71,8 @@ fn harness_with_prefs(files: Vec<PathBuf>, tab: Option<Tab>, prefs_path: Option<
                     let mut app = App::with_prefs_path(ui.ctx(), files, tab, prefs_path);
                     // the first-run tour is tested on its own
                     app.auto_tour = false;
+                    app.tools.step.min_input = GENTLE_STEP_INPUT;
+                    app.tools.recommend.step.min_input = GENTLE_STEP_INPUT;
                     app
                 });
                 app.frame(ui);
@@ -1037,7 +1045,10 @@ fn worker_loads_and_analyses_off_thread() {
     let file = result.expect("decodes");
     assert_eq!(file.source.path.as_deref(), Some(Path::new(LOG_4_2)));
     let session = Arc::new(file.sessions[0].clone());
-    let kind = Kind::Step(StepParams::default());
+    let kind = Kind::Step(StepParams {
+        min_input: GENTLE_STEP_INPUT,
+        ..StepParams::default()
+    });
     let key = JobKey::new(Slot::A, 0, &kind, None);
     w.submit(Job::Analyze {
         key: key.clone(),
@@ -1974,7 +1985,9 @@ fn every_button_with_a_shortcut_shows_it_in_the_tooltip() {
 
 #[test]
 fn log_check_badges_and_card_follow_the_session() {
-    // 4.2.0: raw gyro logged, no eRPM, plenty of stick moves, 17 s (a short-log warning)
+    // 4.2.0: raw gyro logged, no eRPM, 17 s (a short-log warning), and only
+    // gentle stick moves: no step window above the default 80 deg/s (the
+    // overall level follows rate, duration and frames only)
     let mut h = harness(vec![LOG_4_2.into()], Some(Tab::Diagnostics));
     run_until(&mut h, no_slot_loading);
     let f = app(&h)
@@ -1983,6 +1996,7 @@ fn log_check_badges_and_card_follow_the_session() {
         .expect("fitness is computed on load")
         .clone();
     assert_eq!(f.overall, FitnessLevel::Warn);
+    assert_eq!(f.level("sticks"), FitnessLevel::Fail);
     assert_eq!(f.level("duration"), FitnessLevel::Warn);
     assert_eq!(f.level("raw_gyro"), FitnessLevel::Ok);
     assert_eq!(f.level("erpm"), FitnessLevel::Warn);
@@ -1991,7 +2005,7 @@ fn log_check_badges_and_card_follow_the_session() {
         "badge in the slot header"
     );
     assert!(has_label_containing(&h, "rpm [!]"));
-    assert!(has_label_containing(&h, "sticks [ok]"));
+    assert!(has_label_containing(&h, "sticks [x]"));
     assert!(
         has_label_containing(&h, "Log check [!]"),
         "card on Diagnostics"

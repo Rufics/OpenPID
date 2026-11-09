@@ -146,9 +146,12 @@ fn decode_csv_input() {
 fn run_analyses() {
     let l = log("betaflight-4.2.0.BFL");
     let f = l.to_str().unwrap();
+    // 4.2.0 has only gentle stick inputs, below the default step threshold
+    let sharp = log("betaflight-2025.12.2-btfl_027.bbl");
+    let sharp = sharp.to_str().unwrap();
     for (args, key) in [
         (
-            vec!["run", "step", f, "--axis", "pitch", "--epoch", "2..12"],
+            vec!["run", "step", sharp, "--axis", "roll", "--epoch", "5..20"],
             "metrics",
         ),
         (vec!["run", "psd", f, "--channel", "pid.d.roll"], "power_db"),
@@ -173,19 +176,24 @@ fn run_analyses() {
     let (ok, _, err) = run(&["run", "psd", f, "--channel", "debug.7"]);
     assert!(!ok && err.contains("missing channel"));
     // automatic windows: the trim and the most active 20 s
-    let (ok, out, err) = run(&["run", "step", f, "--epoch", "auto", "--json"]);
+    let (ok, out, err) = run(&[
+        "run", "step", sharp, "--epoch", "auto", "--axis", "yaw", "--json",
+    ]);
     assert!(ok, "{err}");
-    assert!(err.contains("epoch 1.80..16.02 s"), "{err}");
-    assert!(out.contains("windows_used"));
+    assert!(err.contains("epoch 1.43..38.60 s"), "{err}");
+    assert!(out.contains("windows_used") && out.contains("windows_rejected"));
     let v: serde_json::Value = serde_json::from_str(&out).expect("json");
     let verdicts = v["verdicts"].as_array().expect("verdicts in the step JSON");
     assert_eq!(verdicts.len(), 7);
     assert!(
         verdicts
             .iter()
-            .any(|x| x["metric"] == "overshoot" && x["level"] == "Fail"),
+            .any(|x| x["metric"] == "overshoot" && x["level"] == "Warn"),
         "{verdicts:?}"
     );
+    // gentle stick inputs: not enough data at the default threshold
+    let (ok, _, err) = run(&["run", "step", f, "--epoch", "auto"]);
+    assert!(!ok && err.contains("above 80 deg/s"), "{err}");
     let (ok, _, err) = run(&["run", "step", f, "--epoch", "active"]);
     assert!(!ok && err.contains("shorter than 20 s"), "{err}");
     let short = log("betaflight-4.5.1-two-sessions.bbl");
@@ -363,7 +371,7 @@ fn run_takes_the_log_and_parameters_from_a_project() {
     std::fs::write(
         &project,
         format!(
-            r#"{{"version":1,"slots":[{{"path":"{}","session":0,"epoch":{{"start_s":2.0,"end_s":8.0}}}}],"axis":"pitch","step":{{"cutoff_hz":40.0,"window_s":1.5}}}}"#,
+            r#"{{"version":1,"slots":[{{"path":"{}","session":0,"epoch":{{"start_s":2.0,"end_s":8.0}}}}],"axis":"pitch","step":{{"cutoff_hz":40.0,"window_s":1.5,"min_input":20.0}}}}"#,
             log.to_str().unwrap().replace('\\', "/")
         ),
     )
@@ -374,8 +382,17 @@ fn run_takes_the_log_and_parameters_from_a_project() {
     assert_eq!(v["axis"], "pitch", "axis from the project");
     assert_eq!(v["time_ms"].as_array().unwrap().len(), 500);
     // the epoch came from the project: fewer windows than the whole log
-    let (ok, whole, _) = run(&["run", "step", log.to_str().unwrap(), "--axis", "pitch"]);
-    assert!(ok);
+    let whole_project = temp("whole.openpid.json");
+    std::fs::write(
+        &whole_project,
+        format!(
+            r#"{{"version":1,"slots":[{{"path":"{}","session":0}}],"axis":"pitch","step":{{"min_input":20.0}}}}"#,
+            log.to_str().unwrap().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    let (ok, whole, err) = run(&["run", "step", "--project", whole_project.to_str().unwrap()]);
+    assert!(ok, "{err}");
     let w: serde_json::Value = serde_json::from_str(&whole).unwrap();
     assert!(v["windows_total"].as_u64().unwrap() < w["windows_total"].as_u64().unwrap());
     // flags override the project

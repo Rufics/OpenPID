@@ -286,11 +286,23 @@ The method is **Wiener deconvolution** from the input (setpoint) to the output (
 1. The epoch (the user's time range) is cut into windows of length `L` (default 2 s) with a hop of `L/superpos` (superpos = 16 → 125 ms).
 2. Every window: `x = setpoint·w`, `y = gyro·w` (Hann), zero-padded to a smooth length.
 3. `H = Y·conj(X) / (|X|² + λ(f))`, where `λ(f)` is the regularisation: `reg_low` (0.1) below `cutoff` (default 25 Hz), `reg_high` (1e8) above, with a raised-cosine transition of ±20 % on a log scale between them. Both signals are multiplied by Hann before the FFT: without it the unobserved tail of the response beyond the record understates the gain (≈ 10 % for a 4 s record and τ = 20 ms, checked on a synthetic model). The FFT length is a 5-smooth number ≥ 1.5·len so the circular convolution does not wrap. The impulse response is `h = IFFT(H)`, the step response `s = cumsum(h)` over the first 500 ms.
-4. Window selection: `max|setpoint| ≥ threshold` (default 20 °/s, with separate "low/high input" as in PID-Analyzer at 500 °/s), windows with gaps or corruption excluded.
+4. Window selection: `max|setpoint| ≥ threshold` (default **80 °/s**, with separate "low/high input" as in PID-Analyzer at 500 °/s), windows with gaps or corruption excluded, and windows whose response **does not settle** between 0.5 and 1.5 (mean of the last quarter, `settle_range`) dropped as failed deconvolutions; the output counts them (`windows_rejected`). Both values are calibrated against PIDtoolbox Pro v0.9 (#33, table below). The earlier 20 °/s took every gentle stick movement, and a few windows whose deconvolution failed pulled the weighted mean: on `btfl_027` the pitch curve ended at 1.26 and the yaw curve, with the automatic trim, at 2.7.
 5. Aggregation: a weighted mean (weight = input amplitude) **and** a 2D histogram (time × amplitude) to show the spread; optional Y-offset correction (normalising on the settled tail value) and smoothing (PTB "smoothing 1/20/40/60").
 6. Metrics: rise time (10–90 %), overshoot %, settling time (±5 %), delay (the first crossing of 50 % of the mean curve) and **latency**: the lag of the cross-correlation peak of setpoint ↔ gyro on the raw signals of the epoch (`openpid_dsp::xcorr::lag_of_max`, searched up to 100 ms, parabolic peak refinement). For a white input this is the transport delay of the axis; with smooth stick input the peak also catches part of the plant's own lag (on real logs 10–17 ms against a 50 % delay of 18–22 ms), so the value is read next to delay. A "whitened" variant through first differences was rejected: on real logs the gyro noise dominates the derivative (r ≈ 0.1) and the peak jumps between 4 and 37 ms depending on the smoothing. Both values are shown side by side: delay depends on the filters and PIDs, latency is the transport delay of the axis. Y-offset: every window is normalised on the mean of the last quarter of its response when that is > 0.2 (otherwise the window is left as is).
 
-Parameters (`StepParams`): `window_s, superpos, cutoff_hz, min_input, high_input, resp_len_s, y_offset, smoothing, axis`.
+Parameters (`StepParams`): `window_s, superpos, cutoff_hz, min_input, settle_range, high_input, resp_len_s, y_offset, smoothing, axis`.
+
+**Calibration against PIDtoolbox Pro v0.9** (#33; the owner's screenshots of the same logs; PTB leaves out the first and the last second of the log, so the comparison uses that epoch; `step_response_matches_pidtoolbox` in `crates/openpid-analysis/tests/real_logs.rs` keeps it). PTB's selection rule itself is not public: the only public PTB code (2019, GPLv3) still uses the old "end of manoeuvre" heuristic and no deconvolution, so the rule was matched on the results, not read.
+
+| Log, axis | PTB windows / peak / latency | OpenPID windows / peak / 50 % |
+|---|---|---|
+| `betaflight-2025.12.2-btfl_027`, roll | 78 / 1.15 / 22 ms | 65 / 1.14 / 22 ms |
+| `btfl_027`, pitch | 13 / 1.12 / 22.5 ms | 14 / 1.14 / 21 ms |
+| `btfl_027`, yaw | 30 / 1.18 / 12.3 ms | 27 / 1.24 / 12 ms |
+| `betaflight-4.5.1-two-sessions` (21 s session), roll / pitch | insufficient data | not enough data |
+| same, yaw | 32 / 0.87 / 11.7 ms | 27 / 0.88 / 12 ms |
+
+PTB's "SR Latency" is the time the mean response takes to reach 50 % (our *delay*); PTB's other latency option, "SP-Gyro Delay" ("Xcorr Latency" in v0.8), most likely corresponds to our cross-correlation *latency*. With the old defaults (20 °/s, no settle check) the same logs gave 172/133/32 windows and peaks of 1.26/1.35/1.24 on `btfl_027`. A log with only gentle stick inputs (`betaflight-4.2.0.BFL`: 48 windows above 20 °/s, none above 80) now gives "not enough data", as PTB does; the threshold is a step-tab control for such logs.
 
 ### 6.3 2D spectral analyzer (PSD)
 

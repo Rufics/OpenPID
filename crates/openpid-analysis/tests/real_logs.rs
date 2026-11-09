@@ -20,10 +20,26 @@ fn load(name: &str) -> openpid_core::LogFile {
         .unwrap()
 }
 
+/// 4.2.0 has only gentle stick inputs (48 windows above 20 deg/s, none above
+/// the default 80): the default gives "not enough data", as `PIDtoolbox` does,
+/// and a lower threshold still yields a plausible response.
+const GENTLE: f64 = 20.0;
+
 #[test]
 fn step_response_of_a_real_flight() {
     let log = load("betaflight-4.2.0.BFL");
     let s = &log.sessions[0];
+    let default = StepAnalysis.run(
+        &AnalysisCtx {
+            session: s,
+            epoch: None,
+        },
+        &StepParams::default(),
+    );
+    assert!(
+        matches!(default, Err(AnalysisError::NotEnoughData(_))),
+        "{default:?}"
+    );
     for axis in [Axis::Roll, Axis::Pitch] {
         let ctx = AnalysisCtx {
             session: s,
@@ -34,6 +50,7 @@ fn step_response_of_a_real_flight() {
                 &ctx,
                 &StepParams {
                     axis,
+                    min_input: GENTLE,
                     ..Default::default()
                 },
             )
@@ -78,7 +95,15 @@ fn step_response_of_a_real_flight() {
             end_s: 8.0,
         }),
     };
-    let out = StepAnalysis.run(&ctx, &StepParams::default()).unwrap();
+    let out = StepAnalysis
+        .run(
+            &ctx,
+            &StepParams {
+                min_input: GENTLE,
+                ..Default::default()
+            },
+        )
+        .unwrap();
     assert!(
         out.windows_total < 60,
         "epoch windows {}",
@@ -339,12 +364,10 @@ fn fitness_of_the_real_logs() {
     let erpm = f.check("erpm").unwrap();
     assert_eq!(erpm.level, FitnessLevel::Warn);
     assert!(erpm.fix.as_deref().unwrap().contains("dshot_telemetry"));
-    assert_eq!(
-        f.level("sticks"),
-        FitnessLevel::Ok,
-        "{:?}",
-        f.check("sticks")
-    );
+    // gentle stick inputs only: no window above the default 80 deg/s
+    let sticks = f.check("sticks").unwrap();
+    assert_eq!(sticks.level, FitnessLevel::Fail, "{sticks:?}");
+    assert!(sticks.detail.contains("80 deg/s"), "{sticks:?}");
     // 4.5.1 session 0: three seconds of arming, nothing to analyse
     let log = load("betaflight-4.5.1-two-sessions.bbl");
     let f = check_session(&log.sessions[0]);
@@ -358,7 +381,7 @@ fn fitness_of_the_real_logs() {
 fn verdicts_of_the_real_logs() {
     use openpid_analysis::{StepTargets, VerdictLevel, verdicts};
     let t = StepTargets::default();
-    let judge = |log: &openpid_core::LogFile, session: usize, axis: Axis| {
+    let judge = |log: &openpid_core::LogFile, session: usize, axis: Axis, min_input: f64| {
         let ctx = AnalysisCtx {
             session: &log.sessions[session],
             epoch: None,
@@ -368,6 +391,7 @@ fn verdicts_of_the_real_logs() {
                 &ctx,
                 &StepParams {
                     axis,
+                    min_input,
                     ..Default::default()
                 },
             )
@@ -378,20 +402,26 @@ fn verdicts_of_the_real_logs() {
         |v: &[openpid_analysis::Verdict], m: &str| v.iter().find(|x| x.metric == m).unwrap().level;
     let log = load("betaflight-4.2.0.BFL");
     assert_eq!(
-        level(&judge(&log, 0, Axis::Roll), "overshoot"),
+        level(&judge(&log, 0, Axis::Roll, GENTLE), "overshoot"),
         VerdictLevel::Fail
     );
     assert_eq!(
-        level(&judge(&log, 0, Axis::Pitch), "overshoot"),
+        level(&judge(&log, 0, Axis::Pitch, GENTLE), "overshoot"),
         VerdictLevel::Fail
     );
     let log = load("betaflight-2025.12.2-btfl_027.bbl");
     assert_eq!(
-        level(&judge(&log, 0, Axis::Pitch), "overshoot"),
+        level(
+            &judge(&log, 0, Axis::Pitch, StepParams::default().min_input),
+            "overshoot"
+        ),
         VerdictLevel::Ok
     );
     assert_eq!(
-        level(&judge(&log, 0, Axis::Roll), "overshoot"),
+        level(
+            &judge(&log, 0, Axis::Roll, StepParams::default().min_input),
+            "overshoot"
+        ),
         VerdictLevel::Warn
     );
     let log = load("betaflight-4.5.1-two-sessions.bbl");
@@ -402,11 +432,11 @@ fn verdicts_of_the_real_logs() {
         .max_by_key(|(_, s)| s.len())
         .map(|(i, _)| i)
         .unwrap();
-    let roll = judge(&log, longest, Axis::Roll);
+    let roll = judge(&log, longest, Axis::Roll, GENTLE);
     assert_eq!(
         level(&roll, "windows"),
         VerdictLevel::Ok,
-        "16 windows: {roll:?}"
+        "13 windows (3 more did not settle): {roll:?}"
     );
     assert_eq!(
         level(&roll, "overshoot"),
@@ -418,11 +448,9 @@ fn verdicts_of_the_real_logs() {
         VerdictLevel::Warn,
         "never settles"
     );
-    assert_eq!(
-        level(&roll, "final"),
-        VerdictLevel::Warn,
-        "0.8: gain mismatch"
-    );
+    // 0.8 before the settle check: the three windows that did not settle
+    // pulled the mean down; without them the plateau is at 0.97
+    assert_eq!(level(&roll, "final"), VerdictLevel::Ok, "{roll:?}");
 }
 
 #[test]
@@ -454,4 +482,92 @@ fn auto_epoch_of_the_real_logs() {
     assert!(short.timebase.duration_s() < 5.0);
     assert_eq!(auto(short), None);
     assert_eq!(most_active(short, ACTIVE_WINDOW_S), None);
+}
+
+/// The default window selection reproduces `PIDtoolbox` Pro 0.9 on the same
+/// logs (owner's screenshots, #33): window counts of the same order, the same
+/// time to 50 %, peaks within a few hundredths, and "insufficient data" where
+/// PTB has it. PTB analyses the log without its first and last second.
+#[test]
+fn step_response_matches_pidtoolbox() {
+    // (log, session, axis, PTB windows, PTB peak, PTB latency ms) or None = insufficient data
+    type Case = (&'static str, usize, Axis, Option<(usize, f64, f64)>);
+    let cases: [Case; 6] = [
+        (
+            "betaflight-2025.12.2-btfl_027.bbl",
+            0,
+            Axis::Roll,
+            Some((78, 1.15, 22.0)),
+        ),
+        (
+            "betaflight-2025.12.2-btfl_027.bbl",
+            0,
+            Axis::Pitch,
+            Some((13, 1.12, 22.5)),
+        ),
+        (
+            "betaflight-2025.12.2-btfl_027.bbl",
+            0,
+            Axis::Yaw,
+            Some((30, 1.18, 12.3)),
+        ),
+        ("betaflight-4.5.1-two-sessions.bbl", 1, Axis::Roll, None),
+        ("betaflight-4.5.1-two-sessions.bbl", 1, Axis::Pitch, None),
+        (
+            "betaflight-4.5.1-two-sessions.bbl",
+            1,
+            Axis::Yaw,
+            Some((32, 0.87, 11.7)),
+        ),
+    ];
+    for (name, session, axis, ptb) in cases {
+        let log = load(name);
+        let s = &log.sessions[session];
+        let t = &s.timebase.time_us;
+        let len_s = (t[t.len() - 1] - t[0]) as f64 * 1e-6;
+        let ctx = AnalysisCtx {
+            session: s,
+            epoch: Some(Epoch {
+                start_s: 1.0,
+                end_s: len_s - 1.0,
+            }),
+        };
+        let out = StepAnalysis.run(
+            &ctx,
+            &StepParams {
+                axis,
+                ..Default::default()
+            },
+        );
+        let Some((n, peak, latency)) = ptb else {
+            assert!(
+                matches!(out, Err(AnalysisError::NotEnoughData(_))),
+                "{name} {axis:?}: PTB has insufficient data, we have {:?}",
+                out.map(|o| o.windows_used)
+            );
+            continue;
+        };
+        let out = out.unwrap();
+        let ours_peak = out.mean.iter().copied().fold(f64::MIN, f64::max);
+        let half = out.mean.iter().position(|v| *v >= 0.5).unwrap();
+        let ours_latency = out.time_ms[half];
+        assert!(
+            out.windows_used * 2 >= n && out.windows_used <= n * 2,
+            "{name} {axis:?}: {} windows, PTB {n}",
+            out.windows_used
+        );
+        assert!(
+            (ours_peak - peak).abs() <= 0.08,
+            "{name} {axis:?}: peak {ours_peak:.2}, PTB {peak}"
+        );
+        assert!(
+            (ours_latency - latency).abs() <= 2.0,
+            "{name} {axis:?}: 50 % at {ours_latency} ms, PTB {latency}"
+        );
+        assert!(
+            (out.mean[out.mean.len() - 1] - 1.0).abs() < 0.25,
+            "{name} {axis:?}: tail {}",
+            out.mean[out.mean.len() - 1]
+        );
+    }
 }
