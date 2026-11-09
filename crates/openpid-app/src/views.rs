@@ -1832,106 +1832,133 @@ pub(crate) fn draw_rpm_overlay(
     ov: &OverlayState,
 ) {
     if ov.show {
-        let harmonics = if ov.harmonics == 0 {
-            o.harmonics
-        } else {
-            ov.harmonics
-        };
-        for (m, bins) in o.motors.iter().enumerate() {
-            if !ov.motors.get(m).copied().unwrap_or(true) {
-                continue;
-            }
-            for k in 1..=harmonics {
-                // one line per run of consecutive bins with a motor speed
-                let mut run: Vec<[f64; 2]> = Vec::new();
-                let mut runs: Vec<Vec<[f64; 2]>> = Vec::new();
-                for (xi, rpm) in x.iter().zip(bins) {
-                    match rpm.map(|r| r / 60.0 * f64::from(k)).filter(|f| *f <= y_max) {
-                        Some(f) => run.push([*xi, f]),
-                        None if !run.is_empty() => runs.push(std::mem::take(&mut run)),
-                        None => {}
-                    }
+        draw_harmonics(pu, o, x, y_max, ov);
+    }
+    if ov.notches {
+        draw_notches(pu, o, x, y_max);
+    }
+}
+
+/// Runs of consecutive throttle bins where harmonic `k` of a motor is known
+/// and below `y_max`: one line each.
+fn harmonic_runs(x: &[f64], bins: &[Option<f64>], k: u32, y_max: f64) -> Vec<Vec<[f64; 2]>> {
+    let mut runs: Vec<Vec<[f64; 2]>> = Vec::new();
+    let mut run: Vec<[f64; 2]> = Vec::new();
+    for (xi, rpm) in x.iter().zip(bins) {
+        match rpm.map(|r| r / 60.0 * f64::from(k)).filter(|f| *f <= y_max) {
+            Some(f) => run.push([*xi, f]),
+            None if !run.is_empty() => runs.push(std::mem::take(&mut run)),
+            None => {}
+        }
+    }
+    if !run.is_empty() {
+        runs.push(run);
+    }
+    runs
+}
+
+/// Every shown motor's harmonic lines: the fundamental solid, the rest dashed.
+fn draw_harmonics(
+    pu: &mut egui_plot::PlotUi<'_>,
+    o: &RpmOverlay,
+    x: &[f64],
+    y_max: f64,
+    ov: &OverlayState,
+) {
+    let harmonics = if ov.harmonics == 0 {
+        o.harmonics
+    } else {
+        ov.harmonics
+    };
+    for (m, bins) in o.motors.iter().enumerate() {
+        if !ov.motors.get(m).copied().unwrap_or(true) {
+            continue;
+        }
+        for k in 1..=harmonics {
+            for pts in harmonic_runs(x, bins, k, y_max) {
+                let mut line = Line::new(format!("M{} ×{k}", m + 1), PlotPoints::from(pts))
+                    .color(motor_color(m))
+                    .width(if k == 1 { 1.8 } else { 1.0 });
+                if k > 1 {
+                    line = line.style(LineStyle::dashed_dense());
                 }
-                if !run.is_empty() {
-                    runs.push(run);
-                }
-                for pts in runs {
-                    let mut line = Line::new(format!("M{} ×{k}", m + 1), PlotPoints::from(pts))
-                        .color(motor_color(m))
-                        .width(if k == 1 { 1.8 } else { 1.0 });
-                    if k > 1 {
-                        line = line.style(LineStyle::dashed_dense());
-                    }
-                    pu.line(line);
-                }
+                pu.line(line);
             }
         }
     }
-    if ov.notches {
-        let (x0, x1) = (
-            x.first().copied().unwrap_or(0.0),
-            x.last().copied().unwrap_or(100.0),
+}
+
+/// A filled horizontal band from `lo` to `hi` across the throttle range.
+fn notch_band(
+    pu: &mut egui_plot::PlotUi<'_>,
+    (x0, x1): (f64, f64),
+    name: String,
+    (lo, hi): (f64, f64),
+    colour: Color32,
+) {
+    if hi <= lo {
+        return;
+    }
+    pu.polygon(
+        egui_plot::Polygon::new(
+            name,
+            PlotPoints::from(vec![[x0, lo], [x1, lo], [x1, hi], [x0, hi]]),
+        )
+        .fill_color(colour)
+        .stroke(egui::Stroke::NONE),
+    );
+}
+
+/// The static notches, the dynamic-notch band and the RPM filter minimum.
+fn draw_notches(pu: &mut egui_plot::PlotUi<'_>, o: &RpmOverlay, x: &[f64], y_max: f64) {
+    let span = (
+        x.first().copied().unwrap_or(0.0),
+        x.last().copied().unwrap_or(100.0),
+    );
+    for (i, (centre, cutoff)) in o.notches.iter().enumerate() {
+        let half = (centre - cutoff).abs();
+        notch_band(
+            pu,
+            span,
+            format!("notch {} band", i + 1),
+            ((centre - half).max(0.0), (centre + half).min(y_max)),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 40),
         );
-        let band =
-            |pu: &mut egui_plot::PlotUi<'_>, name: String, lo: f64, hi: f64, colour: Color32| {
-                let (lo, hi) = (lo.max(0.0), hi.min(y_max));
-                if hi <= lo {
-                    return;
-                }
-                pu.polygon(
-                    egui_plot::Polygon::new(
-                        name,
-                        PlotPoints::from(vec![[x0, lo], [x1, lo], [x1, hi], [x0, hi]]),
-                    )
-                    .fill_color(colour)
-                    .stroke(egui::Stroke::NONE),
+        pu.hline(
+            HLine::new(format!("notch {} {}", i + 1, hz(*centre)), *centre)
+                .color(Color32::WHITE)
+                .style(LineStyle::dashed_loose())
+                .width(1.0),
+        );
+    }
+    if let Some((lo, hi)) = o.dyn_notch_hz {
+        // an outline, not a fill: the band spans most of the useful range
+        // and a tint over it would wash out the heatmap
+        notch_band(
+            pu,
+            span,
+            "dyn notch band".into(),
+            (lo.max(0.0), hi.min(y_max)),
+            ACCENT.gamma_multiply(0.04),
+        );
+        for (name, f) in [("dyn notch min", lo), ("dyn notch max", hi)] {
+            if f < y_max {
+                pu.hline(
+                    HLine::new(format!("{name} {}", hz(f)), f)
+                        .color(ACCENT)
+                        .style(LineStyle::dashed_loose())
+                        .width(1.0),
                 );
-            };
-        for (i, (centre, cutoff)) in o.notches.iter().enumerate() {
-            let half = (centre - cutoff).abs();
-            band(
-                pu,
-                format!("notch {} band", i + 1),
-                centre - half,
-                centre + half,
-                Color32::from_rgba_unmultiplied(255, 255, 255, 40),
-            );
-            pu.hline(
-                HLine::new(format!("notch {} {}", i + 1, hz(*centre)), *centre)
-                    .color(Color32::WHITE)
-                    .style(LineStyle::dashed_loose())
-                    .width(1.0),
-            );
-        }
-        if let Some((lo, hi)) = o.dyn_notch_hz {
-            // an outline, not a fill: the band spans most of the useful range
-            // and a tint over it would wash out the heatmap
-            band(
-                pu,
-                "dyn notch band".into(),
-                lo,
-                hi,
-                ACCENT.gamma_multiply(0.04),
-            );
-            for (name, f) in [("dyn notch min", lo), ("dyn notch max", hi)] {
-                if f < y_max {
-                    pu.hline(
-                        HLine::new(format!("{name} {}", hz(f)), f)
-                            .color(ACCENT)
-                            .style(LineStyle::dashed_loose())
-                            .width(1.0),
-                    );
-                }
             }
         }
-        if let Some(min) = o.rpm_min_hz {
-            pu.hline(
-                HLine::new(format!("RPM filter min {}", hz(min)), min)
-                    .color(MUTED)
-                    .style(LineStyle::dotted_dense())
-                    .width(1.0),
-            );
-        }
+    }
+    if let Some(min) = o.rpm_min_hz {
+        pu.hline(
+            HLine::new(format!("RPM filter min {}", hz(min)), min)
+                .color(MUTED)
+                .style(LineStyle::dotted_dense())
+                .width(1.0),
+        );
     }
 }
 
