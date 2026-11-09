@@ -213,6 +213,8 @@ pub struct Tools {
     /// Throttle bins with fewer segments than this are greyed out on the freq × throttle heatmap.
     pub min_segments: usize,
     pub viewer_channels: Vec<ChannelId>,
+    /// Step tab display options (docs/design/axis-layout).
+    pub step_display: crate::axis_layout::StepDisplay,
 }
 
 impl Default for Tools {
@@ -241,6 +243,7 @@ impl Default for Tools {
                 ChannelId::Setpoint { axis: Axis::Roll },
                 ChannelId::Throttle,
             ],
+            step_display: crate::axis_layout::StepDisplay::default(),
         }
     }
 }
@@ -707,6 +710,8 @@ impl App {
             heatmap_link: p.heatmap_link,
             min_segments: p.min_segments,
             viewer_channels: p.viewer_channels.clone(),
+            // display options are the viewer's, not the project's
+            step_display: self.tools.step_display.clone(),
         };
         self.tab = Tab::from_name(&p.tab).unwrap_or(Tab::LogViewer);
         self.touch_mode = p.touch_mode;
@@ -1101,7 +1106,7 @@ impl App {
         let central = egui::CentralPanel::default().show(ui, |ui| match self.tab {
             _ if self.start_screen_wanted() => views::start_screen(self, ui),
             Tab::LogViewer => views::log_viewer(self, ui),
-            Tab::Step => views::step(self, ui),
+            Tab::Step => crate::axis_layout::step(self, ui),
             Tab::Spectrum => views::spectrum(self, ui),
             Tab::ThrottleHeatmap => views::throttle_heatmap(self, ui),
             Tab::TimeHeatmap => views::time_heatmap(self, ui),

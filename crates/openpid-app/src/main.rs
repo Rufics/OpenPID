@@ -4,6 +4,7 @@
 //! Usage: `openpid-gui [--tab log|step|spectrum|throttle|time|surface|filter|motors|advice|sliders|diagnostics|settings] [log …]` (up to 8 logs, one slot each)
 
 mod app;
+mod axis_layout;
 mod colormap;
 mod export;
 mod i18n;

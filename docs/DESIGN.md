@@ -292,7 +292,7 @@ The method is **Wiener deconvolution** from the input (setpoint) to the output (
 
 Parameters (`StepParams`): `window_s, superpos, cutoff_hz, min_input, settle_range, high_input, resp_len_s, y_offset, smoothing, axis`.
 
-**Calibration against PIDtoolbox Pro v0.9** (#33; the owner's screenshots of the same logs; PTB leaves out the first and the last second of the log, so the comparison uses that epoch; `step_response_matches_pidtoolbox` in `crates/openpid-analysis/tests/real_logs.rs` keeps it). PTB's selection rule itself is not public: the only public PTB code (2019, GPLv3) still uses the old "end of manoeuvre" heuristic and no deconvolution, so the rule was matched on the results, not read.
+**Calibration against PIDtoolbox Pro v0.9** (#33; the owner's screenshots of the same logs; PTB leaves out the first and the last second of the log, so the comparison uses that epoch; `step_response_matches_the_reference_tool` in `crates/openpid-analysis/tests/real_logs.rs` keeps it). PTB's selection rule itself is not public: the only public PTB code (2019, GPLv3) still uses the old "end of manoeuvre" heuristic and no deconvolution, so the rule was matched on the results, not read.
 
 | Log, axis | PTB windows / peak / latency | OpenPID windows / peak / 50 % |
 |---|---|---|

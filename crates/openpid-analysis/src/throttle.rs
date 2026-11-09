@@ -1,7 +1,7 @@
 //! Frequency × throttle amplitude heatmap: the noise signature of a channel
 //! as a function of throttle position.
 //!
-//! Method (as in PIDtoolbox): the epoch is cut into short segments, each
+//! Method: the epoch is cut into short segments, each
 //! segment gets a windowed single-sided amplitude spectrum and a mean
 //! throttle; for every throttle bin `t ∈ 0..=100 %` the spectra of all
 //! segments with `|throttle − t| ≤ half_window` are averaged; the grid is then
@@ -28,16 +28,16 @@ use serde::{Deserialize, Serialize};
 pub struct ThrottleHeatmapParams {
     /// Channel to analyse.
     pub channel: ChannelId,
-    /// Segment length in seconds (PTB: 0.2 s).
+    /// Segment length in seconds (0.2 s).
     pub segment_s: f64,
-    /// Throttle half-window in percent for averaging (PTB: 6).
+    /// Throttle half-window in percent for averaging (6).
     pub half_window: f64,
     /// Window applied to every segment.
     pub window: Window,
     /// Upper frequency bound of the output (Hz).
     pub max_hz: f64,
     /// Box smoothing widths: along throttle (bins) and along frequency (as a
-    /// fraction of the segment length in samples, PTB: 1/100).
+    /// fraction of the segment length in samples, 1/100).
     pub smooth_throttle: usize,
     /// Box smoothing width along frequency, as a fraction of the segment length.
     pub smooth_freq_frac: f64,

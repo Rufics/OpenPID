@@ -2651,3 +2651,37 @@ fn project_file_saves_and_restores_the_view() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// ------------------------------------------------------------------ axis layout
+
+#[test]
+fn step_tab_stacks_the_axes_and_the_panel_collapses() {
+    // docs/design/axis-layout (R4): roll, pitch and yaw at once, the controls
+    // in a right-hand panel that the button and Ctrl+. collapse
+    let mut h = harness(vec![LOG_2025.into()], Some(Tab::Step));
+    run_until(&mut h, no_slot_loading);
+    h.step();
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    assert!(app(&h).prefs.panel_open, "open by default");
+    assert!(h.query_by_label("Control panel").is_some());
+    // the three axes and the reference tool's label of each log
+    for pid in ["45,80,30,40,120", "47,84,34,46,125", "45,80,0,0,120"] {
+        assert!(has_label_containing(&h, pid), "P,I,D,Dm,F {pid}");
+    }
+    assert!(!app(&h).tools.step_display.raw, "Raw off by default");
+    // collapse with the button: a strip with the reopen button stays inside the window
+    h.get_by_label("Hide the control panel").click();
+    h.run_steps(2);
+    assert!(!app(&h).prefs.panel_open);
+    let reopen = h.get_by_label("Show the control panel").rect();
+    assert!(
+        reopen.right() <= 1280.0,
+        "reopen button inside the window: {reopen:?}"
+    );
+    // and back with the shortcut
+    app_mut(&mut h).perform(crate::shortcuts::Action::TogglePanel);
+    h.run_steps(2);
+    assert!(app(&h).prefs.panel_open);
+    assert!(h.query_by_label("Hide the control panel").is_some());
+}

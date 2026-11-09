@@ -34,7 +34,7 @@ pub use project::{Project, ProjectSlot};
 pub use psd::{PsdAnalysis, PsdOutput, PsdParams};
 pub use recommend::{Finding, Recommend, RecommendOutput, RecommendParams};
 pub use rpm::{RpmEstimateOutput, RpmEstimateParams, RpmEstimator};
-pub use step::{StepAnalysis, StepMetrics, StepOutput, StepParams};
+pub use step::{StepAnalysis, StepMetrics, StepOutput, StepParams, StepSpread};
 pub use stft::{StftAnalysis, StftOutput, StftParams};
 pub use targets::{StepTargets, TargetPreset, Verdict, VerdictLevel, verdicts};
 pub use throttle::{RpmOverlay, ThrottleHeatmap, ThrottleHeatmapOutput, ThrottleHeatmapParams};

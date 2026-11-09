@@ -40,6 +40,8 @@ pub enum Action {
     /// Every slot analyses its whole log.
     EpochWhole,
     TouchMode,
+    /// Open or collapse the control panel of the analysis tabs.
+    TogglePanel,
 }
 
 impl Action {
@@ -68,6 +70,7 @@ impl Action {
             Action::ToStart => format!("{}: {}", tr("Player"), tr("To start")),
             Action::EpochWhole => format!("{}: {}", tr("epoch"), tr("whole log, every slot")),
             Action::TouchMode => tr("Touch mode").into(),
+            Action::TogglePanel => tr("Control panel").into(),
         }
     }
 
@@ -122,6 +125,7 @@ pub const TABLE: &[Binding] = &[
     b(Modifiers::COMMAND, Key::Slash, Action::Help),
     b(Modifiers::NONE, Key::F1, Action::Help),
     b(Modifiers::NONE, Key::Escape, Action::Cancel),
+    b(Modifiers::COMMAND, Key::Period, Action::TogglePanel),
     b(Modifiers::NONE, Key::Space, Action::PlayPause),
     b(Modifiers::NONE, Key::Comma, Action::StepBack),
     b(Modifiers::NONE, Key::Period, Action::StepForward),
@@ -257,6 +261,10 @@ impl App {
                 }
             }
             Action::TouchMode => self.touch_mode = !self.touch_mode,
+            Action::TogglePanel => {
+                self.prefs.panel_open = !self.prefs.panel_open;
+                self.save_prefs();
+            }
         }
     }
 

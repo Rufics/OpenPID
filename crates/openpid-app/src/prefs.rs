@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Theme {
-    /// Dark (default, like `PIDtoolbox`).
+    /// Dark (default).
     #[default]
     Dark,
     /// Light.
@@ -86,6 +86,9 @@ pub struct Prefs {
     pub show_tour: bool,
     /// Recently opened logs, newest first (at most `MAX_RECENT`).
     pub recent: Vec<RecentFile>,
+    /// The right-hand control panel of the analysis tabs is open
+    /// (docs/design/axis-layout, R4).
+    pub panel_open: bool,
 }
 
 impl Default for Prefs {
@@ -100,6 +103,7 @@ impl Default for Prefs {
             tour_done: false,
             show_tour: true,
             recent: Vec::new(),
+            panel_open: true,
         }
     }
 }
@@ -235,6 +239,7 @@ mod tests {
                 path: PathBuf::from("/logs/a.bbl"),
                 opened: "2026-11-06".into(),
             }],
+            panel_open: false,
         };
         p.save(&path).unwrap();
         assert_eq!(Prefs::load(&path), p);

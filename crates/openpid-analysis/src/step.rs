@@ -22,14 +22,14 @@ use serde::{Deserialize, Serialize};
 pub struct StepParams {
     /// Axis to analyse.
     pub axis: Axis,
-    /// Window length in seconds (PTB: 2 s).
+    /// Window length in seconds (2 s).
     pub window_s: f64,
     /// Number of sub-windows per window (hop = window / superpos; PID-Analyzer: 16).
     pub superpos: usize,
     /// Deconvolution cut-off (Hz).
     pub cutoff_hz: f64,
     /// Windows whose peak setpoint is below this (deg/s) are ignored. 80
-    /// matches the window counts and curves of `PIDtoolbox` Pro 0.9 on the
+    /// matches the window counts and curves of the reference tool on the
     /// committed fixtures (#33, `docs/DESIGN.md` §6.2); gentle stick
     /// movements give a deconvolution dominated by noise.
     pub min_input: f64,
@@ -43,7 +43,7 @@ pub struct StepParams {
     pub response_s: f64,
     /// Centred moving-average width in milliseconds applied to the mean (0 = none).
     pub smooth_ms: f64,
-    /// Y-offset correction (PTB): normalise every window's response on its
+    /// Y-offset correction: normalise every window's response on its
     /// settled tail (mean of the last quarter) before averaging, so a gain
     /// mismatch between setpoint and gyro does not shift the curves off 1.
     pub y_offset: bool,
@@ -141,6 +141,56 @@ pub struct StepOutput {
     pub windows_rejected: usize,
     /// 2-D histogram of the individual responses: x = time (ms), y = amplitude, z = weight.
     pub histogram: Grid2D,
+    /// Spread of the peak and of the time to 50 % over the used windows.
+    #[serde(default)]
+    pub spread: StepSpread,
+}
+
+/// Mean and standard deviation over the used windows of each window's own
+/// peak and time to 50 % (the error bars of the Peak / Latency plots,
+/// docs/design/axis-layout).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct StepSpread {
+    /// Mean of the windows' peaks.
+    pub peak_mean: f64,
+    /// Standard deviation of the windows' peaks.
+    pub peak_sd: f64,
+    /// Mean time to 50 % of the windows that reach it, milliseconds.
+    pub half_ms_mean: f64,
+    /// Standard deviation of that time, milliseconds.
+    pub half_ms_sd: f64,
+}
+
+/// Mean and (population) standard deviation; `(0, 0)` for no values.
+fn mean_sd(v: &[f64]) -> (f64, f64) {
+    if v.is_empty() {
+        return (0.0, 0.0);
+    }
+    let n = v.len() as f64;
+    let m = v.iter().sum::<f64>() / n;
+    let var = v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / n;
+    (m, var.sqrt())
+}
+
+/// [`StepSpread`] of the window responses sampled at `fs`.
+fn spread(rows: &[(f64, Vec<f64>)], fs: f64) -> StepSpread {
+    let peaks: Vec<f64> = rows
+        .iter()
+        .map(|(_, r)| r.iter().copied().fold(f64::MIN, f64::max))
+        .collect();
+    let halves: Vec<f64> = rows
+        .iter()
+        .filter_map(|(_, r)| r.iter().position(|v| *v >= 0.5))
+        .map(|i| i as f64 * 1000.0 / fs)
+        .collect();
+    let (peak_mean, peak_sd) = mean_sd(&peaks);
+    let (half_ms_mean, half_ms_sd) = mean_sd(&halves);
+    StepSpread {
+        peak_mean,
+        peak_sd,
+        half_ms_mean,
+        half_ms_sd,
+    }
 }
 
 /// How many step windows `axis` would contribute with `p`: `(used, total)`.
@@ -450,6 +500,7 @@ impl Analysis for StepAnalysis {
             windows_total: total,
             windows_used: rows.len(),
             windows_rejected: rejected,
+            spread: spread(&rows, fs),
             histogram,
         })
     }

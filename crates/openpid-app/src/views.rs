@@ -13,8 +13,7 @@ use egui_plot::{
     VLine,
 };
 use openpid_analysis::{
-    Epoch, FilterOverrides, Fitness, FitnessLevel, RpmOverlay, StepParams, TargetPreset, Verdict,
-    VerdictLevel, verdicts,
+    Epoch, FilterOverrides, Fitness, FitnessLevel, RpmOverlay, TargetPreset, Verdict, VerdictLevel,
 };
 use openpid_core::analysis::Grid2D;
 use openpid_core::settings::LowpassKind;
@@ -646,7 +645,10 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
     let mut update: Option<(Option<Epoch>, bool)> = None;
     let mut status: Option<String> = None;
     ui.horizontal(|ui| {
-        let fields_w = if touch { 420.0 } else { 360.0 };
+        // room for start, end, Auto, All and the summary; the summary
+        // truncates rather than push the row past the window
+        // (docs/design/axis-layout: a wider row stretched the whole tab)
+        let fields_w = if touch { 540.0 } else { 470.0 };
         let width = (ui.available_width() - fields_w).max(120.0);
         let (rect, resp) =
             ui.allocate_exact_size(egui::vec2(width, STRIP_H), egui::Sense::click_and_drag());
@@ -830,7 +832,7 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
         if was_auto && update.is_none() {
             text.push_str(" · auto");
         }
-        ui.label(RichText::new(text).color(MUTED));
+        ui.add(egui::Label::new(RichText::new(text).color(MUTED)).truncate());
     });
     if let Some(s) = status {
         app.status = s;
@@ -844,7 +846,7 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
     true
 }
 
-fn axis_selector(ui: &mut Ui, axis: &mut Axis) -> bool {
+pub(crate) fn axis_selector(ui: &mut Ui, axis: &mut Axis) -> bool {
     let before = *axis;
     ui.horizontal(|ui| {
         ui.label(tr("Axis"));
@@ -893,7 +895,12 @@ pub(crate) fn show_error(ui: &mut Ui, slot: Slot, e: &str) {
 /// Heatmap item for a grid; `max` = 0 picks a robust automatic colour maximum.
 /// Cells at or below zero are transparent. `min_y_for_scale` excludes the
 /// near-DC rows (stick motion) from the automatic scale so noise stays visible.
-fn grid_heatmap(name: &str, g: &Grid2D, max: f64, min_y_for_scale: f64) -> Option<Heatmap> {
+pub(crate) fn grid_heatmap(
+    name: &str,
+    g: &Grid2D,
+    max: f64,
+    min_y_for_scale: f64,
+) -> Option<Heatmap> {
     if g.x.len() < 2 || g.y.len() < 2 {
         return None;
     }
@@ -1179,272 +1186,8 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
     }
 }
 
-pub fn step(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
-    ui.separator();
-    ui.horizontal_wrapped(|ui| {
-        axis_selector(ui, &mut app.tools.axis);
-        app.tools.step.axis = app.tools.axis;
-        ui.separator();
-        let l = ui.label(tr("window"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.step.window_s)
-                .speed(0.1)
-                .range(0.5..=10.0)
-                .suffix(" s"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("cutoff"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.step.cutoff_hz)
-                .speed(1.0)
-                .range(5.0..=200.0)
-                .suffix(" Hz"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("min input"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.step.min_input)
-                .speed(5.0)
-                .range(0.0..=1000.0)
-                .suffix(" °/s"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("high input"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.step.high_input)
-                .speed(10.0)
-                .range(50.0..=2000.0)
-                .suffix(" °/s"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("smooth"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.step.smooth_ms)
-                .speed(1.0)
-                .range(0.0..=60.0)
-                .suffix(" ms"),
-        )
-        .labelled_by(l.id);
-        ui.checkbox(&mut app.tools.step.y_offset, tr("Y-offset"))
-            .on_hover_text(tr(
-                "normalise every window on its settled tail before averaging",
-            ));
-    });
-    let params = app.tools.step.clone();
-    let targets = app.tools.recommend.targets;
-    // every axis of every visible slot: the table judges all three, the plot
-    // draws the active one
-    let mut rows: Vec<(Axis, SlotResult)> = Vec::new();
-    for slot in app.visible_slots() {
-        for axis in Axis::ALL {
-            let p = StepParams {
-                axis,
-                ..params.clone()
-            };
-            rows.push((axis, (slot, app.result(slot, Kind::Step(p)))));
-        }
-    }
-    app.step_view.rows.clear();
-    let mut switch_to: Option<Axis> = None;
-    egui::Grid::new("step-verdicts")
-        .striped(true)
-        .show(ui, |ui| {
-            ui.label("");
-            for h in STEP_COLUMNS {
-                ui.label(RichText::new(tr(h)).strong());
-            }
-            ui.end_row();
-            for (axis, (slot, result)) in &rows {
-                let active = *axis == app.tools.axis;
-                let name = format!("{} {}", slot.name(), axis.name());
-                if ui
-                    .selectable_label(
-                        active,
-                        RichText::new(name).color(slot_color(*slot)).strong(),
-                    )
-                    .on_hover_text(tr("click: show this axis on the plot"))
-                    .clicked()
-                {
-                    switch_to = Some(*axis);
-                }
-                match result {
-                    Some(Ok(o)) => {
-                        if let Output::Step(st) = o.as_ref() {
-                            let v = verdicts(&st.metrics, st.windows_used, &targets);
-                            for vd in &v {
-                                ui.label(
-                                    RichText::new(format!("{} {}", vd.value, vd.level.marker()))
-                                        .color(verdict_color(vd.level)),
-                                )
-                                .on_hover_text(&vd.note);
-                            }
-                            app.step_view.rows.push((*slot, *axis, v));
-                        }
-                    }
-                    Some(Err(e)) => {
-                        ui.label(
-                            RichText::new(format!("{}: {e}", slot.name()))
-                                .color(Color32::LIGHT_RED),
-                        );
-                    }
-                    None => {
-                        ui.spinner();
-                    }
-                }
-                ui.end_row();
-            }
-        });
-    if let Some(axis) = switch_to {
-        app.tools.axis = axis;
-        app.tools.step.axis = axis;
-    }
-    let axis = app.tools.axis;
-    // the Advice line: a PID proposal on this axis, when the recommender has one
-    app.step_view.advice = None;
-    if let Some(slot) = app.visible_slots().first().copied() {
-        let rp = app.tools.recommend.clone();
-        if let Some(Ok(o)) = app.result(slot, Kind::Recommend(rp))
-            && let Output::Recommend(r) = o.as_ref()
-        {
-            let prefix = format!("pid.{}.", axis.name());
-            if let Some(p) = r.proposals.iter().find(|p| p.path.starts_with(&prefix)) {
-                let term = p.path.rsplit('.').next().unwrap_or("").to_uppercase();
-                app.step_view.advice = Some(format!(
-                    "{}: {} {} {} {} -> {} ({})",
-                    tr("Advice"),
-                    slot.name(),
-                    axis.name(),
-                    term,
-                    p.from.as_deref().unwrap_or("?"),
-                    p.to,
-                    p.rationale
-                ));
-            }
-        }
-    }
-    if let Some(line) = app.step_view.advice.clone() {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new(line).color(ACCENT));
-            if ui.button(tr("Go to Advice")).clicked() {
-                app.tab = crate::app::Tab::Advice;
-            }
-        });
-    }
-    let outputs: Vec<(Slot, Arc<Output>)> = rows
-        .into_iter()
-        .filter(|(a, _)| *a == axis)
-        .filter_map(|(_, (s, r))| match r {
-            Some(Ok(o)) => Some((s, o)),
-            _ => None,
-        })
-        .collect();
-    // the target band: 1 ± tol from the settling target to the end of the response
-    let end_ms = params.response_s * 1000.0;
-    let band = (
-        targets.settling_ms_max.min(end_ms),
-        1.0 - targets.final_tol,
-        1.0 + targets.final_tol,
-    );
-    app.step_view.band = Some(band);
-    let warn_line = 1.0 + targets.overshoot_warn_pct / 100.0;
-    let fail_line = 1.0 + targets.overshoot_fail_pct / 100.0;
-    let h = ui.available_height();
-    Plot::new("step")
-        .legend(Legend::default())
-        .x_axis_label("time (ms)")
-        .y_axis_label("response")
-        .height(h)
-        .include_y(0.0)
-        .include_y(1.5)
-        .show(ui, |pu| {
-            pu.polygon(
-                egui_plot::Polygon::new(
-                    tr("target band"),
-                    PlotPoints::from(vec![
-                        [band.0, band.1],
-                        [end_ms, band.1],
-                        [end_ms, band.2],
-                        [band.0, band.2],
-                    ]),
-                )
-                .fill_color(Color32::from_rgba_unmultiplied(0, 158, 115, 30))
-                .stroke(egui::Stroke::NONE),
-            );
-            pu.hline(
-                HLine::new("1.0", 1.0)
-                    .color(MUTED)
-                    .style(LineStyle::dashed_dense()),
-            );
-            pu.hline(
-                HLine::new(
-                    format!(
-                        "{} {:.0} %",
-                        tr("overshoot warn"),
-                        targets.overshoot_warn_pct
-                    ),
-                    warn_line,
-                )
-                .color(verdict_color(VerdictLevel::Warn))
-                .style(LineStyle::dashed_loose()),
-            );
-            pu.hline(
-                HLine::new(
-                    format!(
-                        "{} {:.0} %",
-                        tr("overshoot fail"),
-                        targets.overshoot_fail_pct
-                    ),
-                    fail_line,
-                )
-                .color(verdict_color(VerdictLevel::Fail))
-                .style(LineStyle::dashed_loose()),
-            );
-            for (slot, o) in &outputs {
-                let Output::Step(s) = o.as_ref() else {
-                    continue;
-                };
-                if Some(*slot) == outputs.first().map(|(s, _)| *s)
-                    && let Some(hm) = grid_heatmap("A responses", &s.histogram, 0.0, f64::MIN)
-                {
-                    pu.heatmap(hm);
-                }
-                let pts = |v: &[f64]| {
-                    PlotPoints::from(
-                        s.time_ms
-                            .iter()
-                            .zip(v)
-                            .map(|(t, y)| [*t, *y])
-                            .collect::<Vec<_>>(),
-                    )
-                };
-                pu.line(
-                    Line::new(format!("{} mean", slot.name()), pts(&s.mean))
-                        .color(slot_color(*slot))
-                        .width(2.5),
-                );
-                if let Some(l) = &s.low {
-                    pu.line(
-                        Line::new(format!("{} low input", slot.name()), pts(l))
-                            .color(slot_color(*slot))
-                            .width(1.0)
-                            .style(LineStyle::dotted_dense()),
-                    );
-                }
-                if let Some(hi) = &s.high {
-                    pu.line(
-                        Line::new(format!("{} high input", slot.name()), pts(hi))
-                            .color(slot_color(*slot))
-                            .width(1.0)
-                            .style(LineStyle::dashed_dense()),
-                    );
-                }
-            }
-        });
-}
-
 /// Columns of the Step tab verdict table, in `verdicts()` order.
-const STEP_COLUMNS: [&str; 7] = [
+pub(crate) const STEP_COLUMNS: [&str; 7] = [
     "windows",
     "rise",
     "delay",
@@ -1466,7 +1209,7 @@ pub struct StepViewState {
 }
 
 /// Colour of a verdict level (Okabe–Ito green / yellow / vermilion, grey).
-fn verdict_color(level: VerdictLevel) -> Color32 {
+pub(crate) fn verdict_color(level: VerdictLevel) -> Color32 {
     match level {
         VerdictLevel::Ok => Color32::from_rgb(0, 158, 115),
         VerdictLevel::Warn => Color32::from_rgb(240, 228, 66),

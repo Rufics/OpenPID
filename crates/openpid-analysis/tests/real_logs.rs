@@ -21,7 +21,7 @@ fn load(name: &str) -> openpid_core::LogFile {
 }
 
 /// 4.2.0 has only gentle stick inputs (48 windows above 20 deg/s, none above
-/// the default 80): the default gives "not enough data", as `PIDtoolbox` does,
+/// the default 80): the default gives "not enough data", as the reference tool does,
 /// and a lower threshold still yields a plausible response.
 const GENTLE: f64 = 20.0;
 
@@ -484,13 +484,14 @@ fn auto_epoch_of_the_real_logs() {
     assert_eq!(most_active(short, ACTIVE_WINDOW_S), None);
 }
 
-/// The default window selection reproduces `PIDtoolbox` Pro 0.9 on the same
+/// The default window selection reproduces the reference tool on the same
 /// logs (owner's screenshots, #33): window counts of the same order, the same
 /// time to 50 %, peaks within a few hundredths, and "insufficient data" where
-/// PTB has it. PTB analyses the log without its first and last second.
+/// the reference has it. The reference analyses the log without its first and
+/// last second (`docs/DESIGN.md` §6.2).
 #[test]
-fn step_response_matches_pidtoolbox() {
-    // (log, session, axis, PTB windows, PTB peak, PTB latency ms) or None = insufficient data
+fn step_response_matches_the_reference_tool() {
+    // (log, session, axis, reference windows, peak, latency ms) or None = insufficient data
     type Case = (&'static str, usize, Axis, Option<(usize, f64, f64)>);
     let cases: [Case; 6] = [
         (
@@ -520,7 +521,7 @@ fn step_response_matches_pidtoolbox() {
             Some((32, 0.87, 11.7)),
         ),
     ];
-    for (name, session, axis, ptb) in cases {
+    for (name, session, axis, reference) in cases {
         let log = load(name);
         let s = &log.sessions[session];
         let t = &s.timebase.time_us;
@@ -539,10 +540,10 @@ fn step_response_matches_pidtoolbox() {
                 ..Default::default()
             },
         );
-        let Some((n, peak, latency)) = ptb else {
+        let Some((n, peak, latency)) = reference else {
             assert!(
                 matches!(out, Err(AnalysisError::NotEnoughData(_))),
-                "{name} {axis:?}: PTB has insufficient data, we have {:?}",
+                "{name} {axis:?}: the reference has insufficient data, we have {:?}",
                 out.map(|o| o.windows_used)
             );
             continue;
@@ -553,16 +554,16 @@ fn step_response_matches_pidtoolbox() {
         let ours_latency = out.time_ms[half];
         assert!(
             out.windows_used * 2 >= n && out.windows_used <= n * 2,
-            "{name} {axis:?}: {} windows, PTB {n}",
+            "{name} {axis:?}: {} windows, reference {n}",
             out.windows_used
         );
         assert!(
             (ours_peak - peak).abs() <= 0.08,
-            "{name} {axis:?}: peak {ours_peak:.2}, PTB {peak}"
+            "{name} {axis:?}: peak {ours_peak:.2}, reference {peak}"
         );
         assert!(
             (ours_latency - latency).abs() <= 2.0,
-            "{name} {axis:?}: 50 % at {ours_latency} ms, PTB {latency}"
+            "{name} {axis:?}: 50 % at {ours_latency} ms, reference {latency}"
         );
         assert!(
             (out.mean[out.mean.len() - 1] - 1.0).abs() < 0.25,
