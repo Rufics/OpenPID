@@ -48,6 +48,18 @@ Rules shared by every topic of the sprint:
   tests of the pure logic in `openpid-analysis`/`openpid-core`; coverage stays ≥ 90 %.
 - **Documentation**: the USER-GUIDE and the screenshots (`tools/screenshots.sh`)
   are updated in the same PR.
+- **Control panels** (owner's rule, 2026-11-09, every tab's right-hand panel):
+  - one row per field: the **label on the left, the value right-aligned** in one
+    column (combo boxes `panel::VALUE_W` wide, numbers at the right edge);
+  - **sections** with a small upper-case muted title (DISPLAY, ANALYSIS…);
+  - labels in sentence case ("Cut-off", "Min input"); option values without
+    repeating the label ("medium", not "smoothing medium");
+  - **every field explains itself on hover**, over the label and over the value:
+    what it changes and, where it matters, the default and the trade-off;
+  - built only with `crates/openpid-app/src/panel.rs` (`section`, `row`, `drag`,
+    `choice`, `check`, `optional`), whose functions take the hint as a
+    parameter, so a field without one does not compile. Test:
+    `panel_rows_put_values_in_one_column_and_explain_on_hover`.
 
 ## Interface rework ([#33](https://github.com/Rufics/OpenPID/issues/33), PR [#143](https://github.com/Rufics/OpenPID/pull/143))
 

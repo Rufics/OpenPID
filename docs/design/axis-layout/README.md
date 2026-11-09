@@ -59,6 +59,9 @@ R4, for every analysis tab.
 - `views::axis_rows(ui, n)`: splits the remaining height into roll / pitch / yaw
   rows (plus an optional fourth row for throttle / motors), each with its axis
   name on the left; the plots of one tab share a linked x axis and cursor.
+- The panel follows the **control panel rules** of [the design README](../README.md)
+  (label left, value right-aligned, sections, a hint on every field;
+  `panel.rs`).
 - Every new label through `tr(…)` with a Ukrainian translation; accessible names
   on every widget; parameters in `Tools`/`Project` with `#[serde(default)]`.
 

@@ -4,6 +4,7 @@
 
 use crate::app::App;
 use crate::i18n::tr;
+use crate::panel;
 use crate::shortcuts::{self, Action};
 use crate::views::{grid_heatmap, show_error, slot_color, verdict_color};
 use crate::worker::{Kind, Output, Slot};
@@ -90,27 +91,6 @@ pub fn row_height(ui: &Ui, n: usize, extra: f32) -> f32 {
     ((ui.available_height() - gap * (n - 1.0)) / n - extra).max(60.0)
 }
 
-/// A labelled `DragValue` row of the panel.
-fn drag(
-    ui: &mut Ui,
-    label: &'static str,
-    value: &mut f64,
-    speed: f64,
-    range: std::ops::RangeInclusive<f64>,
-    suffix: &str,
-) {
-    ui.horizontal(|ui| {
-        let l = ui.label(tr(label));
-        ui.add(
-            egui::DragValue::new(value)
-                .speed(speed)
-                .range(range)
-                .suffix(suffix),
-        )
-        .labelled_by(l.id);
-    });
-}
-
 // ------------------------------------------------------------------- step
 
 /// What the Latency plot of the Step tab shows.
@@ -152,99 +132,107 @@ impl Default for StepDisplay {
 
 /// Smoothing levels, as the width of the moving average (ms).
 const SMOOTHING: [(&str, f64); 4] = [
-    ("smoothing off", 0.0),
-    ("smoothing low", 10.0),
-    ("smoothing medium", 20.0),
-    ("smoothing high", 40.0),
+    ("off", 0.0),
+    ("low", 10.0),
+    ("medium", 20.0),
+    ("high", 40.0),
 ];
 
 fn step_controls(app: &mut App, ui: &mut Ui) {
-    ui.label(RichText::new(tr("Display")).strong());
-    let current = SMOOTHING
+    panel::section(ui, tr("Display"));
+    let smoothing: Vec<(f64, String)> = SMOOTHING
         .iter()
-        .find(|(_, ms)| (*ms - app.tools.step.smooth_ms).abs() < 1e-9)
-        .map_or_else(
-            || format!("{} {:.0} ms", tr("smoothing"), app.tools.step.smooth_ms),
-            |(name, _)| tr(name).to_string(),
-        );
-    let l = ui.label(tr("smoothing"));
-    egui::ComboBox::from_id_salt("step-smoothing")
-        .selected_text(current)
-        .show_ui(ui, |ui| {
-            for (name, ms) in SMOOTHING {
-                ui.selectable_value(&mut app.tools.step.smooth_ms, ms, tr(name));
-            }
-        })
-        .response
-        .labelled_by(l.id);
-    let l = ui.label(tr("latency"));
-    egui::ComboBox::from_id_salt("step-latency")
-        .selected_text(match app.tools.step_display.latency {
-            LatencyShown::HalfRise => tr("SR latency (50 %)"),
-            LatencyShown::Xcorr => tr("SP-gyro delay (xcorr)"),
-        })
-        .show_ui(ui, |ui| {
-            ui.selectable_value(
-                &mut app.tools.step_display.latency,
-                LatencyShown::HalfRise,
-                tr("SR latency (50 %)"),
-            );
-            ui.selectable_value(
-                &mut app.tools.step_display.latency,
-                LatencyShown::Xcorr,
-                tr("SP-gyro delay (xcorr)"),
-            );
-        })
-        .response
-        .labelled_by(l.id);
-    drag(
+        .map(|(name, ms)| (*ms, tr(name).to_string()))
+        .collect();
+    panel::choice(
         ui,
-        "Y max",
+        "step-smoothing",
+        tr("Smoothing"),
+        tr(
+            "a moving average over the mean response: off, 10, 20 or 40 ms; more smoothing hides noise, and a little of the overshoot",
+        ),
+        &mut app.tools.step.smooth_ms,
+        &smoothing,
+    );
+    panel::choice(
+        ui,
+        "step-latency",
+        tr("Latency"),
+        tr(
+            "what the Latency plots show: the time the mean response takes to reach 50 % (SR latency), or the delay from setpoint to gyro by cross-correlation",
+        ),
+        &mut app.tools.step_display.latency,
+        &[
+            (LatencyShown::HalfRise, tr("SR latency (50 %)").to_string()),
+            (LatencyShown::Xcorr, tr("SP-gyro delay (xcorr)").to_string()),
+        ],
+    );
+    panel::drag(
+        ui,
+        tr("Y max"),
+        tr("upper end of the response axis; 1 is the setpoint"),
         &mut app.tools.step_display.y_max,
         0.05,
         1.1..=5.0,
         "",
     );
-    ui.checkbox(&mut app.tools.step.y_offset, tr("Y corr."))
-        .on_hover_text(tr(
-            "normalise every window on its settled tail before averaging",
-        ));
-    ui.checkbox(&mut app.tools.step_display.raw, tr("Raw"))
-        .on_hover_text(tr("the individual responses behind the mean, as a density"));
-    ui.checkbox(&mut app.tools.step_display.expand, tr("Expand"))
-        .on_hover_text(tr("one axis at full height"));
+    panel::check(
+        ui,
+        &mut app.tools.step.y_offset,
+        tr("Y correction"),
+        tr("normalise every window on its settled tail before averaging"),
+    );
+    panel::check(
+        ui,
+        &mut app.tools.step_display.raw,
+        tr("Raw responses"),
+        tr("the individual responses behind the mean, as a density"),
+    );
+    panel::check(
+        ui,
+        &mut app.tools.step_display.expand,
+        tr("Expand one axis"),
+        tr("one axis at full height"),
+    );
     if app.tools.step_display.expand {
         crate::views::axis_selector(ui, &mut app.tools.axis);
     }
-    ui.separator();
-    ui.label(RichText::new(tr("Analysis")).strong());
-    drag(
+    panel::section(ui, tr("Analysis"));
+    panel::drag(
         ui,
-        "window",
+        tr("Window"),
+        tr(
+            "length of each piece of the log the response is computed on; longer windows see slow settling, shorter ones give more windows",
+        ),
         &mut app.tools.step.window_s,
         0.1,
         0.5..=10.0,
         " s",
     );
-    drag(
+    panel::drag(
         ui,
-        "cutoff",
+        tr("Cut-off"),
+        tr("low-pass on setpoint and gyro before the deconvolution: noise above it is ignored"),
         &mut app.tools.step.cutoff_hz,
         1.0,
         5.0..=200.0,
         " Hz",
     );
-    drag(
+    panel::drag(
         ui,
-        "min input",
+        tr("Min input"),
+        tr(
+            "windows whose stick input stays below this rate are skipped: too small a step to judge",
+        ),
         &mut app.tools.step.min_input,
         5.0,
         0.0..=1000.0,
         " °/s",
     );
-    drag(
+    panel::drag(
         ui,
-        "high input",
+        tr("High input"),
+        tr("windows above this rate form the \"high input\" group, drawn apart from the low one"),
         &mut app.tools.step.high_input,
         10.0,
         50.0..=2000.0,

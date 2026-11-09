@@ -126,15 +126,20 @@ dropped, the rest are averaged with the input amplitude as the weight,
 separately for **low** (< `high input`) and **high** inputs. The histogram
 below shows the spread of the individual windows.
 
-| Parameter | What it does | Default |
+The control panel on the right (hover any field for its explanation):
+
+| Field | What it does | Default |
 |---|---|---|
-| Axis | roll / pitch / yaw | roll |
-| window | window length, s | 2 |
-| cutoff | deconvolution cut-off, Hz (higher = more noise) | 25 |
-| min input | minimum setpoint peak in a window, °/s | 20 |
-| high input | boundary between the low and high groups, °/s | 500 |
-| smooth | moving average over the curve, ms (0 = none) | 0 |
-| Y-offset | normalise every window on its settled tail | off |
+| Smoothing | moving average over the mean response: off / low / medium / high (0 / 10 / 20 / 40 ms) | off |
+| Latency | what the Latency plots show: SR latency (time to 50 %) or SP-gyro delay (xcorr) | SR latency |
+| Y max | upper end of the response axis | 1.5 |
+| Y correction | normalise every window on its settled tail | off |
+| Raw responses | the individual windows behind the mean, as a density | off |
+| Expand one axis | one axis at full height | off |
+| Window | window length, s | 2 |
+| Cut-off | deconvolution cut-off, Hz (higher = more noise) | 25 |
+| Min input | minimum setpoint peak in a window, °/s | 80 |
+| High input | boundary between the low and high groups, °/s | 500 |
 
 The metrics: `rise` 10–90 %, `delay (50 %)` the first crossing of half the
 settled value, `latency (xcorr)` the lag of the setpoint ↔ gyro
@@ -158,24 +163,24 @@ gyro the unfiltered gyro (prefilt) is dotted beside the filtered one: the gap
 between them is the work of the filters, what is left in the solid line reaches
 the PIDs. The x axes of a column move together; a double click resets them.
 
-The control panel on the right:
+The control panel on the right (hover any field for its explanation):
 
-- **channel**: Gyro (default), D-term, P-term, PID sum, PID error, Setpoint;
-  **prefilt (dotted)** (on by default; the gyro only).
-- **smoothing**: off / low / low-med / **medium** (default) / med-high / high,
+- **Channel**: Gyro (default), D-term, P-term, PID sum, PID error, Setpoint;
+  **Prefilt (dotted)** (on by default; the gyro only).
+- **Smoothing**: off / low / low-med / **medium** (default) / med-high / high,
   a moving average of the power over 0 / 2 / 4 / 8 / 16 / 32 Hz.
-- **dB**, **log frequency** (a logarithmic axis on the full spectrum),
+- **dB**, **Log frequency** (a logarithmic axis on the full spectrum),
   **Y min** / **Y max**: automatic by default (the drawn data above 2 Hz, the
   same for every plot so the rows compare); click **auto** to fix an end, the
   small **auto** next to a value returns to automatic.
-- **peaks** / **prominence**: automatic markers on the N most prominent peaks
-  from 20 Hz up (below is the flying, not noise) on each solid line; the panel
-  lists each log's top peak per axis ("A top peak: R 156 Hz · P 460 Hz").
+- **Peaks: Count / Prominence**: automatic markers on the N most prominent
+  peaks from 20 Hz up (below is the flying, not noise) on each solid line; the
+  panel lists each log's top peak per axis ("A top peak: R 156 Hz · P 460 Hz").
 - A click on any plot places a manual marker (snapped to the nearest bin); the
   panel lists the markers and the Δ between the last two, **Clear markers**
   removes them. Manual markers are mirrored as horizontal lines on both
   heatmaps, handy for matching a spectrum peak with a motor harmonic.
-- **segment**: the segment length of the full spectrum (longer = finer
+- **Segment**: the segment length of the full spectrum (longer = finer
   frequency grid, less averaging).
 
 ## 5. Freq × throttle
@@ -436,7 +441,7 @@ the table is updated with it.
 |---|---|
 | "no unfiltered gyro in this log" | Enable `gyroUnfilt` in the blackbox fields (BF 4.5+) or `debug_mode = GYRO_SCALED`; on ArduPilot `INS_LOG_BAT_MASK`. |
 | No RPM overlay | The log has no eRPM (DShot telemetry off). The speed can be estimated (`run rpm`). |
-| Step response: "none of N windows had stick input" | The epoch has no manoeuvres, or `min input` is too high; pick a span with stick movement. |
+| Step response: "none of N windows had stick input" | The epoch has no manoeuvres, or `Min input` is too high; pick a span with stick movement. |
 | Freq × throttle almost empty | A short flight or a narrow throttle range: look at the segments-per-bin strip. |
 | The log opened with "corrupt frames" in Diagnostics | Corrupt frames are skipped; many of them point at the card or the log rate (see docs/BLACKBOX-VERSIONS.md). |
 | ArduPilot: a stair-stepped setpoint | `RATE`/`PIDR` are written at 10 Hz; enable `ATTITUDE_FAST` and `PID` in `LOG_BITMASK`. |

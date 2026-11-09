@@ -8,6 +8,7 @@ mod axis_layout;
 mod colormap;
 mod export;
 mod i18n;
+mod panel;
 mod prefs;
 mod shortcuts;
 mod spectrum_tab;

@@ -8,6 +8,7 @@ use crate::app::App;
 use crate::axis_layout::{control_panel, row_height};
 use crate::colormap::ACCENT;
 use crate::i18n::tr;
+use crate::panel;
 use crate::views::{hz, nearest_bin, show_error, slot_color};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
@@ -656,59 +657,86 @@ fn column_plot(ui: &mut Ui, c: ColumnPlot<'_>) -> Drawn {
 
 /// The panel of the Spectrum tab.
 fn controls(app: &mut App, ui: &mut Ui) {
-    ui.label(RichText::new(tr("Data")).strong());
-    let l = ui.label(tr("channel"));
+    panel::section(ui, tr("Data"));
     let mut q = Quantity::of(&app.tools.spectrum_channel);
-    egui::ComboBox::from_id_salt("spectrum-quantity")
-        .selected_text(q.name())
-        .show_ui(ui, |ui| {
-            for v in Quantity::ALL {
-                ui.selectable_value(&mut q, v, v.name());
-            }
-        })
-        .response
-        .labelled_by(l.id);
+    let quantities: Vec<(Quantity, String)> = Quantity::ALL
+        .iter()
+        .map(|v| (*v, v.name().to_string()))
+        .collect();
+    panel::choice(
+        ui,
+        "spectrum-quantity",
+        tr("Channel"),
+        tr("what the rows show, on roll, pitch and yaw"),
+        &mut q,
+        &quantities,
+    );
     app.tools.spectrum_channel = q.channel(Axis::Roll);
     let d = &mut app.tools.spectrum_display;
-    ui.add_enabled(
+    panel::check_enabled(
+        ui,
         q.prefilt(Axis::Roll).is_some(),
-        egui::Checkbox::new(&mut d.prefilt, tr("prefilt (dotted)")),
-    )
-    .on_hover_text(tr("the unfiltered gyro beside the filtered one"));
-    let l = ui.label(tr("smoothing"));
-    egui::ComboBox::from_id_salt("spectrum-smoothing")
-        .selected_text(tr(SMOOTHING[d.smoothing.min(SMOOTHING.len() - 1)].0))
-        .show_ui(ui, |ui| {
-            for (i, (name, w)) in SMOOTHING.iter().enumerate() {
-                ui.selectable_value(&mut d.smoothing, i, format!("{} ({w:.0} Hz)", tr(name)));
-            }
-        })
-        .response
-        .labelled_by(l.id);
-    ui.separator();
-    ui.label(RichText::new(tr("Scale")).strong());
-    ui.checkbox(&mut app.tools.psd_db, "dB");
-    ui.checkbox(&mut d.log_freq, tr("log frequency"))
-        .on_hover_text(tr("a logarithmic frequency axis on the full spectrum"));
-    optional_bound(ui, "Y min", &mut d.y_min);
-    optional_bound(ui, "Y max", &mut d.y_max);
-    ui.separator();
-    ui.label(RichText::new(tr("Peaks")).strong());
-    ui.horizontal(|ui| {
-        let l = ui.label(tr("peaks"));
-        ui.add(egui::DragValue::new(&mut app.spectrum.auto_peaks).range(0..=10))
-            .labelled_by(l.id);
-    });
-    ui.horizontal(|ui| {
-        let l = ui.label(tr("prominence"));
-        ui.add(
-            egui::DragValue::new(&mut app.spectrum.min_prominence_db)
-                .speed(0.5)
-                .range(0.0..=60.0)
-                .suffix(" dB"),
-        )
-        .labelled_by(l.id);
-    });
+        &mut d.prefilt,
+        tr("Prefilt (dotted)"),
+        tr("the unfiltered gyro beside the filtered one; the gyro only"),
+    );
+    let smoothing: Vec<(usize, String)> = SMOOTHING
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _))| (i, tr(name).to_string()))
+        .collect();
+    panel::choice(
+        ui,
+        "spectrum-smoothing",
+        tr("Smoothing"),
+        tr("a moving average of the power over 0, 2, 4, 8, 16 or 32 Hz; medium (8 Hz) by default"),
+        &mut d.smoothing,
+        &smoothing,
+    );
+    panel::section(ui, tr("Scale"));
+    panel::check(
+        ui,
+        &mut app.tools.psd_db,
+        "dB",
+        tr("power in decibels (10·log10) instead of unit²/Hz"),
+    );
+    panel::check(
+        ui,
+        &mut d.log_freq,
+        tr("Log frequency"),
+        tr("a logarithmic frequency axis on the full spectrum"),
+    );
+    panel::optional(
+        ui,
+        tr("Y min"),
+        tr("lower end of the power axis; auto follows the drawn data"),
+        &mut d.y_min,
+        -50.0,
+    );
+    panel::optional(
+        ui,
+        tr("Y max"),
+        tr("upper end of the power axis; auto follows the drawn data"),
+        &mut d.y_max,
+        20.0,
+    );
+    panel::section(ui, tr("Peaks"));
+    panel::drag_usize(
+        ui,
+        tr("Count"),
+        tr("how many automatic peaks to mark on each solid line, from 20 Hz up; 0 = none"),
+        &mut app.spectrum.auto_peaks,
+        0..=10,
+    );
+    panel::drag(
+        ui,
+        tr("Prominence"),
+        tr("how far a peak must stand above its surroundings to be marked"),
+        &mut app.spectrum.min_prominence_db,
+        0.5,
+        0.0..=60.0,
+        " dB",
+    );
     for line in readout(&app.spectrum.markers, &app.spectrum.peaks) {
         ui.add(egui::Label::new(RichText::new(line).small()).wrap());
     }
@@ -720,47 +748,18 @@ fn controls(app: &mut App, ui: &mut Ui) {
             .small()
             .color(crate::colormap::MUTED),
     );
-    ui.separator();
-    ui.label(RichText::new(tr("Analysis")).strong());
-    ui.horizontal(|ui| {
-        let l = ui.label(tr("segment"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.psd.segment_s)
-                .speed(0.01)
-                .range(0.02..=2.0)
-                .suffix(" s"),
-        )
-        .labelled_by(l.id);
-    });
-}
-
-/// A power-axis end: "auto" until a value is set; the button clears it.
-fn optional_bound(ui: &mut Ui, label: &'static str, value: &mut Option<f64>) {
-    ui.horizontal(|ui| {
-        let l = ui.label(tr(label));
-        match value {
-            Some(v) => {
-                ui.add(egui::DragValue::new(v).speed(1.0)).labelled_by(l.id);
-                if ui
-                    .small_button(tr("auto"))
-                    .on_hover_text(tr("back to the automatic range"))
-                    .clicked()
-                {
-                    *value = None;
-                }
-            }
-            None => {
-                if ui
-                    .button(tr("auto"))
-                    .on_hover_text(tr("click to fix this end"))
-                    .labelled_by(l.id)
-                    .clicked()
-                {
-                    *value = Some(if label == "Y min" { -50.0 } else { 20.0 });
-                }
-            }
-        }
-    });
+    panel::section(ui, tr("Analysis"));
+    panel::drag(
+        ui,
+        tr("Segment"),
+        tr(
+            "length of each averaged piece of the full spectrum: longer gives finer frequency steps and less averaging",
+        ),
+        &mut app.tools.psd.segment_s,
+        0.01,
+        0.02..=2.0,
+        " s",
+    );
 }
 
 /// The marker list (with the delta of the last two) and each log's top peak

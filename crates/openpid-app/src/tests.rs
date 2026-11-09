@@ -538,7 +538,7 @@ fn spectrum_and_heatmap_controls_change_parameters() {
     h.get_by_role_and_label(Role::CheckBox, "dB").click();
     h.step();
     // prefilt off: half the jobs are drawn
-    h.get_by_role_and_label(Role::CheckBox, "prefilt (dotted)")
+    h.get_by_role_and_label(Role::CheckBox, "Prefilt (dotted)")
         .click();
     h.run_steps(2);
     assert!(!app(&h).tools.spectrum_display.prefilt);
@@ -2751,10 +2751,10 @@ fn step_tab_stacks_the_axes_and_the_panel_collapses() {
     }
     assert!(!app(&h).tools.step_display.raw, "Raw off by default");
     // Raw draws every window under the mean, in the slot's colour ramp
-    h.get_by_label("Raw").click();
+    h.get_by_label("Raw responses").click();
     h.run_steps(2);
     assert!(app(&h).tools.step_display.raw);
-    h.get_by_label("Raw").click();
+    h.get_by_label("Raw responses").click();
     h.run_steps(2);
     // collapse with the button: a strip with the reopen button stays inside the window
     h.get_by_label("Hide the control panel").click();
@@ -2809,4 +2809,47 @@ fn the_shell_keeps_its_height_as_logs_are_added() {
     h.run_steps(2);
     assert_eq!(app(&h).dock_slot(), Some(Slot::A));
     assert_eq!(app(&h).central_rect, one);
+}
+
+#[test]
+fn panel_rows_put_values_in_one_column_and_explain_on_hover() {
+    // docs/design/axis-layout, "Control panel rules": the label on the left,
+    // the value right-aligned in one column, a hint on every field
+    let mut h = harness(vec![LOG_2025.into()], Some(Tab::Step));
+    run_until(&mut h, idle);
+    h.ctx.all_styles_mut(|s| s.interaction.tooltip_delay = 0.0);
+    h.run_steps(2);
+    let fields = ["Y max", "Window", "Cut-off", "Min input", "High input"];
+    let rights: Vec<f32> = fields
+        .iter()
+        .map(|f| h.get_by_role_and_label(Role::SpinButton, f).rect().right())
+        .collect();
+    for (f, r) in fields.iter().zip(&rights) {
+        assert!((r - rights[0]).abs() <= 1.0, "{f}: {r} vs {}", rights[0]);
+        let label = h.get_by_role_and_label(Role::Label, f).rect();
+        assert!(label.right() < *r - 40.0, "{f}: label left, value right");
+    }
+    let combo = h.get_by_role_and_label(Role::ComboBox, "Smoothing").rect();
+    assert!(
+        (combo.right() - rights[0]).abs() <= 1.0,
+        "combos share the column"
+    );
+    // a hint on hover over the label and over the value
+    h.get_by_role_and_label(Role::Label, "Cut-off").hover();
+    h.run_steps(3);
+    assert!(has_label_containing(&h, "low-pass on setpoint and gyro"));
+    h.get_by_role_and_label(Role::SpinButton, "Min input")
+        .hover();
+    h.run_steps(3);
+    assert!(has_label_containing(&h, "too small a step to judge"));
+    // the same rows on the Spectrum tab
+    select_tab(&mut h, Tab::Spectrum);
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    let seg = h.get_by_role_and_label(Role::SpinButton, "Segment").rect();
+    let ch = h.get_by_role_and_label(Role::ComboBox, "Channel").rect();
+    assert!((seg.right() - ch.right()).abs() <= 1.0);
+    h.get_by_role_and_label(Role::Label, "Prominence").hover();
+    h.run_steps(3);
+    assert!(has_label_containing(&h, "stand above its surroundings"));
 }
