@@ -173,6 +173,16 @@ pub struct DebugMode {
     pub name: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A setting in words: what it is and its value, as its firmware's profile
+/// reads it ("TPA", "65 % above 1350, on D").
+pub struct Detail {
+    /// The setting, in the firmware's own terms.
+    pub label: String,
+    /// Its value, with units.
+    pub value: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 /// Typed flight-controller settings; everything optional.
 pub struct Settings {
@@ -195,6 +205,19 @@ pub struct Settings {
     pub debug_mode: Option<DebugMode>,
     /// Craft name from the headers.
     pub craft_name: Option<String>,
+    /// The board the firmware was built for, as the log names it
+    /// ("HBRO KAKUTEF7").
+    #[serde(default)]
+    pub board: Option<String>,
+    /// When the log was started, as the firmware wrote it; `None` when the
+    /// flight controller had no clock.
+    #[serde(default)]
+    pub log_start: Option<String>,
+    /// Further settings the profile read and put in words, in the order
+    /// to show them: what a firmware has and the typed model has no field
+    /// for (rates, TPA, feedforward tuning, …).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub details: Vec<Detail>,
     /// Headers the profile did not interpret, verbatim.
     pub extra: BTreeMap<String, String>,
 }

@@ -50,13 +50,15 @@ Five layouts of one tab on the same data (A = 4.5.0, B = 4.5.1):
 - **The rows are pure logic in `openpid-core`** (`describe.rs`), from the
   typed model only, so they read the same for every firmware a profile
   exists for:
-  - `describe::setup(session)`: Firmware, Board, Firmware date, Craft name,
-    Gyro rate, PID loop rate, Logging rate, PID roll / pitch / yaw
+  - `describe::setup(session)`: Firmware, Target, Firmware date, Board,
+    Craft name, Log date, Gyro rate, PID loop rate, Logging rate, PID roll /
+    pitch / yaw
     ("P 45 · I 80 · D 30 · D max 40 · FF 120", at the firmware's gain step),
     the low-passes of the gyro and the D-term ("PT1 500 Hz", "biquad
     75–150 Hz by throttle", "off"), the static notches, the dynamic notch,
     the RPM filter, ESC protocol, Motors, Motor poles, Motor KV, Motor
-    output, Debug mode. A row the log does not say has no row.
+    output, Debug mode, and then the profile's own rows
+    (`Settings::details`, below). A row the log does not say has no row.
   - `describe::decoder(session)`: Profile, Samples, Sample step (median and
     gaps), Frames by kind, Corrupt frames, Desynchronised frames, Skipped
     bytes, Unmapped fields, a Note per decoder note.
@@ -64,6 +66,22 @@ Five layouts of one tab on the same data (A = 4.5.0, B = 4.5.1):
     matched by label (a repeated label by its turn), a row only a later log
     has placed where that log has it; `differs` when the logs do not all
     say the same, a missing row included.
+- **The tuning settings in words** (#140): the typed model has no field
+  for rates, TPA or feedforward tuning, and their header names and units
+  are a firmware's own, so the profile writes them as
+  `Settings::details`, a list of label and value in the order to show.
+  The Betaflight profile (4.0 and later; both the old and the 4.3 header
+  names) gives Rates (by rates type: Betaflight and Actual decoded, the
+  other types as logged and marked so), Rate limit, Throttle curve, TPA
+  (with its mode and the low-throttle part), I-term relax, I-term windup,
+  Anti-gravity, Throttle boost, Feedforward, Simplified tuning, Motor idle
+  (with dynamic idle) and Battery (cell limits, the voltage at arming, sag
+  compensation). INAV, Rotorflight and EmuFlight reuse some of those
+  header names with other units or meanings, so their profiles give none:
+  those settings stay under "All headers", searchable and compared.
+  `Settings::board` ("Board information") and `Settings::log_start` ("Log
+  start datetime", left out when the flight controller had no clock) are
+  typed fields of every Cleanflight-family log.
 - `setup_tab.rs`, four sections in one table:
   - **Log check**: the verdict (log ok / usable / unfit), then each check
     with its mark (tick, "!", cross; read out as "A rpm [!]") and its text;
@@ -90,7 +108,13 @@ Five layouts of one tab on the same data (A = 4.5.0, B = 4.5.1):
 
 ## Tests
 
-`setup_reads_the_typed_settings_in_plain_words`,
+`betaflight_4_5_settings_in_words`,
+`older_names_other_rate_types_and_what_a_log_lacks` and
+`settings_in_words_come_from_the_betaflight_profile_only`
+(`openpid-fmt-blackbox`: every row on 4.5 headers and their order; the 4.2
+names; a rate type shown as logged; TPA and the sliders off; nothing
+before 4.0; the fixtures of INAV, Rotorflight and EmuFlight have no such
+rows); `setup_reads_the_typed_settings_in_plain_words`,
 `decoder_rows_count_what_was_read_and_what_was_not`,
 `compare_matches_rows_by_label_and_marks_the_differences` (`openpid-core`);
 `setup_info_has_a_column_per_log_and_marks_what_differs` (4.5.0 beside
@@ -114,6 +138,10 @@ this tab, the badges on every tab).
 "Differences only":
 
 ![Differences only](differences.jpg)
+
+The Setup section scrolled to the tuning settings:
+
+![Tuning settings in words](tuning.jpg)
 
 Against the reference tool's Setup Info (its tutorial video): the headers
 side by side with the differing rows marked and "differences only" are the

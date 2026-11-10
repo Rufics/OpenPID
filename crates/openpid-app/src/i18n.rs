@@ -56,6 +56,17 @@ pub fn tr(en: &'static str) -> &'static str {
     }
 }
 
+/// [`tr`] for a text that is not a literal of the app: a label a firmware
+/// profile wrote. The English text when there is no entry.
+pub fn tr_text(en: &str) -> String {
+    match current() {
+        Lang::En => en.to_string(),
+        Lang::Ua => UA
+            .binary_search_by_key(&en, |(k, _)| k)
+            .map_or_else(|_| en.to_string(), |i| UA[i].1.to_string()),
+    }
+}
+
 /// English → Ukrainian, sorted by the English key (binary search).
 static UA: &[(&str, &str)] = &[
     ("1 change proposed", "запропоновано 1 зміну"),
@@ -75,11 +86,13 @@ static UA: &[(&str, &str)] = &[
     ("All headers", "Усі заголовки"),
     ("Analysis", "Аналіз"),
     ("Angular rate", "Кутова швидкість"),
+    ("Anti-gravity", "Anti-gravity"),
     ("Appearance", "Вигляд"),
     ("Auto", "Авто"),
     ("Axes", "Осі"),
     ("Axis", "Вісь"),
     ("Back", "Назад"),
+    ("Battery", "Батарея"),
     ("Blackbox Explorer", "Blackbox Explorer"),
     (
         "Blackbox Explorer's line colours and its black-red-white heatmaps",
@@ -153,6 +166,7 @@ static UA: &[(&str, &str)] = &[
     ("ESC protocol", "Протокол ESC"),
     ("Export", "Експорт"),
     ("F-term", "F-складова"),
+    ("Feedforward", "Feedforward"),
     ("Feedforward gain", "Підсилення feedforward"),
     ("Filter Sim", "Симуляція фільтрів"),
     ("Filter sliders", "Повзунки фільтрів"),
@@ -182,6 +196,8 @@ static UA: &[(&str, &str)] = &[
     ("High input", "Сильний вхід"),
     ("I gain", "Підсилення I"),
     ("I-term", "I-складова"),
+    ("I-term relax", "I-term relax"),
+    ("I-term windup", "I-term windup"),
     ("Keyboard shortcuts", "Гарячі клавіші"),
     ("LPF headroom", "запас над LPF"),
     ("Language", "Мова"),
@@ -190,6 +206,7 @@ static UA: &[(&str, &str)] = &[
     ("Link scales", "Спільна шкала"),
     ("Log", "Лог"),
     ("Log check", "Перевірка логу"),
+    ("Log date", "Дата логу"),
     ("Log frequency", "Лог. частота"),
     ("Log viewer", "Перегляд логу"),
     ("Logging rate", "Частота запису"),
@@ -210,6 +227,7 @@ static UA: &[(&str, &str)] = &[
     ("Most active 20 s", "Найактивніші 20 с"),
     ("Motor KV", "KV моторів"),
     ("Motor RPM", "Оберти моторів"),
+    ("Motor idle", "Холостий хід моторів"),
     ("Motor output", "Вихід на мотори"),
     ("Motor poles", "Полюси мотора"),
     ("Motors", "Мотори"),
@@ -287,6 +305,8 @@ static UA: &[(&str, &str)] = &[
     ("RPM overlay", "RPM-overlay"),
     ("Racing", "Гонки"),
     ("Range", "Діапазон"),
+    ("Rate limit", "Обмеження швидкості"),
+    ("Rates", "Rates"),
     ("Raw responses", "Сирі відгуки"),
     ("Recent files", "Нещодавні файли"),
     ("Reset first-run state", "Скинути стан першого запуску"),
@@ -323,6 +343,7 @@ static UA: &[(&str, &str)] = &[
         "Показувати тур при першому відкритому лозі",
     ),
     ("Show tour", "Показати тур"),
+    ("Simplified tuning", "Спрощене налаштування"),
     (
         "Single keys work while no text field has the keyboard; Cmd on macOS, Ctrl elsewhere.",
         "Одиночні клавіші працюють, коли фокус не в текстовому полі; Cmd на macOS, Ctrl на інших ОС.",
@@ -344,7 +365,9 @@ static UA: &[(&str, &str)] = &[
     ),
     ("Sticks", "Стіки"),
     ("THE FILTER CHAIN", "ЛАНЦЮЖОК ФІЛЬТРІВ"),
+    ("TPA", "TPA"),
     ("Tab", "Вкладка"),
+    ("Target", "Ціль збірки"),
     ("Targets", "Цілі"),
     ("Theme", "Тема"),
     (
@@ -356,6 +379,8 @@ static UA: &[(&str, &str)] = &[
         "Пороги вердиктів step response і правила перерегулювання в Порадах.",
     ),
     ("Throttle", "Газ"),
+    ("Throttle boost", "Throttle boost"),
+    ("Throttle curve", "Крива газу"),
     ("Throttle window ±", "Вікно газу ±"),
     ("To start", "На початок"),
     ("Touch mode", "Сенсорний режим"),

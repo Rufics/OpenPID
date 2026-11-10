@@ -9,19 +9,22 @@
 
 use crate::session::FlightSession;
 use crate::settings::{FilterChain, Lowpass, LowpassKind, PidGains, Settings};
+use std::borrow::Cow;
 
-/// One row: a fixed English label and the value in plain words.
+/// One row: an English label and the value in plain words.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fact {
-    /// What the row is; fixed text, so an interface can translate it.
-    pub label: &'static str,
+    /// What the row is: English text an interface can translate. The rows
+    /// of the typed model have fixed labels; a profile's
+    /// [`Detail`](crate::settings::Detail) brings its own.
+    pub label: Cow<'static, str>,
     /// The value, with its unit.
     pub value: String,
 }
 
 fn fact(label: &'static str, value: impl Into<String>) -> Fact {
     Fact {
-        label,
+        label: Cow::Borrowed(label),
         value: value.into(),
     }
 }
@@ -145,13 +148,19 @@ pub fn setup(s: &FlightSession) -> Vec<Fact> {
     let set = &s.settings;
     let mut out = vec![fact("Firmware", s.firmware.revision.clone())];
     if let Some(v) = &s.firmware.target {
-        out.push(fact("Board", v.clone()));
+        out.push(fact("Target", v.clone()));
     }
     if let Some(v) = &s.firmware.build_date {
         out.push(fact("Firmware date", v.clone()));
     }
+    if let Some(v) = &set.board {
+        out.push(fact("Board", v.clone()));
+    }
     if let Some(v) = &set.craft_name {
         out.push(fact("Craft name", v.clone()));
+    }
+    if let Some(v) = &set.log_start {
+        out.push(fact("Log date", v.clone()));
     }
     for (label, rate) in [
         ("Gyro rate", set.loop_rates.gyro_hz),
@@ -191,6 +200,10 @@ pub fn setup(s: &FlightSession) -> Vec<Fact> {
             d.name.clone().unwrap_or_else(|| d.code.to_string()),
         ));
     }
+    out.extend(set.details.iter().map(|d| Fact {
+        label: Cow::Owned(d.label.clone()),
+        value: d.value.clone(),
+    }));
     out
 }
 
@@ -282,7 +295,7 @@ pub fn compare<L: Clone + PartialEq>(logs: &[Vec<(L, String)>]) -> Vec<Compared<
 }
 
 /// A session's own rows in the form [`compare`] takes.
-pub fn rows(facts: Vec<Fact>) -> Vec<(&'static str, String)> {
+pub fn rows(facts: Vec<Fact>) -> Vec<(Cow<'static, str>, String)> {
     facts.into_iter().map(|f| (f.label, f.value)).collect()
 }
 
@@ -395,7 +408,7 @@ mod tests {
         let rows = setup(&s);
         let expected = [
             ("Firmware", "Betaflight 4.5.1 (77d01ba3b) STM32F7X2"),
-            ("Board", "STM32F7X2"),
+            ("Target", "STM32F7X2"),
             ("Gyro rate", "8000 Hz"),
             ("Logging rate", "1562.5 Hz"),
             ("PID roll", "P 45 · I 80 · D 30 · D min 23 · FF 120"),

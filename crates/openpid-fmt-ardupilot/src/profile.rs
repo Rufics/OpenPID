@@ -644,6 +644,9 @@ impl FirmwareProfile for ArdupilotProfile {
             dterm_filters,
             debug_mode: None,
             craft_name: h.get("craft_name").map(str::to_string),
+            board: None,
+            log_start: None,
+            details: Vec::new(),
             extra,
         }
     }

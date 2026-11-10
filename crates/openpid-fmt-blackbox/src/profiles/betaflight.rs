@@ -217,7 +217,12 @@ impl FirmwareProfile for Betaflight {
     }
 
     fn settings(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
-        common::settings(fw, h)
+        let mut s = common::settings(fw, h);
+        // Cleanflight is read with this profile too; the words are Betaflight's
+        if fw.vendor == FirmwareVendor::Betaflight {
+            s.details = super::details::betaflight(fw, h);
+        }
+        s
     }
 
     fn derive(&self, session: &mut FlightSession) {
