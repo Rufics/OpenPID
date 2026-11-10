@@ -5,7 +5,7 @@
 //! control, the player's included, is in the panel on the right.
 
 use crate::app::App;
-use crate::axis_layout::control_panel;
+use crate::axis_layout::{PlotCell, control_panel};
 use crate::colormap::{ACCENT, MUTED};
 use crate::i18n::tr;
 use crate::panel;
@@ -17,7 +17,7 @@ use crate::views::{
 };
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
-use egui_plot::{Line, Plot, PlotPoint, PlotPoints, VLine};
+use egui_plot::{Line, PlotPoint, PlotPoints, VLine};
 use openpid_analysis::{StftOutput, StftParams};
 use openpid_core::analysis::Grid2D;
 use openpid_core::{Axis, ChannelId};
@@ -147,7 +147,14 @@ pub fn time(app: &mut App, ui: &mut Ui) {
     for (i, row) in rows.iter().enumerate() {
         let Some(t) = row.stft() else { continue };
         ui.horizontal(|ui| {
-            let drawn = spectrogram(app, ui, slot, row, t, pos, range, egui::vec2(plot_w, row_h));
+            let cell = PlotCell {
+                slot,
+                axis: row.axis,
+                size: egui::vec2(plot_w, row_h),
+                first: true,
+                last: i + 1 == rows.len(),
+            };
+            let drawn = spectrogram(app, ui, cell, row, pos, range);
             clicked_at = clicked_at.or(drawn.clicked);
             if i == 0 {
                 app.player.column = column;
@@ -156,16 +163,12 @@ pub fn time(app: &mut App, ui: &mut Ui) {
                 app.probes
                     .insert(format!("time/{}", row.axis.name()), probe);
             }
-            slice(
-                ui,
-                slot,
-                row.axis,
-                t,
-                column,
-                range,
-                &display,
-                egui::vec2(SLICE_W, row_h),
-            );
+            let beside = PlotCell {
+                size: egui::vec2(SLICE_W, row_h),
+                first: false,
+                ..cell
+            };
+            slice(ui, beside, t, column, range, &display);
             colour_bar_range(ui, range.0, range.1, row_h);
         });
     }
@@ -317,42 +320,34 @@ struct Drawn {
 }
 
 /// One row's spectrogram with the position line, markers and hover.
-#[allow(clippy::too_many_arguments)]
 fn spectrogram(
     app: &mut App,
     ui: &mut Ui,
-    slot: Slot,
+    cell: PlotCell,
     row: &Row,
-    t: &StftOutput,
     pos: f64,
     range: (f64, f64),
-    size: egui::Vec2,
 ) -> Drawn {
-    let image = texture(app, ui.ctx(), &row.out, &t.grid, range);
-    let markers = app.spectrum.markers.clone();
-    let touch = app.touch_mode;
-    let link = egui::Id::unique("time-x");
+    let PlotCell { slot, size, .. } = cell;
     let mut drawn = Drawn {
         probe: None,
         clicked: None,
     };
+    let Some(t) = row.stft() else { return drawn };
+    let image = texture(app, ui.ctx(), &row.out, &t.grid, range);
+    let markers = app.spectrum.markers.clone();
+    let touch = app.touch_mode;
+    let link = egui::Id::unique("time-x");
     let mut hover = None;
     let (x0, x1) = match t.grid.x.as_slice() {
         [a, .., b] => (*a, *b),
         _ => (0.0, 1.0),
     };
-    Plot::new(("stft", slot.name(), row.axis.name()))
+    crate::grid::row(("stft", slot.name(), row.axis.name()), link, Y_AXIS_W)
         .width(size.x)
         .height(size.y)
-        .y_axis_min_width(Y_AXIS_W)
         .default_x_bounds(x0, x1)
         .set_margin_fraction(egui::Vec2::ZERO)
-        .link_axis(link, [true, false])
-        .link_cursor(link, [true, false])
-        .x_grid_spacer(crate::grid::spacer_x())
-        .x_axis_formatter(crate::grid::label)
-        .y_grid_spacer(crate::grid::spacer_y())
-        .y_axis_formatter(crate::grid::label)
         .y_axis_label(format!("{} (Hz)", row.axis.name()))
         .allow_drag(!touch)
         .allow_scroll(false)
@@ -442,17 +437,17 @@ fn texture(
 
 /// The spectrum at the player's column beside a row: frequency up, value
 /// across, on the colour range of the maps.
-#[allow(clippy::too_many_arguments)]
 fn slice(
     ui: &mut Ui,
-    slot: Slot,
-    axis: Axis,
+    cell: PlotCell,
     t: &StftOutput,
     column: Option<usize>,
     (lo, hi): (f64, f64),
     d: &TimeDisplay,
-    size: egui::Vec2,
 ) {
+    let PlotCell {
+        slot, axis, size, ..
+    } = cell;
     let nx = t.grid.x.len();
     let pts: Vec<[f64; 2]> = column
         .map(|c| {
@@ -468,7 +463,9 @@ fn slice(
         })
         .unwrap_or_default();
     let y_max = t.grid.y.last().copied().unwrap_or(0.0);
-    Plot::new(("stft-slice", slot.name(), axis.name()))
+    // egui_plot's own grid, not `grid::plot`: the slice has no axes, its
+    // lines are only a faint backdrop (the look the owner approved)
+    egui_plot::Plot::new(("stft-slice", slot.name(), axis.name()))
         .width(size.x)
         .height(size.y)
         .show_axes([false, false])
@@ -521,18 +518,11 @@ fn throttle_strip(
         .filter(|p| p[0] >= x0 && p[0] <= x1)
         .collect();
     let link = egui::Id::unique("time-x");
-    Plot::new(("time-throttle", slot.name()))
+    crate::grid::row(("time-throttle", slot.name()), link, Y_AXIS_W)
         .width(size.x)
         .height(size.y)
-        .y_axis_min_width(Y_AXIS_W)
         .default_x_bounds(x0, x1)
         .set_margin_fraction(egui::Vec2::ZERO)
-        .link_axis(link, [true, false])
-        .link_cursor(link, [true, false])
-        .x_grid_spacer(crate::grid::spacer_x())
-        .x_axis_formatter(crate::grid::label)
-        .y_grid_spacer(crate::grid::spacer_y())
-        .y_axis_formatter(crate::grid::label)
         .x_axis_label(tr("time (s)"))
         .y_axis_label(tr("throttle (%)"))
         .default_y_bounds(0.0, 100.0)

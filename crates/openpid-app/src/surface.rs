@@ -97,7 +97,6 @@ pub fn surface(app: &mut App, ui: &mut Ui) {
         .map(|slot| (*slot, app.result(*slot, Kind::Throttle(params.clone()))))
         .collect();
     overlay_controls(app, ui, &results);
-    let overlay = app.overlay.clone();
     let grids: Vec<(Slot, &Grid2D)> = results
         .iter()
         .filter_map(|(s, r)| match r {
@@ -135,16 +134,7 @@ pub fn surface(app: &mut App, ui: &mut Ui) {
                                     let scale = scales.get(&slot).copied().unwrap_or(max);
                                     let size = Vec2::new(w - 8.0 - BAR_W, (h - 24.0).max(50.0));
                                     ui.horizontal(|ui| {
-                                        draw_surface(
-                                            app,
-                                            ui,
-                                            slot,
-                                            t,
-                                            scale,
-                                            &overlay,
-                                            size,
-                                            i == 0,
-                                        );
+                                        draw_surface(app, ui, slot, t, scale, size, i == 0);
                                         colour_bar(ui, scale, size.y);
                                     });
                                 }
@@ -200,17 +190,12 @@ fn interact(st: &mut SurfaceState, ui: &Ui, resp: &egui::Response) {
     st.camera.normalise();
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "one call site, all state is named"
-)]
 fn draw_surface(
     app: &mut App,
     ui: &mut Ui,
     slot: Slot,
     t: &ThrottleHeatmapOutput,
     max: f64,
-    overlay: &OverlayState,
     size: Vec2,
     first: bool,
 ) {
@@ -255,7 +240,7 @@ fn draw_surface(
     mesh.indices = m.indices;
     painter.add(egui::Shape::mesh(mesh));
     axes_frame(&painter, &cam, &grid, ui.visuals().text_color());
-    overlay_lines(&painter, &cam, &grid, max, t, overlay);
+    overlay_lines(&painter, &cam, &grid, max, t, &app.overlay);
     // hover read-out: the nearest node
     let hover = resp.hover_pos().and_then(|pos| {
         let (i, d2) = m

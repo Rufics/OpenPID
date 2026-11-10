@@ -8,7 +8,8 @@
 //! formatter takes the decimals from `round(-log10(step))`, which prints 1.5
 //! as "2" on a 0.5 step, so the spacers here come with [`label`].
 
-use egui_plot::{GridInput, GridMark};
+use eframe::egui;
+use egui_plot::{GridInput, GridMark, Plot};
 use std::ops::RangeInclusive;
 
 /// The next step of the 1–2–5 series at or above `x` (x > 0).
@@ -58,6 +59,30 @@ pub fn spacer_x() -> impl Fn(GridInput) -> Vec<GridMark> {
 /// The spacer for `y_grid_spacer`.
 pub fn spacer_y() -> impl Fn(GridInput) -> Vec<GridMark> {
     egui_plot::uniform_grid_spacer(steps_y)
+}
+
+/// A plot with the app's grid on both axes: every plot of the app starts
+/// here, so none is left with `egui_plot`'s power-of-ten steps.
+pub fn plot<'a>(id: impl std::hash::Hash + std::fmt::Debug) -> Plot<'a> {
+    Plot::new(id)
+        .x_grid_spacer(spacer_x())
+        .x_axis_formatter(label)
+        .y_grid_spacer(spacer_y())
+        .y_axis_formatter(label)
+}
+
+/// One row of a stack of plots that share the x axis: a y axis `y_axis_w`
+/// wide, so the rows line up, and zoom and cursor in step along x under
+/// `link`.
+pub fn row<'a>(
+    id: impl std::hash::Hash + std::fmt::Debug,
+    link: egui::Id,
+    y_axis_w: f32,
+) -> Plot<'a> {
+    plot(id)
+        .y_axis_min_width(y_axis_w)
+        .link_axis(link, [true, false])
+        .link_cursor(link, [true, false])
 }
 
 /// A tick label with as many decimals as its step needs (0.5 → one, 20 →

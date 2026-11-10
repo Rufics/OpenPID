@@ -9,7 +9,7 @@ use crate::shortcuts::{self, Action};
 use crate::views::{grid_heatmap, show_error, slot_color, verdict_color};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
-use egui_plot::{HLine, Legend, Line, LineStyle, Plot, PlotPoints, Points};
+use egui_plot::{HLine, Legend, Line, LineStyle, PlotPoints, Points};
 use openpid_analysis::{FitnessLevel, StepParams, StepTargets, VerdictLevel, verdicts};
 use openpid_core::Axis;
 use openpid_core::settings::{PidGains, Settings};
@@ -378,16 +378,18 @@ pub fn step(app: &mut App, ui: &mut Ui) {
         let note = (outputs.is_empty() && !why.is_empty()).then(|| why.join("\n"));
         ui.horizontal(|ui| {
             let w = (full_w - 2.0 * (SIDE_PLOT_W + ui.spacing().item_spacing.x)).max(200.0);
+            let scale = ResponseScale {
+                display: &display,
+                targets: &targets,
+                band,
+                end_ms,
+            };
             response_plot(
                 ui,
                 axis,
                 (&outputs, &pids, note.as_deref()),
-                &display,
-                &targets,
-                band,
-                end_ms,
-                w,
-                h,
+                &scale,
+                egui::vec2(w, h),
             );
             peak_plot(ui, axis, &outputs, &display, w.min(SIDE_PLOT_W), h);
             latency_plot(ui, axis, &outputs, &display, h);
@@ -640,28 +642,46 @@ fn advice_line(app: &mut App, ui: &mut Ui) {
     });
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "one plot of a row, every input is its own"
-)]
+/// One plot in a tab's grid of axis rows: whose it is, which axis it shows,
+/// how large it is and where it sits. The tabs pass it instead of a slot,
+/// an axis, a size and two flags each.
+#[derive(Debug, Clone, Copy)]
+pub struct PlotCell {
+    pub slot: Slot,
+    pub axis: Axis,
+    pub size: egui::Vec2,
+    /// The first column of its row: it carries the y axis label.
+    pub first: bool,
+    /// The last row: it carries the x axis and its label.
+    pub last: bool,
+}
+
+/// What the response plot is drawn against: the display options, the
+/// targets with their band, and where the time axis ends.
+struct ResponseScale<'a> {
+    display: &'a StepDisplay,
+    targets: &'a StepTargets,
+    band: (f64, f64, f64),
+    end_ms: f64,
+}
+
 fn response_plot(
     ui: &mut Ui,
     axis: Axis,
     (outputs, pids, note): Curves<'_>,
-    display: &StepDisplay,
-    targets: &StepTargets,
-    band: (f64, f64, f64),
-    end_ms: f64,
-    width: f32,
-    height: f32,
+    scale: &ResponseScale<'_>,
+    size: egui::Vec2,
 ) {
+    let ResponseScale {
+        display,
+        targets,
+        band,
+        end_ms,
+    } = *scale;
+    let (width, height) = (size.x, size.y);
     let warn_line = 1.0 + targets.overshoot_warn_pct / 100.0;
     let fail_line = 1.0 + targets.overshoot_fail_pct / 100.0;
-    Plot::new(format!("step-{}", axis.name()))
-        .x_grid_spacer(crate::grid::spacer_x())
-        .x_axis_formatter(crate::grid::label)
-        .y_grid_spacer(crate::grid::spacer_y())
-        .y_axis_formatter(crate::grid::label)
+    crate::grid::plot(format!("step-{}", axis.name()))
         .legend(Legend::default())
         .x_axis_label(tr("time (ms)"))
         .y_axis_label(format!("{} {}", axis.name(), tr("response")))
@@ -823,11 +843,7 @@ fn peak_plot(
             _ => None,
         })
         .collect();
-    Plot::new(format!("step-peak-{}", axis.name()))
-        .x_grid_spacer(crate::grid::spacer_x())
-        .x_axis_formatter(crate::grid::label)
-        .y_grid_spacer(crate::grid::spacer_y())
-        .y_axis_formatter(crate::grid::label)
+    crate::grid::plot(format!("step-peak-{}", axis.name()))
         .width(SIDE_PLOT_W)
         .height(height)
         .y_axis_label(format!("{} {}", axis.name(), tr("peak")))
@@ -869,11 +885,7 @@ fn latency_plot(
             _ => None,
         })
         .collect();
-    Plot::new(format!("step-latency-{}", axis.name()))
-        .x_grid_spacer(crate::grid::spacer_x())
-        .x_axis_formatter(crate::grid::label)
-        .y_grid_spacer(crate::grid::spacer_y())
-        .y_axis_formatter(crate::grid::label)
+    crate::grid::plot(format!("step-latency-{}", axis.name()))
         .width(SIDE_PLOT_W)
         .height(height)
         .y_axis_label(format!("{} {}", axis.name(), tr("latency (ms)")))

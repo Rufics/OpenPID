@@ -4,17 +4,17 @@
 //! louder motor (bearing, bent prop, loose mount) stands out on every axis.
 //! Every control is in the panel on the right.
 
-use crate::app::{App, Loaded};
-use crate::axis_layout::control_panel;
+use crate::app::App;
+use crate::axis_layout::{PlotCell, control_panel};
 use crate::colormap::MUTED;
 use crate::i18n::tr;
 use crate::panel;
-use crate::views::{motor_color, raw_gyro_fix, show_error};
-use crate::worker::{Kind, Output, Slot};
+use crate::views::{has_raw_gyro, motor_color, no_raw_gyro, raw_gyro, show_error};
+use crate::worker::{Kind, Output};
 use eframe::egui::{self, Color32, RichText, Ui};
-use egui_plot::{Bar, BarChart, GridMark, HLine, Line, LineStyle, Plot, PlotPoints, VLine};
+use egui_plot::{Bar, BarChart, GridMark, HLine, Line, LineStyle, PlotPoints, VLine};
 use openpid_analysis::MotorNoiseOutput;
-use openpid_core::{Axis, ChannelId, GyroStage};
+use openpid_core::Axis;
 use std::sync::Arc;
 
 /// Width of the bars beside each spectrum.
@@ -32,14 +32,6 @@ pub struct MotorsDisplay {
     pub per_motor: bool,
 }
 
-/// The unfiltered gyro on `axis`.
-fn raw(axis: Axis) -> ChannelId {
-    ChannelId::Gyro {
-        axis,
-        stage: GyroStage::Raw,
-    }
-}
-
 /// The tab.
 pub fn motors(app: &mut App, ui: &mut Ui) {
     let rows = results(app);
@@ -47,16 +39,9 @@ pub fn motors(app: &mut App, ui: &mut Ui) {
     ui.separator();
     let Some(slot) = app.dock_slot() else { return };
     if rows.is_empty() {
-        if app.loaded(slot).is_some() {
-            ui.label(
-                RichText::new(format!(
-                    "{} {}",
-                    tr("no unfiltered gyro in this log (the filtered one has the motor peaks removed);"),
-                    raw_gyro_fix(app, slot)
-                ))
-                .color(MUTED),
-            );
-        }
+        let why =
+            tr("no unfiltered gyro in this log (the filtered one has the motor peaks removed);");
+        no_raw_gyro(app, ui, slot, why);
         return;
     }
     ui.label(
@@ -81,16 +66,14 @@ pub fn motors(app: &mut App, ui: &mut Ui) {
                     // the plots' own margins take a few pixels more than their widths
                     let w =
                         ui.available_width() - BARS_W - 2.0 * ui.spacing().item_spacing.x - 16.0;
-                    spectrum(
-                        app,
-                        ui,
+                    let cell = PlotCell {
                         slot,
-                        *axis,
-                        m,
-                        egui::vec2(w, height),
-                        i == last,
-                        link,
-                    );
+                        axis: *axis,
+                        size: egui::vec2(w, height),
+                        first: true,
+                        last: i == last,
+                    };
+                    spectrum(app, ui, cell, m, link);
                     bars(ui, *axis, m, egui::vec2(BARS_W, height));
                 });
             }
@@ -111,18 +94,14 @@ fn results(app: &mut App) -> Rows {
     };
     let base = app.tools.motor_noise.clone();
     // the export and the project read the roll row's job
-    app.tools.motor_noise.channel = raw(Axis::Roll);
+    app.tools.motor_noise.channel = raw_gyro(Axis::Roll);
     let mut rows = Vec::new();
     for axis in crate::axis_layout::shown_axes(app) {
-        let has_raw = app
-            .loaded(slot)
-            .and_then(Loaded::current)
-            .is_some_and(|s| s.channel(&raw(axis)).is_some());
-        if !has_raw {
+        if !has_raw_gyro(app, slot, axis) {
             continue;
         }
         let mut p = base.clone();
-        p.channel = raw(axis);
+        p.channel = raw_gyro(axis);
         rows.push((axis, app.result(slot, Kind::MotorNoise(p))));
     }
     rows
@@ -141,31 +120,21 @@ fn mean_hz(m: &MotorNoiseOutput, k: u32) -> Option<f64> {
 }
 
 /// A row's spectrum with the harmonics marked.
-#[allow(clippy::too_many_arguments, reason = "one plot of a row")]
-fn spectrum(
-    app: &App,
-    ui: &mut Ui,
-    slot: Slot,
-    axis: Axis,
-    m: &MotorNoiseOutput,
-    size: egui::Vec2,
-    last: bool,
-    link: egui::Id,
-) {
+fn spectrum(app: &App, ui: &mut Ui, cell: PlotCell, m: &MotorNoiseOutput, link: egui::Id) {
+    let PlotCell {
+        slot,
+        axis,
+        size,
+        last,
+        ..
+    } = cell;
     let text = ui.visuals().text_color();
     let per_motor = app.tools.motors_display.per_motor;
     let harmonics = app.tools.motor_noise.harmonics;
-    let mut plot = Plot::new(("motors-psd", slot.name(), axis.name()))
+    let mut plot = crate::grid::row(("motors-psd", slot.name(), axis.name()), link, Y_AXIS_W)
         .width(size.x)
         .height(size.y)
-        .y_axis_min_width(Y_AXIS_W)
         .show_axes([last, true])
-        .link_axis(link, [true, false])
-        .link_cursor(link, [true, false])
-        .x_grid_spacer(crate::grid::spacer_x())
-        .x_axis_formatter(crate::grid::label)
-        .y_grid_spacer(crate::grid::spacer_y())
-        .y_axis_formatter(crate::grid::label)
         .y_axis_label(format!("{} {}", axis.name(), tr("prefilt (dB)")))
         .allow_scroll(false)
         .allow_drag([true, false])
@@ -258,7 +227,7 @@ fn bars(ui: &mut Ui, axis: Axis, m: &MotorNoiseOutput, size: egui::Vec2) {
             format!("M{}{}", motor.idx + 1, if loud { " !" } else { "" })
         })
         .collect();
-    let plot = Plot::new(("motors-bars", axis.name()))
+    let plot = crate::grid::plot(("motors-bars", axis.name()))
         .width(size.x)
         .height(size.y)
         .y_axis_min_width(28.0)
@@ -288,9 +257,7 @@ fn bars(ui: &mut Ui, axis: Axis, m: &MotorNoiseOutput, size: egui::Vec2) {
             } else {
                 String::new()
             }
-        })
-        .y_grid_spacer(crate::grid::spacer_y())
-        .y_axis_formatter(crate::grid::label);
+        });
     plot.show(ui, |pu| {
         pu.hline(
             HLine::new(tr("mean of the motors"), 1.0)

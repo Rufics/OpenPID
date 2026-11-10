@@ -5,19 +5,18 @@
 //! that chain against the filtered gyro it logged. Every control, the
 //! what-if values of each filter included, is in the panel on the right.
 
-use crate::app::{App, Loaded};
+use crate::app::App;
 use crate::axis_layout::control_panel;
 use crate::colormap::{ACCENT, MUTED};
 use crate::i18n::tr;
 use crate::panel;
-use crate::prefs::PlotColours;
-use crate::views::{decimate, raw_gyro_fix, show_error, slot_color};
+use crate::views::{decimate, has_raw_gyro, no_raw_gyro, show_error, slot_color};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
-use egui_plot::{Line, LineStyle, Plot, PlotPoints};
+use egui_plot::{Line, LineStyle, PlotPoints};
 use openpid_analysis::{FilterOverrides, FilterSimOutput, PartResponse};
+use openpid_core::Axis;
 use openpid_core::settings::LowpassKind;
-use openpid_core::{Axis, ChannelId, GyroStage};
 use openpid_sim::{ChainModel, LowpassModel};
 use std::sync::Arc;
 
@@ -32,23 +31,10 @@ const LOWPASS_KINDS: [(LowpassKind, &str); 4] = [
     (LowpassKind::Pt3, "PT3"),
 ];
 
-/// Colour of part `i` of the chain.
+/// Colour of part `i` of the chain: the palette after its first colour,
+/// which is the log's own.
 fn part_colour(i: usize) -> Color32 {
-    let p: &[Color32] = match crate::colormap::scheme() {
-        PlotColours::Explorer => &crate::colormap::EXPLORER_PALETTE,
-        PlotColours::ColourBlindSafe => crate::colormap::slot_palette(),
-    };
-    // skip the palette's red, kept for the log's own lines
-    p[(i + 1) % p.len()]
-}
-
-/// Colour of the whole chain: the text colour.
-fn total_colour() -> Color32 {
-    if crate::theme::is_dark() {
-        Color32::from_gray(235)
-    } else {
-        Color32::from_gray(30)
-    }
+    crate::colormap::line(i + 1)
 }
 
 /// The tab.
@@ -70,17 +56,9 @@ pub fn filter_sim(app: &mut App, ui: &mut Ui) {
     });
     ui.separator();
     let Some((slot, result)) = output else {
-        if let Some(slot) = app.dock_slot()
-            && app.loaded(slot).is_some()
-        {
-            ui.label(
-                RichText::new(format!(
-                    "{}: {}",
-                    tr("no unfiltered gyro in this log"),
-                    raw_gyro_fix(app, slot)
-                ))
-                .color(MUTED),
-            );
+        if let Some(slot) = app.dock_slot() {
+            let why = format!("{}:", tr("no unfiltered gyro in this log"));
+            no_raw_gyro(app, ui, slot, &why);
         }
         return;
     };
@@ -118,14 +96,7 @@ fn docked_output(app: &mut App) -> DockedResult {
     app.tools.filter_sim.axis = app.tools.axis;
     let slot = app.dock_slot()?;
     let axis = app.tools.axis;
-    let has_raw = app.loaded(slot).and_then(Loaded::current).is_some_and(|s| {
-        s.channel(&ChannelId::Gyro {
-            axis,
-            stage: GyroStage::Raw,
-        })
-        .is_some()
-    });
-    if !has_raw {
+    if !has_raw_gyro(app, slot, axis) {
         return None;
     }
     let r = match app.result(slot, Kind::FilterSim(app.tools.filter_sim.clone())) {
@@ -196,7 +167,11 @@ fn chain_column(ui: &mut Ui, f: &FilterSimOutput) {
     // the parts' names in their colours: the legend
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
-        ui.label(RichText::new(tr("total")).color(total_colour()).strong());
+        ui.label(
+            RichText::new(tr("total"))
+                .color(crate::theme::ink())
+                .strong(),
+        );
         for (i, p) in r.parts.iter().enumerate() {
             ui.label(RichText::new(&p.label).color(part_colour(i)).size(12.0));
         }
@@ -222,16 +197,9 @@ fn chain_column(ui: &mut Ui, f: &FilterSimOutput) {
     ];
     let last = rows.len() - 1;
     for (i, (which, id, label, y)) in rows.into_iter().enumerate() {
-        let mut plot = Plot::new(id)
+        let mut plot = crate::grid::row(id, link, Y_AXIS_W)
             .height(h + if i == last { 20.0 } else { 0.0 })
-            .y_axis_min_width(Y_AXIS_W)
             .show_axes([i == last, true])
-            .link_axis(link, [true, false])
-            .link_cursor(link, [true, false])
-            .x_grid_spacer(crate::grid::spacer_x())
-            .x_axis_formatter(crate::grid::label)
-            .y_grid_spacer(crate::grid::spacer_y())
-            .y_axis_formatter(crate::grid::label)
             .y_axis_label(label)
             .allow_scroll(false)
             .allow_drag([true, false])
@@ -260,7 +228,7 @@ fn chain_column(ui: &mut Ui, f: &FilterSimOutput) {
             }
             pu.line(
                 Line::new(tr("total"), curve(&r.freq, which.of(&r.total)))
-                    .color(total_colour())
+                    .color(crate::theme::ink())
                     .width(2.0),
             );
         });
@@ -301,13 +269,9 @@ fn log_column(app: &App, ui: &mut Ui, slot: Slot, f: &FilterSimOutput) {
     });
     let h = ui.available_height();
     let spectrum_h = (h * 0.55).max(80.0);
-    Plot::new("fsim-psd")
+    crate::grid::plot("fsim-psd")
         .height(spectrum_h)
         .y_axis_min_width(Y_AXIS_W)
-        .x_grid_spacer(crate::grid::spacer_x())
-        .x_axis_formatter(crate::grid::label)
-        .y_grid_spacer(crate::grid::spacer_y())
-        .y_axis_formatter(crate::grid::label)
         .x_axis_label(tr("frequency (Hz)"))
         .y_axis_label("dB")
         .show(ui, |pu| {
@@ -332,13 +296,9 @@ fn log_column(app: &App, ui: &mut Ui, slot: Slot, f: &FilterSimOutput) {
         });
     let px = ui.available_width().max(100.0) as usize;
     let rate = crate::views::display_unit(&openpid_core::units::Unit::DegreesPerSecond, &app.prefs);
-    Plot::new("fsim-time")
+    crate::grid::plot("fsim-time")
         .height((ui.available_height() - 4.0).max(60.0))
         .y_axis_min_width(Y_AXIS_W)
-        .x_grid_spacer(crate::grid::spacer_x())
-        .x_axis_formatter(crate::grid::label)
-        .y_grid_spacer(crate::grid::spacer_y())
-        .y_axis_formatter(crate::grid::label)
         .x_axis_label(tr("time (s)"))
         .y_axis_label(rate.1.clone())
         .allow_drag([true, false])
@@ -478,18 +438,22 @@ fn fit_rows(ui: &mut Ui, f: &FilterSimOutput) {
     );
 }
 
+/// How a what-if number is edited: the drag speed, the range and the unit.
+struct Scale {
+    speed: f64,
+    range: std::ops::RangeInclusive<f64>,
+    unit: &'static str,
+}
+
 /// A what-if number: the log's value until edited, then the override (the
 /// label turns accent-coloured).
-#[allow(clippy::too_many_arguments, reason = "one row, eight knobs")]
 fn whatif_value(
     ui: &mut Ui,
     label: &str,
     hint: &str,
     value: &mut Option<f64>,
     log_value: f64,
-    speed: f64,
-    range: std::ops::RangeInclusive<f64>,
-    unit: &str,
+    scale: &Scale,
 ) {
     let text = RichText::new(label).color(if value.is_some() {
         ACCENT
@@ -502,8 +466,10 @@ fn whatif_value(
         ui,
         text,
         &hint,
-        egui::DragValue::new(&mut v).speed(speed).range(range),
-        unit,
+        egui::DragValue::new(&mut v)
+            .speed(scale.speed)
+            .range(scale.range.clone()),
+        scale.unit,
     )
     .changed()
     {
@@ -527,9 +493,11 @@ fn whatif_count(
         hint,
         &mut v,
         f64::from(log_value),
-        1.0,
-        0.0..=f64::from(max),
-        "",
+        &Scale {
+            speed: 1.0,
+            range: 0.0..=f64::from(max),
+            unit: "",
+        },
     );
     *value = v.map(|v| v.round() as u32);
 }
@@ -601,9 +569,11 @@ fn whatif_rows(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>) 
         cutoff_hint,
         &mut o.lpf1_hz,
         hz1,
-        5.0,
-        0.0..=1000.0,
-        "Hz",
+        &Scale {
+            speed: 5.0,
+            range: 0.0..=1000.0,
+            unit: "Hz",
+        },
     );
     let mut dyn_min = o.lpf1_dyn_hz.map(|d| d.0);
     let mut dyn_max = o.lpf1_dyn_hz.map(|d| d.1);
@@ -613,9 +583,11 @@ fn whatif_rows(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>) 
         tr("the cut-off at zero throttle when the throttle moves it"),
         &mut dyn_min,
         dmin,
-        5.0,
-        0.0..=1000.0,
-        "Hz",
+        &Scale {
+            speed: 5.0,
+            range: 0.0..=1000.0,
+            unit: "Hz",
+        },
     );
     whatif_value(
         ui,
@@ -623,9 +595,11 @@ fn whatif_rows(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>) 
         tr("the cut-off at full throttle"),
         &mut dyn_max,
         dmax,
-        5.0,
-        0.0..=1000.0,
-        "Hz",
+        &Scale {
+            speed: 5.0,
+            range: 0.0..=1000.0,
+            unit: "Hz",
+        },
     );
     if dyn_min.is_some() || dyn_max.is_some() {
         o.lpf1_dyn_hz = Some((dyn_min.unwrap_or(dmin), dyn_max.unwrap_or(dmax)));
@@ -638,9 +612,11 @@ fn whatif_rows(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>) 
         cutoff_hint,
         &mut o.lpf2_hz,
         hz2,
-        5.0,
-        0.0..=1000.0,
-        "Hz",
+        &Scale {
+            speed: 5.0,
+            range: 0.0..=1000.0,
+            unit: "Hz",
+        },
     );
     panel::section(ui, tr("RPM notch"));
     whatif_count(
@@ -658,9 +634,11 @@ fn whatif_rows(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>) 
         q_hint,
         &mut o.rpm_q,
         rpm.map_or(5.0, |r| r.q),
-        0.1,
-        0.1..=20.0,
-        "",
+        &Scale {
+            speed: 0.1,
+            range: 0.1..=20.0,
+            unit: "",
+        },
     );
     whatif_value(
         ui,
@@ -668,9 +646,11 @@ fn whatif_rows(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>) 
         tr("the lowest notch centre"),
         &mut o.rpm_min_hz,
         rpm.map_or(100.0, |r| r.min_hz),
-        5.0,
-        0.0..=500.0,
-        "Hz",
+        &Scale {
+            speed: 5.0,
+            range: 0.0..=500.0,
+            unit: "Hz",
+        },
     );
     panel::section(ui, tr("Dynamic notch"));
     whatif_count(
@@ -687,9 +667,11 @@ fn whatif_rows(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>) 
         q_hint,
         &mut o.dyn_q,
         dn.map_or(3.0, |d| d.q),
-        0.1,
-        0.1..=20.0,
-        "",
+        &Scale {
+            speed: 0.1,
+            range: 0.1..=20.0,
+            unit: "",
+        },
     );
     whatif_value(
         ui,
@@ -697,9 +679,11 @@ fn whatif_rows(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>) 
         tr("the lowest frequency the notches follow"),
         &mut o.dyn_min_hz,
         dn.map_or(150.0, |d| d.min_hz),
-        5.0,
-        0.0..=1000.0,
-        "Hz",
+        &Scale {
+            speed: 5.0,
+            range: 0.0..=1000.0,
+            unit: "Hz",
+        },
     );
     whatif_value(
         ui,
@@ -707,9 +691,11 @@ fn whatif_rows(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>) 
         tr("the highest frequency the notches follow"),
         &mut o.dyn_max_hz,
         dn.map_or(600.0, |d| d.max_hz),
-        5.0,
-        0.0..=1000.0,
-        "Hz",
+        &Scale {
+            speed: 5.0,
+            range: 0.0..=1000.0,
+            unit: "Hz",
+        },
     );
     panel::section(ui, tr("Static notch"));
     whatif_value(
@@ -718,9 +704,11 @@ fn whatif_rows(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>) 
         tr("the frequency the notch removes; 0 switches it off"),
         &mut o.notch_hz,
         notch.map_or(0.0, |n| n.center_hz),
-        5.0,
-        0.0..=1000.0,
-        "Hz",
+        &Scale {
+            speed: 5.0,
+            range: 0.0..=1000.0,
+            unit: "Hz",
+        },
     );
     whatif_value(
         ui,
@@ -728,8 +716,10 @@ fn whatif_rows(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>) 
         tr("the lower edge of the notch: closer to the centre is narrower"),
         &mut o.notch_cutoff_hz,
         notch.map_or(0.0, |n| n.cutoff_hz),
-        5.0,
-        0.0..=1000.0,
-        "Hz",
+        &Scale {
+            speed: 5.0,
+            range: 0.0..=1000.0,
+            unit: "Hz",
+        },
     );
 }

@@ -35,6 +35,16 @@ pub fn is_dark() -> bool {
     DARK.with(std::cell::Cell::get)
 }
 
+/// The colour of a line that stands for "the whole" beside coloured parts
+/// (the total of the filter chain, the throttle): near the text colour.
+pub fn ink() -> Color32 {
+    if is_dark() {
+        Color32::from_gray(235)
+    } else {
+        Color32::from_gray(30)
+    }
+}
+
 /// The "warning" yellow of verdicts and log checks: Okabe–Ito yellow on the
 /// dark theme, a dark amber that stays readable on the light one.
 pub fn warn() -> Color32 {

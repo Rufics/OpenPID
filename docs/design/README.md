@@ -64,6 +64,17 @@ Rules shared by every topic of the sprint:
   `spacer_y`, `label`); egui_plot's powers of ten left narrow axes with one
   label and printed 1.5 as "2". Heatmaps fill their frame (no margin around
   the data), and a plot with nothing to draw says why inside it.
+  A plot is built from `grid::plot(id)` (that grid on both axes) or, in a
+  stack of rows that share the x axis, `grid::row(id, link, y_axis_w)`;
+  a tab does not repeat the four grid calls.
+- **One helper per shared thing** (audit of 2026-11-10, B5): the lines of a
+  plot that are not logs take `colormap::line(i)`, "the whole beside the
+  parts" (the chain's total, the throttle) takes `theme::ink()`; a tab that
+  needs the unfiltered gyro asks `views::has_raw_gyro` and shows
+  `views::no_raw_gyro`; a plot of a tab's grid of axis rows is described by
+  one `axis_layout::PlotCell` (log, axis, size, first column, last row)
+  instead of five arguments. No function of the app needs
+  `#[allow(clippy::too_many_arguments)]`.
   - **every field explains itself on hover**, over the label and over the value:
     what it changes and, where it matters, the default and the trade-off;
   - built only with `crates/openpid-app/src/panel.rs` (`section`, `row`, `drag`,

@@ -5,7 +5,7 @@
 //! the panel on the right.
 
 use crate::app::App;
-use crate::axis_layout::control_panel;
+use crate::axis_layout::{PlotCell, control_panel};
 use crate::i18n::tr;
 use crate::panel;
 use crate::spectrum_tab::Quantity;
@@ -15,7 +15,6 @@ use crate::views::{
 };
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, RichText, Ui};
-use egui_plot::Plot;
 use openpid_analysis::{ThrottleHeatmapOutput, ThrottleHeatmapParams};
 use openpid_core::{Axis, ChannelId};
 use std::sync::Arc;
@@ -292,21 +291,17 @@ fn group(
                     let last = i + 1 == log.rows.len();
                     ui.horizontal(|ui| {
                         for (j, c) in cells.iter().enumerate() {
-                            let Some(t) = c.heatmap() else { continue };
-                            let size =
-                                egui::vec2(cell_w, if last { row_h + X_LABEL_H } else { row_h });
-                            heat_cell(
-                                app,
-                                ui,
-                                log,
-                                (*axis, j == 0),
-                                c,
-                                t,
-                                size,
+                            let at = PlotCell {
+                                slot: log.slot,
+                                axis: *axis,
+                                size: egui::vec2(
+                                    cell_w,
+                                    if last { row_h + X_LABEL_H } else { row_h },
+                                ),
+                                first: j == 0,
                                 last,
-                                reset,
-                                range,
-                            );
+                            };
+                            heat_cell(app, ui, at, c, log.scale, range, reset);
                         }
                     });
                 }
@@ -318,37 +313,38 @@ fn group(
 }
 
 /// One heatmap cell with its overlays, markers and hover read-out.
-#[allow(clippy::too_many_arguments)]
+/// `range` is the throttle range a reset or a double-click goes back to.
 fn heat_cell(
     app: &mut App,
     ui: &mut Ui,
-    log: &LogColumn,
-    (axis, first): (Axis, bool),
+    at: PlotCell,
     cell: &Cell,
-    t: &ThrottleHeatmapOutput,
-    size: egui::Vec2,
-    last: bool,
-    reset: bool,
+    scale: f64,
     range: (f64, f64),
+    reset: bool,
 ) {
+    let PlotCell {
+        slot,
+        axis,
+        size,
+        first,
+        last,
+    } = at;
+    let Some(t) = cell.heatmap() else { return };
     let y_max = t.grid.y.last().copied().unwrap_or(0.0);
-    let image = grid_image(app, ui.ctx(), &cell.out, &t.grid, log.scale, SCALE_MIN_HZ);
+    let image = grid_image(app, ui.ctx(), &cell.out, &t.grid, scale, SCALE_MIN_HZ);
     let markers = app.spectrum.markers.clone();
     let overlay = app.overlay.clone();
     let min_segments = app.tools.min_segments;
     let link = egui::Id::unique("thr-cells");
-    let mut plot = Plot::new(("thr", log.slot.name(), axis.name(), cell.prefilt))
+    let mut plot = crate::grid::plot(("thr", slot.name(), axis.name(), cell.prefilt))
         .width(size.x)
         .height(size.y)
         .link_axis(link, [true, true])
         .link_cursor(link, [true, true])
         .allow_scroll(false)
         .show_x(false)
-        .show_y(false)
-        .x_grid_spacer(crate::grid::spacer_x())
-        .x_axis_formatter(crate::grid::label)
-        .y_grid_spacer(crate::grid::spacer_y())
-        .y_axis_formatter(crate::grid::label);
+        .show_y(false);
     if first {
         plot = plot.y_axis_label(format!("{} (Hz)", axis.name()));
     }
@@ -372,7 +368,7 @@ fn heat_cell(
             draw_rpm_overlay(pu, o, &t.grid.x, y_max, &overlay);
         }
         marker_hlines(pu, &markers);
-        hover = heatmap_hover(pu, log.slot, &t.grid);
+        hover = heatmap_hover(pu, slot, &t.grid);
         probe = Some(crate::probe::PlotProbe::of(pu.transform()));
     });
     if hover.is_some() {
@@ -382,7 +378,7 @@ fn heat_cell(
         app.probes.insert(
             format!(
                 "throttle/{}/{}{}",
-                log.slot.name(),
+                slot.name(),
                 axis.name(),
                 if cell.prefilt { "/prefilt" } else { "" }
             ),

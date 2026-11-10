@@ -9,14 +9,13 @@ use crate::axis_layout::control_panel;
 use crate::colormap::MUTED;
 use crate::i18n::tr;
 use crate::panel;
-use crate::prefs::PlotColours;
 use crate::views::{
     LONG_PRESS_S, LONG_PRESS_SLOP_PX, decimate, display_unit, draw_epochs, grab_radius,
     set_epoch_bound, set_epoch_from_cursor, shade_epochs,
 };
 use crate::worker::Slot;
 use eframe::egui::{self, Color32, RichText, Ui};
-use egui_plot::{Line, Plot, PlotPoints, PlotTransform, VLine};
+use egui_plot::{Line, PlotPoints, PlotTransform, VLine};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, PidTerm};
 
 /// Width of the y-axis labels, the same on every row so the time axes line up.
@@ -183,30 +182,15 @@ impl LogQuantity {
     }
 }
 
-/// Colour of palette entry `i` in the chosen plot colours.
-fn palette(i: usize) -> Color32 {
-    let p: &[Color32] = match crate::colormap::scheme() {
-        PlotColours::Explorer => &crate::colormap::EXPLORER_PALETTE,
-        PlotColours::ColourBlindSafe => crate::colormap::slot_palette(),
-    };
-    p[i % p.len()]
-}
-
 /// Colour of a quantity's line; `k` is the motor or debug index.
 fn colour(q: LogQuantity, k: usize) -> Color32 {
     match q {
         // the motors in the palette's first four distinct colours, as Blackbox Explorer
         LogQuantity::Motors | LogQuantity::MotorRpm | LogQuantity::Debug => {
-            palette(q.palette_index() + k)
+            crate::colormap::line(q.palette_index() + k)
         }
-        LogQuantity::Throttle => {
-            if crate::theme::is_dark() {
-                Color32::from_gray(235)
-            } else {
-                Color32::from_gray(40)
-            }
-        }
-        _ => palette(q.palette_index()),
+        LogQuantity::Throttle => crate::theme::ink(),
+        _ => crate::colormap::line(q.palette_index()),
     }
 }
 
@@ -361,7 +345,7 @@ fn rows(app: &App, s: &FlightSession) -> Vec<RowSpec> {
         .map(|(k, id)| Series {
             name: id.key(),
             id: id.clone(),
-            colour: palette(k),
+            colour: crate::colormap::line(k),
         })
         .collect();
     if !other.is_empty() {
@@ -393,7 +377,6 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
         return;
     };
     let specs = rows(app, &s);
-    let touch = app.touch_mode;
     let gap = ui.spacing().item_spacing.y;
     let weights: f32 = specs.iter().map(|r| r.weight).sum();
     let unit_h = ((ui.available_height() - gap * specs.len() as f32 - 20.0) / weights).max(40.0);
@@ -416,16 +399,7 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
     let mut sticks_transform = None;
     for (i, spec) in specs.iter().enumerate() {
         let h = unit_h * spec.weight + if i == last { 20.0 } else { 0.0 };
-        let t = row(
-            app,
-            ui,
-            (slot, &s, &xs),
-            spec,
-            h,
-            i == last,
-            touch,
-            &mut act,
-        );
+        let t = row(app, ui, (slot, &s, &xs), spec, h, i == last, &mut act);
         first.get_or_insert(t);
         if i == sticks_row {
             sticks_frame = Some(*t.frame());
@@ -477,7 +451,6 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
 
 /// One row: its lines, the epoch bounds and the cursor; clicks, long presses
 /// and drags on it go into `act`.
-#[allow(clippy::too_many_arguments)]
 fn row(
     app: &mut App,
     ui: &mut Ui,
@@ -485,28 +458,25 @@ fn row(
     spec: &RowSpec,
     height: f32,
     last: bool,
-    touch: bool,
     act: &mut Interaction,
 ) -> PlotTransform {
+    let touch = app.touch_mode;
     let handle_interaction = app.viewer.hover_handle.is_some() || app.viewer.drag_handle.is_some();
     let link = egui::Id::unique("log-x");
     let duration = s.timebase.duration_s();
-    let mut plot = Plot::new(("log-row", spec.key, spec.y.map(|y| y.1.to_bits())))
-        .height(height)
-        .y_axis_min_width(Y_AXIS_W)
-        .show_axes([last, true])
-        .default_x_bounds(0.0, duration.max(0.1))
-        .link_axis(link, [true, false])
-        .link_cursor(link, [true, false])
-        .x_grid_spacer(crate::grid::spacer_x())
-        .x_axis_formatter(crate::grid::label)
-        .y_grid_spacer(crate::grid::spacer_y())
-        .y_axis_formatter(crate::grid::label)
-        .y_axis_label(spec.label.clone())
-        .allow_boxed_zoom(false)
-        .allow_drag([!handle_interaction, false])
-        .allow_zoom([true, false])
-        .allow_scroll([true, false]);
+    let mut plot = crate::grid::row(
+        ("log-row", spec.key, spec.y.map(|y| y.1.to_bits())),
+        link,
+        Y_AXIS_W,
+    )
+    .height(height)
+    .show_axes([last, true])
+    .default_x_bounds(0.0, duration.max(0.1))
+    .y_axis_label(spec.label.clone())
+    .allow_boxed_zoom(false)
+    .allow_drag([!handle_interaction, false])
+    .allow_zoom([true, false])
+    .allow_scroll([true, false]);
     if last {
         plot = plot.x_axis_label(tr("time (s)"));
     }

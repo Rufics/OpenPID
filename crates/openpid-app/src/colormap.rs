@@ -60,6 +60,14 @@ pub fn slot_palette() -> &'static [Color32] {
     }
 }
 
+/// Colour `i` of the current scheme's palette, wrapping: the lines of one
+/// plot that are not logs (the motors, the quantities of the Log viewer,
+/// the parts of the filter chain).
+pub fn line(i: usize) -> Color32 {
+    let p = slot_palette();
+    p[i % p.len()]
+}
+
 /// The heatmap colour map of the current scheme.
 pub fn heatmap() -> Colormap {
     match scheme() {

@@ -621,13 +621,34 @@ fn fitness_badges(ui: &mut Ui, f: &Fitness) {
     }
 }
 
-/// The log check's fix for a missing unfiltered gyro, for the tabs that need it.
-pub(crate) fn raw_gyro_fix(app: &App, slot: Slot) -> String {
+/// The unfiltered gyro of `axis`: what Filter Sim and Motor noise read.
+pub(crate) fn raw_gyro(axis: Axis) -> ChannelId {
+    ChannelId::Gyro {
+        axis,
+        stage: GyroStage::Raw,
+    }
+}
+
+/// Whether the session shown in `slot` logs the unfiltered gyro of `axis`.
+pub(crate) fn has_raw_gyro(app: &App, slot: Slot, axis: Axis) -> bool {
     app.loaded(slot)
+        .and_then(Loaded::current)
+        .is_some_and(|s| s.channel(&raw_gyro(axis)).is_some())
+}
+
+/// What a tab that needs the unfiltered gyro shows for a log without it:
+/// `why`, then the log check's fix.
+pub(crate) fn no_raw_gyro(app: &App, ui: &mut Ui, slot: Slot, why: &str) {
+    if app.loaded(slot).is_none() {
+        return;
+    }
+    let fix = app
+        .loaded(slot)
         .and_then(|l| l.fitness())
         .and_then(|f| f.check("raw_gyro"))
         .and_then(|c| c.fix.clone())
-        .unwrap_or_else(|| "log the unfiltered gyro".to_string())
+        .unwrap_or_else(|| "log the unfiltered gyro".to_string());
+    ui.label(RichText::new(format!("{why} {fix}")).color(MUTED));
 }
 
 /// The "Log check" card on Diagnostics: every check with its fix to copy.
@@ -1548,13 +1569,10 @@ pub struct OverlayState {
     pub per_motor: bool,
 }
 
+/// Colour of motor `m`: the chosen plot colours in order, as the Log viewer
+/// draws the motors.
 pub(crate) fn motor_color(m: usize) -> Color32 {
-    // the chosen plot colours in order, as the Log viewer draws the motors
-    let p: &[Color32] = match crate::colormap::scheme() {
-        PlotColours::Explorer => &crate::colormap::EXPLORER_PALETTE,
-        PlotColours::ColourBlindSafe => crate::colormap::slot_palette(),
-    };
-    p[m % p.len()]
+    crate::colormap::line(m)
 }
 
 /// RPM overlay controls (shown once the motor count of a result is known);
