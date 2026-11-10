@@ -223,7 +223,51 @@ fn lowpass(
         cutoff_hz,
         dyn_min_hz: dyn_range.as_ref().filter(|_| dyn_active).map(|l| l[0]),
         dyn_max_hz: dyn_range.as_ref().filter(|_| dyn_active).map(|l| l[1]),
+        dyn_expo: 0.0,
     })
+}
+
+/// What a filter chain carries beyond its cut-offs, so that nothing after
+/// the decoder needs the headers or the firmware version (ADR-0015): the
+/// curve of the dynamic low-pass, the fade-in, weights and motor-speed
+/// smoothing of the RPM notches, the number of dynamic notches. From
+/// Betaflight's headers and, where one is missing, Betaflight's default of
+/// that version: the expo curve since 4.2 (5), the fade-in (50 Hz) and three
+/// dynamic notches since 4.3. The forks that log none of these headers get
+/// the defaults of their own version number, as the filter model has always
+/// assumed. `prefix` is `gyro` or `dterm`.
+pub fn filter_details(chain: &mut FilterChain, prefix: &str, fw: &FirmwareInfo, h: &RawHeaders) {
+    let expo = h
+        .get_f64(&format!("{prefix}_lpf1_dyn_expo"))
+        .or_else(|| h.get_f64(&format!("{prefix}_lowpass_dyn_expo")))
+        .unwrap_or(if fw.is_at_least(4, 2) { 5.0 } else { 0.0 })
+        / 10.0;
+    for l in [&mut chain.lowpass1, &mut chain.lowpass2]
+        .into_iter()
+        .flatten()
+    {
+        l.dyn_expo = expo;
+    }
+    if let Some(r) = &mut chain.rpm_notch {
+        r.weights = h
+            .get_list("rpm_filter_weights")
+            .unwrap_or_default()
+            .into_iter()
+            .map(|w| (w / 100.0).clamp(0.0, 1.0))
+            .collect();
+        r.fade_range_hz = h
+            .get_f64("rpm_filter_fade_range_hz")
+            .unwrap_or(if fw.is_at_least(4, 3) { 50.0 } else { 0.0 });
+        r.lpf_hz = h
+            .get_f64("rpm_filter_lpf_hz")
+            .or_else(|| h.get_f64("gyro_rpm_notch_lpf_hz"))
+            .unwrap_or(150.0);
+    }
+    if let Some(d) = &mut chain.dyn_notch
+        && d.count.is_none()
+    {
+        d.count = Some(if fw.is_at_least(4, 3) { 3 } else { 1 });
+    }
 }
 
 fn notches(h: &RawHeaders, hz_key: &str, cutoff_key: &str) -> Vec<Notch> {
@@ -311,7 +355,7 @@ fn protocol_name(code: f64) -> String {
 }
 
 /// Settings common to Betaflight-like header layouts (old and new key names).
-pub fn settings(h: &RawHeaders) -> Settings {
+pub fn settings(fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
     let pid = match (
         pid_axis(h, "rollPID", 0),
         pid_axis(h, "pitchPID", 1),
@@ -365,8 +409,13 @@ pub fn settings(h: &RawHeaders) -> Settings {
                     .first_of(&["rpm_filter_min_hz", "gyro_rpm_notch_min"])
                     .and_then(|v| v.trim().parse().ok())
                     .unwrap_or(0.0),
+                fade_range_hz: 0.0,
+                weights: Vec::new(),
+                lpf_hz: 0.0,
             }),
     };
+    let mut gyro_filters = gyro_filters;
+    filter_details(&mut gyro_filters, "gyro", fw, h);
     let dterm_filters = FilterChain {
         lowpass1: lowpass(
             h,
@@ -384,6 +433,8 @@ pub fn settings(h: &RawHeaders) -> Settings {
         dyn_notch: None,
         rpm_notch: None,
     };
+    let mut dterm_filters = dterm_filters;
+    filter_details(&mut dterm_filters, "dterm", fw, h);
     let extra =
         h.0.iter()
             .filter(|(k, _)| !k.starts_with("Field "))
@@ -670,6 +721,75 @@ pub fn derive(s: &mut FlightSession) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn filter_details_come_from_the_headers_or_the_version() {
+        let fw = |major, minor| FirmwareInfo {
+            vendor: FirmwareVendor::Betaflight,
+            version: Some(FirmwareVersion::new(major, minor, 0)),
+            ..FirmwareInfo::unknown()
+        };
+        let base = |extra: &[(&str, &str)]| {
+            let mut v: Vec<(String, String)> = [
+                ("gyro_lpf1_dyn_hz", "250,500"),
+                ("dterm_lpf1_dyn_hz", "75,150"),
+                ("dyn_notch_min_hz", "100"),
+                ("dyn_notch_max_hz", "600"),
+                ("rpm_filter_harmonics", "3"),
+            ]
+            .iter()
+            .chain(extra)
+            .map(|(k, x)| ((*k).to_string(), (*x).to_string()))
+            .collect();
+            v.dedup();
+            RawHeaders(v)
+        };
+        // the headers win
+        let s = settings(
+            &fw(2025, 12),
+            &base(&[
+                ("gyro_lpf1_dyn_expo", "7"),
+                ("dterm_lpf1_dyn_expo", "3"),
+                ("rpm_filter_fade_range_hz", "30"),
+                ("rpm_filter_weights", "100,50,0"),
+                ("rpm_filter_lpf_hz", "120"),
+                ("dyn_notch_count", "2"),
+            ]),
+        );
+        assert_eq!(
+            s.gyro_filters.lowpass1.as_ref().map(|l| l.dyn_expo),
+            Some(0.7)
+        );
+        assert_eq!(
+            s.dterm_filters.lowpass1.as_ref().map(|l| l.dyn_expo),
+            Some(0.3)
+        );
+        let r = s.gyro_filters.rpm_notch.as_ref().expect("rpm notch");
+        assert_eq!((r.fade_range_hz, r.lpf_hz), (30.0, 120.0));
+        assert_eq!(r.weights, [1.0, 0.5, 0.0]);
+        assert_eq!(s.gyro_filters.dyn_notch.and_then(|d| d.count), Some(2));
+        // 4.3 without them: expo 5, a 50 Hz fade, three dynamic notches
+        let s = settings(&fw(4, 3), &base(&[]));
+        assert_eq!(
+            s.gyro_filters.lowpass1.as_ref().map(|l| l.dyn_expo),
+            Some(0.5)
+        );
+        let r = s.gyro_filters.rpm_notch.as_ref().expect("rpm notch");
+        assert_eq!((r.fade_range_hz, r.lpf_hz), (50.0, 150.0));
+        assert!(r.weights.is_empty(), "every harmonic at full weight");
+        assert_eq!(s.gyro_filters.dyn_notch.and_then(|d| d.count), Some(3));
+        // 4.1: a linear curve, no fade, one dynamic notch
+        let s = settings(&fw(4, 1), &base(&[]));
+        assert_eq!(
+            s.gyro_filters.lowpass1.as_ref().map(|l| l.dyn_expo),
+            Some(0.0)
+        );
+        assert_eq!(
+            s.gyro_filters.rpm_notch.as_ref().map(|r| r.fade_range_hz),
+            Some(0.0)
+        );
+        assert_eq!(s.gyro_filters.dyn_notch.and_then(|d| d.count), Some(1));
+    }
 
     #[test]
     fn indexed_names() {

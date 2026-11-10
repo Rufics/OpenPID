@@ -594,12 +594,7 @@ impl Analysis for FilterSimAnalysis {
         let rpm: Vec<Vec<f64>> = (0..16u8)
             .map_while(|idx| optional(ctx, &ChannelId::MotorRpm { idx }, None).map(|r| r.filled()))
             .collect();
-        let model = ChainModel::from_settings(
-            &ctx.session.settings,
-            ctx.session.firmware.version,
-            ChainKind::Gyro,
-            fs,
-        );
+        let model = ChainModel::from_settings(&ctx.session.settings, ChainKind::Gyro, fs);
         let mut whatif = model.clone();
         p.overrides.apply(&mut whatif);
         let drive = Drive {
@@ -722,12 +717,13 @@ mod tests {
             cutoff_hz: 250.0,
             dyn_min_hz: Some(250.0),
             dyn_max_hz: Some(500.0),
+            dyn_expo: 0.0,
         });
         s.gyro_filters.notches.push(Notch {
             center_hz: 200.0,
             cutoff_hz: 150.0,
         });
-        ChainModel::from_settings(&s, None, ChainKind::Gyro, 1000.0)
+        ChainModel::from_settings(&s, ChainKind::Gyro, 1000.0)
     }
 
     #[test]

@@ -31,8 +31,8 @@ impl FirmwareProfile for Emuflight {
         common::map_field(field, &scales(fw, h))
     }
 
-    fn settings(&self, _fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
-        let mut s = common::settings(h);
+    fn settings(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
+        let mut s = common::settings(fw, h);
         // EmuFlight has per-axis gyro lowpass cutoffs; expose the roll value as the chain cutoff.
         if s.gyro_filters.lowpass1.is_none()
             && let Some(hz) = h.get_f64("gyro_lowpass_hz_roll").filter(|v| *v > 0.0)
@@ -42,6 +42,7 @@ impl FirmwareProfile for Emuflight {
                 cutoff_hz: hz,
                 dyn_min_hz: None,
                 dyn_max_hz: None,
+                dyn_expo: 0.0,
             });
         }
         s

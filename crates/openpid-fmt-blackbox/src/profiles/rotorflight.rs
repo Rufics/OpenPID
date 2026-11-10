@@ -184,8 +184,8 @@ impl FirmwareProfile for Rotorflight {
         }
     }
 
-    fn settings(&self, _fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
-        let mut s = common::settings(h);
+    fn settings(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
+        let mut s = common::settings(fw, h);
         for key in [
             "gyro_rpm_filter_bank_motor_index",
             "gyro_rpm_filter_bank_gear_ratio",

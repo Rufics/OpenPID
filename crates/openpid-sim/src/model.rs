@@ -10,7 +10,6 @@
 //! matters for the weighted and retuned ones.
 
 use crate::filter::{Biquad, Chain, Filter, Pt1, Ptn, Stage};
-use openpid_core::FirmwareVersion;
 use openpid_core::settings::{FilterChain, Lowpass, LowpassKind, Notch, Settings};
 use openpid_dsp::{Complex, Fft, Window, next_smooth, spectrum::amplitude_spectrum};
 use serde::{Deserialize, Serialize};
@@ -173,12 +172,12 @@ const MAX_NOTCH_FRACTION: f64 = 0.48;
 /// Smoothing of the tracked dynamic-notch centres, Hz (Betaflight `DYN_NOTCH_SMOOTH_HZ`).
 const DYN_NOTCH_SMOOTH_HZ: f64 = 4.0;
 
-fn lowpass_model(l: &Lowpass, expo: f64) -> Option<LowpassModel> {
+fn lowpass_model(l: &Lowpass) -> Option<LowpassModel> {
     let dynamic = match (l.dyn_min_hz, l.dyn_max_hz) {
         (Some(min), Some(max)) if min > 0.0 && max > min => Some(DynLowpass {
             min_hz: min,
             max_hz: max,
-            expo,
+            expo: l.dyn_expo.clamp(0.0, 1.0),
         }),
         _ => None,
     };
@@ -192,47 +191,22 @@ fn lowpass_model(l: &Lowpass, expo: f64) -> Option<LowpassModel> {
     })
 }
 
-fn extra_f64(settings: &Settings, key: &str) -> Option<f64> {
-    settings.extra.get(key)?.trim().parse().ok()
-}
-
-fn extra_list(settings: &Settings, key: &str) -> Option<Vec<f64>> {
-    settings
-        .extra
-        .get(key)?
-        .split(',')
-        .map(|v| v.trim().parse().ok())
-        .collect()
-}
+/// Smoothing of the motor frequency when the settings give none, Hz.
+const RPM_LPF_HZ: f64 = 150.0;
 
 impl ChainModel {
-    /// The model of `kind` from the typed settings (and the raw headers in
-    /// `Settings::extra` for what the typed chain does not carry: dynamic
-    /// low-pass expo, RPM fade range, weights and smoothing). `version`
-    /// fills defaults the firmware of that version uses when a header is
-    /// missing.
-    pub fn from_settings(
-        settings: &Settings,
-        version: Option<FirmwareVersion>,
-        kind: ChainKind,
-        fs: f64,
-    ) -> Self {
-        let (chain, prefix): (&FilterChain, &str) = match kind {
-            ChainKind::Gyro => (&settings.gyro_filters, "gyro"),
-            ChainKind::Dterm => (&settings.dterm_filters, "dterm"),
+    /// The model of `kind` from the typed settings; the firmware profile has
+    /// already resolved what a firmware version implies (ADR-0015).
+    pub fn from_settings(settings: &Settings, kind: ChainKind, fs: f64) -> Self {
+        let chain: &FilterChain = match kind {
+            ChainKind::Gyro => &settings.gyro_filters,
+            ChainKind::Dterm => &settings.dterm_filters,
         };
-        let at_least =
-            |maj: u32, min: u32| version.is_some_and(|v| v >= FirmwareVersion::new(maj, min, 0));
-        // the expo curve exists since 4.2 (default 5); before that the cutoff is linear
-        let expo = extra_f64(settings, &format!("{prefix}_lpf1_dyn_expo"))
-            .or_else(|| extra_f64(settings, &format!("{prefix}_lowpass_dyn_expo")))
-            .unwrap_or(if at_least(4, 2) { 5.0 } else { 0.0 })
-            / 10.0;
-        let rpm_notch = chain.rpm_notch.map(|r| {
-            let weights = extra_list(settings, "rpm_filter_weights")
-                .unwrap_or_default()
-                .into_iter()
-                .map(|w| (w / 100.0).clamp(0.0, 1.0))
+        let rpm_notch = chain.rpm_notch.as_ref().map(|r| {
+            let weights = r
+                .weights
+                .iter()
+                .map(|w| w.clamp(0.0, 1.0))
                 .chain(std::iter::repeat(1.0))
                 .take(r.harmonics as usize)
                 .collect();
@@ -240,20 +214,16 @@ impl ChainModel {
                 harmonics: r.harmonics,
                 q: if r.q > 0.0 { r.q } else { 5.0 },
                 min_hz: r.min_hz,
-                // the fade-in arrived with 4.3; older firmware switches the notch hard at min_hz
-                fade_range_hz: extra_f64(settings, "rpm_filter_fade_range_hz")
-                    .unwrap_or(if at_least(4, 3) { 50.0 } else { 0.0 }),
+                fade_range_hz: r.fade_range_hz.max(0.0),
                 weights,
-                rpm_lpf_hz: extra_f64(settings, "rpm_filter_lpf_hz")
-                    .or_else(|| extra_f64(settings, "gyro_rpm_notch_lpf_hz"))
-                    .unwrap_or(150.0),
+                rpm_lpf_hz: if r.lpf_hz > 0.0 { r.lpf_hz } else { RPM_LPF_HZ },
             }
         });
         let dyn_notch = chain
             .dyn_notch
             .filter(|d| d.max_hz > d.min_hz)
             .map(|d| DynNotchModel {
-                count: d.count.unwrap_or(if at_least(4, 3) { 3 } else { 1 }).max(1),
+                count: d.count.unwrap_or(1).max(1),
                 q: if d.q > 0.0 { d.q } else { 3.0 },
                 min_hz: d.min_hz,
                 max_hz: d.max_hz,
@@ -261,8 +231,8 @@ impl ChainModel {
         ChainModel {
             fs,
             kind,
-            lowpass1: chain.lowpass1.as_ref().and_then(|l| lowpass_model(l, expo)),
-            lowpass2: chain.lowpass2.as_ref().and_then(|l| lowpass_model(l, expo)),
+            lowpass1: chain.lowpass1.as_ref().and_then(lowpass_model),
+            lowpass2: chain.lowpass2.as_ref().and_then(lowpass_model),
             notches: chain
                 .notches
                 .iter()
@@ -705,7 +675,6 @@ pub fn track_peaks(x: &[f64], fs: f64, min_hz: f64, max_hz: f64, count: usize) -
 mod tests {
     use super::*;
     use openpid_core::settings::{DynNotch, RpmNotch};
-    use std::collections::BTreeMap;
 
     const FS: f64 = 1000.0;
 
@@ -715,11 +684,13 @@ mod tests {
             cutoff_hz,
             dyn_min_hz: dynamic.map(|d| d.0),
             dyn_max_hz: dynamic.map(|d| d.1),
+            dyn_expo: 0.0,
         }
     }
 
-    fn settings(extra: &[(&str, &str)]) -> Settings {
-        Settings {
+    /// A gyro and a D-term chain with every stage; `tweak` sets what a test is about.
+    fn settings_with(tweak: impl FnOnce(&mut Settings)) -> Settings {
+        let mut s = Settings {
             gyro_filters: FilterChain {
                 lowpass1: Some(lowpass(LowpassKind::Pt1, 250.0, Some((250.0, 500.0)))),
                 lowpass2: Some(lowpass(LowpassKind::Pt1, 500.0, None)),
@@ -737,6 +708,9 @@ mod tests {
                     harmonics: 3,
                     q: 5.0,
                     min_hz: 100.0,
+                    fade_range_hz: 0.0,
+                    weights: Vec::new(),
+                    lpf_hz: 0.0,
                 }),
             },
             dterm_filters: FilterChain {
@@ -746,19 +720,20 @@ mod tests {
                 dyn_notch: None,
                 rpm_notch: None,
             },
-            extra: extra
-                .iter()
-                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-                .collect::<BTreeMap<_, _>>(),
             ..Default::default()
-        }
+        };
+        tweak(&mut s);
+        s
+    }
+
+    fn rpm(s: &mut Settings) -> &mut RpmNotch {
+        s.gyro_filters.rpm_notch.as_mut().unwrap()
     }
 
     #[test]
     fn parts_at_an_operating_point() {
-        let v2025 = Some(FirmwareVersion::new(2025, 12, 2));
-        let s = settings(&[("rpm_filter_weights", "100,50,0")]);
-        let m = ChainModel::from_settings(&s, v2025, ChainKind::Gyro, FS);
+        let s = settings_with(|s| rpm(s).weights = vec![1.0, 0.5, 0.0]);
+        let m = ChainModel::from_settings(&s, ChainKind::Gyro, FS);
         // without motor speeds or dynamic-notch centres: notch and low-passes only
         let still = m.parts_at(&OperatingPoint::default());
         let labels: Vec<&str> = still.iter().map(|p| p.label.as_str()).collect();
@@ -808,15 +783,15 @@ mod tests {
     }
 
     #[test]
-    fn builds_from_settings_with_version_defaults() {
-        let v2025 = Some(FirmwareVersion::new(2025, 12, 2));
-        let s = settings(&[
-            ("gyro_lpf1_dyn_expo", "7"),
-            ("rpm_filter_fade_range_hz", "30"),
-            ("rpm_filter_weights", "100,50,0"),
-            ("rpm_filter_lpf_hz", "120"),
-        ]);
-        let m = ChainModel::from_settings(&s, v2025, ChainKind::Gyro, FS);
+    fn builds_from_the_typed_settings() {
+        let s = settings_with(|s| {
+            s.gyro_filters.lowpass1.as_mut().unwrap().dyn_expo = 0.7;
+            let r = rpm(s);
+            r.fade_range_hz = 30.0;
+            r.weights = vec![1.0, 0.5, 0.0];
+            r.lpf_hz = 120.0;
+        });
+        let m = ChainModel::from_settings(&s, ChainKind::Gyro, FS);
         let l1 = m.lowpass1.as_ref().unwrap();
         assert_eq!(l1.kind, LowpassKind::Pt1);
         let d = l1.dynamic.as_ref().unwrap();
@@ -832,52 +807,23 @@ mod tests {
         assert_eq!(m.dyn_notch.as_ref().unwrap().count, 1);
         assert_eq!(m.describe().len(), 5);
         // D-term chain: dynamic lpf1 with the dterm expo, no notches
-        let s2 = settings(&[("dterm_lpf1_dyn_expo", "3")]);
-        let dt = ChainModel::from_settings(&s2, v2025, ChainKind::Dterm, FS);
+        let s2 = settings_with(|s| s.dterm_filters.lowpass1.as_mut().unwrap().dyn_expo = 0.3);
+        let dt = ChainModel::from_settings(&s2, ChainKind::Dterm, FS);
         assert_eq!(
             dt.lowpass1.as_ref().unwrap().dynamic.as_ref().unwrap().expo,
             0.3
         );
         assert!(dt.rpm_notch.is_none() && dt.dyn_notch.is_none());
-        // 4.1 defaults: linear curve, no fade, one dynamic notch
-        let old = ChainModel::from_settings(
-            &settings(&[]),
-            Some(FirmwareVersion::new(4, 1, 0)),
-            ChainKind::Gyro,
-            FS,
-        );
-        assert_eq!(
-            old.lowpass1
-                .as_ref()
-                .unwrap()
-                .dynamic
-                .as_ref()
-                .unwrap()
-                .expo,
-            0.0
-        );
-        assert_eq!(old.rpm_notch.as_ref().unwrap().fade_range_hz, 0.0);
-        assert_eq!(old.rpm_notch.as_ref().unwrap().weights, vec![1.0; 3]);
-        // 4.3 defaults without the headers: expo 5, fade 50
-        let v43 = ChainModel::from_settings(
-            &settings(&[]),
-            Some(FirmwareVersion::new(4, 3, 0)),
-            ChainKind::Gyro,
-            FS,
-        );
-        assert_eq!(
-            v43.lowpass1
-                .as_ref()
-                .unwrap()
-                .dynamic
-                .as_ref()
-                .unwrap()
-                .expo,
-            0.5
-        );
-        assert_eq!(v43.rpm_notch.as_ref().unwrap().fade_range_hz, 50.0);
+        // what the settings do not give: a linear curve, no fade, every
+        // harmonic at full weight, the model's smoothing of the motor speed
+        let plain = ChainModel::from_settings(&settings_with(|_| {}), ChainKind::Gyro, FS);
+        let l1 = plain.lowpass1.as_ref().unwrap();
+        assert_eq!(l1.dynamic.as_ref().unwrap().expo, 0.0);
+        let r = plain.rpm_notch.as_ref().unwrap();
+        assert_eq!((r.fade_range_hz, r.rpm_lpf_hz), (0.0, RPM_LPF_HZ));
+        assert_eq!(r.weights, vec![1.0; 3]);
         // an empty chain
-        let none = ChainModel::from_settings(&Settings::default(), None, ChainKind::Gyro, FS);
+        let none = ChainModel::from_settings(&Settings::default(), ChainKind::Gyro, FS);
         assert_eq!(none.describe(), vec!["no filters".to_string()]);
         assert!((none.static_response(100.0) - Complex::new(1.0, 0.0)).norm() < 1e-12);
     }
@@ -900,8 +846,8 @@ mod tests {
 
     #[test]
     fn static_run_equals_the_static_chain() {
-        let s = settings(&[]);
-        let mut m = ChainModel::from_settings(&s, None, ChainKind::Gyro, FS);
+        let s = settings_with(|_| {});
+        let mut m = ChainModel::from_settings(&s, ChainKind::Gyro, FS);
         m.rpm_notch = None;
         m.dyn_notch = None;
         m.lowpass1.as_mut().unwrap().dynamic = None;
@@ -915,8 +861,8 @@ mod tests {
 
     #[test]
     fn throttle_opens_the_dynamic_lowpass() {
-        let s = settings(&[("gyro_lpf1_dyn_expo", "0")]);
-        let mut m = ChainModel::from_settings(&s, None, ChainKind::Gyro, FS);
+        let s = settings_with(|_| {});
+        let mut m = ChainModel::from_settings(&s, ChainKind::Gyro, FS);
         m.rpm_notch = None;
         m.dyn_notch = None;
         m.notches.clear();
@@ -952,11 +898,8 @@ mod tests {
 
     #[test]
     fn rpm_notches_remove_the_motor_tone_and_fade_near_the_minimum() {
-        let s = settings(&[
-            ("rpm_filter_fade_range_hz", "50"),
-            ("rpm_filter_weights", "100,100,100"),
-        ]);
-        let mut m = ChainModel::from_settings(&s, None, ChainKind::Gyro, FS);
+        let s = settings_with(|s| rpm(s).fade_range_hz = 50.0);
+        let mut m = ChainModel::from_settings(&s, ChainKind::Gyro, FS);
         m.dyn_notch = None;
         m.notches.clear();
         m.lowpass1 = None;
@@ -1044,8 +987,8 @@ mod tests {
                 freqs[i]
             );
         }
-        let s = settings(&[]);
-        let mut m = ChainModel::from_settings(&s, None, ChainKind::Gyro, FS);
+        let s = settings_with(|_| {});
+        let mut m = ChainModel::from_settings(&s, ChainKind::Gyro, FS);
         m.rpm_notch = None;
         m.notches.clear();
         m.lowpass1 = None;

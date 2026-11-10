@@ -100,6 +100,10 @@ pub struct Lowpass {
     pub dyn_min_hz: Option<f64>,
     /// Dynamic cut-off at full throttle.
     pub dyn_max_hz: Option<f64>,
+    /// Curve of the dynamic cut-off over the throttle: 0 = linear, up to 1
+    /// (the firmware's expo setting scaled to 0…1).
+    #[serde(default)]
+    pub dyn_expo: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -124,7 +128,7 @@ pub struct DynNotch {
     pub count: Option<u32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// RPM (ESC telemetry) notch configuration.
 pub struct RpmNotch {
     /// Harmonics filtered per motor.
@@ -133,6 +137,16 @@ pub struct RpmNotch {
     pub q: f64,
     /// Lowest filtered frequency.
     pub min_hz: f64,
+    /// Width of the fade-in above `min_hz`, Hz (0 = switched hard at `min_hz`).
+    #[serde(default)]
+    pub fade_range_hz: f64,
+    /// Weight of each harmonic, 0…1; a harmonic without one counts as 1.
+    #[serde(default)]
+    pub weights: Vec<f64>,
+    /// Cut-off of the low-pass that smooths the motor frequency, Hz
+    /// (0 = not given).
+    #[serde(default)]
+    pub lpf_hz: f64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

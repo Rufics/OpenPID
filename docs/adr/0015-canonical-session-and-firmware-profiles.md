@@ -53,19 +53,25 @@ the `ArduPilot` mode numbers and the `RCIN` channel map and calibration in
 its profile; the session builders only walk the slow frames or the `MODE` /
 `EV` events. `modes.rs` and `sticks.rs` left `openpid-analysis`.
 
+The filter model (`openpid-sim`) had read four settings from raw headers
+kept in `Settings::extra` and taken the firmware version for their defaults.
+They are typed now (`Lowpass::dyn_expo`, `RpmNotch::fade_range_hz`,
+`weights`, `lpf_hz`; `DynNotch::count` always set) and filled by the
+profiles (`common::filter_details` on Blackbox logs: Betaflight's headers,
+else its default of that version; the `ArduPilot` harmonic notch has no
+fade-in or weights). `ChainModel::from_settings` takes the settings only.
+The simulation of the Betaflight fixture is unchanged to the bit.
+
 ## Consequences
 
 - A new firmware or version is one profile; a new consumer needs no
   firmware knowledge.
 - The profile trait grows with every kind of firmware-specific meaning; that
   is where it belongs.
-- **Deviations that exist today** (older code, not changed by this ADR; each
-  is to move behind the profile):
+- **Deviations that exist today** (older code; each is to move behind the
+  profile):
   - `openpid-analysis/src/fitness.rs` picks the advice "how to log the
     unfiltered gyro" by firmware vendor and version.
-  - `openpid-sim/src/model.rs` reads four filter settings (dynamic low-pass
-    expo, RPM-notch fade range, weights and smoothing) from raw headers kept
-    in `Settings::extra`, and takes the firmware version for their defaults.
   - `rc.N` channels (`ChannelId::RcCommand`) keep the firmware's own units
     and channel order (±500 on the Cleanflight family, microseconds on
     `ArduPilot`, where `CTUN.ThrIn` of old Copter logs shares `rc.2` with

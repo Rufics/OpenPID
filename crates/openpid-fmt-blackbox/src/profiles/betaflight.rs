@@ -215,8 +215,8 @@ impl FirmwareProfile for Betaflight {
         common::map_field(field, &Scales::betaflight(fw, h))
     }
 
-    fn settings(&self, _fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
-        common::settings(h)
+    fn settings(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
+        common::settings(fw, h)
     }
 
     fn derive(&self, session: &mut FlightSession) {

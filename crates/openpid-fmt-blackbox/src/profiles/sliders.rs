@@ -183,7 +183,7 @@ impl BetaflightSliders {
             "simplified_gyro_filter".into(),
             h.get_f64("simplified_gyro_filter").unwrap_or(1.0),
         );
-        let logged = super::common::settings(h).pid;
+        let logged = super::common::settings(firmware, h).pid;
         let list = |k: &str| h.get_list(k).unwrap_or_default();
         let gyro_dyn_hz = list("gyro_lpf1_dyn_hz");
         let dterm_dyn_hz = list("dterm_lpf1_dyn_hz");

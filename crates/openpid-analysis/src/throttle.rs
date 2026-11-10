@@ -235,8 +235,8 @@ impl Analysis for ThrottleHeatmap {
                             .collect()
                     })
                     .collect(),
-                harmonics: chain.rpm_notch.map_or(3, |r| r.harmonics.max(1)),
-                rpm_min_hz: chain.rpm_notch.map(|r| r.min_hz),
+                harmonics: chain.rpm_notch.as_ref().map_or(3, |r| r.harmonics.max(1)),
+                rpm_min_hz: chain.rpm_notch.as_ref().map(|r| r.min_hz),
                 notches: chain
                     .notches
                     .iter()

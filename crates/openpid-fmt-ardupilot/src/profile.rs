@@ -576,6 +576,7 @@ impl FirmwareProfile for ArdupilotProfile {
                     cutoff_hz,
                     dyn_min_hz: None,
                     dyn_max_hz: None,
+                    dyn_expo: 0.0,
                 }),
             lowpass2: None,
             notches: Vec::new(),
@@ -592,6 +593,7 @@ impl FirmwareProfile for ArdupilotProfile {
                 cutoff_hz,
                 dyn_min_hz: None,
                 dyn_max_hz: None,
+                dyn_expo: 0.0,
             }),
             ..FilterChain::default()
         };
@@ -691,10 +693,14 @@ fn harmonic_notch(h: &RawHeaders, mut chain: FilterChain) -> FilterChain {
     match h.get_f64("INS_HNTCH_MODE").unwrap_or(0.0) as i64 {
         // 2 = RPM sensor, 3 = ESC telemetry: tracks motor speed
         2 | 3 => {
+            // the harmonic notch has no fade-in and no per-harmonic weights
             chain.rpm_notch = Some(RpmNotch {
                 harmonics,
                 q,
                 min_hz: freq,
+                fade_range_hz: 0.0,
+                weights: Vec::new(),
+                lpf_hz: 0.0,
             });
         }
         // 4 = in-flight FFT

@@ -549,6 +549,7 @@ impl SignalSpec {
                 cutoff_hz: self.filter_hz,
                 dyn_min_hz: None,
                 dyn_max_hz: None,
+                dyn_expo: 0.0,
             });
         }
         let mut firmware = FirmwareInfo::parse_revision("Synthetic (openpid-sim)");

@@ -870,6 +870,9 @@ mod tests {
                 harmonics: 3,
                 q: 500.0,
                 min_hz: 100.0,
+                fade_range_hz: 0.0,
+                weights: Vec::new(),
+                lpf_hz: 0.0,
             });
         });
         assert!(
