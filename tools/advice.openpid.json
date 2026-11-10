@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "slots": [
+    { "path": "../tests/logs/betaflight-4.5.1-two-sessions.bbl", "session": 1, "epoch": null, "id": 0, "visible": true },
+    { "path": "../tests/logs/betaflight-2025.12.2-btfl_027.bbl", "session": 0, "epoch": null, "id": 1, "visible": true }
+  ],
+  "tab": "advice"
+}
