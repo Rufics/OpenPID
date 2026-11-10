@@ -326,12 +326,21 @@ PIDs (sim what-if against logged) before touching the firmware.
 
 ![Motor noise](screenshots/motors.png)
 
-A table with, per motor, the mean rpm, the gyro amplitude at the harmonics
-`×1…×n` and the ratio to the mean over the motors, and the sum. The loudest
-motor and ratios > 1.3 are highlighted: a bent prop or a worn bearing shows as
-a row that stands out. The speeds come from eRPM; without telemetry the
-estimate from the gyro peaks (section 9) is used and the table has one row for
-all motors. Below is the spectrum with every motor's harmonics in its colour.
+A row per axis (roll, pitch, yaw) of the docked log, on the unfiltered gyro:
+
+- **The spectrum** with the motor harmonics marked: ×1 solid, ×2 and ×3
+  dashed, at the mean speed of the motors; **Per motor** (panel) draws one
+  marker per motor and harmonic in the motor's colour instead.
+- **The bars** beside it: each motor's ×1, ×2, ×3 amplitude over the mean of
+  the motors (1 = average, the dashed line). A bent prop, a worn bearing or a
+  loose motor mount shows as a motor that stands out on every axis; hover a
+  bar for its amplitude.
+- **The panel** gives the speed source and frames, the loudest motor and a
+  table of each motor's rpm and ×1 ratio per axis (ratios above 1.3
+  highlighted), and the Harmonics and Segment fields.
+
+The speeds come from eRPM; without telemetry the estimate from the gyro peaks
+(section 9) is used and there is one bar group for all motors.
 
 ## 9. Motor speed without eRPM
 

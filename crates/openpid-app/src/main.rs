@@ -11,6 +11,7 @@ mod filter_tab;
 mod grid;
 mod i18n;
 mod log_tab;
+mod motors_tab;
 mod panel;
 mod prefs;
 mod shortcuts;

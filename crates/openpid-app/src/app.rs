@@ -228,6 +228,8 @@ pub struct Tools {
     pub viewer_channels: Vec<ChannelId>,
     /// Log viewer display options (docs/design/log-tab).
     pub log_display: crate::log_tab::LogDisplay,
+    /// Motors tab display options (docs/design/motors-tab).
+    pub motors_display: crate::motors_tab::MotorsDisplay,
     /// Step tab display options (docs/design/axis-layout).
     pub step_display: crate::axis_layout::StepDisplay,
     /// Spectrum tab display options (docs/design/spectrum-tab).
@@ -261,6 +263,7 @@ impl Default for Tools {
             min_segments: 3,
             viewer_channels: Vec::new(),
             log_display: crate::log_tab::LogDisplay::default(),
+            motors_display: crate::motors_tab::MotorsDisplay::default(),
             step_display: crate::axis_layout::StepDisplay::default(),
             spectrum_display: crate::spectrum_tab::SpectrumDisplay::default(),
             throttle_display: crate::throttle_tab::ThrottleDisplay::default(),
@@ -757,6 +760,7 @@ impl App {
             viewer_channels: p.viewer_channels.clone(),
             // display options are the viewer's, not the project's
             log_display: self.tools.log_display.clone(),
+            motors_display: self.tools.motors_display.clone(),
             step_display: self.tools.step_display.clone(),
             spectrum_display: self.tools.spectrum_display.clone(),
             throttle_display: self.tools.throttle_display.clone(),
@@ -1260,7 +1264,7 @@ impl App {
                 Tab::TimeHeatmap => crate::time_tab::time(self, ui),
                 Tab::Surface => surface::surface(self, ui),
                 Tab::FilterSim => crate::filter_tab::filter_sim(self, ui),
-                Tab::MotorNoise => views::motor_noise(self, ui),
+                Tab::MotorNoise => crate::motors_tab::motors(self, ui),
                 Tab::Advice => views::advice(self, ui),
                 Tab::Sliders => views::sliders(self, ui),
                 Tab::Diagnostics => views::diagnostics(self, ui),

@@ -83,4 +83,5 @@ Rules shared by every topic of the sprint:
 | Freq × time: R/P/Y spectrograms in dB, spectrum at the position, throttle | [time-tab](time-tab/README.md) |
 | Log viewer: R/P/Y at one scale, throttle / motors, quantities, values at the cursor | [log-tab](log-tab/README.md) |
 | Filter Sim: the chain's magnitude, delay and phase per part beside the log | [filter-tab](filter-tab/README.md) |
+| Motors: R/P/Y spectra with the harmonics, each motor over the mean beside them | [motors-tab](motors-tab/README.md) |
 

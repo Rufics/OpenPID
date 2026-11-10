@@ -2731,8 +2731,14 @@ fn motor_noise_tab_lists_every_motor() {
     for m in ["M1", "M2", "M3", "M4"] {
         assert!(h.query_by_label(m).is_some(), "{m}");
     }
-    assert!(has_label_containing(&h, "loudest M"));
-    assert!(has_label_containing(&h, "×1 amp (ratio)"));
+    assert!(has_label_containing(&h, "loudest: roll M"));
+    assert!(has_label_containing(&h, "×1 over the mean of the motors"));
+    // a row per axis: three jobs on the unfiltered gyro
+    assert_eq!(app(&h).cache.len(), 3);
+    assert!(!app(&h).tools.motors_display.per_motor);
+    h.get_by_label("Per motor").click();
+    h.step();
+    assert!(app(&h).tools.motors_display.per_motor);
     let out = app(&h)
         .cache
         .values()

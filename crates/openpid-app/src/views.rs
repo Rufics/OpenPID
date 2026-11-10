@@ -8,7 +8,7 @@ use crate::prefs::{AccUnit, PlotColours, Prefs, RateUnit, Theme};
 use crate::shortcuts::{self, Action};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
-use egui_plot::{HLine, Heatmap, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, VLine};
+use egui_plot::{HLine, Heatmap, Line, LineStyle, PlotPoint, PlotPoints, VLine};
 use openpid_analysis::{
     Epoch, Fitness, FitnessLevel, RpmOverlay, TargetPreset, Verdict, VerdictLevel,
 };
@@ -1559,8 +1559,12 @@ pub struct OverlayState {
 }
 
 pub(crate) fn motor_color(m: usize) -> Color32 {
-    let hue = (m as f32 * 0.23 + 0.08) % 1.0;
-    egui::ecolor::Hsva::new(hue, 0.85, 1.0, 1.0).into()
+    // the chosen plot colours in order, as the Log viewer draws the motors
+    let p: &[Color32] = match crate::colormap::scheme() {
+        PlotColours::Explorer => &crate::colormap::EXPLORER_PALETTE,
+        PlotColours::ColourBlindSafe => crate::colormap::slot_palette(),
+    };
+    p[m % p.len()]
 }
 
 /// RPM overlay controls (shown once the motor count of a result is known);
@@ -2705,172 +2709,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
 }
 
 // ---------------------------------------------------------------------------
-
-/// Motor noise: a table of every motor's harmonic amplitudes on the gyro and
-/// the spectrum with the harmonics marked per motor.
-pub fn motor_noise(app: &mut App, ui: &mut Ui) {
-    ui.separator();
-    ui.horizontal_wrapped(|ui| {
-        if axis_selector(ui, &mut app.tools.axis) {
-            app.tools.motor_noise.channel = ChannelId::Gyro {
-                axis: app.tools.axis,
-                stage: GyroStage::Raw,
-            };
-        }
-        ui.separator();
-        let l = ui.label(tr("segment"));
-        crate::panel::with_unit(
-            ui,
-            egui::DragValue::new(&mut app.tools.motor_noise.segment_s)
-                .speed(0.01)
-                .range(0.05..=2.0),
-            " s",
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("harmonics"));
-        ui.add(egui::DragValue::new(&mut app.tools.motor_noise.harmonics).range(1..=8))
-            .labelled_by(l.id);
-    });
-    let axis = app.tools.axis;
-    let params = app.tools.motor_noise.clone();
-    let mut outputs: Vec<(Slot, Arc<Output>)> = Vec::new();
-    for slot in app.visible_slots() {
-        let has_raw = app.loaded(slot).and_then(Loaded::current).is_some_and(|s| {
-            s.channel(&ChannelId::Gyro {
-                axis,
-                stage: GyroStage::Raw,
-            })
-            .is_some()
-        });
-        if app.loaded(slot).is_some() && !has_raw {
-            ui.label(
-                RichText::new(format!(
-                    "{}: no unfiltered gyro in this log (the filtered one has the motor peaks removed); {}",
-                    slot.name(),
-                    raw_gyro_fix(app, slot)
-                ))
-                .color(MUTED),
-            );
-            continue;
-        }
-        if !has_raw {
-            continue;
-        }
-        match app.result(slot, Kind::MotorNoise(params.clone())) {
-            Some(Ok(o)) => outputs.push((slot, o)),
-            Some(Err(e)) => show_error(ui, slot, &e),
-            None => {
-                ui.spinner();
-            }
-        }
-    }
-    let w = panel_width(ui, outputs.len());
-    egui::ScrollArea::horizontal()
-        .id_salt("motor-panels")
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                for (slot, o) in &outputs {
-                    let Output::MotorNoise(m) = o.as_ref() else {
-                        continue;
-                    };
-                    ui.vertical(|ui| {
-                        ui.set_width(w - 8.0);
-                        ui.label(
-                            RichText::new(format!(
-                                "{}: {} ({}), rpm {}, {} frames{}",
-                                slot.name(),
-                                m.channel.key(),
-                                m.unit,
-                                m.rpm_source,
-                                m.frames,
-                                m.loudest
-                                    .filter(|_| m.motors.len() > 1)
-                                    .map_or(String::new(), |i| format!(", loudest M{}", i + 1))
-                            ))
-                            .color(slot_color(*slot)),
-                        );
-                        egui::Grid::new(("motor-noise", slot.name()))
-                            .striped(true)
-                            .show(ui, |ui| {
-                                ui.label(RichText::new(tr("motor")).strong());
-                                ui.label(RichText::new(tr("rpm")).strong());
-                                for k in 1..=params.harmonics {
-                                    ui.label(RichText::new(format!("×{k} amp (ratio)")).strong());
-                                }
-                                ui.label(RichText::new(tr("total")).strong());
-                                ui.end_row();
-                                for motor in &m.motors {
-                                    let loud = m.loudest == Some(motor.idx) && m.motors.len() > 1;
-                                    let colour = if loud {
-                                        ACCENT
-                                    } else {
-                                        motor_color(usize::from(motor.idx))
-                                    };
-                                    ui.label(
-                                        RichText::new(format!("M{}", motor.idx + 1)).color(colour),
-                                    );
-                                    ui.label(format!("{:.0}", motor.mean_rpm));
-                                    for h in &motor.harmonics {
-                                        let text = format!("{:.2} ({:.2})", h.amplitude, h.ratio);
-                                        ui.label(if h.ratio > 1.3 {
-                                            RichText::new(text).color(ACCENT)
-                                        } else {
-                                            RichText::new(text)
-                                        });
-                                    }
-                                    ui.label(format!("{:.2}", motor.total));
-                                    ui.end_row();
-                                }
-                            });
-                    });
-                }
-            });
-            let h = ui.available_height();
-            Plot::new("motor-noise-psd")
-                .legend(Legend::default())
-                .x_axis_label("frequency (Hz)")
-                .y_axis_label("dB")
-                .height(h)
-                .show(ui, |pu| {
-                    for (slot, o) in &outputs {
-                        let Output::MotorNoise(m) = o.as_ref() else {
-                            continue;
-                        };
-                        let pts: Vec<[f64; 2]> = m
-                            .freq
-                            .iter()
-                            .zip(&m.psd_db)
-                            .map(|(f, y)| [*f, *y])
-                            .collect();
-                        pu.line(
-                            Line::new(
-                                format!("{} {}", slot.name(), m.channel.key()),
-                                PlotPoints::from(pts),
-                            )
-                            .color(slot_color(*slot))
-                            .width(1.2),
-                        );
-                        for motor in &m.motors {
-                            for hn in &motor.harmonics {
-                                if hn.mean_hz <= 0.0 {
-                                    continue;
-                                }
-                                let mut line = VLine::new(
-                                    format!("{} M{} ×{}", slot.name(), motor.idx + 1, hn.k),
-                                    hn.mean_hz,
-                                )
-                                .color(motor_color(usize::from(motor.idx)))
-                                .width(if hn.k == 1 { 1.5 } else { 1.0 });
-                                if hn.k > 1 {
-                                    line = line.style(LineStyle::dashed_dense());
-                                }
-                                pu.vline(line);
-                            }
-                        }
-                    }
-                });
-        });
-}
 
 #[cfg(test)]
 mod tests {
