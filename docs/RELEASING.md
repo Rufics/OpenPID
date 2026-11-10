@@ -28,7 +28,7 @@
 feature branch ──PR──▶ master ──release-plz──▶ PR "chore: release vX.Y.Z" ──merge──▶ tag vX.Y.Z
                                                                                      └─▶ GitHub Release + CHANGELOG
                                                                                      └─▶ release.yml: binaries for
-                                                                                         Linux x86_64, macOS arm64/x86_64, Windows x86_64
+                                                                                         Linux x86_64, macOS arm64, Windows x86_64
 ```
 
 One version for the whole workspace (`[workspace.package].version`), the tag
@@ -69,7 +69,8 @@ merge never goes through with an untested platform. The policy:
 3. **No automatic retry.** `nick-fields/retry` or the like is a new workflow
    dependency (ADR-0007), and a repeated `cargo test` does not help when the
    problem is machine allocation, not the test.
-4. **macOS artifacts for both architectures.** `build (macos)` builds arm64 on
-   `macos-15`, `build (macos-intel)` x86_64 on `macos-15-intel` (a different
-   runner pool). When the arm64 pool is empty the release still has a macOS
-   build, and Intel-Mac users have theirs.
+4. **One macOS architecture.** macOS is built for Apple silicon (arm64) on
+   `macos-15` alone; the Intel leg on `macos-15-intel` was removed (#164). A
+   release therefore waits for that pool: when the `aarch64-apple-darwin` job
+   of `release.yml` is abandoned, rerun it the same way, and the archive is
+   attached to the existing GitHub release.
