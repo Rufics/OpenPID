@@ -103,3 +103,9 @@ Rules shared by every topic of the sprint:
 | Advice: a card per proposal with its command, the other checks with their marks, per log | [advice-tab](advice-tab/README.md) |
 | Settings: four cards with everything in view, the targets open, every row explained | [settings-tab](settings-tab/README.md) |
 
+## After the rework
+
+| Topic | Document | Issue |
+|---|---|---|
+| Log chips in a zone of fixed width, so the tabs never move | [log-chips](log-chips/README.md) | [#162](https://github.com/Rufics/OpenPID/issues/162) |
+

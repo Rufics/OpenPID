@@ -255,142 +255,309 @@ pub(crate) fn panel_width(ui: &Ui, n: usize) -> f32 {
     if n <= 2.0 { w } else { w.max(480.0) }
 }
 
-/// The log chips in the top bar (docs/design/app-shell, R4): one chip per
-/// slot and "+" to add a log. The bar keeps its height however many logs
-/// are open; a click picks the log the timeline dock shows.
-pub(crate) fn log_chips(app: &mut App, ui: &mut Ui) {
-    let top_left = ui.cursor().min;
-    let active = app.dock_slot();
-    let compact = app
-        .slots
-        .iter()
-        .filter(|e| !matches!(e.state, SlotState::Empty))
-        .count()
-        > 2;
-    for slot in app.slot_ids() {
-        if matches!(app.slot_state(slot), Some(SlotState::Empty)) {
-            continue;
-        }
-        if log_chip(app, ui, slot, active == Some(slot), compact).clicked() {
-            app.dock = Some(slot);
-        }
-    }
-    let full = app.slots.len() >= Slot::MAX;
-    let add = ui.add_enabled(
-        !full,
-        egui::Button::new(RichText::new("+").strong()).min_size(egui::vec2(28.0, 0.0)),
-    );
-    add.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, !full, tr("Add log")));
-    let add_rect = add.rect;
-    if add
-        .on_hover_text(shortcuts::hint(
-            ui.ctx(),
-            tr("Add log: open another log to compare (up to 8), or drop it on the window"),
-            Action::OpenLogNext,
-        ))
-        .clicked()
-        && let Some(slot) = app.free_slot()
-    {
-        app.dialog = Some(crate::app::Dialog::OpenLog(slot));
-    }
-    app.anchors
-        .insert("slot-bar", egui::Rect::from_min_max(top_left, add_rect.max));
+/// How much a log chip shows. The chips of the top bar take the richest
+/// form that fits their zone (docs/design/log-chips, K2), so the zone, and
+/// with it the tabs beside it, keeps its width whatever the number of logs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ChipDetail {
+    /// Dot, letter, file name and log-check mark on every chip.
+    #[default]
+    Names,
+    /// The file name on the docked log's chip only.
+    ActiveName,
+    /// Dot, letter and mark.
+    Letters,
+    /// The letter on a disc in the log's colour; a warning or a failed log
+    /// check as a dot on its corner.
+    Discs,
 }
 
-/// One log chip: the slot's dot and letter, the file name (only the
-/// active one when more than two logs are open) and the log check's mark.
-fn log_chip(app: &App, ui: &mut Ui, slot: Slot, active: bool, compact: bool) -> egui::Response {
-    let font = egui::FontId::proportional(13.0);
-    let visible = app.slot_entry(slot).is_some_and(|e| e.visible);
-    let (name, mark, accessible) = match app.slot_state(slot) {
-        Some(SlotState::Ready(_)) => {
-            let loaded = app.loaded(slot).expect("ready");
-            let file = loaded
-                .path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            let stem = loaded
-                .path
-                .file_stem()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            let max = if compact { 14 } else { 18 };
-            let short: String = if stem.chars().count() > max {
-                stem.chars().take(max - 1).chain(['…']).collect()
-            } else {
-                stem
-            };
-            let mark = loaded.fitness().map(|f| f.overall);
-            ((!compact || active).then_some(short), mark, file)
+impl ChipDetail {
+    /// From the richest to the smallest.
+    const ALL: [ChipDetail; 4] = [
+        ChipDetail::Names,
+        ChipDetail::ActiveName,
+        ChipDetail::Letters,
+        ChipDetail::Discs,
+    ];
+}
+
+/// What the top bar drew last frame, for the layout of the next one and
+/// for the tests.
+#[derive(Debug, Clone, Copy)]
+pub struct ShellState {
+    /// Natural width of the tab group.
+    pub tabs_w: f32,
+    /// Width of the menu button.
+    pub menu_w: f32,
+    /// Where the tab group is on screen.
+    pub tabs_rect: egui::Rect,
+    /// The zone of the log chips.
+    pub log_zone: egui::Rect,
+    /// The form the chips took.
+    pub chips: ChipDetail,
+    /// The docked log when the chips were last drawn: a change scrolls its
+    /// chip into view on a window too narrow for all of them.
+    docked: Option<Slot>,
+}
+
+impl Default for ShellState {
+    fn default() -> Self {
+        ShellState {
+            // the widths of the first frame; the second one measures them
+            tabs_w: 720.0,
+            menu_w: 36.0,
+            tabs_rect: egui::Rect::NOTHING,
+            log_zone: egui::Rect::NOTHING,
+            chips: ChipDetail::default(),
+            docked: None,
         }
-        Some(SlotState::Loading(p)) => (
-            Some(format!("{}…", tr("loading"))),
-            None,
-            format!("{} {}", tr("loading"), p.display()),
-        ),
-        Some(SlotState::Failed(p, e)) => (
-            None,
-            Some(FitnessLevel::Fail),
-            format!("{} — {e}", p.display()),
-        ),
-        Some(SlotState::Empty) | None => (None, None, tr("empty").to_string()),
+    }
+}
+
+/// Space between two chips.
+const CHIP_GAP: f32 = 4.0;
+/// Width of the "+" button.
+const ADD_W: f32 = 28.0;
+/// Height of a chip.
+const CHIP_H: f32 = 26.0;
+
+/// The log chips in the top bar (docs/design/app-shell R4, log-chips K2):
+/// one chip per slot and "+" to add a log, in a zone of fixed width. The
+/// chips take the richest form that fits it; on a window too narrow even
+/// for the discs they scroll sideways. A click picks the log the timeline
+/// dock shows.
+pub(crate) fn log_chips(app: &mut App, ui: &mut Ui) {
+    let zone = ui.available_width();
+    let active = app.dock_slot();
+    let slots: Vec<Slot> = app
+        .slot_ids()
+        .into_iter()
+        .filter(|s| !matches!(app.slot_state(*s), Some(SlotState::Empty)))
+        .collect();
+    let width_at = |detail: ChipDetail| -> f32 {
+        slots
+            .iter()
+            .map(|s| Chip::new(app, ui, *s, active == Some(*s), detail).width() + CHIP_GAP)
+            .sum::<f32>()
+            + ADD_W
     };
-    let strong = ui.visuals().strong_text_color();
-    let letter = ui
-        .painter()
-        .layout_no_wrap(slot.name().to_string(), font.clone(), strong);
-    let name = name.map(|n| {
-        ui.painter()
-            .layout_no_wrap(n, font.clone(), ui.visuals().text_color())
-    });
-    let mut w = 8.0 + 8.0 + 6.0 + letter.size().x + 8.0;
-    if let Some(g) = &name {
-        w += g.size().x + 6.0;
+    let detail = ChipDetail::ALL
+        .into_iter()
+        .find(|d| width_at(*d) <= zone)
+        .unwrap_or(ChipDetail::Discs);
+    app.shell.chips = detail;
+    let docked_changed = app.shell.docked != active;
+    app.shell.docked = active;
+    let mut bar = egui::Rect::NOTHING;
+    egui::ScrollArea::horizontal()
+        .id_salt("log-chips")
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = CHIP_GAP;
+            let top_left = ui.cursor().min;
+            for slot in &slots {
+                let is_active = active == Some(*slot);
+                let resp = Chip::new(app, ui, *slot, is_active, detail).show(ui);
+                if is_active && docked_changed {
+                    resp.scroll_to_me(None);
+                }
+                if resp.clicked() {
+                    app.dock = Some(*slot);
+                }
+            }
+            let full = app.slots.len() >= Slot::MAX;
+            let add = ui.add_enabled(
+                !full,
+                egui::Button::new(RichText::new("+").strong()).min_size(egui::vec2(ADD_W, 0.0)),
+            );
+            add.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, !full, tr("Add log")));
+            bar = egui::Rect::from_min_max(top_left, add.rect.max);
+            if add
+                .on_hover_text(shortcuts::hint(
+                    ui.ctx(),
+                    tr("Add log: open another log to compare (up to 8), or drop it on the window"),
+                    Action::OpenLogNext,
+                ))
+                .clicked()
+                && let Some(slot) = app.free_slot()
+            {
+                app.dialog = Some(crate::app::Dialog::OpenLog(slot));
+            }
+        });
+    // what of the chips is in view: the tour points at it
+    app.anchors.insert("slot-bar", bar.intersect(ui.max_rect()));
+}
+
+/// One log chip, laid out but not yet drawn, so its width is known before
+/// the form of the chips is chosen.
+struct Chip {
+    slot: Slot,
+    active: bool,
+    visible: bool,
+    detail: ChipDetail,
+    letter: Arc<egui::Galley>,
+    name: Option<Arc<egui::Galley>>,
+    mark: Option<FitnessLevel>,
+    /// "Slot A: file.bbl", for screen readers, tests and the tooltip.
+    label: String,
+}
+
+impl Chip {
+    fn new(app: &App, ui: &Ui, slot: Slot, active: bool, detail: ChipDetail) -> Chip {
+        let font = egui::FontId::proportional(13.0);
+        let visible = app.slot_entry(slot).is_some_and(|e| e.visible);
+        let named = match detail {
+            ChipDetail::Names => true,
+            ChipDetail::ActiveName => active,
+            ChipDetail::Letters | ChipDetail::Discs => false,
+        };
+        let (name, mark, accessible) = match app.slot_state(slot) {
+            Some(SlotState::Ready(_)) => {
+                let loaded = app.loaded(slot).expect("ready");
+                let file = loaded
+                    .path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let stem = loaded
+                    .path
+                    .file_stem()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let max = if detail == ChipDetail::Names { 18 } else { 14 };
+                let short: String = if stem.chars().count() > max {
+                    stem.chars().take(max - 1).chain(['…']).collect()
+                } else {
+                    stem
+                };
+                let mark = loaded.fitness().map(|f| f.overall);
+                (named.then_some(short), mark, file)
+            }
+            Some(SlotState::Loading(p)) => (
+                named.then(|| format!("{}…", tr("loading"))),
+                None,
+                format!("{} {}", tr("loading"), p.display()),
+            ),
+            Some(SlotState::Failed(p, e)) => (
+                None,
+                Some(FitnessLevel::Fail),
+                format!("{} — {e}", p.display()),
+            ),
+            Some(SlotState::Empty) | None => (None, None, tr("empty").to_string()),
+        };
+        let p = ui.painter();
+        let (letter_font, letter_colour) = if detail == ChipDetail::Discs {
+            (
+                egui::FontId::proportional(12.0),
+                Color32::from_rgb(16, 18, 22),
+            )
+        } else {
+            (font.clone(), ui.visuals().strong_text_color())
+        };
+        Chip {
+            slot,
+            active,
+            visible,
+            detail,
+            letter: p.layout_no_wrap(slot.name().to_string(), letter_font, letter_colour),
+            name: name.map(|n| p.layout_no_wrap(n, font, ui.visuals().strong_text_color())),
+            mark,
+            label: format!("{} {}: {accessible}", tr("Slot"), slot.name()),
+        }
     }
-    if mark.is_some() {
-        w += 14.0;
+
+    fn width(&self) -> f32 {
+        if self.detail == ChipDetail::Discs {
+            return CHIP_H;
+        }
+        let mut w = 8.0 + 8.0 + 6.0 + self.letter.size().x + 8.0;
+        if let Some(g) = &self.name {
+            w += g.size().x + 6.0;
+        }
+        if self.mark.is_some() {
+            w += 14.0;
+        }
+        w
     }
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 26.0), egui::Sense::click());
-    let label = format!("{} {}: {accessible}", tr("Slot"), slot.name());
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, active, &label));
-    let v = ui.visuals();
-    let (fill, stroke) = if active {
-        (
-            crate::theme::ACCENT.gamma_multiply(0.22),
-            egui::Stroke::new(1.0, crate::theme::ACCENT.gamma_multiply(0.8)),
-        )
-    } else if resp.hovered() {
-        (v.widgets.hovered.weak_bg_fill, v.widgets.hovered.bg_stroke)
-    } else {
-        (
-            v.widgets.inactive.weak_bg_fill,
-            v.widgets.inactive.bg_stroke,
-        )
-    };
-    let p = ui.painter();
-    p.rect(rect, 6.0, fill, stroke, egui::StrokeKind::Inside);
-    let cy = rect.center().y;
-    let mut x = rect.left() + 8.0;
-    let dot = if visible {
-        slot_color(slot)
-    } else {
-        slot_color(slot).gamma_multiply(0.3)
-    };
-    p.circle_filled(egui::pos2(x + 4.0, cy), 4.0, dot);
-    x += 14.0;
-    let lw = letter.size();
-    p.galley(egui::pos2(x, cy - lw.y / 2.0), letter, strong);
-    x += lw.x + 6.0;
-    if let Some(g) = name {
-        let gs = g.size();
-        p.galley(egui::pos2(x, cy - gs.y / 2.0), g, strong);
-        x += gs.x + 6.0;
+
+    fn show(self, ui: &mut Ui) -> egui::Response {
+        let (rect, resp) =
+            ui.allocate_exact_size(egui::vec2(self.width(), CHIP_H), egui::Sense::click());
+        resp.widget_info(|| {
+            egui::WidgetInfo::selected(egui::Role::Button, true, self.active, &self.label)
+        });
+        let colour = if self.visible {
+            slot_color(self.slot)
+        } else {
+            slot_color(self.slot).gamma_multiply(0.3)
+        };
+        if self.detail == ChipDetail::Discs {
+            self.paint_disc(ui, rect, colour, resp.hovered());
+        } else {
+            self.paint_chip(ui, rect, colour, resp.hovered());
+        }
+        resp.on_hover_text(self.label)
     }
-    if let Some(level) = mark {
-        paint_mark(p, egui::pos2(x + 4.0, cy), level, level_color(level));
+
+    /// The letter on a disc in the log's colour; the docked log has a ring
+    /// in the accent, a log check that is not fine a dot on the corner.
+    fn paint_disc(&self, ui: &Ui, rect: egui::Rect, colour: Color32, hovered: bool) {
+        let p = ui.painter();
+        let c = rect.center();
+        if self.active {
+            p.circle_stroke(c, 12.0, egui::Stroke::new(2.0, crate::theme::ACCENT));
+        } else if hovered {
+            p.circle_stroke(c, 12.0, ui.visuals().widgets.hovered.bg_stroke);
+        }
+        p.circle_filled(c, 9.5, colour);
+        let size = self.letter.size();
+        p.galley(
+            c - size / 2.0,
+            self.letter.clone(),
+            Color32::from_rgb(16, 18, 22),
+        );
+        if let Some(level) = self.mark.filter(|l| *l != FitnessLevel::Ok) {
+            let at = c + egui::vec2(8.0, -8.0);
+            p.circle_filled(at, 4.0, ui.visuals().panel_fill);
+            p.circle_filled(at, 3.0, level_color(level));
+        }
     }
-    resp.on_hover_text(label)
+
+    fn paint_chip(&self, ui: &Ui, rect: egui::Rect, dot: Color32, hovered: bool) {
+        let v = ui.visuals();
+        let strong = v.strong_text_color();
+        let (fill, stroke) = if self.active {
+            (
+                crate::theme::ACCENT.gamma_multiply(0.22),
+                egui::Stroke::new(1.0, crate::theme::ACCENT.gamma_multiply(0.8)),
+            )
+        } else if hovered {
+            (v.widgets.hovered.weak_bg_fill, v.widgets.hovered.bg_stroke)
+        } else {
+            (
+                v.widgets.inactive.weak_bg_fill,
+                v.widgets.inactive.bg_stroke,
+            )
+        };
+        let p = ui.painter();
+        p.rect(rect, 6.0, fill, stroke, egui::StrokeKind::Inside);
+        let cy = rect.center().y;
+        let mut x = rect.left() + 8.0;
+        p.circle_filled(egui::pos2(x + 4.0, cy), 4.0, dot);
+        x += 14.0;
+        let lw = self.letter.size();
+        p.galley(egui::pos2(x, cy - lw.y / 2.0), self.letter.clone(), strong);
+        x += lw.x + 6.0;
+        if let Some(g) = &self.name {
+            let gs = g.size();
+            p.galley(egui::pos2(x, cy - gs.y / 2.0), g.clone(), strong);
+            x += gs.x + 6.0;
+        }
+        if let Some(level) = self.mark {
+            paint_mark(p, egui::pos2(x + 4.0, cy), level, level_color(level));
+        }
+    }
 }
 
 /// Height of the timeline dock's content.

@@ -208,6 +208,130 @@ fn the_shell_keeps_its_height_as_logs_are_added() {
     assert_eq!(ui.app().central_rect, one);
 }
 
+/// Opens `path` in the next free slot, as "Add log" does.
+fn add_log(ui: &mut Ui, path: &str) {
+    let slot = ui.app_mut().next_slot().expect("a free slot");
+    ui.app_mut().open(slot, path.into());
+    ui.settle();
+}
+
+/// docs/design/log-chips (K2), #162: the tabs of the top bar keep their
+/// place and width whatever the number of open logs; the chips shrink to
+/// fit their zone instead.
+#[test]
+fn the_tabs_keep_their_place_as_logs_are_added() {
+    use crate::views::ChipDetail;
+    use eframe::egui::accesskit::Role;
+    crate::testkit::at_every_size(|screen| {
+        // no log yet: the zone of the logs is kept, empty
+        let mut ui = Ui::setup().tab(Tab::Step).screen(screen).open();
+        let tabs = ui.app().shell.tabs_rect;
+        assert!(tabs.width() > 100.0, "{tabs:?}");
+        let logs = [
+            LOG_4_2, LOG_4_5_1, LOG_2025, LOG_4_5, LOG_4_2, LOG_4_5_1, LOG_2025, LOG_4_5,
+        ];
+        let mut forms = Vec::new();
+        for (i, path) in logs.iter().enumerate() {
+            add_log(&mut ui, path);
+            assert_eq!(ui.app().loaded_slots().len(), i + 1);
+            assert_eq!(
+                ui.app().shell.tabs_rect,
+                tabs,
+                "{}: the tabs moved with {} logs",
+                screen.name,
+                i + 1
+            );
+            // every log keeps its chip and its name for screen readers
+            let chips = ui.count(Role::Button);
+            assert!(chips > i, "{chips}");
+            assert!(ui.sees(&format!("Slot {}:", Slot(i as u8).name())));
+            forms.push(ui.app().shell.chips);
+        }
+        // the chips never grow richer as logs are added
+        let rank = |d: &ChipDetail| match d {
+            ChipDetail::Names => 0,
+            ChipDetail::ActiveName => 1,
+            ChipDetail::Letters => 2,
+            ChipDetail::Discs => 3,
+        };
+        assert!(
+            forms.windows(2).all(|w| rank(&w[0]) <= rank(&w[1])),
+            "{forms:?}"
+        );
+        assert_ne!(
+            forms[7],
+            ChipDetail::Names,
+            "eight names fit no window here"
+        );
+        // a chip still docks its log, whatever its form
+        ui.click_containing("Slot B:");
+        assert_eq!(ui.app().dock_slot(), Some(Slot::B));
+        ui.click_containing("Slot H:");
+        assert_eq!(ui.app().dock_slot(), Some(Slot(7)));
+        assert!(!ui.is_enabled("Add log"), "eight is the limit");
+        // closing logs gives the chips their names back, and moves nothing
+        ui.click("close H");
+        assert_eq!(ui.app().shell.tabs_rect, tabs);
+        assert!(ui.is_enabled("Add log"));
+    });
+
+    // at the design size: every tab in view with eight logs, and the forms
+    let mut ui = Ui::setup().tab(Tab::Step).screen(DESK).open();
+    let mut forms = Vec::new();
+    for path in [
+        LOG_4_2, LOG_4_5_1, LOG_2025, LOG_4_5, LOG_4_2, LOG_4_5_1, LOG_2025, LOG_4_5,
+    ] {
+        add_log(&mut ui, path);
+        forms.push(ui.app().shell.chips);
+    }
+    assert_eq!(forms[0], ChipDetail::Names, "one log shows its name");
+    assert_eq!(forms[1], ChipDetail::Names);
+    assert_eq!(forms[2], ChipDetail::ActiveName, "three: the docked one");
+    assert_eq!(forms[7], ChipDetail::Discs);
+    let shell = ui.app().shell;
+    assert!(
+        shell.tabs_w <= shell.tabs_rect.width() + 0.5,
+        "the tab group fits: {} in {}",
+        shell.tabs_w,
+        shell.tabs_rect.width()
+    );
+    for tab in Tab::ALL {
+        let r = ui.rect(Role::Button, tab.title());
+        assert!(
+            shell.tabs_rect.expand(1.0).contains_rect(r),
+            "{tab:?} is in view: {r:?} in {:?}",
+            shell.tabs_rect
+        );
+    }
+    // the chips stay inside their zone, left of the tabs
+    assert!(shell.log_zone.right() <= shell.tabs_rect.left());
+    for letter in ["A", "D", "H"] {
+        let chip = ui.rect(
+            Role::Button,
+            &format!("Slot {letter}: {}", file_of(&ui, letter)),
+        );
+        assert!(
+            shell.log_zone.expand(1.0).contains_rect(chip),
+            "{letter}: {chip:?}"
+        );
+    }
+}
+
+/// The file name of the log in the slot named `letter`.
+fn file_of(ui: &Ui, letter: &str) -> String {
+    let slot = ui
+        .app()
+        .slot_ids()
+        .into_iter()
+        .find(|s| s.name() == letter)
+        .expect("the slot is open");
+    ui.app()
+        .loaded(slot)
+        .and_then(|l| l.path.file_name())
+        .map(|n| n.to_string_lossy().into_owned())
+        .expect("the slot has a file")
+}
+
 #[test]
 fn the_tour_starts_once_on_the_first_log_and_walks_the_tuning_loop() {
     use crate::tour::STEPS;
