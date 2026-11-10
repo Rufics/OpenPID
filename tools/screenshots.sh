@@ -45,9 +45,13 @@ shot "$OUT/start.png"
 shot "$OUT/slots-step.png" "$LOG" tests/logs/betaflight-4.5.1-two-sessions.bbl \
   tests/logs/betaflight-4.2.0.BFL --tab step
 
-for tab in log step spectrum throttle time filter advice sliders settings; do
+for tab in log step spectrum throttle time filter sliders settings; do
   shot "$OUT/$tab.png" "$LOG" --tab "$tab"
 done
+
+# Advice over whole logs (a project keeps the analysis windows): one log with
+# nothing to change beside one with a proposal
+shot "$OUT/advice.png" tools/advice.openpid.json
 
 # Setup info compares logs: two of them side by side
 shot "$OUT/setup.png" tests/logs/betaflight-4.5.0-gps-rescue.bbl \

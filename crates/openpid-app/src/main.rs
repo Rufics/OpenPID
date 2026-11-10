@@ -3,6 +3,7 @@
 //!
 //! Usage: `openpid-gui [--tab log|step|spectrum|throttle|time|filter|advice|sliders|setup|settings] [log …]` (up to 8 logs, one slot each)
 
+mod advice_tab;
 mod app;
 mod axis_layout;
 mod colormap;
@@ -14,6 +15,7 @@ mod log_tab;
 mod panel;
 mod prefs;
 mod probe;
+mod settings_tab;
 mod setup_tab;
 mod shortcuts;
 mod sliders_tab;

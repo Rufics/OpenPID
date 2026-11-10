@@ -415,11 +415,15 @@ or `--set master_multiplier=110,pd_ratio=120` for the ratio sliders.
   clipboard, ready for the configurator CLI. The Filter Sim tab shows the
   same fix when the raw gyro is missing. A log with several
   sessions is checked per session; the table shows the selected one.
-- **Settings**: theme (dark/light), the **interface language** (English /
-  Ukrainian, switched instantly; units and numbers do not change), touch mode
-  at start, the deg/s ↔ rad/s and g ↔ m/s² units, **Targets** (the step
-  response verdict thresholds: a preset or custom, section 3), **first run**
-  (show the tour on the first log, reset the state, show the tour now). Saved
+- **Settings**: four cards, all in view. **Appearance**: theme (dark /
+  light), plot colours, the **interface language** (English / Ukrainian,
+  switched instantly; units and numbers do not change), touch mode at start.
+  **Units**: deg/s or rad/s, g or m/s². **Targets**: the step response
+  verdict thresholds, a preset (Freestyle, Racing, Cinematic) or your own
+  values (section 3). **First run**: show the tour on the first log, show
+  the tour now, reset the first-run state. Every row says what it changes
+  when the pointer rests on it. **Reset to defaults** puts the settings back
+  and keeps the list of recent files. Saved
   in `prefs.json` of the configuration directory (`~/.config/openpid`,
   `~/Library/Application Support/openpid`, `%APPDATA%\openpid`;
   `OPENPID_CONFIG_DIR` overrides it).
@@ -469,11 +473,22 @@ that proposed nothing included:
   below the low band (10…cutoff/2) → static LPF1 cutoff ×1.25 (less phase
   delay; the explanation gives the milliseconds before and after).
 
-On the tab: the rule thresholds (**overshoot limit**, **D step**, **peak
-prominence**, **LPF headroom**) are saved in the project; the **Proposals**
-table (path, from → to, confidence, rationale), the **Evidence** table (● the
-rule fired, ○ it did not) and ready text for the Betaflight CLI; Export → JSON
-gives the same result. In the CLI, `--cli` prints the evidence as comments and
+On the tab every visible log has its column:
+
+- a **card per proposal**: the setting in words ("Roll D"), the value now and
+  the value proposed, how sure the rule is, the reason, the firmware's
+  command with **Copy**, and **Show on Step response** / **Show on Spectrum**,
+  which opens the tab the proposal was read from;
+- **Checked**: what every other rule saw, with a tick (the rule is
+  satisfied), a dash (not judged: no data for it, or it does not apply) or
+  "!" (something is off but there is no setting to propose, for example an
+  overshoot with a D-term too noisy to raise D);
+- the commands of all the proposals together, ready for the Betaflight CLI.
+
+The rule thresholds are in the panel (**Overshoot limit**, **D step**, **Peak
+prominence**, **LPF headroom**) and are saved in the project; **Checks without
+a proposal** hides the Checked list. Export → JSON gives the same result. In
+the CLI, `--cli` prints the evidence as comments and
 the `set … / save` commands for the Betaflight CLI instead of JSON (the same
 name table as `openpid diff --cli`). The commands are written by the firmware
 profile of the log: Betaflight logs get them; for INAV, Rotorflight, EmuFlight

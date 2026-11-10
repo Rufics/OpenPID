@@ -83,6 +83,22 @@ pub fn row(
     hint: &str,
     add: impl FnOnce(&mut Ui) -> Response,
 ) -> Response {
+    laid_out(ui, label, hint, true, add)
+}
+
+/// A row whose control is a button: the label says what it is about, and
+/// the button keeps its own name (`button`) for screen readers and tests.
+pub fn action(ui: &mut Ui, label: &str, hint: &str, button: &str) -> Response {
+    laid_out(ui, label, hint, false, |ui| ui.button(button))
+}
+
+fn laid_out(
+    ui: &mut Ui,
+    label: impl Into<egui::WidgetText>,
+    hint: &str,
+    named_by_label: bool,
+    add: impl FnOnce(&mut Ui) -> Response,
+) -> Response {
     let w = ui.available_width();
     ui.allocate_ui_with_layout(
         egui::vec2(w, ROW_H),
@@ -92,7 +108,13 @@ pub fn row(
                 .add(egui::Label::new(label).sense(egui::Sense::hover()))
                 .on_hover_text(hint);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                add(ui).labelled_by(l.id).on_hover_text(hint)
+                let control = add(ui);
+                let control = if named_by_label {
+                    control.labelled_by(l.id)
+                } else {
+                    control
+                };
+                control.on_hover_text(hint)
             })
             .inner
         },

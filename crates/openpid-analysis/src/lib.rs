@@ -32,7 +32,7 @@ pub use openpid_core::analysis::{
 pub use prepare::{Prepared, prepare};
 pub use project::{Project, ProjectSlot};
 pub use psd::{PsdAnalysis, PsdOutput, PsdParams};
-pub use recommend::{Finding, Recommend, RecommendOutput, RecommendParams};
+pub use recommend::{Finding, FindingStatus, Recommend, RecommendOutput, RecommendParams};
 pub use rpm::{RpmEstimateOutput, RpmEstimateParams, RpmEstimator};
 pub use step::{StepAnalysis, StepMetrics, StepOutput, StepParams, StepSpread};
 pub use stft::{StftAnalysis, StftOutput, StftParams};
