@@ -99,6 +99,7 @@ static UA: &[(&str, &str)] = &[
         "Blackbox analysis for tuning: noise, filters, step response, advice.",
         "Аналіз blackbox для налаштування: шум, фільтри, step response, поради.",
     ),
+    ("Centre", "Центр"),
     ("Channel", "Канал"),
     (
         "Choose the analysis window: drag the handles, or press Auto.",
@@ -129,12 +130,16 @@ static UA: &[(&str, &str)] = &[
     ("Dark", "Темна"),
     ("Data", "Дані"),
     ("Debug", "Налагодження"),
+    ("Delay", "Затримка"),
     ("Details", "Деталі"),
     ("Diagnostics", "Діагностика"),
     ("Display", "Показ"),
     ("Done", "Готово"),
     ("Drop a log here, or", "Перетягніть лог сюди або"),
+    ("Dyn max", "Дин. макс"),
+    ("Dyn min", "Дин. мін"),
     ("Dyn notch", "Dyn notch"),
+    ("Dynamic notch", "Динамічний notch"),
     ("Evidence", "Докази"),
     ("Expand one axis", "Одна вісь на всю висоту"),
     ("Export", "Експорт"),
@@ -168,10 +173,15 @@ static UA: &[(&str, &str)] = &[
     ("Log check", "Перевірка логу"),
     ("Log frequency", "Лог. частота"),
     ("Log viewer", "Перегляд логу"),
+    ("Low-pass 1", "Low-pass 1"),
+    ("Low-pass 2", "Low-pass 2"),
+    ("Max", "Макс"),
     ("Max frequency", "Макс. частота"),
     ("Menu", "Меню"),
+    ("Min", "Мін"),
     ("Min input", "Мін. вхід"),
     ("Min segments", "Мін. сегментів"),
+    ("Model", "Модель"),
     ("Most active 20 s", "Найактивніші 20 с"),
     ("Motor RPM", "Оберти моторів"),
     ("Motor noise", "Шум моторів"),
@@ -192,6 +202,7 @@ static UA: &[(&str, &str)] = &[
     ),
     ("Notch", "Notch"),
     ("Notches", "Нотчі"),
+    ("ON THE LOG", "НА ЛОЗІ"),
     (
         "Okabe-Ito line colours and viridis heatmaps, readable with colour-vision deficiencies",
         "кольори ліній Okabe–Ito і теплові карти viridis, розрізнювані при порушеннях кольорового зору",
@@ -224,6 +235,10 @@ static UA: &[(&str, &str)] = &[
     ("Prominence", "Виразність"),
     ("Proposals", "Пропозиції"),
     ("Quantities", "Величини"),
+    (
+        "RMS of sim minus logged filtered gyro, relative to the logged RMS: how well the model matches the flight controller",
+        "RMS різниці sim і записаного відфільтрованого гіро відносно записаного RMS: наскільки модель збігається з контролером",
+    ),
     ("RPM notch", "RPM notch"),
     ("RPM overlay", "RPM-overlay"),
     ("Racing", "Гонки"),
@@ -234,6 +249,7 @@ static UA: &[(&str, &str)] = &[
     ("Reset to defaults", "Скинути до типових"),
     ("Reset to log", "Скинути до логу"),
     ("Reset view", "Скинути вид"),
+    ("Residual", "Залишок"),
     (
         "Rules are hints with their evidence, not an autotune: apply one change, fly, compare the new log.",
         "Правила — підказки з доказами, не autotune: застосуйте одну зміну, політайте, порівняйте новий лог.",
@@ -262,6 +278,7 @@ static UA: &[(&str, &str)] = &[
     ("Spectrum", "Спектр"),
     ("Speed", "Швидкість"),
     ("Start the tour", "Почати тур"),
+    ("Static notch", "Статичний notch"),
     ("Step", "Крок"),
     ("Step response", "Перехідна характеристика"),
     (
@@ -269,6 +286,7 @@ static UA: &[(&str, &str)] = &[
         "Відгук на стік: перерегулювання і затримка проти ваших цілей.",
     ),
     ("Surface 3D", "Поверхня 3D"),
+    ("THE FILTER CHAIN", "ЛАНЦЮЖОК ФІЛЬТРІВ"),
     ("Tab", "Вкладка"),
     ("Targets", "Цілі"),
     ("Theme", "Тема"),
@@ -290,6 +308,8 @@ static UA: &[(&str, &str)] = &[
         "Try new filters without flying.",
         "Перевірте нові фільтри без польоту.",
     ),
+    ("Type", "Тип"),
+    ("Unfiltered", "Без фільтрів"),
     ("Units", "Одиниці"),
     (
         "Units apply to the log viewer traces; analyses stay in deg/s.",
@@ -333,12 +353,18 @@ static UA: &[(&str, &str)] = &[
         "a term of the PID output, in the firmware's units, on the axis rows",
         "складова виходу PID в одиницях прошивки, у рядках осей",
     ),
+    ("as flown (dashed)", "як у польоті (пунктир)"),
+    ("at", "при"),
     ("auto", "авто"),
     ("axes", "осі"),
     ("axis", "вісь"),
     (
         "back to the automatic range",
         "повернути автоматичний діапазон",
+    ),
+    (
+        "back to the filters the log flew with",
+        "повернутися до фільтрів, з якими літав лог",
     ),
     ("below 100 Hz (1 s segments)", "нижче 100 Гц (сегменти 1 с)"),
     ("channel", "канал"),
@@ -366,6 +392,8 @@ static UA: &[(&str, &str)] = &[
     ),
     ("debug", "налагодження"),
     ("delay", "затримка"),
+    ("delay (ms)", "затримка (мс)"),
+    ("delay at 100 Hz", "затримка на 100 Гц"),
     (
         "drag a handle or the window; double-click = whole log",
         "тягніть ручку або вікно; подвійний клік = весь лог",
@@ -374,6 +402,7 @@ static UA: &[(&str, &str)] = &[
         "drag: orbit · wheel / pinch: zoom · shift-drag, right-drag or two fingers: pan · double-click: reset",
         "перетягування: обертання · коліщатко / щипок: масштаб · shift-, праве або два пальці: зсув · подвійний клік: скинути",
     ),
+    ("drives LPF1", "керує LPF1"),
     (
         "each throttle bin averages the segments within this distance of it",
         "кожен бін газу усереднює сегменти в межах цієї відстані від нього",
@@ -424,6 +453,10 @@ static UA: &[(&str, &str)] = &[
         "keys: Right / Enter, Left, Esc",
         "клавіші: → / Enter, ←, Esc",
     ),
+    (
+        "lag of the sim behind the logged gyro; negative: the sim leads",
+        "відставання sim від записаного гіро; від’ємне: sim випереджає",
+    ),
     ("latency", "лаг"),
     ("latency (ms)", "затримка (мс)"),
     (
@@ -442,6 +475,10 @@ static UA: &[(&str, &str)] = &[
         "length of each spectrum along the log: longer gives finer frequency steps, fewer segments per throttle bin",
         "довжина кожного спектра вздовж логу: довший дає дрібніший крок частоти й менше сегментів на бін газу",
     ),
+    (
+        "length of each spectrum segment: longer gives finer frequency steps and fewer averages",
+        "довжина сегмента спектра: довший дає дрібніший крок частоти і менше усереднень",
+    ),
     ("linear", "лінійна"),
     ("link scales", "спільна шкала"),
     ("loading", "завантаження"),
@@ -450,7 +487,9 @@ static UA: &[(&str, &str)] = &[
     ("log too short to trim", "лог закороткий для обрізання"),
     ("log unfit", "лог непридатний"),
     ("log usable", "лог придатний"),
+    ("log:", "лог:"),
     ("logged", "у лозі"),
+    ("logged filtered", "записаний відфільтрований"),
     ("low", "низька"),
     ("low-med", "нижче середньої"),
     (
@@ -461,6 +500,7 @@ static UA: &[(&str, &str)] = &[
         "lower end of the power axis; auto follows the drawn data",
         "нижня межа осі потужності; авто — за показаними даними",
     ),
+    ("magnitude (dB)", "амплітуда (дБ)"),
     ("markers", "мітки"),
     ("max", "макс"),
     ("med-high", "вище середньої"),
@@ -470,13 +510,35 @@ static UA: &[(&str, &str)] = &[
     ("min windows ok", "мін. вікон (ok)"),
     ("min windows weak", "мін. вікон (слабко)"),
     ("motor", "мотор"),
+    ("motors", "мотори"),
+    (
+        "motors whose logged speed moved the RPM notches",
+        "мотори, чиї записані оберти рухали RPM notch",
+    ),
     ("new slot, to compare", "новий слот, для порівняння"),
+    (
+        "no gyro.filtered in the log to validate against",
+        "у лозі немає gyro.filtered для перевірки",
+    ),
+    (
+        "no unfiltered gyro in this log",
+        "у цьому лозі немає нефільтрованого гіро",
+    ),
     (
         "normalise every window on its settled tail before averaging",
         "нормувати кожне вікно за усталеним хвостом перед усередненням",
     ),
     ("not in this log", "немає в цьому лозі"),
+    ("not logged", "не записано"),
     ("notches", "notch-и"),
+    (
+        "notches per motor, at the motor frequency and its multiples; 0 switches them off",
+        "notch на мотор, на частоті мотора та її кратних; 0 вимикає їх",
+    ),
+    (
+        "notches that follow the strongest peaks of the gyro; 0 switches them off",
+        "notch, що йдуть за найсильнішими піками гіро; 0 вимикає їх",
+    ),
     ("note", "примітка"),
     (
         "nothing to change: every rule is satisfied",
@@ -501,6 +563,7 @@ static UA: &[(&str, &str)] = &[
     ("peak", "пік"),
     ("peak prominence", "виразність піка"),
     ("peaks", "піки"),
+    ("phase (deg)", "фаза (°)"),
     (
         "playback speed relative to the flight",
         "швидкість відтворення відносно польоту",
@@ -513,7 +576,9 @@ static UA: &[(&str, &str)] = &[
     ("prefilt", "до фільтра"),
     ("profile", "профіль"),
     ("prominence", "виразність"),
+    ("raw", "сирий"),
     ("response", "відгук"),
+    ("rest", "спокої"),
     ("rise", "підйом"),
     ("rise max", "підйом макс"),
     ("rpm", "об/хв"),
@@ -536,6 +601,9 @@ static UA: &[(&str, &str)] = &[
         "показати лише канали, назва яких містить цей текст",
     ),
     ("show this motor's lines", "показати лінії цього мотора"),
+    ("sim", "sim"),
+    ("sim as flown", "sim як у польоті"),
+    ("sim as flown (dashed)", "sim як у польоті (пунктир)"),
     ("smooth", "згладжування"),
     ("smoothing", "згладжування"),
     ("solo", "лише цей"),
@@ -559,6 +627,19 @@ static UA: &[(&str, &str)] = &[
         "вікно аналізу закріпленого логу починається тут",
     ),
     (
+        "the axis whose gyro runs through the chain",
+        "вісь, чиє гіро проходить через ланцюжок",
+    ),
+    ("the cut-off at full throttle", "зріз на повному газі"),
+    (
+        "the cut-off at zero throttle when the throttle moves it",
+        "зріз на нульовому газі, коли газ його рухає",
+    ),
+    (
+        "the cut-off frequency; 0 switches the filter off",
+        "частота зрізу; 0 вимикає фільтр",
+    ),
+    (
         "the debug values of the log's debug mode, in a row of their own",
         "значення debug-режиму логу, в окремому рядку",
     ),
@@ -567,13 +648,38 @@ static UA: &[(&str, &str)] = &[
         "відфільтроване гіро, те, що бачить PID-регулятор",
     ),
     (
+        "the frequency the notch removes; 0 switches it off",
+        "частота, яку вирізає notch; 0 вимикає його",
+    ),
+    (
         "the gyro before the software filters, where the noise shows",
         "гіро до програмних фільтрів, де видно шум",
+    ),
+    (
+        "the highest frequency the notches follow",
+        "найвища частота, за якою йдуть notch",
     ),
     (
         "the individual responses behind the mean, as a density",
         "окремі відгуки за середнім, як щільність",
     ),
+    (
+        "the log's unfiltered gyro through the modelled chain (sim) against the filtered gyro the flight controller logged",
+        "нефільтроване гіро логу через модель ланцюжка (sim) проти відфільтрованого гіро, яке записав польотний контролер",
+    ),
+    (
+        "the low-pass topology: PT1 is gentle and quick; PT2, PT3 and biquad cut harder and delay more",
+        "тип low-pass: PT1 м’який і швидкий; PT2, PT3 і biquad ріжуть сильніше і затримують більше",
+    ),
+    (
+        "the lower edge of the notch: closer to the centre is narrower",
+        "нижній край notch: ближче до центру — вужчий",
+    ),
+    (
+        "the lowest frequency the notches follow",
+        "найнижча частота, за якою йдуть notch",
+    ),
+    ("the lowest notch centre", "найнижчий центр notch"),
     (
         "the motor outputs, in the row under the axes (%)",
         "виходи моторів, у рядку під осями (%)",
@@ -586,10 +692,22 @@ static UA: &[(&str, &str)] = &[
         "the motors' speed and its harmonics over the map: noise that follows them is motor noise",
         "оберти моторів та їх гармоніки поверх карти: шум, що йде за ними, — це шум моторів",
     ),
+    (
+        "the notch quality: higher is narrower, with less delay and less removed",
+        "добротність notch: вища — вужчий, з меншою затримкою і меншим вирізанням",
+    ),
     ("the rate the pilot asked for", "швидкість, яку задав пілот"),
+    (
+        "the response of each filter at a typical moment of the flight: the mean throttle, the mean motor speeds, the median dynamic-notch centres",
+        "відгук кожного фільтра в типовий момент польоту: середній газ, середні оберти моторів, медіанні центри динамічних notch",
+    ),
     (
         "the roll, pitch and yaw rows span ± this rate; the same on every row, so the axes compare",
         "рядки roll, pitch і yaw охоплюють ± цю швидкість; однаково в кожному рядку, щоб осі можна було порівняти",
+    ),
+    (
+        "the same for the unfiltered gyro: what the filters remove",
+        "те саме для нефільтрованого гіро: що прибирають фільтри",
     ),
     (
         "the same target as on the Step tab (Settings → Targets)",
@@ -614,6 +732,10 @@ static UA: &[(&str, &str)] = &[
     (
         "the time the cursor and the spectra show",
         "момент, який показують курсор і спектри",
+    ),
+    (
+        "the top of the frequency axes; auto: half the logging rate",
+        "верх осей частоти; auto: половина частоти логування",
     ),
     (
         "the unfiltered gyro beside the filtered one",
@@ -660,6 +782,7 @@ static UA: &[(&str, &str)] = &[
     ),
     ("top peak", "головний пік"),
     ("total", "разом"),
+    ("total as flown", "разом, як у польоті"),
     ("type", "тип"),
     ("unmapped fields", "незіставлені поля"),
     (
@@ -677,6 +800,10 @@ static UA: &[(&str, &str)] = &[
     (
         "what the rows show, on roll, pitch and yaw",
         "що показують ряди, на roll, pitch і yaw",
+    ),
+    (
+        "whether the logged throttle moved the dynamic low-pass",
+        "чи рухав записаний газ динамічний low-pass",
     ),
     ("whole log", "весь лог"),
     ("whole log, every slot", "весь лог, усі слоти"),

@@ -79,7 +79,7 @@ pub fn section(ui: &mut Ui, title: &str) {
 /// readers and tests.
 pub fn row(
     ui: &mut Ui,
-    label: &str,
+    label: impl Into<egui::WidgetText>,
     hint: &str,
     add: impl FnOnce(&mut Ui) -> Response,
 ) -> Response {
@@ -124,7 +124,7 @@ pub fn drag(
 /// like), as [`drag`].
 pub fn drag_value(
     ui: &mut Ui,
-    label: &str,
+    label: impl Into<egui::WidgetText>,
     hint: &str,
     value: egui::DragValue<'_>,
     unit: &str,

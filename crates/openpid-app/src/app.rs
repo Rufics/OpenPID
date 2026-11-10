@@ -1259,7 +1259,7 @@ impl App {
                 Tab::ThrottleHeatmap => crate::throttle_tab::throttle(self, ui),
                 Tab::TimeHeatmap => crate::time_tab::time(self, ui),
                 Tab::Surface => surface::surface(self, ui),
-                Tab::FilterSim => views::filter_sim(self, ui),
+                Tab::FilterSim => crate::filter_tab::filter_sim(self, ui),
                 Tab::MotorNoise => views::motor_noise(self, ui),
                 Tab::Advice => views::advice(self, ui),
                 Tab::Sliders => views::sliders(self, ui),

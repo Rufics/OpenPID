@@ -1390,6 +1390,27 @@ fn filter_sim_tab_validates_the_model_and_applies_what_if_changes() {
         })
         .expect("filter sim ran");
     assert!(fit.residual_rel < 0.25 && fit.residual_rel < fit.unfiltered_rel / 2.0);
+    // the chain at the flight's typical moment: four motors, both low-passes,
+    // the dynamic notch, and a delay at 100 Hz
+    let response = app(&h)
+        .cache
+        .values()
+        .find_map(|c| match c {
+            Cached::Ready(o) => match o.as_ref() {
+                crate::worker::Output::FilterSim(f) => Some(f.response.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(response.motor_hz.len(), 4);
+    let labels: Vec<&str> = response.parts.iter().map(|p| p.label.as_str()).collect();
+    assert!(labels[0].starts_with("RPM 3 × 4 motors"), "{labels:?}");
+    assert!(labels.iter().any(|l| l.starts_with("LPF1 PT1")));
+    assert!(labels.iter().any(|l| l.starts_with("Dyn notch")));
+    assert!(response.delay_100hz_ms > 0.0);
+    assert!(has_label_containing(&h, "LPF2 PT1 500 Hz"), "the legend");
+    assert!(has_label_containing(&h, "delay at 100 Hz"));
     // a what-if cutoff is a new job and changes the description and the spectrum
     app_mut(&mut h)
         .tools
@@ -1401,6 +1422,9 @@ fn filter_sim_tab_validates_the_model_and_applies_what_if_changes() {
     run_until(&mut h, idle);
     assert_eq!(app(&h).cache.len(), 2);
     assert!(has_label_containing(&h, "lowpass 1: PT1 90 Hz"));
+    // the chain's legend follows: the what-if low-pass, the chain as flown dashed
+    assert!(has_label_containing(&h, "LPF1 PT1 90 Hz"));
+    assert!(has_label_containing(&h, "as flown (dashed)"));
     let changed = app(&h)
         .cache
         .values()
@@ -1428,7 +1452,7 @@ fn filter_sim_tab_validates_the_model_and_applies_what_if_changes() {
         "the as-flown result is still cached"
     );
     // the editor shows the log's values and turns a field into an override on edit
-    assert!(has_label_containing(&h, "harmonics"));
+    assert!(has_label_containing(&h, "Harmonics"));
     // a log without unfiltered gyro gets a hint and no job
     let mut h2 = harness(vec![LOG_TWO.into()], Some(Tab::FilterSim));
     run_until(&mut h2, no_slot_loading);

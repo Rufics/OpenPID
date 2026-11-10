@@ -297,15 +297,27 @@ that tracks the peaks. It needs a log with the unfiltered gyro: Betaflight ≥ 4
 writes `gyroUnfilt`, older versions need `debug_mode = GYRO_SCALED`; ArduPilot
 the batch sampler.
 
-- The **fit** line: the residual `gyro.sim − gyro.filtered` in % of the
-  filtered RMS (how well the model reproduces the firmware; 5–15 % is normal,
-  the model runs at the log rate), the residual without any filter for
-  comparison, and the delay of the simulation against the log.
-- **What-if**: the editor fields show the log's values; a changed field
-  becomes an override (highlighted) and recomputes the simulation. 0 switches
-  a stage off. **Reset to log** restores everything.
-- Plots: PSD raw / logged filtered / sim as flown (dashed) / sim what-if, and
-  the same series over time.
+- **The filter chain** (left): magnitude, delay and phase against frequency
+  for each part of the chain (each low-pass, the RPM notches, static and
+  dynamic notches) and for the whole chain (thick line), at a typical moment
+  of the flight: the mean throttle (for a throttle-driven LPF1), the mean
+  speed of each motor (RPM notches), the median centre of each dynamic notch.
+  The delay is the phase delay: how many milliseconds a sine of that
+  frequency comes out late; the line above it gives it at 100 Hz. A notch
+  delays the frequencies below its centre and leads those above it.
+- **On the log** (right): the spectrum and the time trace of the unfiltered
+  gyro, the filtered gyro the log carries and the simulation. The **fit**
+  line gives the residual `gyro.sim − gyro.filtered` in % of the filtered RMS
+  (how well the model reproduces the firmware; 5–15 % is normal, the model
+  runs at the log rate) and the delay of the simulation against the log; the
+  panel's **Model** section has the same with the residual without any filter
+  for comparison.
+- **What-if** (panel): every field shows the log's value; a changed field
+  becomes an override (its label turns the accent colour), recomputes the
+  simulation and the curves, and the chain as flown stays as a dashed line.
+  0 switches a stage off. **Reset to log** restores everything.
+- The tab shows the docked log (the one in the timeline dock); the axis is
+  chosen in the panel.
 
 A typical use: remove LPF2 or raise LPF1 and see how much noise reaches the
 PIDs (sim what-if against logged) before touching the firmware.

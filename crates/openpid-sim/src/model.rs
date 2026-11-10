@@ -118,6 +118,52 @@ pub struct Drive<'a> {
     pub dyn_centers: Option<&'a [Vec<f64>]>,
 }
 
+/// Which kind of filtering a part of the chain does, for the response plots.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PartGroup {
+    /// Low-pass filters.
+    Lowpass,
+    /// Notch filters (static, RPM and dynamic).
+    Notch,
+}
+
+/// Where the moving parts of a chain sit, for its frequency response: a
+/// typical moment of a flight rather than a whole one.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct OperatingPoint {
+    /// Throttle in 0..=1 (dynamic low-pass); `None` = its minimum cutoff.
+    pub throttle: Option<f64>,
+    /// Motor frequency per motor, Hz (RPM notches); empty = RPM notches off,
+    /// as the model runs them without motor speeds.
+    pub motor_hz: Vec<f64>,
+    /// Centre per dynamic notch, Hz; empty = dynamic notches left out.
+    pub dyn_hz: Vec<f64>,
+}
+
+/// One part of a chain at an operating point: a low-pass, a static notch,
+/// all the RPM notches, or all the dynamic notches. Each stage carries the
+/// weight it is blended with (`weight · filtered + (1 − weight) · input`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChainPart {
+    /// What the part is, with its frequency ("LPF1 PT1 330 Hz").
+    pub label: String,
+    /// Low-pass or notch.
+    pub group: PartGroup,
+    /// The stages and their weights.
+    pub stages: Vec<(Stage, f64)>,
+}
+
+impl ChainPart {
+    /// Response of the part at `f_hz`: the product of its weighted stages.
+    pub fn response(&self, f_hz: f64) -> Complex<f64> {
+        self.stages
+            .iter()
+            .fold(Complex::new(1.0, 0.0), |h, (stage, w)| {
+                h * (stage.response(f_hz) * *w + Complex::new(1.0 - *w, 0.0))
+            })
+    }
+}
+
 /// Throttle steps the firmware quantises to before retuning the dynamic low-pass.
 const DYN_LPF_THROTTLE_STEPS: f64 = 100.0;
 /// How often the dynamic low-pass cutoff is recomputed, seconds.
@@ -300,6 +346,94 @@ impl ChainModel {
         chain
     }
 
+    /// The chain's parts at the operating point `op`, in the order the
+    /// signal passes them: RPM notches (per motor and harmonic, faded and
+    /// weighted as in [`ChainModel::run`]), static notches, the low-passes
+    /// (a dynamic one at the cutoff for `op.throttle`), dynamic notches.
+    pub fn parts_at(&self, op: &OperatingPoint) -> Vec<ChainPart> {
+        let fs = self.fs;
+        let nyq = MAX_NOTCH_FRACTION * fs;
+        let mut parts = Vec::new();
+        if let Some(r) = &self.rpm_notch
+            && !op.motor_hz.is_empty()
+        {
+            let mut stages = Vec::new();
+            for f_motor in &op.motor_hz {
+                for k in 0..r.harmonics {
+                    let f = f_motor * f64::from(k + 1);
+                    let fade = if r.fade_range_hz > 0.0 {
+                        ((f - r.min_hz) / r.fade_range_hz).clamp(0.0, 1.0)
+                    } else if f >= r.min_hz {
+                        1.0
+                    } else {
+                        0.0
+                    };
+                    let weight = fade * r.weights.get(k as usize).copied().unwrap_or(1.0);
+                    if f < nyq && f > 0.0 && weight > 0.0 {
+                        let notch = Biquad::notch_q(f.max(r.min_hz), r.q, fs);
+                        stages.push((Stage::Biquad(notch), weight));
+                    }
+                }
+            }
+            if !stages.is_empty() {
+                let mean = op.motor_hz.iter().sum::<f64>() / op.motor_hz.len() as f64;
+                parts.push(ChainPart {
+                    label: format!(
+                        "RPM {} × {} motors, {mean:.0} Hz",
+                        r.harmonics,
+                        op.motor_hz.len()
+                    ),
+                    group: PartGroup::Notch,
+                    stages,
+                });
+            }
+        }
+        for n in &self.notches {
+            if n.center_hz > 0.0 && n.center_hz < nyq {
+                parts.push(ChainPart {
+                    label: format!("Notch {:.0} Hz", n.center_hz),
+                    group: PartGroup::Notch,
+                    stages: vec![(
+                        Stage::Biquad(Biquad::notch(n.center_hz, n.cutoff_hz, fs)),
+                        1.0,
+                    )],
+                });
+            }
+        }
+        for (i, l) in [&self.lowpass1, &self.lowpass2].into_iter().enumerate() {
+            let Some(l) = l else { continue };
+            let cutoff = match (&l.dynamic, op.throttle) {
+                (Some(d), Some(t)) => d.cutoff_hz(t.clamp(0.0, 1.0)),
+                (Some(d), None) => d.min_hz,
+                (None, _) => l.cutoff_hz,
+            };
+            if let Some(stage) = lowpass_stage(l, cutoff, fs) {
+                parts.push(ChainPart {
+                    label: format!("LPF{} {} {cutoff:.0} Hz", i + 1, kind_label(&l.kind)),
+                    group: PartGroup::Lowpass,
+                    stages: vec![(stage, 1.0)],
+                });
+            }
+        }
+        if let Some(d) = &self.dyn_notch {
+            let stages: Vec<(Stage, f64)> = op
+                .dyn_hz
+                .iter()
+                .filter(|f| **f > 0.0 && **f < nyq)
+                .map(|f| (Stage::Biquad(Biquad::notch_q(*f, d.q, fs)), 1.0))
+                .collect();
+            if !stages.is_empty() {
+                let centres: Vec<String> = op.dyn_hz.iter().map(|f| format!("{f:.0}")).collect();
+                parts.push(ChainPart {
+                    label: format!("Dyn notch {} Hz", centres.join(", ")),
+                    group: PartGroup::Notch,
+                    stages,
+                });
+            }
+        }
+        parts
+    }
+
     /// Response of [`ChainModel::static_chain`] at `f_hz`.
     pub fn static_response(&self, f_hz: f64) -> Complex<f64> {
         self.static_chain().response(f_hz)
@@ -449,6 +583,15 @@ impl ChainModel {
 }
 
 /// A low-pass stage of `l`'s topology at `cutoff_hz` (none for a zero cutoff).
+fn kind_label(k: &LowpassKind) -> &'static str {
+    match k {
+        LowpassKind::Pt2 => "PT2",
+        LowpassKind::Pt3 => "PT3",
+        LowpassKind::Biquad => "biquad",
+        LowpassKind::Pt1 | LowpassKind::Other(_) => "PT1",
+    }
+}
+
 fn lowpass_stage(l: &LowpassModel, cutoff_hz: f64, fs: f64) -> Option<Stage> {
     if cutoff_hz <= 0.0 {
         return None;
@@ -595,6 +738,59 @@ mod tests {
                 .collect::<BTreeMap<_, _>>(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn parts_at_an_operating_point() {
+        let v2025 = Some(FirmwareVersion::new(2025, 12, 2));
+        let s = settings(&[("rpm_filter_weights", "100,50,0")]);
+        let m = ChainModel::from_settings(&s, v2025, ChainKind::Gyro, FS);
+        // without motor speeds or dynamic-notch centres: notch and low-passes only
+        let still = m.parts_at(&OperatingPoint::default());
+        let labels: Vec<&str> = still.iter().map(|p| p.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            ["Notch 200 Hz", "LPF1 PT1 250 Hz", "LPF2 PT1 500 Hz"]
+        );
+        assert_eq!(still[1].group, PartGroup::Lowpass);
+        // half throttle moves the dynamic low-pass; the motors bring the RPM
+        // notches (the third harmonic weighs 0 and is left out), and a centre
+        // the dynamic notch
+        let op = OperatingPoint {
+            throttle: Some(0.5),
+            motor_hz: vec![150.0, 160.0],
+            dyn_hz: vec![320.0],
+        };
+        let parts = m.parts_at(&op);
+        let rpm = &parts[0];
+        assert_eq!(rpm.label, "RPM 3 × 2 motors, 155 Hz");
+        assert_eq!(rpm.group, PartGroup::Notch);
+        assert_eq!(rpm.stages.len(), 4, "2 motors × 2 weighted harmonics");
+        assert!((rpm.stages[1].1 - 0.5).abs() < 1e-12);
+        assert!(rpm.response(150.0).norm() < 0.05, "deep at the motor");
+        // the second harmonic is weighted 0.5: it only halves the signal
+        let h2 = rpm.response(300.0).norm();
+        assert!(h2 > 0.2 && h2 < 0.7, "{h2}");
+        let lpf1 = parts.iter().find(|p| p.label.starts_with("LPF1")).unwrap();
+        let cutoff = m
+            .lowpass1
+            .as_ref()
+            .unwrap()
+            .dynamic
+            .as_ref()
+            .unwrap()
+            .cutoff_hz(0.5);
+        assert_eq!(lpf1.label, format!("LPF1 PT1 {cutoff:.0} Hz"));
+        assert_eq!(parts.last().unwrap().label, "Dyn notch 320 Hz");
+        assert!(parts.last().unwrap().response(320.0).norm() < 0.01);
+        // a static notch outside the sample rate's reach is left out
+        let mut far = m.clone();
+        far.notches[0].center_hz = 900.0;
+        assert!(
+            far.parts_at(&OperatingPoint::default())
+                .iter()
+                .all(|p| !p.label.starts_with("Notch"))
+        );
     }
 
     #[test]
