@@ -80,4 +80,5 @@ Rules shared by every topic of the sprint:
 | Spectrum: R/P/Y × (full \| below 100 Hz), prefilt, smoothing | [spectrum-tab](spectrum-tab/README.md) |
 | Freq × throttle: R/P/Y × (prefilt \| gyro) per log, flown range | [throttle-tab](throttle-tab/README.md) |
 | Plot colours as Blackbox Explorer, colour-blind safe option | [plot-colours](plot-colours/README.md) |
+| Freq × time: R/P/Y spectrograms in dB, spectrum at the position, throttle | [time-tab](time-tab/README.md) |
 

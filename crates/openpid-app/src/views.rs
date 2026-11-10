@@ -1586,9 +1586,14 @@ pub(crate) fn linked_scales(
     per.into_iter().collect()
 }
 
-/// A vertical colour scale: the viridis gradient from 0 (bottom) to `max`
-/// (top) with five ticks and the unit (docs/design/colour-scale, R1).
+/// A vertical colour scale: the colour map from 0 (bottom) to `max` (top)
+/// with five ticks (docs/design/colour-scale, R1).
 pub(crate) fn colour_bar(ui: &mut Ui, max: f64, height: f32) -> egui::Response {
+    colour_bar_range(ui, 0.0, max, height)
+}
+
+/// [`colour_bar`] from `lo` to `hi` (a dB range, for one).
+pub(crate) fn colour_bar_range(ui: &mut Ui, lo: f64, max: f64, height: f32) -> egui::Response {
     let stops = crate::colormap::heatmap().stops();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(BAR_W, height), egui::Sense::hover());
     let painter = ui.painter_at(rect);
@@ -1620,9 +1625,9 @@ pub(crate) fn colour_bar(ui: &mut Ui, max: f64, height: f32) -> egui::Response {
     let font = egui::FontId::proportional(10.0);
     let colour = ui.visuals().text_color();
     let fmt = |v: f64| {
-        if v >= 100.0 {
+        if v.abs() >= 100.0 || (lo < 0.0 && v.abs() >= 10.0) {
             format!("{v:.0}")
-        } else if v >= 10.0 {
+        } else if v.abs() >= 10.0 || lo < 0.0 {
             format!("{v:.1}")
         } else {
             format!("{v:.2}")
@@ -1638,7 +1643,7 @@ pub(crate) fn colour_bar(ui: &mut Ui, max: f64, height: f32) -> egui::Response {
         painter.text(
             egui::pos2(bar.max.x + 5.0, y),
             egui::Align2::LEFT_CENTER,
-            fmt(max * f64::from(f)),
+            fmt(lo + (max - lo) * f64::from(f)),
             font.clone(),
             colour,
         );
@@ -1650,7 +1655,11 @@ pub(crate) fn colour_bar(ui: &mut Ui, max: f64, height: f32) -> egui::Response {
         egui::WidgetInfo::labeled(
             egui::Role::Label,
             true,
-            format!("colour scale 0 to {}", fmt(max)),
+            if lo == 0.0 {
+                format!("colour scale 0 to {}", fmt(max))
+            } else {
+                format!("colour scale {} to {}", fmt(lo), fmt(max))
+            },
         )
     });
     resp
@@ -2046,321 +2055,6 @@ pub(crate) fn sparse_bins(
             .stroke(egui::Stroke::NONE)
         })
         .collect()
-}
-
-pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
-    let markers = app.spectrum.markers.clone();
-    ui.separator();
-    heatmap_controls(app, ui);
-    ui.horizontal_wrapped(|ui| {
-        let l = ui.label(tr("segment"));
-        crate::panel::with_unit(
-            ui,
-            egui::DragValue::new(&mut app.tools.stft.segment_s)
-                .speed(0.01)
-                .range(0.02..=1.0),
-            " s",
-        )
-        .labelled_by(l.id);
-        let mut max = app.tools.stft.max_hz.unwrap_or(0.0);
-        let l = ui.label(tr("max"));
-        if crate::panel::with_unit(
-            ui,
-            egui::DragValue::new(&mut max)
-                .speed(10.0)
-                .range(0.0..=8000.0),
-            " Hz",
-        )
-        .labelled_by(l.id)
-        .changed()
-        {
-            app.tools.stft.max_hz = if max > 0.0 { Some(max) } else { None };
-        }
-    });
-    app.tools.stft.channel = app.tools.heatmap_channel.clone();
-    let params = app.tools.stft.clone();
-    let max = app.tools.heatmap_max;
-    let touch = app.touch_mode;
-    let slots: Vec<Slot> = app.visible_slots();
-    let results: Vec<SlotResult> = slots
-        .iter()
-        .map(|slot| (*slot, app.result(*slot, Kind::Stft(params.clone()))))
-        .collect();
-    // the player runs over slot A's columns (B follows the same time)
-    let range = results.iter().find_map(|(_, r)| match r {
-        Some(Ok(o)) => match o.as_ref() {
-            Output::Stft(t) if t.grid.x.len() > 1 => {
-                Some((t.grid.x[0], t.grid.x[t.grid.x.len() - 1]))
-            }
-            _ => None,
-        },
-        _ => None,
-    });
-    let columns: Vec<f64> = results
-        .iter()
-        .find_map(|(_, r)| match r {
-            Some(Ok(o)) => match o.as_ref() {
-                Output::Stft(t) => Some(t.grid.x.clone()),
-                _ => None,
-            },
-            _ => None,
-        })
-        .unwrap_or_default();
-    let mut pos = player_controls(app, ui, range, &columns);
-    let grids: Vec<(Slot, &Grid2D)> = results
-        .iter()
-        .filter_map(|(s, r)| match r {
-            Some(Ok(o)) => match o.as_ref() {
-                Output::Stft(t) => Some((*s, &t.grid)),
-                _ => None,
-            },
-            _ => None,
-        })
-        .collect();
-    let scales = linked_scales(app, &grids, 20.0);
-    app.heatmap_hover = None;
-    // two panels share the height; more scroll at a readable minimum
-    let h = (ui.available_height() / slots.len().max(1) as f32).max(260.0);
-    let mut clicked_at: Option<f64> = None;
-    egui::ScrollArea::vertical()
-        .id_salt("stft-panels")
-        .show(ui, |ui| {
-            for (i, (slot, result)) in results.into_iter().enumerate() {
-                match result {
-                    Some(Ok(o)) => {
-                        if let Output::Stft(t) = o.as_ref() {
-                            ui.label(
-                                RichText::new(format!(
-                                    "{}: {} ({})",
-                                    slot.name(),
-                                    t.channel.key(),
-                                    t.unit
-                                ))
-                                .color(slot_color(slot)),
-                            );
-                            let scale = scales.get(&slot).copied().unwrap_or(max);
-                            let image = grid_image(app, ui.ctx(), &o, &t.grid, scale, 20.0);
-                            let column = pos.and_then(|p| nearest_column(&t.grid.x, p));
-                            let spectrum_h = ((h - 24.0) * 0.3).max(60.0);
-                            let plot_h = h - 24.0 - spectrum_h - 20.0;
-                            let plot_w = ui.available_width() - BAR_W;
-                            let mut frame = None;
-                            let mut x_bounds = None;
-                            let mut hover = None;
-                            ui.horizontal(|ui| {
-                                Plot::new(("stft", slot.name()))
-                                    // the map fills the frame: no blank
-                                    // margin around the epoch
-                                    .set_margin_fraction(egui::Vec2::ZERO)
-                                    .x_grid_spacer(crate::grid::spacer_x())
-                                    .x_axis_formatter(crate::grid::label)
-                                    .y_grid_spacer(crate::grid::spacer_y())
-                                    .y_axis_formatter(crate::grid::label)
-                                    .x_axis_label("time (s)")
-                                    .y_axis_label("frequency (Hz)")
-                                    .width(plot_w)
-                                    .height(plot_h)
-                                    .allow_drag(!touch)
-                                    .show(ui, |pu| {
-                                        if let Some(img) = image {
-                                            pu.image(img);
-                                        }
-                                        marker_hlines(pu, &markers);
-                                        if let Some(p) = pos {
-                                            pu.vline(
-                                                VLine::new("position", p).color(ACCENT).width(1.5),
-                                            );
-                                        }
-                                        // click (or, on touch, drag) scrubs
-                                        // (`interact_pointer_pos`: the hover position is gone during a drag)
-                                        let r = pu.response();
-                                        if (r.clicked() || (touch && r.dragged()))
-                                            && let Some(p) = r.interact_pointer_pos()
-                                        {
-                                            clicked_at =
-                                                Some(pu.transform().value_from_position(p).x);
-                                        }
-                                        let b = pu.plot_bounds();
-                                        x_bounds = Some((b.min()[0], b.max()[0]));
-                                        frame = Some(*pu.transform().frame());
-                                        hover = heatmap_hover(pu, slot, &t.grid);
-                                    });
-                                colour_bar(ui, scale, plot_h);
-                            });
-                            if hover.is_some() {
-                                app.heatmap_hover = hover;
-                            }
-                            if let Some(f) = frame {
-                                app.heatmap_frames.insert(slot, f);
-                            }
-                            hover_label(ui, hover, true);
-                            if i == 0 {
-                                app.player.plot_frame = frame;
-                                app.player.x_bounds = x_bounds;
-                                app.player.column = column;
-                            }
-                            column_spectrum(ui, slot, t, column, max, spectrum_h);
-                        }
-                    }
-                    Some(Err(e)) => show_error(ui, slot, &e),
-                    None => {
-                        ui.spinner();
-                    }
-                }
-            }
-        });
-    if let Some(t) = clicked_at
-        && let Some((x0, x1)) = range
-    {
-        pos = Some(t.clamp(x0, x1));
-    }
-    if pos != app.player.pos_s {
-        app.player.pos_s = pos;
-        app.player.synced_cursor = pos;
-        app.viewer.cursor_s = pos;
-    }
-}
-
-/// Play / pause, stepping, speed and the scrub slider; returns the position
-/// after this frame's input and playback.
-fn player_controls(
-    app: &mut App,
-    ui: &mut Ui,
-    range: Option<(f64, f64)>,
-    columns: &[f64],
-) -> Option<f64> {
-    let Some((x0, x1)) = range else {
-        app.player.playing = false;
-        return None;
-    };
-    // the log-viewer cursor moved elsewhere: follow it
-    if app.viewer.cursor_s != app.player.synced_cursor
-        && let Some(c) = app.viewer.cursor_s
-    {
-        app.player.pos_s = Some(c.clamp(x0, x1));
-        app.player.synced_cursor = app.viewer.cursor_s;
-    }
-    let mut pos = app.player.pos_s.unwrap_or(x0).clamp(x0, x1);
-    let now = ui.input(|i| i.time);
-    let step = |pos: f64, dir: i64| -> f64 {
-        nearest_column(columns, pos)
-            .and_then(|c| columns.get((c as i64 + dir).max(0) as usize))
-            .copied()
-            .unwrap_or(pos)
-    };
-    let ctx = ui.ctx().clone();
-    match app.player.request.take() {
-        Some(PlayerRequest::ToStart) => pos = x0,
-        Some(PlayerRequest::StepBack) => pos = step(pos, -1),
-        Some(PlayerRequest::StepForward) => pos = step(pos, 1),
-        None => {}
-    }
-    ui.horizontal_wrapped(|ui| {
-        let p = &mut app.player;
-        if ui
-            .button(if p.playing { tr("Pause") } else { tr("Play") })
-            .on_hover_text(shortcuts::keys_of(&ctx, Action::PlayPause))
-            .clicked()
-        {
-            p.playing = !p.playing;
-            p.last_frame_time = None;
-        }
-        if ui
-            .button(tr("To start"))
-            .on_hover_text(shortcuts::keys_of(&ctx, Action::ToStart))
-            .clicked()
-        {
-            pos = x0;
-        }
-        if ui
-            .button(tr("< step"))
-            .on_hover_text(shortcuts::keys_of(&ctx, Action::StepBack))
-            .clicked()
-        {
-            pos = step(pos, -1);
-        }
-        if ui
-            .button(tr("step >"))
-            .on_hover_text(shortcuts::keys_of(&ctx, Action::StepForward))
-            .clicked()
-        {
-            pos = step(pos, 1);
-        }
-        let l = ui.label(tr("speed"));
-        crate::panel::with_unit(
-            ui,
-            egui::DragValue::new(&mut p.speed)
-                .speed(0.1)
-                .range(0.1..=16.0),
-            "×",
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("position"));
-        ui.add(
-            egui::Slider::new(&mut pos, x0..=x1)
-                .suffix(" s")
-                .fixed_decimals(2),
-        )
-        .labelled_by(l.id);
-        if let Some(c) = nearest_column(columns, pos) {
-            ui.label(RichText::new(format!("column {} of {}", c + 1, columns.len())).color(MUTED));
-        }
-    });
-    if app.player.playing {
-        if let Some(last) = app.player.last_frame_time {
-            pos += (now - last).max(0.0) * app.player.speed;
-            if pos > x1 {
-                pos = x0; // loop
-            }
-        }
-        app.player.last_frame_time = Some(now);
-        ui.ctx().request_repaint();
-    }
-    Some(pos)
-}
-
-/// The spectrum of one STFT column as a line: amplitude over frequency.
-fn column_spectrum(
-    ui: &mut Ui,
-    slot: Slot,
-    t: &openpid_analysis::StftOutput,
-    column: Option<usize>,
-    max: f64,
-    height: f32,
-) {
-    let nx = t.grid.x.len();
-    let y_max = if max > 0.0 {
-        max
-    } else {
-        openpid_analysis::render::robust_max(&t.grid.z)
-    };
-    let points: Vec<[f64; 2]> = column
-        .map(|c| {
-            t.grid
-                .y
-                .iter()
-                .enumerate()
-                .map(|(iy, f)| [*f, t.grid.z[iy * nx + c]])
-                .collect()
-        })
-        .unwrap_or_default();
-    let title = match column {
-        Some(c) => format!("{} spectrum at {:.2} s", slot.name(), t.grid.x[c]),
-        None => format!("{} spectrum", slot.name()),
-    };
-    ui.label(RichText::new(title.clone()).color(MUTED));
-    Plot::new(("stft-column", slot.name()))
-        .x_axis_label("frequency (Hz)")
-        .y_axis_label(t.unit.clone())
-        .height(height)
-        .include_y(0.0)
-        .include_y(y_max)
-        .allow_drag(false)
-        .allow_zoom(false)
-        .allow_scroll(false)
-        .show(ui, |pu| {
-            pu.line(Line::new(title, PlotPoints::from(points)).color(slot_color(slot)));
-        });
 }
 
 pub fn diagnostics(app: &mut App, ui: &mut Ui) {

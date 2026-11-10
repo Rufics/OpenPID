@@ -231,6 +231,8 @@ pub struct Tools {
     pub spectrum_display: crate::spectrum_tab::SpectrumDisplay,
     /// Freq × throttle display options (docs/design/throttle-tab).
     pub throttle_display: crate::throttle_tab::ThrottleDisplay,
+    /// Freq × time display options (docs/design/time-tab).
+    pub time_display: crate::time_tab::TimeDisplay,
 }
 
 impl Default for Tools {
@@ -262,6 +264,7 @@ impl Default for Tools {
             step_display: crate::axis_layout::StepDisplay::default(),
             spectrum_display: crate::spectrum_tab::SpectrumDisplay::default(),
             throttle_display: crate::throttle_tab::ThrottleDisplay::default(),
+            time_display: crate::time_tab::TimeDisplay::default(),
         }
     }
 }
@@ -285,6 +288,8 @@ pub struct App {
     pub heatmap_frames: HashMap<Slot, egui::Rect>,
     /// Freq × throttle view state (the throttle range last applied).
     pub throttle_view: crate::throttle_tab::ThrottleView,
+    /// Freq × time view state.
+    pub time_view: crate::time_tab::TimeView,
     pub tab: Tab,
     pub tools: Tools,
     pub touch_mode: bool,
@@ -390,6 +395,7 @@ impl App {
             heatmap_hover: None,
             heatmap_frames: HashMap::new(),
             throttle_view: crate::throttle_tab::ThrottleView::default(),
+            time_view: crate::time_tab::TimeView::default(),
             tab: tab.unwrap_or(Tab::LogViewer),
             tools,
             touch_mode: prefs.touch_mode,
@@ -753,6 +759,7 @@ impl App {
             step_display: self.tools.step_display.clone(),
             spectrum_display: self.tools.spectrum_display.clone(),
             throttle_display: self.tools.throttle_display.clone(),
+            time_display: self.tools.time_display.clone(),
         };
         self.tab = Tab::from_name(&p.tab).unwrap_or(Tab::LogViewer);
         self.touch_mode = p.touch_mode;
@@ -1249,7 +1256,7 @@ impl App {
                 Tab::Step => crate::axis_layout::step(self, ui),
                 Tab::Spectrum => crate::spectrum_tab::spectrum(self, ui),
                 Tab::ThrottleHeatmap => crate::throttle_tab::throttle(self, ui),
-                Tab::TimeHeatmap => views::time_heatmap(self, ui),
+                Tab::TimeHeatmap => crate::time_tab::time(self, ui),
                 Tab::Surface => surface::surface(self, ui),
                 Tab::FilterSim => views::filter_sim(self, ui),
                 Tab::MotorNoise => views::motor_noise(self, ui),

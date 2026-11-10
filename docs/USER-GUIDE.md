@@ -243,21 +243,33 @@ up to 128 × 192 cells after averaging, so rotation stays smooth on big logs.
 
 ## 6. Freq × time
 
-A spectrogram (STFT) of a channel: frequency vertical, time horizontal.
-**segment** and **max** as in section 5. It shows how the noise changes over
-the flight (motor spin-up, propwash, resonances during certain manoeuvres).
-Manual markers from the Spectrum tab show here too.
+Spectrograms (STFT) of roll, pitch and yaw of the **docked log** (the one in
+the dock at the bottom; click another log's chip to show it): time across,
+frequency up. By default the unfiltered gyro (**Prefilt**), where the motor
+noise shows as lines that follow the throttle, and the colour in **dB**, as
+the reference tool, so weak and strong lines show together. Beside each row,
+the spectrum at the player's position; under the rows, the throttle on the
+same time axis, so a burst of noise can be matched with what the throttle
+did. It shows how the noise changes over the flight (motor spin-up, propwash,
+resonances during certain manoeuvres). Manual markers from the Spectrum tab
+show here too.
 
 ![Freq × time](screenshots/time.png)
 
-**Spectrum player.** Under the map is the spectrum of the current STFT column
-(amplitude over frequency), and on the map a vertical position line. **Play /
-Pause** advances the position in real time (× **speed**, looping at the end),
-**< step / step >** move one column, **To start** rewinds, the **position**
-slider and a click on the map (a finger drag in touch mode) scrub. The
-position is the Log viewer cursor: a cursor placed there moves the player and
-the player moves the cursor, so the epoch can be set from the place where the
-spectrum "lights up".
+The control panel on the right (hover any field for its explanation):
+
+- **Channel** and **Prefilt** (the gyro only; off: the filtered gyro).
+- **Scale**: dB (default) or linear. In dB, **Z min** / **Z max** are the
+  values drawn black and brightest (automatic: the background noise and the
+  strongest lines of the maps); in linear, **Colour max**. The colour bars
+  show relative values, without a unit.
+- **Player**: **Play / Pause** advances the position in real time
+  (× **Speed**, looping at the end), **< step / step >** move one column,
+  **To start** rewinds; the **Position** slider and a click on a map (a
+  finger drag in touch mode) scrub. The position is the Log viewer cursor: a
+  cursor placed there moves the player and the player moves the cursor, so
+  the epoch can be set from the place where the spectrum "lights up".
+- **Segment** and **Max frequency**.
 
 ## 7. Filter Sim
 

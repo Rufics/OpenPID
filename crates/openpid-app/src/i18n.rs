@@ -208,6 +208,8 @@ static UA: &[(&str, &str)] = &[
     ("Player", "Плеєр"),
     ("Plot as PNG…", "Графік як PNG…"),
     ("Plot colours", "Кольори графіків"),
+    ("Position", "Позиція"),
+    ("Prefilt", "До фільтра"),
     ("Prefilt (dotted)", "До фільтра (пунктир)"),
     ("Prefilt beside it", "До фільтра поруч"),
     ("Preset", "Пресет"),
@@ -251,6 +253,7 @@ static UA: &[(&str, &str)] = &[
     ("Slot", "Слот"),
     ("Smoothing", "Згладжування"),
     ("Spectrum", "Спектр"),
+    ("Speed", "Швидкість"),
     ("Start the tour", "Почати тур"),
     ("Step", "Крок"),
     ("Step response", "Перехідна характеристика"),
@@ -294,6 +297,8 @@ static UA: &[(&str, &str)] = &[
         "Your logs live here. Drop another one to compare.",
         "Тут ваші логи. Перетягніть ще один, щоб порівняти.",
     ),
+    ("Z max", "Z макс."),
+    ("Z min", "Z мін."),
     ("Zoom to the flown range", "Лише діапазон польоту"),
     (
         "a coloured line per motor and harmonic instead of one line at the mean of the motors",
@@ -342,6 +347,10 @@ static UA: &[(&str, &str)] = &[
         "пошкоджені / десинхр. / пропущені байти",
     ),
     ("cutoff", "зріз"),
+    (
+        "dB (20·log10 of the amplitude) shows weak and strong lines at once, as the reference tool; linear shows the strongest only",
+        "dB (20·log10 амплітуди) показує слабкі й сильні лінії разом, як в еталонному інструменті; лінійна — лише найсильніші",
+    ),
     ("delay", "затримка"),
     (
         "drag a handle or the window; double-click = whole log",
@@ -409,9 +418,14 @@ static UA: &[(&str, &str)] = &[
         "довжина кожного шматка логу, на якому рахується відгук; довші вікна бачать повільне встановлення, коротші дають більше вікон",
     ),
     (
+        "length of each spectrum along the log: longer gives finer frequency steps and coarser time steps",
+        "довжина кожного спектра вздовж логу: довший дає дрібніший крок частоти й грубший крок часу",
+    ),
+    (
         "length of each spectrum along the log: longer gives finer frequency steps, fewer segments per throttle bin",
         "довжина кожного спектра вздовж логу: довший дає дрібніший крок частоти й менше сегментів на бін газу",
     ),
+    ("linear", "лінійна"),
     ("link scales", "спільна шкала"),
     ("loading", "завантаження"),
     ("log ok", "лог ок"),
@@ -468,6 +482,10 @@ static UA: &[(&str, &str)] = &[
     ("peak", "пік"),
     ("peak prominence", "виразність піка"),
     ("peaks", "піки"),
+    (
+        "playback speed relative to the flight",
+        "швидкість відтворення відносно польоту",
+    ),
     ("position", "позиція"),
     (
         "power in decibels (10·log10) instead of unit²/Hz",
@@ -496,6 +514,7 @@ static UA: &[(&str, &str)] = &[
     ("smooth", "згладжування"),
     ("smoothing", "згладжування"),
     ("solo", "лише цей"),
+    ("spectrum at", "спектр на"),
     ("speed", "швидкість"),
     ("start", "початок"),
     ("step >", "крок >"),
@@ -525,6 +544,10 @@ static UA: &[(&str, &str)] = &[
         "вісь газу від першого до останнього біна з даними замість 0–100 %",
     ),
     (
+        "the time the cursor and the spectra show",
+        "момент, який показують курсор і спектри",
+    ),
+    (
         "the unfiltered gyro beside the filtered one",
         "нефільтрований гіро поруч із фільтрованим",
     ),
@@ -537,6 +560,18 @@ static UA: &[(&str, &str)] = &[
         "нефільтрований гіро в окремій колонці, на тій самій шкалі кольору; лише для гіро",
     ),
     (
+        "the unfiltered gyro, where the motor noise shows; off: the filtered gyro",
+        "нефільтрований гіро, де видно шум моторів; вимкнено: фільтрований гіро",
+    ),
+    (
+        "the value drawn black; auto: the background noise of the maps",
+        "значення, що малюється чорним; авто: фоновий шум карт",
+    ),
+    (
+        "the value drawn brightest; auto: the strongest lines of the maps",
+        "значення, що малюється найяскравішим; авто: найсильніші лінії карт",
+    ),
+    (
         "the verdict table: every log and axis against the targets",
         "таблиця вердиктів: кожен лог і вісь проти цілей",
     ),
@@ -547,8 +582,13 @@ static UA: &[(&str, &str)] = &[
     ),
     ("throttle window ±", "вікно газу ±"),
     ("time (ms)", "час (мс)"),
+    ("time (s)", "час (с)"),
     ("timeline", "таймлайн"),
     ("top of the frequency axis", "верх осі частот"),
+    (
+        "top of the frequency axis, at most half the logging rate",
+        "верх осі частот, не більше половини частоти запису",
+    ),
     ("top peak", "головний пік"),
     ("total", "разом"),
     ("type", "тип"),

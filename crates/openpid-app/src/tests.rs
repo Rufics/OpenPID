@@ -654,7 +654,7 @@ fn spectrum_and_heatmap_controls_change_parameters() {
     assert_eq!(app(&h).cache.len(), jobs);
     select_tab(&mut h, Tab::TimeHeatmap);
     run_until(&mut h, idle);
-    assert!(has_label_containing(&h, "segment"));
+    assert!(has_label_containing(&h, "Segment"));
 }
 
 // ------------------------------------------------------------------ log viewer
@@ -1969,7 +1969,7 @@ fn file_shortcuts_ask_for_dialogs_and_close_the_last_slot() {
 fn single_keys_type_into_a_focused_field_instead_of_switching_tabs() {
     let mut h = harness(vec![LOG_4_2.into()], Some(Tab::TimeHeatmap));
     run_until(&mut h, idle);
-    h.get_by_role_and_label(Role::SpinButton, "speed").click();
+    h.get_by_role_and_label(Role::SpinButton, "Speed").click();
     h.run_steps(2);
     assert!(
         crate::shortcuts::text_input_focused(&h.ctx),
@@ -2512,10 +2512,14 @@ fn heatmaps_show_a_colour_scale_with_linked_maxima_and_a_hover_value() {
     pointer_move(&mut h, egui::pos2(2.0, 2.0));
     h.step();
     assert!(app(&h).heatmap_hover.is_none());
-    // the same scale and read-out on freq × time and the surface
+    // the same scale and read-out on freq × time (linear; it shows the
+    // docked log, here A) and the surface
+    app_mut(&mut h).tools.time_display.db = false;
+    app_mut(&mut h).dock = Some(Slot::A);
     select_tab(&mut h, Tab::TimeHeatmap);
     run_until(&mut h, idle);
     h.run_steps(2);
+    assert_eq!(app(&h).colour_scales.len(), 1, "the docked log");
     assert!(app(&h).colour_scales.iter().all(|s| s.1 == 5.0));
     let frame = app(&h).heatmap_frames[&Slot::A];
     pointer_move(&mut h, frame.center());
@@ -2979,4 +2983,46 @@ fn plot_colours_follow_the_setting() {
         PlotColours::ColourBlindSafe
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn time_tab_stacks_the_axes_in_db_with_the_throttle_under_them() {
+    // docs/design/time-tab (F2): roll, pitch and yaw spectrograms of the
+    // docked log (the unfiltered gyro by default), in dB, the spectrum at
+    // the position beside each row, the throttle under them
+    let mut h = harness(vec![LOG_2025.into()], Some(Tab::TimeHeatmap));
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    let jobs = |a: &App| a.cache.keys().filter(|k| k.kind == "stft").count();
+    assert_eq!(jobs(app(&h)), 3, "one spectrogram per axis");
+    assert!(app(&h).tools.time_display.db && app(&h).tools.time_display.prefilt);
+    assert_eq!(
+        app(&h).tools.stft.channel,
+        openpid_core::ChannelId::Gyro {
+            axis: Axis::Roll,
+            stage: openpid_core::GyroStage::Raw
+        },
+        "prefilt by default, as the reference tool"
+    );
+    assert!(has_label_containing(&h, "A prefilt"));
+    // the dB range comes from the maps: negative floor, top above it
+    let (_, top) = app(&h).colour_scales[0];
+    assert!(
+        has_label_containing(&h, "colour scale -"),
+        "a dB floor below 0"
+    );
+    assert!(top.is_finite());
+    // a fixed floor and top take over
+    app_mut(&mut h).tools.time_display.z_min = Some(-30.0);
+    app_mut(&mut h).tools.time_display.z_max = Some(10.0);
+    h.run_steps(2);
+    assert_eq!(app(&h).colour_scales[0].1, 10.0);
+    assert!(has_label_containing(&h, "colour scale -30 to 10"));
+    // filtered gyro: three new jobs
+    h.get_by_role_and_label(Role::CheckBox, "Prefilt").click();
+    h.run_steps(2);
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    assert_eq!(jobs(app(&h)), 6);
+    assert!(has_label_containing(&h, "A Gyro"));
 }

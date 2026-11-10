@@ -18,6 +18,7 @@ mod surface;
 mod tests;
 mod theme;
 mod throttle_tab;
+mod time_tab;
 mod tour;
 mod views;
 mod worker;

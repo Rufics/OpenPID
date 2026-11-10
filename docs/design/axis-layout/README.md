@@ -93,7 +93,7 @@ colour max per tab (default automatic; "link scales" as now), the colour-scale
 rules of [colour-scale](../colour-scale/README.md) stay, overlays (RPM, notches),
 segment and throttle window. The full preset list is #142.
 
-**Freq × time.** Three rows (roll / pitch / yaw) of the chosen channel, the
+**Freq × time** (implemented: [time-tab](../time-tab/README.md)). Three rows (roll / pitch / yaw) of the chosen channel, the
 existing player under them. Panel: channel, colour max, segment, overlays.
 
 **Log viewer.** Rows roll / pitch / yaw at a shared y scale (default ± 500 °/s,
