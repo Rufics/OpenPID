@@ -1901,17 +1901,14 @@ pub fn diagnostics(app: &mut App, ui: &mut Ui) {
                     ui.end_row();
                     if let Some(pid) = &s.settings.pid {
                         ui.label("PID roll / pitch / yaw");
+                        let axis = |g: &PidGains| {
+                            [g.p, g.i, g.d].map(|v| s.settings.gain_text(v)).join("/")
+                        };
                         ui.label(format!(
-                            "{}/{}/{}  {}/{}/{}  {}/{}/{}",
-                            pid.roll.p,
-                            pid.roll.i,
-                            pid.roll.d,
-                            pid.pitch.p,
-                            pid.pitch.i,
-                            pid.pitch.d,
-                            pid.yaw.p,
-                            pid.yaw.i,
-                            pid.yaw.d
+                            "{}  {}  {}",
+                            axis(&pid.roll),
+                            axis(&pid.pitch),
+                            axis(&pid.yaw)
                         ));
                         ui.end_row();
                     }

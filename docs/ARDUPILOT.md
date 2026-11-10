@@ -83,7 +83,7 @@ samples and the base coverage of every channel in percent.
 
 | What | Parameters |
 |------|------------|
-| PID per axis | Copter: `ATC_RAT_{RLL,PIT,YAW}_{P,I,D,FF}` (3.x: `RATE_*`); Plane: `{RLL,PTCH,YAW}_RATE_*` (without a yaw controller: zeros) |
+| PID per axis | Copter: `ATC_RAT_{RLL,PIT,YAW}_{P,I,D,FF}` (3.x: `RATE_*`); Plane: `{RLL,PTCH,YAW}_RATE_*` (without a yaw controller: zeros); shown and rounded to 0.0001 (`Settings::pid_step`) |
 | Rates | `SCHED_LOOP_RATE` → pid_hz; `INS_GYRO_RATE` → gyro_hz (1/2/4/8 kHz); log_hz is the timebase rate |
 | Gyro filter | `INS_GYRO_FILTER` → lowpass1 (second-order biquad) |
 | D-term | `*_FLTD` → dterm lowpass1 (PT1) |

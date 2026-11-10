@@ -206,7 +206,8 @@ A typed structure with optional fields (`Option<T>`), filled in by the `Firmware
 
 ```rust
 pub struct Settings {
-    pub pid: PerAxis<PidGains>,          // P, I, D, D_min/D_max, F
+    pub pid: PerAxis<PidGains>,          // P, I, D, D_min/D_max, F in the firmware's numbers
+    pub pid_step: Option<f64>,           // their smallest step: 1 on Betaflight, 0.0001 on ArduPilot
     pub gyro_filters: FilterChain,       // lowpass1/2 (type, cutoff, dyn min/max), notch, dyn-notch, rpm-notch
     pub dterm_filters: FilterChain,
     pub rates: RatesProfile,

@@ -62,6 +62,13 @@ else its default of that version; the `ArduPilot` harmonic notch has no
 fade-in or weights). `ChainModel::from_settings` takes the settings only.
 The simulation of the Betaflight fixture is unchanged to the bit.
 
+PID gains stay in the firmware's own numbers (what the pilot types back),
+so the profile also says how fine they are: `Settings::pid_step` is 1 on the
+Cleanflight family and 0.0001 on `ArduPilot`. Consumers round and print
+through `Settings::round_gain` and `gain_text`; none of them assumes an
+integer. Before that an `ArduPilot` log showed "0, 0, 0" in the Step legend
+and a D advice of "0 → 0".
+
 ## Consequences
 
 - A new firmware or version is one profile; a new consumer needs no

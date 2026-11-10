@@ -290,7 +290,11 @@ impl Recommend {
             );
             return;
         }
-        let to = (d * (1.0 + p.d_step_pct / 100.0)).round();
+        let settings = &ctx.session.settings;
+        // at the firmware's gain step, and never a change of nothing
+        let to = settings
+            .round_gain(d * (1.0 + p.d_step_pct / 100.0))
+            .max(settings.round_gain(d + settings.gain_step()));
         let noise = noise_db.map_or(String::new(), |n| format!(", D-term noise {n:+.0} dB"));
         Self::finding(
             out,
@@ -306,8 +310,8 @@ impl Recommend {
             out,
             Proposal {
                 path: format!("pid.{}.d", axis.name()),
-                from: Some(format!("{d:.0}")),
-                to: format!("{to:.0}"),
+                from: Some(settings.gain_text(d)),
+                to: settings.gain_text(to),
                 rationale: format!(
                     "{} overshoots {overshoot:.0} % (limit {:.0} %){noise}: more D damps it",
                     axis.name(),
@@ -700,6 +704,32 @@ mod tests {
         let roll = d.iter().find(|p| p.path == "pid.roll.d").unwrap();
         assert_eq!(roll.from.as_deref(), Some("30"));
         assert_eq!(roll.to, "33");
+        // fractional gains (ArduPilot) keep their precision instead of rounding to 0
+        let fine = run(&spec, |s| {
+            let mut g = gains();
+            g.roll.d = 0.0036;
+            s.settings.pid = Some(g);
+            s.settings.pid_step = Some(0.0001);
+        });
+        let roll = fine
+            .proposals
+            .iter()
+            .find(|p| p.path == "pid.roll.d")
+            .unwrap();
+        assert_eq!(roll.from.as_deref(), Some("0.0036"));
+        assert_eq!(roll.to, "0.004");
+        // a gain too small for 10 % to move it still moves by one step
+        let small = run(&spec, |s| {
+            let mut g = gains();
+            g.roll.d = 3.0;
+            s.settings.pid = Some(g);
+        });
+        let roll = small
+            .proposals
+            .iter()
+            .find(|p| p.path == "pid.roll.d")
+            .unwrap();
+        assert_eq!((roll.from.as_deref(), roll.to.as_str()), (Some("3"), "4"));
         assert!(roll.rationale.contains("overshoots") && roll.confidence >= 0.3);
         assert!(
             out.findings

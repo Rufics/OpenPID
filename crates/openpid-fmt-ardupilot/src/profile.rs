@@ -632,6 +632,8 @@ impl FirmwareProfile for ArdupilotProfile {
         }
         Settings {
             pid,
+            // gains are fractions (ATC_RAT_RLL_P 0.135, _D 0.0036)
+            pid_step: Some(0.0001),
             loop_rates: openpid_core::settings::LoopRates {
                 gyro_hz,
                 pid_hz,

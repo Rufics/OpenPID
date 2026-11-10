@@ -178,6 +178,11 @@ pub struct DebugMode {
 pub struct Settings {
     /// PID gains per axis.
     pub pid: Option<PerAxis<PidGains>>,
+    /// The smallest step of a PID gain on this firmware, which is also the
+    /// precision the gains are written with: 1 for the integer gains of the
+    /// Cleanflight family, 0.0001 for `ArduPilot`'s. `None` reads as 1.
+    #[serde(default)]
+    pub pid_step: Option<f64>,
     /// Loop rates.
     pub loop_rates: LoopRates,
     /// Motor configuration.
@@ -192,4 +197,67 @@ pub struct Settings {
     pub craft_name: Option<String>,
     /// Headers the profile did not interpret, verbatim.
     pub extra: BTreeMap<String, String>,
+}
+impl Settings {
+    /// The smallest step of a PID gain (1 when the profile gave none).
+    pub fn gain_step(&self) -> f64 {
+        self.pid_step
+            .filter(|s| *s > 0.0 && s.is_finite())
+            .unwrap_or(1.0)
+    }
+
+    /// `gain` rounded to the firmware's step.
+    pub fn round_gain(&self, gain: f64) -> f64 {
+        let step = self.gain_step();
+        (gain / step).round() * step
+    }
+
+    /// `gain` as the firmware writes it: at the step's precision, without
+    /// trailing zeros ("45" on Betaflight, "0.135" and "0.0036" on `ArduPilot`).
+    pub fn gain_text(&self, gain: f64) -> String {
+        let step = self.gain_step();
+        let decimals = if step >= 1.0 {
+            0
+        } else {
+            (-step.log10()).ceil().clamp(0.0, 9.0) as usize
+        };
+        let text = format!("{:.decimals$}", self.round_gain(gain));
+        if decimals == 0 {
+            return text;
+        }
+        let text = text.trim_end_matches('0').trim_end_matches('.');
+        if text.is_empty() || text == "-" {
+            "0".to_string()
+        } else {
+            text.to_string()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gains_are_written_at_the_firmware_step() {
+        let integer = Settings::default();
+        assert_eq!(integer.gain_step(), 1.0);
+        assert_eq!(integer.gain_text(45.0), "45");
+        assert_eq!(integer.round_gain(37.4), 37.0);
+        let fine = Settings {
+            pid_step: Some(0.0001),
+            ..Settings::default()
+        };
+        assert_eq!(fine.gain_text(0.135), "0.135");
+        assert_eq!(fine.gain_text(0.0036), "0.0036");
+        assert_eq!(fine.gain_text(0.0), "0");
+        assert_eq!(fine.gain_text(0.00396), "0.004");
+        assert!((fine.round_gain(0.00396) - 0.004).abs() < 1e-12);
+        // a step that makes no sense reads as 1
+        let odd = Settings {
+            pid_step: Some(0.0),
+            ..Settings::default()
+        };
+        assert_eq!(odd.gain_step(), 1.0);
+    }
 }

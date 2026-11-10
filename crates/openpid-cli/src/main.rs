@@ -266,17 +266,14 @@ fn cmd_info(args: &Args) -> Result<(), String> {
         );
         println!("  events   : {}", sum.events);
         if let Some(pid) = &s.settings.pid {
+            let axis = |g: &openpid_core::settings::PidGains| {
+                [g.p, g.i, g.d].map(|v| s.settings.gain_text(v)).join("/")
+            };
             println!(
-                "  pid      : roll {}/{}/{}  pitch {}/{}/{}  yaw {}/{}/{}",
-                pid.roll.p,
-                pid.roll.i,
-                pid.roll.d,
-                pid.pitch.p,
-                pid.pitch.i,
-                pid.pitch.d,
-                pid.yaw.p,
-                pid.yaw.i,
-                pid.yaw.d
+                "  pid      : roll {}  pitch {}  yaw {}",
+                axis(&pid.roll),
+                axis(&pid.pitch),
+                axis(&pid.yaw)
             );
         }
         if let Some(lp) = &s.settings.gyro_filters.lowpass1 {

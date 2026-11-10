@@ -442,6 +442,8 @@ pub fn settings(fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
             .collect();
     Settings {
         pid,
+        // the Cleanflight family sets its gains as integers
+        pid_step: Some(1.0),
         loop_rates: LoopRates {
             gyro_hz,
             pid_hz,

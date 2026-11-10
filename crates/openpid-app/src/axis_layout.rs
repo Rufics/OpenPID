@@ -12,7 +12,7 @@ use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{HLine, Legend, Line, LineStyle, Plot, PlotPoints, Points};
 use openpid_analysis::{FitnessLevel, StepParams, StepTargets, VerdictLevel, verdicts};
 use openpid_core::Axis;
-use openpid_core::settings::PidGains;
+use openpid_core::settings::{PidGains, Settings};
 use std::sync::Arc;
 
 /// Width of the control panel (R4).
@@ -305,10 +305,12 @@ type Curves<'a> = (
 type AxisResult = (Axis, Slot, Option<Result<Arc<Output>, String>>);
 
 /// "45,80,30,40,120": P, I, D, D-max (or D-min), F of a log.
-pub fn pid_text(g: &PidGains) -> String {
+pub fn pid_text(settings: &Settings, g: &PidGains) -> String {
     let dm = g.d_max.or(g.d_min).unwrap_or(0.0);
     let f = g.f.unwrap_or(0.0);
-    format!("{:.0},{:.0},{:.0},{dm:.0},{f:.0}", g.p, g.i, g.d)
+    [g.p, g.i, g.d, dm, f]
+        .map(|gain| settings.gain_text(gain))
+        .join(",")
 }
 
 /// The Step tab (R4): the verdict table, then roll / pitch / yaw rows of the
@@ -355,10 +357,11 @@ pub fn step(app: &mut App, ui: &mut Ui) {
         let pids: Vec<(Slot, Option<String>)> = outputs
             .iter()
             .map(|(s, _)| {
-                let pid = app
-                    .loaded(*s)
-                    .and_then(|l| l.current())
-                    .and_then(|ses| ses.settings.pid.map(|p| pid_text(p.get(axis))));
+                let pid = app.loaded(*s).and_then(|l| l.current()).and_then(|ses| {
+                    ses.settings
+                        .pid
+                        .map(|p| pid_text(&ses.settings, p.get(axis)))
+                });
                 (*s, pid)
             })
             .collect();
