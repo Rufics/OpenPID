@@ -242,7 +242,7 @@ fn setup_info_follows_the_session_and_the_firmware() {
 #[test]
 fn setup_info_shows_every_fixture() {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/logs");
-    let mut logs: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
+    let mut logs: Vec<PathBuf> = std::fs::read_dir(dir)
         .unwrap()
         .filter_map(|e| Some(e.ok()?.path()))
         .filter(|p| {
