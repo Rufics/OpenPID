@@ -2,7 +2,9 @@
 //! the export, and every tab on one real log.
 
 use super::temp_dir;
-use super::{LOG_4_2, LOG_4_5, LOG_2025, LOG_ARDUCOPTER, LOG_TWO, result, set_epoch};
+use super::{
+    LOG_4_2, LOG_4_5, LOG_4_5_1, LOG_2025, LOG_ARDUCOPTER, LOG_TWO, jobs, result, set_epoch,
+};
 use crate::app::{Cached, Tab};
 use crate::testkit::Ui;
 use crate::worker::{Output, Slot};
@@ -109,26 +111,66 @@ fn filter_sim_tab_validates_the_model_and_applies_what_if_changes() {
 
 #[test]
 fn advice_tab_lists_proposals_evidence_and_cli() {
+    // docs/design/advice-tab (A2)
+    // the 4.2.0 log on its automatic trim: roll overshoots, so a card with
+    // the setting in words, the change, the reason, the firmware's command
     let mut ui = Ui::open(&[LOG_4_2], Tab::Advice);
-    // the advice below is about the whole log, not the automatic trim
+    assert!(ui.sees("1 change proposed"));
+    assert!(ui.has("Roll D"));
+    assert!(ui.sees("pid.roll.d"));
+    assert!(ui.has("83 -> 91"), "from and to, read out as written");
+    assert!(ui.sees("roll overshoots 40 % (limit 15 %)"));
+    assert!(ui.has("set d_roll = 91"));
+    assert!(ui.has("Copy A pid.roll.d"));
+    assert!(ui.sees("90 %"), "how sure the rule is");
+    // the other checks, each with what the rule concluded
+    assert!(ui.sees("CHECKED"));
+    assert!(ui.has("A Noise peak roll [ok]"));
+    assert!(
+        ui.has("A Overshoot pitch [!]"),
+        "pitch overshoots too, but its D-term is noisy: no proposal, a warning"
+    );
+    assert!(ui.sees("lower the D-term filter before raising D"));
+    assert!(ui.has("A Overshoot yaw [-]"), "not judged");
+    assert!(ui.has("A Gyro low-pass [-]"));
+    assert!(
+        !ui.has("A Overshoot roll [!]"),
+        "the check behind a proposal is the card"
+    );
+    // the whole log: the D-term is quieter over it, and pitch gets D too
     set_epoch(&mut ui, None);
-    assert!(ui.has("Proposals"));
-    assert!(ui.has("Evidence"));
-    // the 4.2.0 log overshoots on roll and pitch: D proposals with rationale and CLI text
-    assert!(ui.sees("pid.roll.d"), "roll D proposed");
-    assert!(ui.sees("overshoots"));
+    assert!(ui.sees("2 changes proposed"));
+    assert!(ui.has("Pitch D"));
+    assert!(ui.has("90 -> 99"));
+    assert!(!ui.has("A Overshoot pitch [!]"));
+    // the commands of every proposal together
     assert!(ui.sees("Betaflight CLI: commands to apply"));
-    assert!(ui.text_box().contains("set d_roll = "));
+    assert!(ui.text_box().contains("set d_roll = 91\n"));
+    assert!(ui.text_box().ends_with("set d_pitch = 99\nsave\n"));
+    ui.check("Checks without a proposal", false);
+    assert!(!ui.sees("CHECKED"));
+    assert!(!ui.has("A Noise peak roll [ok]"));
+    assert!(ui.has("Roll D"), "the proposals stay");
+    ui.check("Checks without a proposal", true);
+
     let cached = ui.app().cache.len();
     // a looser overshoot limit: recomputed, nothing left to propose on the PIDs
-    ui.app_mut().tools.recommend.targets.overshoot_warn_pct = 90.0;
-    ui.settle();
+    ui.set("Overshoot limit", 90.0);
+    assert_eq!(ui.app().tools.recommend.targets.overshoot_warn_pct, 90.0);
     assert_eq!(ui.app().cache.len(), cached + 1, "new parameters, new job");
     assert!(!ui.sees("pid.roll.d"));
+    assert!(ui.sees("nothing to change"));
     assert!(ui.sees("within the 90 % limit"));
+    assert!(ui.has("A Overshoot roll [ok]"));
+    assert_eq!(ui.count(Role::MultilineTextInput), 0, "no commands");
     // the project round-trip keeps the thresholds
     let project = ui.app().project(Path::new("advice.openpid.json"));
     assert_eq!(project.recommend.targets.overshoot_warn_pct, 90.0);
+
+    // the card leads to the tab its evidence is on
+    ui.set("Overshoot limit", 15.0);
+    ui.click("Show on Step response A pid.roll.d");
+    assert_eq!(ui.app().tab, Tab::Step);
 }
 
 /// The Advice tab speaks the log's firmware: gains at its own step, and no
@@ -137,11 +179,27 @@ fn advice_tab_lists_proposals_evidence_and_cli() {
 fn advice_is_in_the_firmwares_own_terms() {
     let mut ui = Ui::open(&[LOG_ARDUCOPTER], Tab::Advice);
     set_epoch(&mut ui, None);
-    assert!(ui.sees("pid.pitch.d"), "pitch D proposed");
-    assert!(ui.sees("0.008 -> 0.0088"), "a gain of 0.0001 steps");
+    assert!(ui.sees("2 changes proposed"));
+    assert!(ui.has("Pitch D"));
+    assert!(ui.sees("pid.pitch.d"));
+    assert!(ui.has("0.008 -> 0.0088"), "a gain of 0.0001 steps");
     assert!(ui.sees("no ready commands for this firmware"));
     assert!(!ui.sees("Betaflight"));
+    assert!(!ui.has("Copy A pid.pitch.d"), "no command to copy");
     assert_eq!(ui.count(Role::MultilineTextInput), 0, "no box of commands");
+}
+
+/// Every visible log has its column of advice.
+#[test]
+fn advice_has_a_column_per_log() {
+    let mut ui = Ui::open(&[LOG_4_2, LOG_4_5_1], Tab::Advice);
+    assert!(ui.sees("A · betaflight-4.2.0"));
+    assert!(ui.sees("B · betaflight-4.5.1-two-sessions"));
+    assert!(ui.has("A Gyro low-pass [-]"));
+    assert!(ui.has("B Gyro low-pass [-]"));
+    assert_eq!(jobs(&ui, "advice"), 2);
+    ui.click("hide B");
+    assert!(!ui.sees("B · betaflight-4.5.1-two-sessions"));
 }
 
 #[test]

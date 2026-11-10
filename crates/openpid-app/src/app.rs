@@ -226,6 +226,8 @@ pub struct Tools {
     pub throttle_display: crate::throttle_tab::ThrottleDisplay,
     /// Freq × time display options (docs/design/time-tab).
     pub time_display: crate::time_tab::TimeDisplay,
+    /// Advice display options (docs/design/advice-tab).
+    pub advice_display: crate::advice_tab::AdviceDisplay,
     /// Setup info display options (docs/design/setup-tab).
     pub setup_display: crate::setup_tab::SetupDisplay,
 }
@@ -257,6 +259,7 @@ impl Default for Tools {
             spectrum_display: crate::spectrum_tab::SpectrumDisplay::default(),
             throttle_display: crate::throttle_tab::ThrottleDisplay::default(),
             time_display: crate::time_tab::TimeDisplay::default(),
+            advice_display: crate::advice_tab::AdviceDisplay::default(),
             setup_display: crate::setup_tab::SetupDisplay::default(),
         }
     }
@@ -753,6 +756,7 @@ impl App {
             spectrum_display: self.tools.spectrum_display.clone(),
             throttle_display: self.tools.throttle_display.clone(),
             time_display: self.tools.time_display.clone(),
+            advice_display: self.tools.advice_display.clone(),
             setup_display: self.tools.setup_display.clone(),
         };
         self.tab = Tab::from_name(&p.tab).unwrap_or(Tab::LogViewer);
@@ -1253,7 +1257,7 @@ impl App {
                 Tab::ThrottleHeatmap => crate::throttle_tab::throttle(self, ui),
                 Tab::TimeHeatmap => crate::time_tab::time(self, ui),
                 Tab::FilterSim => crate::filter_tab::filter_sim(self, ui),
-                Tab::Advice => views::advice(self, ui),
+                Tab::Advice => crate::advice_tab::advice(self, ui),
                 Tab::Sliders => crate::sliders_tab::sliders(self, ui),
                 Tab::Setup => crate::setup_tab::setup(self, ui),
                 Tab::Settings => views::settings(self, ui),

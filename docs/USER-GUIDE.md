@@ -469,11 +469,22 @@ that proposed nothing included:
   below the low band (10…cutoff/2) → static LPF1 cutoff ×1.25 (less phase
   delay; the explanation gives the milliseconds before and after).
 
-On the tab: the rule thresholds (**overshoot limit**, **D step**, **peak
-prominence**, **LPF headroom**) are saved in the project; the **Proposals**
-table (path, from → to, confidence, rationale), the **Evidence** table (● the
-rule fired, ○ it did not) and ready text for the Betaflight CLI; Export → JSON
-gives the same result. In the CLI, `--cli` prints the evidence as comments and
+On the tab every visible log has its column:
+
+- a **card per proposal**: the setting in words ("Roll D"), the value now and
+  the value proposed, how sure the rule is, the reason, the firmware's
+  command with **Copy**, and **Show on Step response** / **Show on Spectrum**,
+  which opens the tab the proposal was read from;
+- **Checked**: what every other rule saw, with a tick (the rule is
+  satisfied), a dash (not judged: no data for it, or it does not apply) or
+  "!" (something is off but there is no setting to propose, for example an
+  overshoot with a D-term too noisy to raise D);
+- the commands of all the proposals together, ready for the Betaflight CLI.
+
+The rule thresholds are in the panel (**Overshoot limit**, **D step**, **Peak
+prominence**, **LPF headroom**) and are saved in the project; **Checks without
+a proposal** hides the Checked list. Export → JSON gives the same result. In
+the CLI, `--cli` prints the evidence as comments and
 the `set … / save` commands for the Betaflight CLI instead of JSON (the same
 name table as `openpid diff --cli`). The commands are written by the firmware
 profile of the log: Betaflight logs get them; for INAV, Rotorflight, EmuFlight

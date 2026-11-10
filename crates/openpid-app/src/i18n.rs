@@ -58,6 +58,7 @@ pub fn tr(en: &'static str) -> &'static str {
 
 /// English → Ukrainian, sorted by the English key (binary search).
 static UA: &[(&str, &str)] = &[
+    ("1 change proposed", "запропоновано 1 зміну"),
     ("< step", "< крок"),
     ("Acceleration", "Прискорення"),
     ("Add log", "Додати лог"),
@@ -92,6 +93,8 @@ static UA: &[(&str, &str)] = &[
     ("Centre", "Центр"),
     ("Changed", "Змінено"),
     ("Channel", "Канал"),
+    ("Checked", "Перевірено"),
+    ("Checks without a proposal", "Перевірки без пропозиції"),
     (
         "Choose the analysis window: drag the handles, or press Auto.",
         "Оберіть вікно аналізу: перетягніть межі або натисніть Auto.",
@@ -148,7 +151,6 @@ static UA: &[(&str, &str)] = &[
     ("Dyn notch", "Dyn notch"),
     ("Dynamic notch", "Динамічний notch"),
     ("ESC protocol", "Протокол ESC"),
-    ("Evidence", "Докази"),
     ("Export", "Експорт"),
     ("F-term", "F-складова"),
     ("Feedforward gain", "Підсилення feedforward"),
@@ -165,6 +167,7 @@ static UA: &[(&str, &str)] = &[
     ("Go to Advice", "До порад"),
     ("Gyro", "Гіро"),
     ("Gyro filter", "Фільтр гіроскопа"),
+    ("Gyro low-pass", "Low-pass гіроскопа"),
     ("Gyro low-pass 1", "Low-pass 1 гіроскопа"),
     ("Gyro low-pass 2", "Low-pass 2 гіроскопа"),
     ("Gyro notch 1", "Notch 1 гіроскопа"),
@@ -216,6 +219,7 @@ static UA: &[(&str, &str)] = &[
         "Noise over throttle, and the motor harmonics (RPM overlay).",
         "Шум по газу і гармоніки моторів (RPM overlay).",
     ),
+    ("Noise peak", "Пік шуму"),
     (
         "Noise: peaks above 80 Hz are notch candidates.",
         "Шум: піки вище 80 Гц — кандидати на notch.",
@@ -234,6 +238,8 @@ static UA: &[(&str, &str)] = &[
     ("Open…", "Відкрити…"),
     ("Other channels", "Інші канали"),
     ("Overlays", "Накладки"),
+    ("Overshoot", "Перерегулювання"),
+    ("Overshoot limit", "Межа перерегулювання"),
     ("P & I gain", "Підсилення P та I"),
     ("P-term", "P-складова"),
     ("P:D ratio", "Співвідношення P:D"),
@@ -247,6 +253,7 @@ static UA: &[(&str, &str)] = &[
     ("PID sum", "Сума PID"),
     ("PID yaw", "PID yaw"),
     ("Pause", "Пауза"),
+    ("Peak prominence", "Виразність піка"),
     ("Peaks", "Піки"),
     ("Per motor", "По моторах"),
     ("Pitch D gain", "D по pitch"),
@@ -264,7 +271,6 @@ static UA: &[(&str, &str)] = &[
     ("Profile", "Профіль"),
     ("Project", "Проєкт"),
     ("Prominence", "Виразність"),
-    ("Proposals", "Пропозиції"),
     ("Quantities", "Величини"),
     (
         "RMS of sim minus logged filtered gyro, relative to the logged RMS: how well the model matches the flight controller",
@@ -282,6 +288,7 @@ static UA: &[(&str, &str)] = &[
     ("Reset to log", "Скинути до логу"),
     ("Residual", "Залишок"),
     ("Roll:pitch ratio", "Співвідношення roll:pitch"),
+    ("Rules", "Правила"),
     (
         "Rules are hints with their evidence, not an autotune: apply one change, fly, compare the new log.",
         "Правила — підказки з доказами, не autotune: застосуйте одну зміну, політайте, порівняйте новий лог.",
@@ -300,6 +307,7 @@ static UA: &[(&str, &str)] = &[
     ("Setup", "Налаштування апарата"),
     ("Setup info", "Конфігурація"),
     ("Show", "Показати"),
+    ("Show on", "Показати на"),
     ("Show the control panel", "Показати панель керування"),
     (
         "Show the tour on the first opened log",
@@ -409,6 +417,10 @@ static UA: &[(&str, &str)] = &[
         "усі три осі або одна на всю висоту; клавіша показаної осі повертає всі три",
     ),
     ("amplitude", "амплітуда"),
+    (
+        "an axis that overshoots more gets more D; the same target as on the Step tab (Settings, Targets)",
+        "вісь, що перерегульовує більше, отримує більше D; та сама ціль, що й на вкладці Step (Налаштування, Цілі)",
+    ),
     ("as flown", "як у польоті"),
     ("as flown (dashed)", "як у польоті (пунктир)"),
     ("as flown:", "як у польоті:"),
@@ -425,6 +437,7 @@ static UA: &[(&str, &str)] = &[
         "повернутися до фільтрів, з якими літав лог",
     ),
     ("below 100 Hz (1 s segments)", "нижче 100 Гц (сегменти 1 с)"),
+    ("changes proposed", "змін запропоновано"),
     ("channel", "канал"),
     (
         "click a plot to place a marker",
@@ -439,6 +452,7 @@ static UA: &[(&str, &str)] = &[
         "commands to apply (select all, copy)",
         "команди для застосування (виділити все, скопіювати)",
     ),
+    ("confidence", "впевненість"),
     ("copy", "скопіювати"),
     (
         "copy the rows shown as tab-separated text, to paste into a spreadsheet or a message",
@@ -497,6 +511,10 @@ static UA: &[(&str, &str)] = &[
         "наведіть на карту, щоб побачити значення",
     ),
     (
+        "how far a noise peak must stand above the spectrum around it to count",
+        "наскільки пік шуму має підніматися над спектром довкола, щоб його врахувати",
+    ),
+    (
         "how far a peak must stand above its surroundings to be marked",
         "наскільки пік має підніматися над оточенням, щоб його позначити",
     ),
@@ -507,6 +525,18 @@ static UA: &[(&str, &str)] = &[
     (
         "how many harmonics per motor; 0 = as many as the RPM filter removes",
         "скільки гармонік на мотор; 0 = стільки, скільки знімає RPM-фільтр",
+    ),
+    (
+        "how much D is raised in one proposal; small steps keep the motors cool",
+        "на скільки D піднімається за одну пропозицію; малі кроки бережуть мотори від перегріву",
+    ),
+    (
+        "how much quieter the band above the gyro low-pass must be than the low band before its cut-off is raised",
+        "наскільки тихішою за низьку смугу має бути смуга над low-pass гіроскопа, щоб підняти його частоту зрізу",
+    ),
+    (
+        "how sure the rule is, from how far the measurement is past its threshold",
+        "наскільки правило впевнене: за тим, як далеко вимір за порогом",
     ),
     (
         "how the craft was set up, in plain words: firmware, rates, PID gains, filters, motors",
@@ -604,6 +634,10 @@ static UA: &[(&str, &str)] = &[
         "нормувати кожне вікно за усталеним хвостом перед усередненням",
     ),
     ("not in this log", "немає в цьому лозі"),
+    (
+        "not judged: the text says why",
+        "не оцінено: у тексті сказано чому",
+    ),
     ("not logged", "не записано"),
     (
         "notches per motor, at the motor frequency and its multiples; 0 switches them off",
@@ -613,9 +647,10 @@ static UA: &[(&str, &str)] = &[
         "notches that follow the strongest peaks of the gyro; 0 switches them off",
         "notch, що йдуть за найсильнішими піками гіро; 0 вимикає їх",
     ),
+    ("nothing to change", "нічого змінювати"),
     (
-        "nothing to change: every rule is satisfied",
-        "нічого міняти: усі правила виконані",
+        "nothing to change: every rule that could be judged is satisfied",
+        "нічого змінювати: кожне правило, яке вдалося оцінити, виконано",
     ),
     (
         "nothing: the sliders are as flown",
@@ -642,10 +677,8 @@ static UA: &[(&str, &str)] = &[
     ("other", "інше"),
     ("overshoot", "перерегулювання"),
     ("overshoot fail", "перерегулювання: межа"),
-    ("overshoot limit", "межа перерегулювання"),
     ("overshoot warn", "перерегулювання: увага"),
     ("peak", "пік"),
-    ("peak prominence", "виразність піка"),
     ("phase (deg)", "фаза (°)"),
     (
         "playback speed relative to the flight",
@@ -694,6 +727,10 @@ static UA: &[(&str, &str)] = &[
     ("smooth", "згладжування"),
     ("smoothing", "згладжування"),
     ("solo", "лише цей"),
+    (
+        "something is off; the text says what to look at",
+        "щось не так; у тексті сказано, на що глянути",
+    ),
     ("spectrum at", "спектр на"),
     ("start", "початок"),
     ("start = cursor", "початок = курсор"),
@@ -802,13 +839,10 @@ static UA: &[(&str, &str)] = &[
         "the roll, pitch and yaw rows span ± this rate; the same on every row, so the axes compare",
         "рядки roll, pitch і yaw охоплюють ± цю швидкість; однаково в кожному рядку, щоб осі можна було порівняти",
     ),
+    ("the rule is satisfied", "правило виконано"),
     (
         "the same for the unfiltered gyro: what the filters remove",
         "те саме для нефільтрованого гіро: що прибирають фільтри",
-    ),
-    (
-        "the same target as on the Step tab (Settings → Targets)",
-        "той самий поріг, що на вкладці Step (Settings → Targets)",
     ),
     (
         "the static notches, the dynamic-notch band and the RPM filter minimum",
@@ -817,6 +851,10 @@ static UA: &[(&str, &str)] = &[
     (
         "the sticks at the pointer or the cursor, at the bottom right of the throttle / motors row",
         "стіки під вказівником або курсором, у правому нижньому куті рядка газу й моторів",
+    ),
+    (
+        "the tab with what this proposal was read from",
+        "вкладка з даними, з яких зроблено цю пропозицію",
     ),
     (
         "the throttle axis from the first to the last sampled bin instead of 0–100 %",
@@ -884,6 +922,10 @@ static UA: &[(&str, &str)] = &[
     ("total", "разом"),
     ("total as flown", "разом, як у польоті"),
     ("type", "тип"),
+    (
+        "under the proposals, what every other rule saw: satisfied, or not judged and why",
+        "під пропозиціями — що побачило кожне інше правило: виконано або не оцінено й чому",
+    ),
     (
         "upper end of the power axis; auto follows the drawn data",
         "верхня межа осі потужності; авто — за показаними даними",

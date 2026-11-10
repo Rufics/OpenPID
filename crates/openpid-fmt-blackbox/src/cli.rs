@@ -239,15 +239,20 @@ impl Exporter for BetaflightCli {
         "Betaflight CLI"
     }
 
+    fn command(&self, proposal: &Proposal) -> Result<String, ExportError> {
+        let name = self
+            .setting_name(&proposal.path)
+            .ok_or_else(|| ExportError::UnknownPath {
+                target: TARGET,
+                path: proposal.path.clone(),
+            })?;
+        Ok(format!("set {name} = {}", proposal.to))
+    }
+
     fn export(&self, proposals: &[Proposal]) -> Result<String, ExportError> {
         let mut out = format!("# OpenPID proposals for {}\n", self.revision);
         for p in proposals {
-            let name = self
-                .setting_name(&p.path)
-                .ok_or_else(|| ExportError::UnknownPath {
-                    target: TARGET,
-                    path: p.path.clone(),
-                })?;
+            let command = self.command(p)?;
             let from = p
                 .from
                 .as_deref()
@@ -260,7 +265,7 @@ impl Exporter for BetaflightCli {
                 p.rationale,
                 p.confidence * 100.0
             );
-            let _ = writeln!(out, "set {name} = {}", p.to);
+            let _ = writeln!(out, "{command}");
         }
         if !proposals.is_empty() {
             out.push_str("save\n");
