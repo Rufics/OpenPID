@@ -58,16 +58,8 @@ pub fn tr(en: &'static str) -> &'static str {
 
 /// English → Ukrainian, sorted by the English key (binary search).
 static UA: &[(&str, &str)] = &[
-    (
-        "0 = as many as the RPM filter removes",
-        "0 = стільки, скільки знімає RPM-фільтр",
-    ),
     ("3D", "3D"),
     ("< step", "< крок"),
-    (
-        "A log without eRPM: estimate motor speed from the gyro",
-        "Лог без eRPM: оцінити оберти моторів з гіроскопа",
-    ),
     ("Acceleration", "Прискорення"),
     ("Add log", "Додати лог"),
     (
@@ -149,12 +141,10 @@ static UA: &[(&str, &str)] = &[
     ("Filter Sim", "Симуляція фільтрів"),
     ("Filter sliders", "Повзунки фільтрів"),
     ("Firmware defaults", "Типові значення прошивки"),
-    ("First run", "Перший запуск"),
     ("Flight modes", "Режими польоту"),
     ("Freestyle", "Фрістайл"),
     ("Freq × throttle", "Частота × газ"),
     ("Freq × time", "Частота × час"),
-    ("Full throttle range", "Увесь діапазон газу"),
     ("Go to Advice", "До порад"),
     ("Gyro", "Гіро"),
     ("Gyro filter", "Фільтр гіроскопа"),
@@ -257,7 +247,6 @@ static UA: &[(&str, &str)] = &[
     ("Reset first-run state", "Скинути стан першого запуску"),
     ("Reset to defaults", "Скинути до типових"),
     ("Reset to log", "Скинути до логу"),
-    ("Reset view", "Скинути вид"),
     ("Residual", "Залишок"),
     ("Roll:pitch ratio", "Співвідношення roll:pitch"),
     (
@@ -297,7 +286,6 @@ static UA: &[(&str, &str)] = &[
         "Відгук на стік: перерегулювання і затримка проти ваших цілей.",
     ),
     ("Sticks", "Стіки"),
-    ("Surface 3D", "Поверхня 3D"),
     ("THE FILTER CHAIN", "ЛАНЦЮЖОК ФІЛЬТРІВ"),
     ("Tab", "Вкладка"),
     ("Targets", "Цілі"),
@@ -401,17 +389,11 @@ static UA: &[(&str, &str)] = &[
         "click a plot to place a marker",
         "клацніть графік, щоб поставити мітку",
     ),
-    ("click to fix this end", "клацніть, щоб зафіксувати цю межу"),
-    (
-        "click: show this axis on the plot",
-        "клік: показати цю вісь на графіку",
-    ),
     (
         "click: this axis at full height",
         "клік: ця вісь на всю висоту",
     ),
     ("close", "закрити"),
-    ("colour max (0 = auto)", "стеля кольору (0 = авто)"),
     (
         "commands to apply (select all, copy)",
         "команди для застосування (виділити все, скопіювати)",
@@ -421,7 +403,6 @@ static UA: &[(&str, &str)] = &[
         "corrupt / desync / skipped bytes",
         "пошкоджені / десинхр. / пропущені байти",
     ),
-    ("cutoff", "зріз"),
     (
         "dB (20·log10 of the amplitude) shows weak and strong lines at once, as the reference tool; linear shows the strongest only",
         "dB (20·log10 амплітуди) показує слабкі й сильні лінії разом, як в еталонному інструменті; лінійна — лише найсильніші",
@@ -433,10 +414,6 @@ static UA: &[(&str, &str)] = &[
     (
         "drag a handle or the window; double-click = whole log",
         "тягніть ручку або вікно; подвійний клік = весь лог",
-    ),
-    (
-        "drag: orbit · wheel / pinch: zoom · shift-drag, right-drag or two fingers: pan · double-click: reset",
-        "перетягування: обертання · коліщатко / щипок: масштаб · shift-, праве або два пальці: зсув · подвійний клік: скинути",
     ),
     ("drives LPF1", "керує LPF1"),
     (
@@ -464,15 +441,10 @@ static UA: &[(&str, &str)] = &[
     ("frames", "кадри"),
     ("frequency (Hz)", "частота (Гц)"),
     ("frequency (Hz, log)", "частота (Гц, лог.)"),
-    ("from sliders", "зі слайдерів"),
     ("from the sliders", "з повзунків"),
     ("gyro", "гіро"),
-    ("harmonics", "гармоніки"),
-    ("height", "висота"),
-    ("height of the colour maximum", "висота стелі кольору"),
     ("hide", "сховати"),
     ("high", "висока"),
-    ("high input", "верхній вхід"),
     (
         "hover the map for a value",
         "наведіть на карту, щоб побачити значення",
@@ -488,10 +460,6 @@ static UA: &[(&str, &str)] = &[
     (
         "how many harmonics per motor; 0 = as many as the RPM filter removes",
         "скільки гармонік на мотор; 0 = стільки, скільки знімає RPM-фільтр",
-    ),
-    (
-        "into the first empty slot, or a new one",
-        "у перший порожній слот або в новий",
     ),
     ("judged", "оцінено"),
     (
@@ -525,7 +493,6 @@ static UA: &[(&str, &str)] = &[
         "довжина сегмента спектра: довший дає дрібніший крок частоти і менше усереднень",
     ),
     ("linear", "лінійна"),
-    ("link scales", "спільна шкала"),
     ("loading", "завантаження"),
     ("log ok", "лог ок"),
     ("log shorter than 20 s", "лог коротший за 20 с"),
@@ -547,11 +514,8 @@ static UA: &[(&str, &str)] = &[
     ),
     ("magnitude (dB)", "амплітуда (дБ)"),
     ("markers", "мітки"),
-    ("max", "макс"),
     ("med-high", "вище середньої"),
     ("medium", "середня"),
-    ("min input", "мін. вхід"),
-    ("min segments", "мін. сегментів"),
     ("min windows ok", "мін. вікон (ok)"),
     ("min windows weak", "мін. вікон (слабко)"),
     ("motors", "мотори"),
@@ -584,7 +548,6 @@ static UA: &[(&str, &str)] = &[
     ),
     ("not in this log", "немає в цьому лозі"),
     ("not logged", "не записано"),
-    ("notches", "notch-и"),
     (
         "notches per motor, at the motor frequency and its multiples; 0 switches them off",
         "notch на мотор, на частоті мотора та її кратних; 0 вимикає їх",
@@ -608,10 +571,6 @@ static UA: &[(&str, &str)] = &[
         "one colour scale for every log (the largest automatic maximum), so the same colour means the same value",
         "одна шкала кольору для всіх логів (найбільша з автоматичних стель): однаковий колір означає однакове значення",
     ),
-    (
-        "open another log to compare (up to 8)",
-        "відкрити ще один лог для порівняння (до 8)",
-    ),
     ("other", "інше"),
     ("overshoot", "перерегулювання"),
     ("overshoot fail", "перерегулювання: межа"),
@@ -619,7 +578,6 @@ static UA: &[(&str, &str)] = &[
     ("overshoot warn", "перерегулювання: увага"),
     ("peak", "пік"),
     ("peak prominence", "виразність піка"),
-    ("peaks", "піки"),
     ("phase (deg)", "фаза (°)"),
     (
         "playback speed relative to the flight",
@@ -640,7 +598,6 @@ static UA: &[(&str, &str)] = &[
     ),
     ("prefilt", "до фільтра"),
     ("profile", "профіль"),
-    ("prominence", "виразність"),
     ("raw", "сирий"),
     ("response", "відгук"),
     ("rest", "спокої"),
@@ -649,7 +606,6 @@ static UA: &[(&str, &str)] = &[
     ("rpm", "об/хв"),
     ("running", "рахується"),
     ("samples", "семпли"),
-    ("segment", "сегмент"),
     ("session", "сесія"),
     ("setpoint", "уставка"),
     ("setpoint minus gyro", "уставка мінус гіро"),
@@ -659,7 +615,6 @@ static UA: &[(&str, &str)] = &[
         "seven steps through the tuning loop, on the sample log",
         "сім кроків циклом налаштування на зразковому лозі",
     ),
-    ("shading", "затінення"),
     ("show", "показувати"),
     (
         "show only the channels whose name contains this",
@@ -673,12 +628,10 @@ static UA: &[(&str, &str)] = &[
     ("smoothing", "згладжування"),
     ("solo", "лише цей"),
     ("spectrum at", "спектр на"),
-    ("speed", "швидкість"),
     ("start", "початок"),
     ("start = cursor", "початок = курсор"),
     ("step >", "крок >"),
     ("sum", "сума"),
-    ("target band", "цільова смуга"),
     (
         "the amplitude drawn in the brightest colour; auto: the 99th percentile above 20 Hz",
         "амплітуда найяскравішого кольору; авто: 99-й перцентиль вище 20 Гц",
@@ -811,10 +764,6 @@ static UA: &[(&str, &str)] = &[
         "верх осей частоти; auto: половина частоти логування",
     ),
     (
-        "the unfiltered gyro beside the filtered one",
-        "нефільтрований гіро поруч із фільтрованим",
-    ),
-    (
         "the unfiltered gyro beside the filtered one; the gyro only",
         "нефільтрований гіро поруч із фільтрованим; лише для гіро",
     ),
@@ -844,7 +793,6 @@ static UA: &[(&str, &str)] = &[
         "throttle bins with fewer segments are dimmed: they are unsampled, not quiet",
         "біни газу з меншою кількістю сегментів затемнено: там немає даних, а не тиша",
     ),
-    ("throttle window ±", "вікно газу ±"),
     ("time (ms)", "час (мс)"),
     ("time (s)", "час (с)"),
     ("timeline", "таймлайн"),
@@ -881,7 +829,6 @@ static UA: &[(&str, &str)] = &[
     ),
     ("whole log", "весь лог"),
     ("whole log, every slot", "весь лог, усі слоти"),
-    ("window", "вікно"),
     ("windows", "вікна"),
     (
         "windows above this rate form the \"high input\" group, drawn apart from the low one",
@@ -890,10 +837,6 @@ static UA: &[(&str, &str)] = &[
     (
         "windows whose stick input stays below this rate are skipped: too small a step to judge",
         "вікна, де вхід стіків не перевищує цієї швидкості, пропускаються: замалий крок для оцінки",
-    ),
-    (
-        "×1 over the mean of the motors",
-        "×1 відносно середнього по моторах",
     ),
 ];
 

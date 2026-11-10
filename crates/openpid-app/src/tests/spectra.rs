@@ -1,12 +1,12 @@
-//! The spectral tabs: Spectrum, Freq × throttle, Freq × time with its
-//! player, and the 3D surface; their colour scales and overlays.
+//! The spectral tabs: Spectrum, Freq × throttle and Freq × time with its
+//! player; their colour scales and overlays.
 
 use super::{LOG_4_2, LOG_4_5_1, LOG_2025, jobs, result, shown, temp_dir};
 use crate::app::Tab;
 use crate::spectrum_tab::Quantity;
 use crate::testkit::{Ui, at_every_size};
 use crate::worker::{Output, Slot};
-use eframe::egui::{self, Key, PointerButton};
+use eframe::egui::Key;
 use openpid_core::{Axis, ChannelId, GyroStage};
 use std::path::Path;
 
@@ -244,12 +244,12 @@ fn heatmaps_show_a_colour_scale_with_linked_maxima_and_a_hover_value() {
     let Output::Throttle(t) = result.as_ref() else {
         panic!("throttle output")
     };
-    assert_eq!(openpid_analysis::surface::value_at(&t.grid, x, y), Some(z));
+    assert_eq!(openpid_analysis::render::value_at(&t.grid, x, y), Some(z));
     assert!(ui.sees("Hz:"));
     ui.plot("throttle/A/roll").leave();
     assert!(ui.app().heatmap_hover.is_none());
     // the same scale and read-out on freq × time (linear; it shows the
-    // docked log, here A) and the surface
+    // docked log, here A)
     ui.app_mut().tools.time_display.db = false;
     ui.app_mut().dock = Some(Slot::A);
     ui.tab(Tab::TimeHeatmap);
@@ -258,9 +258,6 @@ fn heatmaps_show_a_colour_scale_with_linked_maxima_and_a_hover_value() {
     ui.plot("time/roll").hover_middle();
     assert!(ui.app().heatmap_hover.is_some());
     assert!(ui.sees(" s, "));
-    ui.tab(Tab::Surface);
-    assert_eq!(ui.app().colour_scales.len(), 2);
-    assert!(ui.sees("colour scale 0 to 5.00"));
     // the project keeps the link setting
     assert!(!ui.app().project(Path::new("p.openpid.json")).heatmap_link);
 }
@@ -407,61 +404,6 @@ fn time_heatmap_player_plays_scrubs_and_syncs_the_cursor() {
     // without a log there is no player
     let ui = Ui::open(&[], Tab::TimeHeatmap);
     assert!(!ui.has("Play"));
-}
-
-#[test]
-fn surface_tab_orbits_zooms_pans_and_reads_out() {
-    let mut ui = Ui::open(&[LOG_4_5_1], Tab::Surface);
-    let s = ui.app().surface.clone();
-    assert!(s.fitted && s.cells > 1000, "{s:?}");
-    assert!(s.camera.zoom > 100.0, "fitted to the panel: {s:?}");
-    // the same result and overlay controls as the heatmap
-    assert_eq!(ui.app().cache.len(), 1);
-    assert!(ui.has("RPM overlay"));
-    // the node under the pointer is read out
-    ui.plot("surface/A").hover_middle();
-    let (thr, hz, amp) = ui.app().surface.hover.expect("a node under the pointer");
-    assert!((0.0..=100.0).contains(&thr) && hz >= 0.0 && amp >= 0.0);
-    // drag: orbit (yaw with x, pitch with y)
-    let before = ui.app().surface.camera;
-    ui.plot("surface/A")
-        .drag_by(PointerButton::Primary, egui::vec2(80.0, -30.0));
-    let after = ui.app().surface.camera;
-    assert!(after.yaw > before.yaw, "{before:?} → {after:?}");
-    assert!(after.pitch < before.pitch, "{before:?} → {after:?}");
-    assert_eq!(ui.app().surface.pan, egui::Vec2::ZERO);
-    // pinch / ctrl-wheel: zoom
-    ui.send(egui::Event::Zoom(1.5));
-    let zoomed = ui.app().surface.camera.zoom;
-    assert!((zoomed / after.zoom - 1.5).abs() < 1e-3, "{zoomed}");
-    // wheel: zoom too
-    ui.send(egui::Event::MouseWheel {
-        unit: egui::MouseWheelUnit::Point,
-        delta: egui::vec2(0.0, 50.0),
-        phase: egui::TouchPhase::Move,
-        source: egui::MouseWheelSource::Wheel,
-        modifiers: egui::Modifiers::NONE,
-    });
-    assert!(ui.app().surface.camera.zoom > zoomed, "wheel zooms in");
-    // right-drag: pan
-    ui.plot("surface/A")
-        .drag_by(PointerButton::Secondary, egui::vec2(-60.0, 50.0));
-    let pan = ui.app().surface.pan;
-    assert!(pan.x < -20.0 && pan.y > 20.0, "{pan:?}");
-    // shading off, reset view
-    ui.check("shading", false);
-    assert!(!ui.app().surface.shade);
-    ui.click("Reset view");
-    let s = ui.app().surface.clone();
-    assert_eq!(s.pan, egui::Vec2::ZERO);
-    let default_yaw = openpid_analysis::surface::Camera::default().yaw;
-    assert!((s.camera.yaw - default_yaw).abs() < 1e-5, "{s:?}");
-    assert!(!s.shade, "reset keeps the shading choice");
-    assert!(s.fitted, "refitted after the reset");
-    // the B slot gets its own panel; the hover read-out follows the first
-    ui.drop_files(&[LOG_4_2]);
-    assert!(ui.sees("B: gyro"));
-    assert!(ui.has_plot("surface/B"));
 }
 
 #[test]

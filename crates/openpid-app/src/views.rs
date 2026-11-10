@@ -1139,48 +1139,6 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
     true
 }
 
-pub(crate) fn axis_selector(ui: &mut Ui, axis: &mut Axis) -> bool {
-    let before = *axis;
-    ui.horizontal(|ui| {
-        ui.label(tr("Axis"));
-        for a in Axis::ALL {
-            ui.selectable_value(axis, a, a.name());
-        }
-    });
-    before != *axis
-}
-
-fn channel_picker(
-    ui: &mut Ui,
-    id: &str,
-    session: Option<&FlightSession>,
-    current: &mut ChannelId,
-) -> bool {
-    let mut changed = false;
-    let l = ui.label(tr("channel"));
-    let combo = egui::ComboBox::from_id_salt(id)
-        .selected_text(current.key())
-        .width(220.0)
-        .show_ui(ui, |ui| {
-            if let Some(s) = session {
-                let mut keys: Vec<(String, ChannelId)> = s
-                    .channels
-                    .iter()
-                    .map(|c| (c.id.key(), c.id.clone()))
-                    .collect();
-                keys.sort();
-                for (k, id) in keys {
-                    if ui.selectable_label(*current == id, k).clicked() {
-                        *current = id;
-                        changed = true;
-                    }
-                }
-            }
-        });
-    combo.response.labelled_by(l.id);
-    changed
-}
-
 pub(crate) fn show_error(ui: &mut Ui, slot: Slot, e: &str) {
     ui.colored_label(Color32::LIGHT_RED, format!("{}: {e}", slot.name()));
 }
@@ -1310,78 +1268,13 @@ pub(crate) fn marker_hlines(pu: &mut egui_plot::PlotUi<'_>, markers: &[f64]) {
     }
 }
 
-pub(crate) fn heatmap_controls(app: &mut App, ui: &mut Ui) {
-    let session_a = app
-        .first_loaded()
-        .and_then(|s| app.loaded(s))
-        .and_then(|l| l.current().cloned());
-    ui.horizontal_wrapped(|ui| {
-        channel_picker(
-            ui,
-            "hm_channel",
-            session_a.as_deref(),
-            &mut app.tools.heatmap_channel,
-        );
-        if axis_selector(ui, &mut app.tools.axis) {
-            app.tools.heatmap_channel = ChannelId::Gyro {
-                axis: app.tools.axis,
-                stage: GyroStage::Filtered,
-            };
-        }
-        let l = ui.label(tr("colour max (0 = auto)"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.heatmap_max)
-                .speed(0.5)
-                .range(0.0..=10000.0),
-        )
-        .labelled_by(l.id);
-        let several = app.visible_slots().len() > 1;
-        ui.add_enabled(
-            several,
-            egui::Checkbox::new(&mut app.tools.heatmap_link, tr("link scales")),
-        )
-        .on_hover_text(tr(
-            "one colour scale for every log (the largest automatic maximum), so the same colour means the same value",
-        ));
-    });
-}
-
 /// Width taken by the colour scale beside a heatmap.
 pub(crate) const BAR_W: f32 = 56.0;
 
 /// The colour maximum a grid is drawn with: `max` when set, else the robust
 /// automatic maximum over the rows at or above `min_y`.
 pub(crate) fn effective_max(g: &Grid2D, max: f64, min_y: f64) -> f64 {
-    openpid_analysis::surface::colour_max(
-        g,
-        &openpid_analysis::surface::SurfaceOptions {
-            max,
-            min_y_for_scale: min_y,
-            ..openpid_analysis::surface::SurfaceOptions::default()
-        },
-    )
-}
-
-/// Colour maximum per slot for one tab: each grid's own, or, with "link
-/// scales", the largest of them for all; recorded in `app.colour_scales`.
-pub(crate) fn linked_scales(
-    app: &mut App,
-    grids: &[(Slot, &Grid2D)],
-    min_y: f64,
-) -> HashMap<Slot, f64> {
-    let max = app.tools.heatmap_max;
-    let mut per: Vec<(Slot, f64)> = grids
-        .iter()
-        .map(|(slot, g)| (*slot, effective_max(g, max, min_y)))
-        .collect();
-    if app.tools.heatmap_link && per.len() > 1 {
-        let shared = per.iter().map(|(_, m)| *m).fold(0.0_f64, f64::max);
-        for (_, m) in &mut per {
-            *m = shared;
-        }
-    }
-    app.colour_scales.clone_from(&per);
-    per.into_iter().collect()
+    openpid_analysis::render::colour_max(g, max, min_y)
 }
 
 /// A vertical colour scale: the colour map from 0 (bottom) to `max` (top)
@@ -1470,7 +1363,7 @@ pub(crate) fn heatmap_hover(
     g: &Grid2D,
 ) -> Option<(Slot, f64, f64, f64)> {
     let c = pu.pointer_coordinate()?;
-    let z = openpid_analysis::surface::value_at(g, c.x, c.y)?;
+    let z = openpid_analysis::render::value_at(g, c.x, c.y)?;
     Some((slot, c.x, c.y, z))
 }
 
@@ -1573,67 +1466,6 @@ pub struct OverlayState {
 /// draws the motors.
 pub(crate) fn motor_color(m: usize) -> Color32 {
     crate::colormap::line(m)
-}
-
-/// RPM overlay controls (shown once the motor count of a result is known);
-/// shared by the freq × throttle heatmap and the 3D surface.
-pub(crate) fn overlay_controls(app: &mut App, ui: &mut Ui, results: &[SlotResult]) {
-    let motors = results
-        .iter()
-        .filter_map(|(_, r)| match r {
-            Some(Ok(o)) => match o.as_ref() {
-                Output::Throttle(t) => t.overlay.as_ref().map(|ov| ov.motors.len()),
-                _ => None,
-            },
-            _ => None,
-        })
-        .max();
-    if let Some(n) = motors {
-        let ov = &mut app.overlay;
-        ov.motors.resize(n, true);
-        ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut ov.show, tr("RPM overlay"));
-            for (m, on) in ov.motors.iter_mut().enumerate() {
-                ui.checkbox(on, format!("M{}", m + 1));
-            }
-            let l = ui.label(tr("harmonics"));
-            ui.add(egui::DragValue::new(&mut ov.harmonics).range(0..=8))
-                .labelled_by(l.id)
-                .on_hover_text(tr("0 = as many as the RPM filter removes"));
-            ui.checkbox(&mut ov.notches, tr("notches"));
-        });
-    }
-}
-
-/// Harmonic frequencies to draw for `o` under `ov`: `(motor, harmonic, per-x Hz)`
-/// with `None` where the bin has no motor speed or the harmonic is above `y_max`.
-pub(crate) fn overlay_harmonics(
-    o: &RpmOverlay,
-    y_max: f64,
-    ov: &OverlayState,
-) -> Vec<(usize, u32, Vec<Option<f64>>)> {
-    if !ov.show {
-        return Vec::new();
-    }
-    let harmonics = if ov.harmonics == 0 {
-        o.harmonics
-    } else {
-        ov.harmonics
-    };
-    let mut out = Vec::new();
-    for (m, bins) in o.motors.iter().enumerate() {
-        if !ov.motors.get(m).copied().unwrap_or(true) {
-            continue;
-        }
-        for k in 1..=harmonics {
-            let f: Vec<Option<f64>> = bins
-                .iter()
-                .map(|rpm| rpm.map(|r| r / 60.0 * f64::from(k)).filter(|f| *f <= y_max))
-                .collect();
-            out.push((m, k, f));
-        }
-    }
-    out
 }
 
 /// The motor harmonics and notch bands of `o` over a heatmap whose frequency axis ends at `y_max`.

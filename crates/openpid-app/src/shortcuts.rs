@@ -115,7 +115,6 @@ pub const TABLE: &[Binding] = &[
     b(Modifiers::NONE, Key::Num8, Action::Tab(7)),
     b(Modifiers::NONE, Key::Num9, Action::Tab(8)),
     b(Modifiers::NONE, Key::Num0, Action::Tab(9)),
-    b(Modifiers::NONE, Key::Minus, Action::Tab(10)),
     b(CMD_SHIFT, Key::Tab, Action::PrevTab),
     b(Modifiers::COMMAND, Key::Tab, Action::NextTab),
     b(CMD_SHIFT, Key::O, Action::OpenLogNext),
@@ -355,7 +354,7 @@ mod tests {
             ("Ctrl", "Ctrl+Shift")
         };
         assert_eq!(keys_of(&ctx, Action::Help), format!("? / {cmd}+/ / F1"));
-        assert_eq!(keys_of(&ctx, Action::Tab(10)), "-");
+        assert_eq!(keys_of(&ctx, Action::Tab(9)), "0");
         assert_eq!(keys_of(&ctx, Action::PrevTab), format!("{cmd_shift}+Tab"));
         assert_eq!(keys_of(&ctx, Action::EpochWhole), "Shift+A");
         assert!(hint(&ctx, "Open log…", Action::OpenLog).contains("O)"));

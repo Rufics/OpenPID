@@ -242,7 +242,7 @@ The control panel on the right (hover any field for its explanation):
 - **Colour max**: auto (the 99th percentile without the rows below 20 Hz) or a
   fixed ceiling; **Link scales** (on by default with several logs) gives every
   log the same ceiling, the largest of the automatic ones, so the same colour
-  means the same value. The same on Freq × time and Surface 3D.
+  means the same value. The same on Freq × time.
 - **RPM overlay** (off by default; when the log has eRPM): one thin line per harmonic
   `k·rpm/60` at the mean speed of the motors (**Harmonics** = how many to
   draw, 0 = as many as the RPM filter removes); **Per motor** draws a
@@ -254,26 +254,6 @@ The control panel on the right (hover any field for its explanation):
 - **Segment**, **Throttle window ±**, **Max frequency**, **Min segments**:
   throttle bins with fewer segments than the minimum are dimmed towards
   black: there is no data there, not silence.
-
-### Surface 3D
-
-![Surface 3D](screenshots/surface.png)
-
-The same freq × throttle × amplitude grid as a relief: height and colour are
-the amplitude (ceiling: **colour max**, as on the heatmap; **height** scales
-the relief). Drawn by our own software projection without GPU dependencies:
-up to 128 × 192 cells after averaging, so rotation stays smooth on big logs.
-
-- **Drag** rotates (horizontal around the vertical axis, vertical tilts down
-  to a top view, that is the plain heatmap); **wheel / pinch** zooms; **shift-
-  or right-drag, two fingers** pans; **double-click** or **Reset view**
-  restores the initial view.
-- **RPM overlay** and **notches** are the same as on the heatmap: the motor
-  harmonics and notch bands lie on the surface.
-- Hovering a node shows throttle, frequency and amplitude in the panel corner.
-- **shading** lights the surface by its slope (ridges stand out); switch it
-  off for colours that match the heatmap scale exactly.
-- CSV/PNG export from this tab gives the same grid as Freq × throttle.
 
 ## 6. Freq × time
 
@@ -434,7 +414,7 @@ or `--set master_multiplier=110,pd_ratio=120` for the ratio sliders.
   **Colour-blind safe** switches to the Okabe–Ito palette and viridis
   heatmaps). Line tabs (Log
   viewer, Step response, Spectrum, Filter Sim) overlay every slot on one plot;
-  panel tabs (the heatmaps, Surface 3D, Advice, Diagnostics) put
+  panel tabs (the heatmaps, Advice, Diagnostics) put
   the panels side by side: two across the full width, more in a scroll. In the
   dock, for the docked log: the eye (show / hide), solo (this slot only;
   pressing it again shows every slot) and the cross (close; the other letters do
@@ -517,7 +497,7 @@ on Windows/Linux. Single keys (`1`…`=`, `?`, `Space`, `,`, `.`, `Home`,
 
 | Action | Key |
 |---|---|
-| Tabs in order (Log viewer … Settings) | `1`…`9`, `0` (10th, PID sliders), `-` (11th, Diagnostics), `=` (12th, Settings) |
+| Tabs in order (Log viewer … Settings) | `1`…`9`, `0` (10th, Settings) |
 | Next / previous tab (wrapping) | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 | Open a log into the first empty slot | `Ctrl+O` |
 | Open a log to compare (into the slot after the last loaded one) | `Ctrl+Shift+O` |
