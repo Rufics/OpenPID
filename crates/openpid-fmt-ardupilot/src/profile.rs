@@ -49,14 +49,6 @@ impl Vehicle {
             Vehicle::Other => "Other",
         }
     }
-
-    fn parse(h: &RawHeaders) -> Vehicle {
-        match h.get("vehicle") {
-            Some("Copter") => Vehicle::Copter,
-            Some("Plane") => Vehicle::Plane,
-            _ => Vehicle::Other,
-        }
-    }
 }
 
 /// The `ArduPilot` profile.
@@ -350,7 +342,7 @@ impl FirmwareProfile for ArdupilotProfile {
         firmware: &FirmwareInfo,
         headers: &RawHeaders,
     ) -> Option<FieldMapping> {
-        let vehicle = Vehicle::parse(headers);
+        let vehicle = Vehicle::from_firmware(&firmware.revision);
         let (msg, col) = split(field)?;
         let rate_scale = match vehicle {
             Vehicle::Copter => RAD_TO_DEG,
@@ -395,23 +387,15 @@ impl FirmwareProfile for ArdupilotProfile {
                 Unit::Unitless,
                 1.0,
             ),
-            ("PIDR" | "PIDP" | "PIDY", "Tar") => {
-                let axis = pid_axis(msg)?;
-                // copter logs RATE.*Des as well; the PID target then stays a secondary channel
-                if vehicle == Vehicle::Copter && headers.get("has_rate_msg") == Some("1") {
-                    custom(
-                        &format!("pid_target.{}", axis.name()),
-                        Unit::DegreesPerSecond,
-                        rate_scale,
-                    )
-                } else {
-                    mapping(
-                        ChannelId::Setpoint { axis },
-                        Unit::DegreesPerSecond,
-                        rate_scale,
-                    )
-                }
-            }
+            // on a log that also has RATE.*Des the session builder keeps this
+            // one as a secondary channel: the first field of a channel wins
+            ("PIDR" | "PIDP" | "PIDY", "Tar") => mapping(
+                ChannelId::Setpoint {
+                    axis: pid_axis(msg)?,
+                },
+                Unit::DegreesPerSecond,
+                rate_scale,
+            ),
             ("PIDR" | "PIDP" | "PIDY", "Act") => custom(
                 &format!("pid_actual.{}", pid_axis(msg)?.name()),
                 Unit::DegreesPerSecond,
@@ -521,8 +505,8 @@ impl FirmwareProfile for ArdupilotProfile {
         vec![mode(Vehicle::from_firmware(&firmware.revision), word)]
     }
 
-    fn settings(&self, _firmware: &FirmwareInfo, h: &RawHeaders) -> Settings {
-        let vehicle = Vehicle::parse(h);
+    fn settings(&self, firmware: &FirmwareInfo, h: &RawHeaders) -> Settings {
+        let vehicle = Vehicle::from_firmware(&firmware.revision);
         let (roll, pitch, yaw) = match vehicle {
             Vehicle::Copter => ("ATC_RAT_RLL", "ATC_RAT_PIT", "ATC_RAT_YAW"),
             Vehicle::Plane => ("RLL_RATE", "PTCH_RATE", "YAW_RATE"),
@@ -645,9 +629,6 @@ impl FirmwareProfile for ArdupilotProfile {
             if let Some(v) = h.get(key) {
                 extra.insert(key.to_string(), v.to_string());
             }
-        }
-        if let Some(v) = h.get("vehicle") {
-            extra.insert("vehicle".into(), v.to_string());
         }
         Settings {
             pid,
@@ -777,42 +758,46 @@ mod tests {
         assert_eq!(input(true).ranged(1250.0), 0.75);
     }
 
-    fn headers(vehicle: &str, pairs: &[(&str, &str)]) -> RawHeaders {
-        let mut v = vec![("vehicle".to_string(), vehicle.to_string())];
-        v.extend(
+    fn headers(pairs: &[(&str, &str)]) -> RawHeaders {
+        RawHeaders(
             pairs
                 .iter()
-                .map(|(k, x)| ((*k).to_string(), (*x).to_string())),
-        );
-        RawHeaders(v)
+                .map(|(k, x)| ((*k).to_string(), (*x).to_string()))
+                .collect(),
+        )
+    }
+
+    /// A firmware of `revision` (the vehicle is read from it).
+    fn firmware(revision: &str) -> FirmwareInfo {
+        FirmwareInfo {
+            vendor: FirmwareVendor::Ardupilot,
+            revision: revision.into(),
+            ..FirmwareInfo::unknown()
+        }
     }
 
     #[test]
     fn copter_fields_and_gains() {
-        let h = headers(
-            "Copter",
-            &[
-                ("ATC_RAT_RLL_P", "0.135"),
-                ("ATC_RAT_RLL_I", "0.135"),
-                ("ATC_RAT_RLL_D", "0.0036"),
-                ("ATC_RAT_RLL_FF", "0"),
-                ("ATC_RAT_PIT_P", "0.135"),
-                ("ATC_RAT_YAW_P", "0.18"),
-                ("ATC_RAT_RLL_FLTD", "20"),
-                ("INS_GYRO_FILTER", "20"),
-                ("INS_HNTCH_ENABLE", "1"),
-                ("INS_HNTCH_MODE", "3"),
-                ("INS_HNTCH_FREQ", "80"),
-                ("INS_HNTCH_BW", "40"),
-                ("INS_HNTCH_HMNCS", "7"),
-                ("SCHED_LOOP_RATE", "400"),
-                ("MOT_PWM_MIN", "1100"),
-                ("MOT_PWM_MAX", "1900"),
-                ("FRAME_CLASS", "1"),
-                ("has_rate_msg", "1"),
-            ],
-        );
-        let fw = FirmwareInfo::unknown();
+        let h = headers(&[
+            ("ATC_RAT_RLL_P", "0.135"),
+            ("ATC_RAT_RLL_I", "0.135"),
+            ("ATC_RAT_RLL_D", "0.0036"),
+            ("ATC_RAT_RLL_FF", "0"),
+            ("ATC_RAT_PIT_P", "0.135"),
+            ("ATC_RAT_YAW_P", "0.18"),
+            ("ATC_RAT_RLL_FLTD", "20"),
+            ("INS_GYRO_FILTER", "20"),
+            ("INS_HNTCH_ENABLE", "1"),
+            ("INS_HNTCH_MODE", "3"),
+            ("INS_HNTCH_FREQ", "80"),
+            ("INS_HNTCH_BW", "40"),
+            ("INS_HNTCH_HMNCS", "7"),
+            ("SCHED_LOOP_RATE", "400"),
+            ("MOT_PWM_MIN", "1100"),
+            ("MOT_PWM_MAX", "1900"),
+            ("FRAME_CLASS", "1"),
+        ]);
+        let fw = firmware("ArduCopter V4.5.0");
         let p = ArdupilotProfile;
         let g = p.map_field("IMU.GyrY", &fw, &h).unwrap();
         assert_eq!(
@@ -826,9 +811,11 @@ mod tests {
         let sp = p.map_field("RATE.PDes", &fw, &h).unwrap();
         assert_eq!(sp.id, ChannelId::Setpoint { axis: Axis::Pitch });
         assert_eq!(sp.scale, 1.0);
+        // the PID target maps to the setpoint too; which one keeps the
+        // channel is the session builder's choice (the first field wins)
         assert_eq!(
             p.map_field("PIDR.Tar", &fw, &h).unwrap().id,
-            ChannelId::Custom("pid_target.roll".into())
+            ChannelId::Setpoint { axis: Axis::Roll }
         );
         let m = p.map_field("RCOU.C3", &fw, &h).unwrap();
         assert_eq!(m.id, ChannelId::Motor { idx: 2 });
@@ -853,19 +840,16 @@ mod tests {
 
     #[test]
     fn plane_and_legacy_copter() {
-        let h = headers(
-            "Plane",
-            &[
-                ("RLL_RATE_P", "0.35"),
-                ("PTCH_RATE_P", "0.48"),
-                ("YAW_RATE_P", "0.5"),
-                ("INS_HNTCH_ENABLE", "1"),
-                ("INS_HNTCH_MODE", "1"),
-                ("INS_HNTCH_FREQ", "160"),
-                ("INS_HNTCH_BW", "80"),
-            ],
-        );
-        let fw = FirmwareInfo::unknown();
+        let h = headers(&[
+            ("RLL_RATE_P", "0.35"),
+            ("PTCH_RATE_P", "0.48"),
+            ("YAW_RATE_P", "0.5"),
+            ("INS_HNTCH_ENABLE", "1"),
+            ("INS_HNTCH_MODE", "1"),
+            ("INS_HNTCH_FREQ", "160"),
+            ("INS_HNTCH_BW", "80"),
+        ]);
+        let fw = firmware("ArduPlane V4.4.4");
         let p = ArdupilotProfile;
         let t = p.map_field("PIDP.Tar", &fw, &h).unwrap();
         assert_eq!(t.id, ChannelId::Setpoint { axis: Axis::Pitch });
@@ -880,14 +864,12 @@ mod tests {
         assert_eq!(s.gyro_filters.notches.len(), 1);
         assert_eq!(s.gyro_filters.notches[0].center_hz, 160.0);
 
-        let h = headers(
-            "Copter",
-            &[
-                ("RATE_RLL_P", "0.1288"),
-                ("RATE_PIT_P", "0.168"),
-                ("RATE_YAW_P", "0.66"),
-            ],
-        );
+        let fw = firmware("APM:Copter V3.3");
+        let h = headers(&[
+            ("RATE_RLL_P", "0.1288"),
+            ("RATE_PIT_P", "0.168"),
+            ("RATE_YAW_P", "0.66"),
+        ]);
         let s = p.settings(&fw, &h);
         assert_eq!(s.pid.unwrap().roll.p, 0.1288);
         assert_eq!(

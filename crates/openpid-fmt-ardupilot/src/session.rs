@@ -8,7 +8,7 @@
 //! value logged at or before that time, and is invalid before its first one.
 
 use crate::batch::{Batch, BatchKind, batches, resample_onto};
-use crate::profile::{ArdupilotProfile, Vehicle};
+use crate::profile::ArdupilotProfile;
 use crate::reader::{FormatDef, Message, RawLog, Value};
 use openpid_core::modes::{FlightMode, ModeChange, push_change};
 use openpid_core::session::{
@@ -146,9 +146,8 @@ fn firmware_string(raw: &RawLog) -> Option<String> {
         })
 }
 
-fn firmware_info(raw: &RawLog) -> (FirmwareInfo, Vehicle) {
+fn firmware_info(raw: &RawLog) -> FirmwareInfo {
     let fw = firmware_string(raw).unwrap_or_default();
-    let vehicle = Vehicle::from_firmware(&fw);
     let version = raw
         .messages_named("VER")
         .next()
@@ -166,27 +165,19 @@ fn firmware_info(raw: &RawLog) -> (FirmwareInfo, Vehicle) {
                 .find(|w| w.starts_with('V') && w[1..].starts_with(|c: char| c.is_ascii_digit()))
                 .and_then(FirmwareVersion::parse)
         });
-    (
-        FirmwareInfo {
-            vendor: FirmwareVendor::Ardupilot,
-            version,
-            revision: fw,
-            target: None,
-            build_date: None,
-        },
-        vehicle,
-    )
+    FirmwareInfo {
+        vendor: FirmwareVendor::Ardupilot,
+        version,
+        revision: fw,
+        target: None,
+        build_date: None,
+    }
 }
 
-fn headers(raw: &RawLog, firmware: &FirmwareInfo, vehicle: Vehicle) -> RawHeaders {
-    let mut h: Vec<(String, String)> = vec![
-        ("vehicle".into(), vehicle.name().into()),
-        ("firmware".into(), firmware.revision.clone()),
-        (
-            "has_rate_msg".into(),
-            if raw.def("RATE").is_some() { "1" } else { "0" }.into(),
-        ),
-    ];
+/// The log's parameters and messages as headers: only what the log
+/// carries, nothing made up for the profile.
+fn headers(raw: &RawLog) -> RawHeaders {
+    let mut h: Vec<(String, String)> = Vec::new();
     if let Some((idx, def)) = raw.def("PARM")
         && let (Some(name_c), Some(val_c)) = (def.column("Name"), def.column("Value"))
     {
@@ -378,8 +369,19 @@ fn export_channels(
                 .then(|| profile.map_field(&field, firmware, h))
                 .flatten();
             let target = column_target(raw, &ex, col, col_name, mapped, use_profile);
+            // the first field of a channel wins (RATE.RDes over PIDR.Tar); a
+            // later one stays under its logged name, in the mapped unit
+            let target = if channels.contains(&target.id) {
+                ColumnTarget {
+                    id: ChannelId::Custom(axis_channel_name(ex.name, col_name, ex.instance)),
+                    generic: false,
+                    ..target
+                }
+            } else {
+                target
+            };
             if channels.contains(&target.id) {
-                continue; // first mapping wins (e.g. RATE.RDes over PIDR.Tar)
+                continue;
             }
             if target.generic {
                 unmapped.push(axis_channel_name(ex.name, col_name, ex.instance));
@@ -589,8 +591,8 @@ pub(crate) fn build(
     options: &OpenOptions,
     profile: ArdupilotProfile,
 ) -> Result<FlightSession, FormatError> {
-    let (firmware, vehicle) = firmware_info(raw);
-    let h = headers(raw, &firmware, vehicle);
+    let firmware = firmware_info(raw);
+    let h = headers(raw);
     let (primary_name, times, dropped) = primary_timebase(raw)?;
     let timebase = Timebase::from_times(times.clone(), None);
     let use_profile = !options.raw;

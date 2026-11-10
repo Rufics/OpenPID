@@ -68,6 +68,12 @@ The simulation of the Betaflight fixture is unchanged to the bit.
   firmware knowledge.
 - The profile trait grows with every kind of firmware-specific meaning; that
   is where it belongs.
+- The `ArduPilot` session builder passed facts to its profile through
+  made-up headers (`vehicle`, `firmware`, `has_rate_msg`), which then counted
+  as settings in `openpid diff`. The headers are the log's own parameters
+  again: the profile reads the vehicle from the firmware string, and which
+  of two fields keeps a channel is the builder's rule (the first wins, the
+  other stays under its logged name).
 - **Deviations that exist today** (older code; each is to move behind the
   profile):
   - `openpid-analysis/src/fitness.rs` picks the advice "how to log the

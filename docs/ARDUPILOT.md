@@ -31,7 +31,7 @@ response is stair-stepped; for tuning, enable fast logging (`LOG_BITMASK` bits
 | `IMU.AccX/Y/Z` | `acc.*` | g | m/s² ÷ 9.80665 |
 | `RATE.RDes/PDes/YDes` | `setpoint.*` | deg/s | Copter < 3.4: centidegrees/s × 0.01 |
 | `RATE.R/P/Y`, `ROut/…` | `custom:rate.*`, `custom:rate_out.*` | deg/s, — | |
-| `PIDR/PIDP/PIDY.Tar` | `setpoint.*` (without `RATE`) or `custom:pid_target.*` | deg/s | Copter: rad/s × 57.3; Plane: already deg/s |
+| `PIDR/PIDP/PIDY.Tar` | `setpoint.*`, or `custom:PIDR.Tar` … when `RATE.*Des` already gave the setpoint (the first field of a channel wins) | deg/s | Copter: rad/s × 57.3; Plane: already deg/s |
 | `PID*.Err` | `pid_error.*` | deg/s | the same scaling |
 | `PID*.P/I/D/FF` | `pid.p/i/d/f.*` | raw | controller output |
 | `RCOU.C1…` | Copter: `motor.N` (%, by `MOT_PWM_MIN/MAX`); Plane: `custom:servo.N` (µs) | | |

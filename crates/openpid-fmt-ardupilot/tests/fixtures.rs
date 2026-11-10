@@ -79,7 +79,14 @@ fn copter_3_3_legacy_format() {
     assert_eq!(s.firmware.vendor, FirmwareVendor::Ardupilot);
     assert_eq!(s.firmware.version, Some(FirmwareVersion::new(3, 3, 0)));
     assert!(s.firmware.revision.starts_with("APM:Copter V3.3-dev"));
-    assert_eq!(s.header("vehicle"), Some("Copter"));
+    assert_eq!(
+        Vehicle::from_firmware(&s.firmware.revision),
+        Vehicle::Copter
+    );
+    // the headers are the log's own parameters: nothing made up for the profile
+    for made_up in ["vehicle", "firmware", "has_rate_msg"] {
+        assert_eq!(s.header(made_up), None, "{made_up}");
+    }
     assert_eq!(s.profile_id, "ardupilot");
     // IMU (50 Hz in this log) is the timebase; the 10 Hz RATE message is held onto it
     let rate = s.timebase.sample_rate_hz();
@@ -151,7 +158,6 @@ fn copter_3_3_legacy_format() {
 fn plane_4_3_5_pid_messages() {
     let s = open(PLANE);
     assert_eq!(s.firmware.version, Some(FirmwareVersion::new(4, 3, 5)));
-    assert_eq!(s.header("vehicle"), Some("Plane"));
     assert_eq!(Vehicle::from_firmware(&s.firmware.revision), Vehicle::Plane);
     // units from FMTU/UNIT/MULT: attitude in degrees, battery in volts
     let att = s
