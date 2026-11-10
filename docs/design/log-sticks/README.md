@@ -44,7 +44,9 @@ owner's decision beats the score.
   the stick), throttle `(rcCommand[3] − 1000) / 10`, on Rotorflight the
   collective `(rcCommand[3] + 500) / 10`. `ArduPilot`: `RCIN` by `RCMAP_*`
   and `RCn_MIN / MAX / TRIM / REVERSED`, pitch negated (a stick pushed
-  forward lowers the pulse width), a pulse width of 0 left missing.
+  forward lowers the pulse width; checked on the Copter fixture against
+  the attitude the flight controller asked for, `ATT.DesPitch`), a pulse
+  width of 0 left missing.
   `FlightSession::sticks_at(t)` reads them back; `None` without them.
 - `log_tab.rs`: the card at the bottom right of the throttle / motors row
   (the last row when it is hidden), two 54 px boxes in mode 2 (left:
@@ -96,7 +98,8 @@ Rotorflight 4.3 ARM · BLACKBOX and its collective, EmuFlight ARM · bit 21);
 `modes_follow_the_vehicle`, `rc_inputs_follow_their_calibration`,
 `modes_follow_the_mode_and_arming_events`,
 `flight_modes_come_from_the_mode_and_arming_messages` and
-`sticks_come_from_the_rc_inputs` (`openpid-fmt-ardupilot`: Copter LOITER,
+`sticks_come_from_the_rc_inputs`,
+`stick_signs_agree_with_the_attitude_the_copter_asked_for` (`openpid-fmt-ardupilot`: Copter LOITER,
 Plane ARM then ARM · RTL, QuadPlane QRTL); the CSV reader's
 `opens_as_session`;
 `log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor` (none

@@ -294,7 +294,8 @@ fn derive_throttle(session: &mut FlightSession, throttle: &RcInput) {
 /// The stick channels from `RCIN`, in the canonical convention of
 /// [`ChannelId::Stick`]: each input by its channel map and calibration;
 /// pitch negated, as `ArduPilot` reads a stick pushed forward as a lower
-/// pulse width.
+/// pulse width (checked on the Copter fixture: a stick forward goes with a
+/// negative `ATT.DesPitch`, nose down).
 fn derive_sticks(session: &mut FlightSession, throttle: &RcInput) {
     for (function, default, axis, sign) in [
         ("ROLL", 1, StickAxis::Roll, 1.0),

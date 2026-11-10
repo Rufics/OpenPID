@@ -569,3 +569,41 @@ fn sticks_come_from_the_rc_inputs() {
     }
     assert_eq!(seen, 3, "every fixture logs RCIN");
 }
+
+/// The sign of the roll and pitch sticks, checked against what the flight
+/// controller did with them: `ATT.DesRoll` and `ATT.DesPitch`, the attitude
+/// it asked for (positive = right wing down, nose up). In the Copter log,
+/// flown by hand, a stick to the right asks for a positive roll, and a
+/// stick pushed forward (positive in the canonical convention) for a
+/// negative pitch, nose down.
+#[test]
+fn stick_signs_agree_with_the_attitude_the_copter_asked_for() {
+    use openpid_core::StickAxis;
+    let s = open("ardupilot-copter-3.3-dronekit.bin");
+    let values =
+        |id: &ChannelId| -> Vec<Option<f64>> { s.channel(id).unwrap().data.iter().collect() };
+    // of the samples with the stick off its centre, the share where the
+    // desired angle has the same sign as the stick
+    let same_sign = |axis: StickAxis, desired: &str| -> (usize, f64) {
+        let stick = values(&ChannelId::Stick { axis });
+        let angle = values(&ChannelId::Custom(desired.to_string()));
+        let moved: Vec<(f64, f64)> = stick
+            .iter()
+            .zip(&angle)
+            .filter_map(|(a, b)| Some(((*a)?, (*b)?)))
+            .filter(|(stick, angle)| stick.abs() > 5.0 && *angle != 0.0)
+            .collect();
+        let same = moved.iter().filter(|(a, b)| a * b > 0.0).count();
+        (moved.len(), same as f64 / moved.len() as f64)
+    };
+    let (n, share) = same_sign(StickAxis::Roll, "attitude.desroll");
+    assert!(
+        n > 100 && share > 0.9,
+        "roll: {n} samples, {share:.2} same sign"
+    );
+    let (n, share) = same_sign(StickAxis::Pitch, "attitude.despitch");
+    assert!(
+        n > 100 && share < 0.1,
+        "pitch: {n} samples, {share:.2} same sign"
+    );
+}
