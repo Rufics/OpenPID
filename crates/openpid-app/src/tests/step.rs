@@ -105,7 +105,7 @@ fn step_tab_judges_three_axes_and_targets_change_badges_without_new_jobs() {
     assert_eq!(ui.app().tab, Tab::Advice);
     // Settings: presets, custom edits, persisted in prefs
     ui.tab(Tab::Settings);
-    ui.click("Targets");
+    assert!(ui.has("Rise max"), "the targets are in view, not folded");
     ui.click("Racing");
     assert_eq!(ui.app().prefs.targets, TargetPreset::Racing.targets());
     assert_eq!(
@@ -113,7 +113,7 @@ fn step_tab_judges_three_axes_and_targets_change_badges_without_new_jobs() {
         TargetPreset::Racing.targets()
     );
     assert!(!ui.has("Custom"));
-    ui.set("rise max", 33.0);
+    ui.set("Rise max", 33.0);
     assert_eq!(ui.app().prefs.targets.rise_ms_max, 33.0);
     assert!(ui.has("Custom"), "no preset matches any more");
 }

@@ -34,6 +34,8 @@ use std::time::{Duration, Instant};
 
 /// Frames without work after which the UI counts as at rest.
 const QUIET_FRAMES: usize = 3;
+/// Frames for the pointer to rest before a tooltip is expected.
+const TOOLTIP_FRAMES: usize = 6;
 
 /// Step-response input threshold for the tests. The main fixture
 /// (`betaflight-4.2.0.BFL`) has only gentle stick inputs, none above the
@@ -464,7 +466,7 @@ impl Ui {
         self.h.get_by_label_contains(text).scroll_to_me();
         self.settle();
         self.h.get_by_label_contains(text).hover();
-        self.settle();
+        self.rest_on_it();
     }
 
     /// The same for the control of `role` named exactly `label`.
@@ -472,6 +474,14 @@ impl Ui {
         self.h.get_by_role_and_label(role, label).scroll_to_me();
         self.settle();
         self.h.get_by_role_and_label(role, label).hover();
+        self.rest_on_it();
+    }
+
+    /// Lets the pointer rest where it is until a tooltip is due: egui shows
+    /// one after the pointer has been still for its delay, which a tab that
+    /// settles in a few frames does not reach.
+    fn rest_on_it(&mut self) {
+        self.advance(TOOLTIP_FRAMES);
         self.settle();
     }
 

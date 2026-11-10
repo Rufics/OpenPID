@@ -156,9 +156,11 @@ static UA: &[(&str, &str)] = &[
     ("Feedforward gain", "Підсилення feedforward"),
     ("Filter Sim", "Симуляція фільтрів"),
     ("Filter sliders", "Повзунки фільтрів"),
+    ("Final tolerance", "Допуск кінцевого"),
     ("Firmware", "Прошивка"),
     ("Firmware date", "Дата прошивки"),
     ("Firmware defaults", "Типові значення прошивки"),
+    ("First run", "Перший запуск"),
     ("Flight modes", "Режими польоту"),
     ("Frames", "Кадри"),
     ("Freestyle", "Фрістайл"),
@@ -201,6 +203,8 @@ static UA: &[(&str, &str)] = &[
     ("Min", "Мін"),
     ("Min input", "Мін. вхід"),
     ("Min segments", "Мін. сегментів"),
+    ("Min windows ok", "Мін. вікон (ok)"),
+    ("Min windows weak", "Мін. вікон (слабко)"),
     ("Mode changes", "Зміни режиму"),
     ("Model", "Модель"),
     ("Most active 20 s", "Найактивніші 20 с"),
@@ -239,7 +243,9 @@ static UA: &[(&str, &str)] = &[
     ("Other channels", "Інші канали"),
     ("Overlays", "Накладки"),
     ("Overshoot", "Перерегулювання"),
+    ("Overshoot fail", "Перерегулювання: межа"),
     ("Overshoot limit", "Межа перерегулювання"),
+    ("Overshoot warn", "Перерегулювання: увага"),
     ("P & I gain", "Підсилення P та I"),
     ("P-term", "P-складова"),
     ("P:D ratio", "Співвідношення P:D"),
@@ -287,6 +293,7 @@ static UA: &[(&str, &str)] = &[
     ("Reset to defaults", "Скинути до типових"),
     ("Reset to log", "Скинути до логу"),
     ("Residual", "Залишок"),
+    ("Rise max", "Підйом макс"),
     ("Roll:pitch ratio", "Співвідношення roll:pitch"),
     ("Rules", "Правила"),
     (
@@ -298,12 +305,14 @@ static UA: &[(&str, &str)] = &[
     ("Sample step", "Крок семплів"),
     ("Samples", "Семпли"),
     ("Save as…", "Зберегти як…"),
+    ("Saved in", "Збережено в"),
     ("Scale", "Шкала"),
     ("Search", "Пошук"),
     ("Sections", "Розділи"),
     ("Segment", "Сегмент"),
     ("Setpoint", "Уставка"),
     ("Settings", "Налаштування"),
+    ("Settling max", "Усталення макс"),
     ("Setup", "Налаштування апарата"),
     ("Setup info", "Конфігурація"),
     ("Show", "Показати"),
@@ -350,10 +359,6 @@ static UA: &[(&str, &str)] = &[
     ("Throttle window ±", "Вікно газу ±"),
     ("To start", "На початок"),
     ("Touch mode", "Сенсорний режим"),
-    (
-        "Touch mode (larger controls, touch gestures)",
-        "Сенсорний режим (більші елементи, жести)",
-    ),
     ("Tour", "Тур"),
     ("Trim take-off and landing", "Обрізати зліт і посадку"),
     (
@@ -392,6 +397,10 @@ static UA: &[(&str, &str)] = &[
         "пунктир там, де змінюються режими польоту, з режимами від цього моменту, на рядку газу й моторів",
     ),
     (
+        "a fresh install starts the seven-step tour when its first log opens",
+        "після встановлення тур із семи кроків починається, щойно відкрито перший лог",
+    ),
+    (
         "a logarithmic frequency axis on the full spectrum",
         "логарифмічна вісь частот на повному спектрі",
     ),
@@ -420,6 +429,14 @@ static UA: &[(&str, &str)] = &[
     (
         "an axis that overshoots more gets more D; the same target as on the Step tab (Settings, Targets)",
         "вісь, що перерегульовує більше, отримує більше D; та сама ціль, що й на вкладці Step (Налаштування, Цілі)",
+    ),
+    (
+        "an overshoot above this fails the axis",
+        "перерегулювання вище цього — вісь не проходить",
+    ),
+    (
+        "an overshoot above this is a warning, and the Advice rule proposes more D",
+        "перерегулювання вище цього — попередження, і правило Порад пропонує більше D",
     ),
     ("as flown", "як у польоті"),
     ("as flown (dashed)", "як у польоті (пунктир)"),
@@ -486,6 +503,10 @@ static UA: &[(&str, &str)] = &[
     ),
     ("every section is hidden", "усі розділи приховано"),
     (
+        "every setting on this tab back to its default; the recent files stay",
+        "усі налаштування цієї вкладки до типових; список недавніх файлів лишається",
+    ),
+    (
         "every slider back to the position the log flew with",
         "усі повзунки назад у позиції, з якими літав лог",
     ),
@@ -496,9 +517,12 @@ static UA: &[(&str, &str)] = &[
     ("filter", "фільтр"),
     ("filter…", "фільтр…"),
     ("final", "кінцеве"),
-    ("final tolerance", "допуск кінцевого"),
     ("first empty slot", "перший порожній слот"),
     ("fix", "як виправити"),
+    (
+        "forget that the tour was seen, so the next first log starts it again",
+        "забути, що тур уже переглянуто: наступний перший лог почне його знову",
+    ),
     ("frequency (Hz)", "частота (Гц)"),
     ("frequency (Hz, log)", "частота (Гц, лог.)"),
     ("from the sliders", "з повзунків"),
@@ -517,6 +541,10 @@ static UA: &[(&str, &str)] = &[
     (
         "how far a peak must stand above its surroundings to be marked",
         "наскільки пік має підніматися над оточенням, щоб його позначити",
+    ),
+    (
+        "how far from 1 the settled response may be: 0.10 is within 10 %",
+        "наскільки усталений відгук може відрізнятися від 1: 0.10 — у межах 10 %",
     ),
     (
         "how many automatic peaks to mark on each solid line, from 20 Hz up; 0 = none",
@@ -550,6 +578,10 @@ static UA: &[(&str, &str)] = &[
     (
         "lag of the sim behind the logged gyro; negative: the sim leads",
         "відставання sim від записаного гіро; від’ємне: sim випереджає",
+    ),
+    (
+        "larger controls and touch gestures (pinch, two-finger pan, long press); it also switches itself on at the first touch",
+        "більші елементи керування й сенсорні жести (щипок, прокрутка двома пальцями, довге натискання); вмикається й сам за першого дотику",
     ),
     ("latency", "лаг"),
     ("latency (ms)", "затримка (мс)"),
@@ -597,8 +629,6 @@ static UA: &[(&str, &str)] = &[
     ("markers", "мітки"),
     ("med-high", "вище середньої"),
     ("medium", "середня"),
-    ("min windows ok", "мін. вікон (ok)"),
-    ("min windows weak", "мін. вікон (слабко)"),
     ("motors", "мотори"),
     (
         "motors whose logged speed moved the RPM notches",
@@ -676,8 +706,6 @@ static UA: &[(&str, &str)] = &[
     ),
     ("other", "інше"),
     ("overshoot", "перерегулювання"),
-    ("overshoot fail", "перерегулювання: межа"),
-    ("overshoot warn", "перерегулювання: увага"),
     ("peak", "пік"),
     ("phase (deg)", "фаза (°)"),
     (
@@ -699,10 +727,13 @@ static UA: &[(&str, &str)] = &[
     ),
     ("prefilt", "до фільтра"),
     ("raw", "сирий"),
+    (
+        "ready thresholds for a flying style; editing a value below makes them custom",
+        "готові пороги під стиль польоту; зміна значення нижче робить їх власними",
+    ),
     ("response", "відгук"),
     ("rest", "спокої"),
     ("rise", "підйом"),
-    ("rise max", "підйом макс"),
     ("rows differ", "рядків різняться"),
     ("rpm", "об/хв"),
     ("running", "рахується"),
@@ -710,7 +741,6 @@ static UA: &[(&str, &str)] = &[
     ("setpoint", "уставка"),
     ("setpoint minus gyro", "уставка мінус гіро"),
     ("settling", "усталення"),
-    ("settling max", "усталення макс"),
     (
         "seven steps through the tuning loop, on the sample log",
         "сім кроків циклом налаштування на зразковому лозі",
@@ -752,6 +782,14 @@ static UA: &[(&str, &str)] = &[
         "the axis whose gyro runs through the chain",
         "вісь, чиє гіро проходить через ланцюжок",
     ),
+    (
+        "the colours of the interface: dark or light",
+        "кольори інтерфейсу: темні або світлі",
+    ),
+    (
+        "the colours of the logs' lines and of the heatmaps",
+        "кольори ліній логів і теплових карт",
+    ),
     ("the cut-off at full throttle", "зріз на повному газі"),
     (
         "the cut-off at zero throttle when the throttle moves it",
@@ -790,6 +828,10 @@ static UA: &[(&str, &str)] = &[
         "окремі відгуки за середнім, як щільність",
     ),
     (
+        "the language of the interface, switched at once; units and numbers do not change",
+        "мова інтерфейсу, перемикається одразу; одиниці й числа не змінюються",
+    ),
+    (
         "the log's unfiltered gyro through the modelled chain (sim) against the filtered gyro the flight controller logged",
         "нефільтроване гіро логу через модель ланцюжка (sim) проти відфільтрованого гіро, яке записав польотний контролер",
     ),
@@ -800,6 +842,14 @@ static UA: &[(&str, &str)] = &[
     (
         "the logs do not differ in the sections shown",
         "у показаних розділах логи не різняться",
+    ),
+    (
+        "the longest rise time (10 to 90 %) that is still fine",
+        "найдовший час наростання (від 10 до 90 %), який ще прийнятний",
+    ),
+    (
+        "the longest time to settle within the final tolerance that is still fine",
+        "найдовший час встановлення в межах кінцевого допуску, який ще прийнятний",
     ),
     (
         "the low-pass topology: PT1 is gentle and quick; PT2, PT3 and biquad cut harder and delay more",
@@ -889,6 +939,14 @@ static UA: &[(&str, &str)] = &[
         "нефільтрований гіро, де видно шум моторів; вимкнено: фільтрований гіро",
     ),
     (
+        "the unit of the accelerometer traces in the log viewer",
+        "одиниця кривих акселерометра в перегляді логу",
+    ),
+    (
+        "the unit of the gyro and setpoint traces in the log viewer",
+        "одиниця кривих гіроскопа та уставки в перегляді логу",
+    ),
+    (
         "the value drawn black; auto: the background noise of the maps",
         "значення, що малюється чорним; авто: фоновий шум карт",
     ),
@@ -936,6 +994,10 @@ static UA: &[(&str, &str)] = &[
     ),
     ("verdict", "вердикт"),
     (
+        "walk through the tabs now, on the log that is open",
+        "пройти вкладками зараз, на відкритому лозі",
+    ),
+    (
         "what the Latency plots show: the time the mean response takes to reach 50 % (SR latency), or the delay from setpoint to gyro by cross-correlation",
         "що показують графіки затримки: час, за який середній відгук сягає 50 %, або затримку від уставки до гіро за взаємною кореляцією",
     ),
@@ -966,6 +1028,14 @@ static UA: &[(&str, &str)] = &[
     (
         "windows whose stick input stays below this rate are skipped: too small a step to judge",
         "вікна, де вхід стіків не перевищує цієї швидкості, пропускаються: замалий крок для оцінки",
+    ),
+    (
+        "with at least this many step windows the verdicts are trusted",
+        "коли вікон кроку не менше за це, вердиктам можна довіряти",
+    ),
+    (
+        "with fewer step windows than this the verdicts are greyed out",
+        "коли вікон кроку менше за це, вердикти сірі",
     ),
 ];
 

@@ -15,6 +15,7 @@ mod log_tab;
 mod panel;
 mod prefs;
 mod probe;
+mod settings_tab;
 mod setup_tab;
 mod shortcuts;
 mod sliders_tab;

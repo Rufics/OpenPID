@@ -1260,7 +1260,7 @@ impl App {
                 Tab::Advice => crate::advice_tab::advice(self, ui),
                 Tab::Sliders => crate::sliders_tab::sliders(self, ui),
                 Tab::Setup => crate::setup_tab::setup(self, ui),
-                Tab::Settings => views::settings(self, ui),
+                Tab::Settings => crate::settings_tab::settings(self, ui),
             });
         self.central_rect = central.response.rect;
         self.help_window(&ctx);

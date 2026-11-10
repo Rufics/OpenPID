@@ -415,11 +415,15 @@ or `--set master_multiplier=110,pd_ratio=120` for the ratio sliders.
   clipboard, ready for the configurator CLI. The Filter Sim tab shows the
   same fix when the raw gyro is missing. A log with several
   sessions is checked per session; the table shows the selected one.
-- **Settings**: theme (dark/light), the **interface language** (English /
-  Ukrainian, switched instantly; units and numbers do not change), touch mode
-  at start, the deg/s ↔ rad/s and g ↔ m/s² units, **Targets** (the step
-  response verdict thresholds: a preset or custom, section 3), **first run**
-  (show the tour on the first log, reset the state, show the tour now). Saved
+- **Settings**: four cards, all in view. **Appearance**: theme (dark /
+  light), plot colours, the **interface language** (English / Ukrainian,
+  switched instantly; units and numbers do not change), touch mode at start.
+  **Units**: deg/s or rad/s, g or m/s². **Targets**: the step response
+  verdict thresholds, a preset (Freestyle, Racing, Cinematic) or your own
+  values (section 3). **First run**: show the tour on the first log, show
+  the tour now, reset the first-run state. Every row says what it changes
+  when the pointer rests on it. **Reset to defaults** puts the settings back
+  and keeps the list of recent files. Saved
   in `prefs.json` of the configuration directory (`~/.config/openpid`,
   `~/Library/Application Support/openpid`, `%APPDATA%\openpid`;
   `OPENPID_CONFIG_DIR` overrides it).

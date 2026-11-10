@@ -101,4 +101,5 @@ Rules shared by every topic of the sprint:
 | Log viewer: the sticks and the flight modes at the pointer or the cursor, on the motors row | [log-sticks](log-sticks/README.md) |
 | Setup info: one table of the log check, the decoder, the setup and the headers, a column per log, differences marked | [setup-tab](setup-tab/README.md) |
 | Advice: a card per proposal with its command, the other checks with their marks, per log | [advice-tab](advice-tab/README.md) |
+| Settings: four cards with everything in view, the targets open, every row explained | [settings-tab](settings-tab/README.md) |
 

@@ -356,7 +356,7 @@ fn settings_tab_persists_preferences() {
         "other units pass through"
     );
 
-    ui.click("Touch mode (larger controls, touch gestures)");
+    ui.check("Touch mode", false);
     assert!(
         !ui.app().touch_mode,
         "the settings checkbox drives the live mode"
@@ -380,6 +380,70 @@ fn settings_tab_persists_preferences() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// docs/design/settings-tab (G2): four cards with everything in view, every
+/// row explained on hover, and a reset that keeps the recent files.
+#[test]
+fn settings_cards_show_every_option_and_explain_their_rows() {
+    use crate::prefs::Theme;
+    use eframe::egui::accesskit::Role;
+    use openpid_analysis::TargetPreset;
+    let dir = temp_dir("settings-cards");
+    let path = dir.join("prefs.json");
+    let mut ui = Ui::setup()
+        .files([LOG_4_2])
+        .tab(Tab::Settings)
+        .prefs(&path)
+        .open();
+    assert_eq!(ui.app().prefs.recent.len(), 1, "the opened log is recent");
+    for title in ["APPEARANCE", "UNITS", "TARGETS", "FIRST RUN"] {
+        assert!(ui.has(title), "{title}");
+    }
+    // a choice shows all its options, and the targets are not folded
+    for option in [
+        "Dark",
+        "Light",
+        "Blackbox Explorer",
+        "Colour-blind safe",
+        "English",
+        "Українська",
+        "deg/s",
+        "rad/s",
+        "Freestyle",
+        "Racing",
+        "Cinematic",
+        "Overshoot warn",
+        "Min windows weak",
+    ] {
+        assert!(ui.has(option), "{option}");
+    }
+    // a row explains itself over its label and over its value
+    ui.hover_role(Role::Label, "Rise max");
+    assert!(ui.sees("the longest rise time"));
+    ui.hover_role(Role::CheckBox, "Touch mode");
+    assert!(ui.sees("larger controls and touch gestures"));
+    // the first-run rows
+    ui.check("Show the tour on the first opened log", false);
+    assert!(!Prefs::load(&path).show_tour);
+    ui.app_mut().prefs.tour_done = true;
+    ui.click("Reset first-run state");
+    assert!(!Prefs::load(&path).tour_done);
+    // back to the defaults: the settings, not the list of recent files
+    ui.click("Light");
+    ui.click("Cinematic");
+    assert_eq!(ui.app().prefs.targets, TargetPreset::Cinematic.targets());
+    ui.click("Reset to defaults");
+    assert_eq!(ui.app().prefs.theme, Theme::Dark);
+    assert_eq!(ui.app().prefs.targets, TargetPreset::Freestyle.targets());
+    assert_eq!(
+        ui.app().tools.recommend.targets,
+        TargetPreset::Freestyle.targets()
+    );
+    assert!(ui.app().prefs.show_tour);
+    assert_eq!(ui.app().prefs.recent.len(), 1, "the recent files stay");
+    assert_eq!(Prefs::load(&path).recent.len(), 1);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn language_switch_translates_labels_and_persists() {
     let dir = temp_dir("lang");
@@ -390,13 +454,15 @@ fn language_switch_translates_labels_and_persists() {
         .prefs(&path)
         .open();
     assert!(ui.has("Settings"));
-    assert!(ui.has("Appearance"));
+    assert!(ui.has("APPEARANCE"), "a card title");
+    assert!(ui.has("Theme"));
     assert!(!ui.has("Налаштування"));
     ui.click("Українська");
     assert_eq!(ui.app().prefs.lang, crate::i18n::Lang::Ua);
     // tab titles, headings, labels, buttons and tooltips all follow
     assert!(ui.has("Налаштування"));
-    assert!(ui.has("Вигляд"));
+    assert!(ui.has("ВИГЛЯД"));
+    assert!(ui.has("Тема"));
     assert!(ui.has("Скинути до типових"));
     assert!(!ui.has("Settings"));
     ui.open_menu();
