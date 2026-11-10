@@ -108,6 +108,42 @@ fn dterm_filters(h: &RawHeaders) -> FilterChain {
     }
 }
 
+/// INAV's RC modes by box id, the first 32 `flightModeFlags` holds.
+const BOXES_INAV: [&str; 32] = [
+    "ARM",
+    "ANGLE",
+    "HORIZON",
+    "NAV ALTHOLD",
+    "HEADING HOLD",
+    "HEADFREE",
+    "HEADADJ",
+    "CAMSTAB",
+    "NAV RTH",
+    "NAV POSHOLD",
+    "MANUAL",
+    "BEEPER",
+    "LEDS OFF",
+    "LIGHTS",
+    "NAV LAUNCH",
+    "OSD OFF",
+    "TELEMETRY",
+    "BLACKBOX",
+    "FAILSAFE",
+    "NAV WP",
+    "AIR MODE",
+    "HOME RESET",
+    "GCS NAV",
+    "KILLSWITCH",
+    "SURFACE",
+    "FLAPERON",
+    "TURN ASSIST",
+    "SERVO AUTOTRIM",
+    "AUTO TUNE",
+    "CAMERA CONTROL 1",
+    "CAMERA CONTROL 2",
+    "CAMERA CONTROL 3",
+];
+
 impl FirmwareProfile for Inav {
     fn id(&self) -> &'static str {
         "inav"
@@ -222,6 +258,10 @@ impl FirmwareProfile for Inav {
 
     fn derive(&self, session: &mut FlightSession) {
         common::derive(session);
+    }
+
+    fn flight_modes(&self, _fw: &FirmwareInfo, word: i64) -> Vec<openpid_core::FlightMode> {
+        openpid_core::modes::modes_from_mask(word, &BOXES_INAV)
     }
 }
 

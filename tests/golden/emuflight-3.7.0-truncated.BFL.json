@@ -338,6 +338,42 @@
         "valid": 42412
       },
       {
+        "key": "stick.pitch",
+        "max": 0.0,
+        "mean": -0.164505,
+        "min": -0.4,
+        "name": "stick pitch",
+        "unit": "%",
+        "valid": 42412
+      },
+      {
+        "key": "stick.roll",
+        "max": -0.6,
+        "mean": -0.799519,
+        "min": -0.8,
+        "name": "stick roll",
+        "unit": "%",
+        "valid": 42412
+      },
+      {
+        "key": "stick.throttle",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stick throttle",
+        "unit": "%",
+        "valid": 42412
+      },
+      {
+        "key": "stick.yaw",
+        "max": 0.8,
+        "mean": 0.8,
+        "min": 0.8,
+        "name": "stick yaw",
+        "unit": "%",
+        "valid": 42412
+      },
+      {
         "key": "throttle",
         "max": 0.0,
         "mean": 0.0,

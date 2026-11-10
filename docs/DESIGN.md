@@ -138,14 +138,28 @@ pub struct FlightSession {
 }
 ```
 
+**The session is the only thing consumers read** (ADR-0015). The core owns
+the model and every lookup on it (`sample_at`, `flight_modes_at`,
+`mode_changes`, `sticks_at`); a format crate is a reader (bytes to raw
+records), a firmware profile (the only place that knows a firmware: fields,
+scales, settings, derived channels, mode words) and a session builder; the
+analysis, the simulator and the app never branch on the firmware.
+
 **Flight modes** are one set of values for every firmware (`FlightMode`: Arm,
 Angle, Horizon, AirMode, AltHold, PosHold, ReturnHome, GpsRescue, Failsafe, …,
-`Other(name)` for the rest). The format crate decodes what its log records:
-the Blackbox decoder the slow frames' `flightModeFlags` (the mode-box mask, by
-the firmware's box list and version: Betaflight, Cleanflight, INAV,
-Rotorflight; EmuFlight's bits other than ARM stay numbered), the `ArduPilot`
-decoder the `MODE` messages by vehicle and the arming `EV` messages, the CSV
-reader the `flightModeFlags` names. Nothing after the decoder reads the bits.
+`Other(name)` for the rest). The profile turns the firmware's mode word into
+them (`FirmwareProfile::flight_modes`): the mode-box mask of
+`flightModeFlags` by box list and version (Betaflight, Cleanflight, INAV,
+Rotorflight; EmuFlight and unknown firmware: ARM, ANGLE, HORIZON, the other
+bits numbered), the `ArduPilot` mode number by vehicle (arming from its `EV`
+messages); the CSV reader takes the `flightModeFlags` names.
+
+**Sticks** are the channels `stick.roll`, `stick.pitch`, `stick.yaw` (−100 …
+100 %: right, forward, right positive) and `stick.throttle` (0 … 100 %; the
+collective on a helicopter), derived by the profile: `rcCommand` on the
+Cleanflight family (±500 full deflection, yaw stored inverted), `RCIN` by
+`RCMAP_*` and `RCn_MIN / MAX / TRIM / REVERSED` on `ArduPilot` (pitch
+negated).
 
 A **channel** is one series with one unit:
 

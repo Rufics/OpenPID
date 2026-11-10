@@ -927,8 +927,12 @@ fn log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor() {
     assert!(h.query_by_label("Position").is_some());
     // the pointer leaves the rows: the sticks stay at the cursor
     pointer_move(&mut h, egui::pos2(2.0, 2.0));
-    let at_cursor =
-        openpid_analysis::sticks_at(app(&h).loaded(Slot::A).unwrap().current().unwrap(), t);
+    let at_cursor = app(&h)
+        .loaded(Slot::A)
+        .unwrap()
+        .current()
+        .unwrap()
+        .sticks_at(t);
     assert_eq!(app(&h).viewer.sticks, at_cursor);
     // and they can be hidden
     assert!(app(&h).tools.log_display.sticks, "shown by default");

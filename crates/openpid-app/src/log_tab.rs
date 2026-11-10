@@ -436,17 +436,15 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
     if app.tools.log_display.mode_marks
         && let Some(t) = sticks_transform
     {
-        app.viewer.mode_marks = draw_mode_marks(ui, &t, &openpid_analysis::mode_changes(&s));
+        app.viewer.mode_marks = draw_mode_marks(ui, &t, &s.mode_changes());
     }
     // the sticks under the pointer while it is over the rows, else at the cursor
     let at = act.hover.or(act.cursor);
     let d = &app.tools.log_display;
-    app.viewer.sticks = at
-        .filter(|_| d.sticks)
-        .and_then(|t| openpid_analysis::sticks_at(&s, t));
+    app.viewer.sticks = at.filter(|_| d.sticks).and_then(|t| s.sticks_at(t));
     app.viewer.modes = at
         .filter(|_| d.modes)
-        .and_then(|t| openpid_analysis::flight_modes_at(&s, t))
+        .and_then(|t| s.flight_modes_at(t))
         .map(<[openpid_core::FlightMode]>::to_vec);
     app.viewer.sticks_rect = None;
     if let Some(frame) = sticks_frame
@@ -691,7 +689,7 @@ const STICK_BOX: f32 = 54.0;
 fn draw_sticks(
     ui: &Ui,
     frame: egui::Rect,
-    st: Option<&openpid_analysis::Sticks>,
+    st: Option<&openpid_core::Sticks>,
     modes: Option<&str>,
 ) -> egui::Rect {
     let painter = ui.painter().with_clip_rect(ui.clip_rect());

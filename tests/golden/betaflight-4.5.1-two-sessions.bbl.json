@@ -538,6 +538,42 @@
         "valid": 3124
       },
       {
+        "key": "stick.pitch",
+        "max": 0.4,
+        "mean": 0.300256,
+        "min": 0.2,
+        "name": "stick pitch",
+        "unit": "%",
+        "valid": 3124
+      },
+      {
+        "key": "stick.roll",
+        "max": 0.4,
+        "mean": 0.212932,
+        "min": 0.2,
+        "name": "stick roll",
+        "unit": "%",
+        "valid": 3124
+      },
+      {
+        "key": "stick.throttle",
+        "max": 37.8,
+        "mean": 7.972023,
+        "min": 0.0,
+        "name": "stick throttle",
+        "unit": "%",
+        "valid": 3124
+      },
+      {
+        "key": "stick.yaw",
+        "max": 21.6,
+        "mean": 10.088348,
+        "min": 3.6,
+        "name": "stick yaw",
+        "unit": "%",
+        "valid": 3124
+      },
+      {
         "key": "throttle",
         "max": 37.8,
         "mean": 7.98646,
@@ -1127,6 +1163,42 @@
         "min": -29.0,
         "name": "setpoint[2]",
         "unit": "deg/s",
+        "valid": 20968
+      },
+      {
+        "key": "stick.pitch",
+        "max": 15.4,
+        "mean": 0.524647,
+        "min": -14.6,
+        "name": "stick pitch",
+        "unit": "%",
+        "valid": 20968
+      },
+      {
+        "key": "stick.roll",
+        "max": 9.8,
+        "mean": -0.496652,
+        "min": -13.6,
+        "name": "stick roll",
+        "unit": "%",
+        "valid": 20968
+      },
+      {
+        "key": "stick.throttle",
+        "max": 78.8,
+        "mean": 20.095178,
+        "min": 0.0,
+        "name": "stick throttle",
+        "unit": "%",
+        "valid": 20968
+      },
+      {
+        "key": "stick.yaw",
+        "max": 17.0,
+        "mean": -2.327213,
+        "min": -34.2,
+        "name": "stick yaw",
+        "unit": "%",
         "valid": 20968
       },
       {

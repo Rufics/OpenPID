@@ -30,4 +30,10 @@ impl FirmwareProfile for Generic {
     fn derive(&self, session: &mut FlightSession) {
         common::derive(session);
     }
+
+    fn flight_modes(&self, _fw: &FirmwareInfo, word: i64) -> Vec<openpid_core::FlightMode> {
+        // an unknown firmware's other boxes are not known: the boxes every
+        // Cleanflight fork starts with, the other bits stay numbered
+        openpid_core::modes::modes_from_mask(word, &common::BOXES_COMMON)
+    }
 }

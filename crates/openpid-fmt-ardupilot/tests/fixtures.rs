@@ -516,3 +516,50 @@ fn flight_modes_come_from_the_mode_and_arming_messages() {
     // the plane log records its arming: ARM, then ARM with RTL
     assert_eq!(plane[0], [FlightMode::Arm]);
 }
+
+#[test]
+fn sticks_come_from_the_rc_inputs() {
+    use openpid_core::StickAxis;
+    let mut seen = 0;
+    for name in [
+        "ardupilot-copter-3.3-dronekit.bin",
+        "ardupilot-plane-4.3.5.bin",
+        "ardupilot-quadplane-4.4.4-esc-telemetry.bin",
+    ] {
+        let s = open(name);
+        if s.channel(&ChannelId::RcCommand { ch: 0 }).is_none() {
+            // no RCIN in this log: no sticks either
+            assert!(s.sticks_at(1.0).is_none(), "{name}");
+            continue;
+        }
+        // a log whose RC input stays at 0 (no receiver: an autonomous flight)
+        // has no stick positions, the others have them from the first pulse on
+        let roll = s
+            .channel(&ChannelId::Stick {
+                axis: StickAxis::Roll,
+            })
+            .unwrap();
+        let has_rc = roll.data.iter().flatten().next().is_some();
+        let at_end = s.sticks_at(s.timebase.duration_s());
+        assert_eq!(at_end.is_some(), has_rc, "{name}");
+        if !has_rc {
+            continue;
+        }
+        seen += 1;
+        for axis in StickAxis::ALL {
+            let (lo, hi) = range(&s, &ChannelId::Stick { axis });
+            let floor = if axis == StickAxis::Throttle {
+                0.0
+            } else {
+                -100.0
+            };
+            assert!(lo >= floor && hi <= 100.0, "{name} {axis:?}: {lo}..{hi}");
+        }
+        // the two Plane logs never got a throttle pulse (RCIN.C3 is 0): no
+        // throttle stick there, the Copter log has one
+        let throttle = s.channel(&ChannelId::RcCommand { ch: 2 }).unwrap();
+        let pulsed = throttle.data.iter().flatten().any(|pwm| pwm > 0.0);
+        assert_eq!(at_end.unwrap().throttle.is_some(), pulsed, "{name}");
+    }
+    assert_eq!(seen, 3, "every fixture logs RCIN");
+}

@@ -10,6 +10,7 @@
 use crate::batch::{Batch, BatchKind, batches, resample_onto};
 use crate::profile::{ArdupilotProfile, Vehicle};
 use crate::reader::{FormatDef, Message, RawLog, Value};
+use openpid_core::modes::{FlightMode, ModeChange, push_change};
 use openpid_core::session::{
     Channel, ChannelSet, Diagnostics, Event, EventKind, FrameStats, Origin, Timebase,
 };
@@ -516,27 +517,6 @@ fn timebase_channels(channels: &mut ChannelSet, primary_name: &str, times: &[i64
     });
 }
 
-/// Throttle from the RC input when the controller did not log one.
-fn derive_throttle(channels: &mut ChannelSet) {
-    if channels.contains(&ChannelId::Throttle) {
-        return;
-    }
-    let Some(rc) = channels.get(&ChannelId::RcCommand { ch: 2 }) else {
-        return;
-    };
-    let data = rc.data.map(|us| ((us - 1000.0) / 10.0).clamp(0.0, 100.0));
-    channels.insert(Channel {
-        id: ChannelId::Throttle,
-        name: "throttle (RCIN.C3)".into(),
-        unit: Unit::Percent,
-        data,
-        origin: Origin::Derived {
-            from: vec![ChannelId::RcCommand { ch: 2 }],
-            by: "(pwm - 1000) / 10".into(),
-        },
-    });
-}
-
 /// Human-readable notes about what went onto the timebase and what did not.
 fn notes(
     raw: &RawLog,
@@ -619,9 +599,6 @@ pub(crate) fn build(
         export_channels(raw, &times, &firmware, &h, profile, use_profile);
     let batch = batch_channels(raw, &times, instances(raw, "IMU").len(), &mut channels);
     timebase_channels(&mut channels, primary_name, &times);
-    if use_profile {
-        derive_throttle(&mut channels);
-    }
     channels.reindex();
 
     let mut settings = if use_profile {
@@ -663,11 +640,55 @@ pub(crate) fn build(
         flight_modes: Vec::new(),
         diagnostics,
     };
-    session.flight_modes = crate::modes::changes(vehicle, &session.events);
     if use_profile {
+        session.flight_modes = mode_changes(&profile, &session.firmware, &session.events);
         profile.derive(&mut session);
     }
     Ok(session)
+}
+
+/// `EV` ids for arming and disarming.
+const EV_ARMED: i64 = 10;
+const EV_DISARMED: i64 = 11;
+
+/// The mode changes of a log's `MODE` and `EV` events (in sample order):
+/// the mode the profile reads from the `MODE` number, with
+/// [`FlightMode::Arm`] first while armed. Before the first arming `EV` the
+/// arming state is unknown and not shown.
+fn mode_changes(
+    profile: &dyn FirmwareProfile,
+    firmware: &FirmwareInfo,
+    events: &[Event],
+) -> Vec<ModeChange> {
+    let mut out = Vec::new();
+    let mut armed = false;
+    let mut current: Vec<FlightMode> = Vec::new();
+    for e in events {
+        let EventKind::Other { name, data } = &e.kind else {
+            continue;
+        };
+        match name.as_str() {
+            "MODE" => {
+                let Some(n) = data.get("ModeNum").or_else(|| data.get("Mode")) else {
+                    continue;
+                };
+                current = profile.flight_modes(firmware, *n);
+            }
+            "EV" => match data.get("Id") {
+                Some(&EV_ARMED) => armed = true,
+                Some(&EV_DISARMED) => armed = false,
+                _ => continue,
+            },
+            _ => continue,
+        }
+        let mut modes = Vec::new();
+        if armed {
+            modes.push(FlightMode::Arm);
+        }
+        modes.extend(current.iter().cloned());
+        push_change(&mut out, e.sample_index, modes);
+    }
+    out
 }
 
 /// `MODE` and `EV` messages as events on the timebase.
@@ -698,4 +719,48 @@ fn events(raw: &RawLog, times: &[i64]) -> Vec<Event> {
     }
     out.sort_by_key(|e| e.sample_index);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ev(i: usize, name: &str, kv: &[(&str, i64)]) -> Event {
+        Event {
+            sample_index: i,
+            kind: EventKind::Other {
+                name: name.into(),
+                data: kv.iter().map(|(k, v)| ((*k).to_string(), *v)).collect(),
+            },
+        }
+    }
+
+    #[test]
+    fn modes_follow_the_mode_and_arming_events() {
+        let events = [
+            ev(0, "MODE", &[("Mode", 0), ("ModeNum", 0)]),
+            ev(5, "EV", &[("Id", EV_ARMED)]),
+            ev(8, "EV", &[("Id", 15)]), // not an arming event
+            ev(9, "MODE", &[("Mode", 2), ("ModeNum", 2), ("Rsn", 1)]),
+            ev(20, "EV", &[("Id", EV_DISARMED)]),
+        ];
+        let fw = FirmwareInfo {
+            vendor: FirmwareVendor::Ardupilot,
+            revision: "ArduCopter V4.5.0".into(),
+            ..FirmwareInfo::unknown()
+        };
+        let seq: Vec<(usize, Vec<FlightMode>)> = mode_changes(&ArdupilotProfile, &fw, &events)
+            .into_iter()
+            .map(|c| (c.sample_index, c.modes))
+            .collect();
+        assert_eq!(
+            seq,
+            [
+                (0, vec![FlightMode::Angle]),
+                (5, vec![FlightMode::Arm, FlightMode::Angle]),
+                (9, vec![FlightMode::Arm, FlightMode::AltHold]),
+                (20, vec![FlightMode::AltHold]),
+            ]
+        );
+    }
 }

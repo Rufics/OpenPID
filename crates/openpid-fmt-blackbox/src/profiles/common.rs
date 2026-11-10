@@ -8,7 +8,8 @@ use openpid_core::settings::{
 };
 use openpid_core::{
     Axis, BatteryField, Channel, ChannelId, FieldMapping, FirmwareInfo, FirmwareVendor,
-    FirmwareVersion, FlightSession, GyroStage, Origin, PidTerm, RawHeaders, Series, Settings, Unit,
+    FirmwareVersion, FlightSession, GyroStage, Origin, PidTerm, RawHeaders, Series, Settings,
+    StickAxis, Unit,
 };
 
 /// `gyroADC[2]` -> (`gyroADC`, Some(2)).
@@ -487,13 +488,92 @@ fn derive_gyro_raw_from_debug(s: &mut FlightSession) {
     }
 }
 
+/// Mode boxes every Cleanflight-family firmware starts its list with, in
+/// the bit order of `flightModeFlags`.
+pub const BOXES_COMMON: [&str; 3] = ["ARM", "ANGLE", "HORIZON"];
+
+/// Full deflection of `rcCommand` on roll, pitch and yaw.
+const RC_FULL: f64 = 500.0;
+
+/// The stick channels from `rcCommand`, in the canonical convention of
+/// [`ChannelId::Stick`]: roll and pitch as logged (±500 is full deflection),
+/// yaw negated (the Cleanflight family stores it inverted; its Blackbox
+/// Explorers negate it to draw the stick), the throttle from
+/// `rcCommand[3]` (1000…2000) where it is one.
+fn derive_sticks(s: &mut FlightSession) {
+    for (ch, axis, sign) in [
+        (0, StickAxis::Roll, 1.0),
+        (1, StickAxis::Pitch, 1.0),
+        (2, StickAxis::Yaw, -1.0),
+    ] {
+        let rc = ChannelId::RcCommand { ch };
+        if let Some(c) = s.channels.get(&rc) {
+            // `+ 0.0` turns the −0.0 of a negated zero into 0.0
+            let data = c
+                .data
+                .map(|v| (sign * v / RC_FULL * 100.0).clamp(-100.0, 100.0) + 0.0);
+            s.channels.insert(derived(
+                ChannelId::Stick { axis },
+                &format!("stick {}", axis.name()),
+                Unit::Percent,
+                data,
+                vec![rc],
+                if sign < 0.0 {
+                    "-rcCommand / 5"
+                } else {
+                    "rcCommand / 5"
+                },
+            ));
+        }
+    }
+    let rc3 = ChannelId::RcCommand { ch: 3 };
+    if let Some(c) = s.channels.get(&rc3) {
+        let max = c.data.iter().flatten().fold(f64::MIN, f64::max);
+        if max > 900.0 {
+            let data = c.data.map(|v| ((v - 1000.0) / 10.0).clamp(0.0, 100.0));
+            s.channels.insert(derived(
+                ChannelId::Stick {
+                    axis: StickAxis::Throttle,
+                },
+                "stick throttle",
+                Unit::Percent,
+                data,
+                vec![rc3],
+                "(rcCommand[3] - 1000) / 10",
+            ));
+        }
+    }
+}
+
+/// The throttle stick of a helicopter: the collective, `rcCommand[3]`
+/// (±500), as 0…100 %.
+pub fn derive_collective_stick(s: &mut FlightSession) {
+    let rc3 = ChannelId::RcCommand { ch: 3 };
+    if let Some(c) = s.channels.get(&rc3) {
+        let data = c
+            .data
+            .map(|v| ((v + RC_FULL) / (2.0 * RC_FULL) * 100.0).clamp(0.0, 100.0));
+        s.channels.insert(derived(
+            ChannelId::Stick {
+                axis: StickAxis::Throttle,
+            },
+            "stick collective",
+            Unit::Percent,
+            data,
+            vec![rc3],
+            "(rcCommand[3] + 500) / 10",
+        ));
+    }
+}
+
 /// Derived channels every Cleanflight-family log can have: throttle percent,
-/// PID error, PID sum and mechanical motor RPM.
+/// the sticks, PID error, PID sum and mechanical motor RPM.
 ///
 /// # Panics
 /// Never: every channel it reads was checked to exist just before.
 pub fn derive(s: &mut FlightSession) {
     derive_gyro_raw_from_debug(s);
+    derive_sticks(s);
     let sp3 = ChannelId::Custom("setpoint[3]".into());
     if let Some(c) = s.channels.get(&sp3) {
         let data = c.data.clone();

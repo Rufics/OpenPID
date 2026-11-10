@@ -15,10 +15,11 @@ pub mod series;
 pub mod session;
 pub mod settings;
 pub mod sliders;
+pub mod sticks;
 pub mod summary;
 pub mod units;
 
-pub use channel::{Axis, BatteryField, ChannelId, GyroStage, PidTerm};
+pub use channel::{Axis, BatteryField, ChannelId, GyroStage, PidTerm, StickAxis};
 pub use format::{Confidence, FormatError, FormatRegistry, LogFormat, OpenOptions};
 pub use modes::{FlightMode, ModeChange};
 pub use profile::{FieldMapping, FirmwareProfile, ProfileRegistry, RawHeaders};
@@ -31,4 +32,5 @@ pub use session::{
 };
 pub use settings::Settings;
 pub use sliders::{SliderDef, SliderModel, SliderResult, SliderValues};
+pub use sticks::Sticks;
 pub use units::Unit;

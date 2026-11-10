@@ -6,7 +6,6 @@
 pub mod epoch;
 pub mod filter_sim;
 pub mod fitness;
-pub mod modes;
 pub mod motor_noise;
 pub mod prepare;
 pub mod project;
@@ -16,7 +15,6 @@ pub mod render;
 pub mod rpm;
 pub mod step;
 pub mod stft;
-pub mod sticks;
 pub mod surface;
 pub mod targets;
 pub mod throttle;
@@ -26,7 +24,6 @@ pub use filter_sim::{
     PartResponse,
 };
 pub use fitness::{Check, Fitness, Level as FitnessLevel, check_session};
-pub use modes::{flight_modes_at, mode_changes};
 pub use motor_noise::{
     HarmonicNoise, MotorNoise, MotorNoiseAnalysis, MotorNoiseOutput, MotorNoiseParams,
 };
@@ -40,6 +37,5 @@ pub use recommend::{Finding, Recommend, RecommendOutput, RecommendParams};
 pub use rpm::{RpmEstimateOutput, RpmEstimateParams, RpmEstimator};
 pub use step::{StepAnalysis, StepMetrics, StepOutput, StepParams, StepSpread};
 pub use stft::{StftAnalysis, StftOutput, StftParams};
-pub use sticks::{Sticks, sticks_at};
 pub use targets::{StepTargets, TargetPreset, Verdict, VerdictLevel, verdicts};
 pub use throttle::{RpmOverlay, ThrottleHeatmap, ThrottleHeatmapOutput, ThrottleHeatmapParams};

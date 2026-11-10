@@ -39,7 +39,7 @@ pub struct ViewerState {
     /// Plot x range (seconds) last frame.
     pub x_bounds: Option<(f64, f64)>,
     /// The sticks drawn on the Log viewer last frame (at the pointer or the cursor).
-    pub sticks: Option<openpid_analysis::Sticks>,
+    pub sticks: Option<openpid_core::Sticks>,
     /// Where the stick card was drawn last frame.
     pub sticks_rect: Option<egui::Rect>,
     /// The flight modes on that card last frame.

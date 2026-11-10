@@ -2,6 +2,7 @@
 //! field names, scales and settings.
 
 use crate::channel::ChannelId;
+use crate::modes::FlightMode;
 use crate::session::{FirmwareInfo, FlightSession};
 use crate::settings::Settings;
 use crate::sliders::SliderModel;
@@ -105,9 +106,16 @@ pub trait FirmwareProfile: Send + Sync {
     /// Extract typed settings from the headers.
     fn settings(&self, firmware: &FirmwareInfo, headers: &RawHeaders) -> Settings;
 
-    /// Add derived channels (throttle percent, PID error, ...). Called after
-    /// all logged channels are in place.
+    /// Add derived channels (throttle percent, PID error, the sticks, ...).
+    /// Called after all logged channels are in place.
     fn derive(&self, _session: &mut FlightSession) {}
+
+    /// The flight modes the firmware's logged mode word stands for: the
+    /// mode-box mask of the Cleanflight family (`flightModeFlags`), the mode
+    /// number of `ArduPilot`. Empty when the profile does not know them.
+    fn flight_modes(&self, _firmware: &FirmwareInfo, _word: i64) -> Vec<FlightMode> {
+        Vec::new()
+    }
 
     /// Slider ("simplified tuning") model for this log, when the firmware has one.
     fn slider_model(

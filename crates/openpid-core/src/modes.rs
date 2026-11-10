@@ -2,8 +2,10 @@
 //!
 //! Each format crate turns what its log records (Betaflight-family
 //! `flightModeFlags` bits, `ArduPilot` `MODE` and `EV` messages, ...) into
-//! [`ModeChange`]s on the session; everything after the decoder reads
-//! [`FlightMode`] values and never the firmware's own numbering.
+//! [`ModeChange`]s on the session, through its firmware profile
+//! ([`crate::FirmwareProfile::flight_modes`]); everything after the decoder
+//! reads them with [`crate::FlightSession::flight_modes_at`] and
+//! [`crate::FlightSession::mode_changes`], never the firmware's numbering.
 
 use serde::{Deserialize, Serialize};
 
@@ -160,6 +162,18 @@ pub fn push_change(changes: &mut Vec<ModeChange>, sample_index: usize, modes: Ve
     });
 }
 
+/// The modes of the bits set in a mode-box mask, by the firmware's box
+/// names in bit order; a bit past the list reads `bit n`.
+pub fn modes_from_mask(mask: i64, names: &[&str]) -> Vec<FlightMode> {
+    (0..64)
+        .filter(|b| (mask >> b) & 1 == 1)
+        .map(|b| match names.get(b as usize) {
+            Some(n) => FlightMode::from_name(n),
+            None => FlightMode::Other(format!("bit {b}")),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,5 +206,13 @@ mod tests {
         assert_eq!(modes_at(&c, 10), [FlightMode::Arm, FlightMode::Angle]);
         assert_eq!(modes_at(&c, 99).len(), 2);
         assert!(modes_at(&[], 3).is_empty());
+        assert_eq!(
+            modes_from_mask(0b101 | 1 << 40, &["ARM", "ANGLE", "NAV POSHOLD"]),
+            [
+                FlightMode::Arm,
+                FlightMode::PosHold,
+                FlightMode::Other("bit 40".into())
+            ]
+        );
     }
 }

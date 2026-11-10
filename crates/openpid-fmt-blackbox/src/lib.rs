@@ -15,7 +15,6 @@
 pub mod cli;
 pub mod encoding;
 pub mod headers;
-pub mod modes;
 pub mod parser;
 pub mod predictor;
 pub mod profiles;

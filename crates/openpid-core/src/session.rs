@@ -1,8 +1,10 @@
 //! The canonical, firmware-independent representation of a decoded log.
 
-use crate::channel::ChannelId;
+use crate::channel::{ChannelId, StickAxis};
+use crate::modes::{FlightMode, modes_at};
 use crate::series::Series;
 use crate::settings::Settings;
+use crate::sticks::Sticks;
 use crate::units::Unit;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -546,11 +548,151 @@ impl FlightSession {
     pub fn is_empty(&self) -> bool {
         self.timebase.is_empty()
     }
+
+    /// The main-frame sample at or just after `t_s` seconds from the start
+    /// of the session (the last one past the end); `None` when it is empty.
+    pub fn sample_at(&self, t_s: f64) -> Option<usize> {
+        let time = &self.timebase.time_us;
+        let t0 = *time.first()?;
+        let target = t0 + (t_s.max(0.0) * 1.0e6) as i64;
+        Some(time.partition_point(|t| *t < target).min(time.len() - 1))
+    }
+
+    /// Seconds from the start of the session at `sample`.
+    pub fn time_s(&self, sample: usize) -> Option<f64> {
+        let time = &self.timebase.time_us;
+        Some((*time.get(sample)? - *time.first()?) as f64 / 1.0e6)
+    }
+
+    /// The flight modes active at `t_s` seconds from the start of the
+    /// session; `None` when the log records no modes.
+    pub fn flight_modes_at(&self, t_s: f64) -> Option<&[FlightMode]> {
+        if self.flight_modes.is_empty() {
+            return None;
+        }
+        Some(modes_at(&self.flight_modes, self.sample_at(t_s)?))
+    }
+
+    /// The time (s from the start of the session) of every mode change,
+    /// with the modes from then on.
+    pub fn mode_changes(&self) -> Vec<(f64, &[FlightMode])> {
+        self.flight_modes
+            .iter()
+            .filter_map(|c| Some((self.time_s(c.sample_index)?, c.modes.as_slice())))
+            .collect()
+    }
+
+    /// The sticks at `t_s` seconds from the start of the session, from the
+    /// [`ChannelId::Stick`] channels; `None` when the log has no stick data.
+    pub fn sticks_at(&self, t_s: f64) -> Option<Sticks> {
+        let i = self.sample_at(t_s)?;
+        let read = |axis: StickAxis| -> Option<f64> {
+            let c = self.channel(&ChannelId::Stick { axis })?;
+            let v = c.data.values();
+            // the nearest valid sample at or before `i`
+            (0..=i.min(v.len().checked_sub(1)?))
+                .rev()
+                .find(|k| c.data.is_valid(*k))
+                .map(|k| v[k] / 100.0)
+        };
+        Some(Sticks {
+            roll: read(StickAxis::Roll)?.clamp(-1.0, 1.0),
+            pitch: read(StickAxis::Pitch)?.clamp(-1.0, 1.0),
+            yaw: read(StickAxis::Yaw)?.clamp(-1.0, 1.0),
+            throttle: read(StickAxis::Throttle).map(|t| t.clamp(0.0, 1.0)),
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 11 samples at 100 ms with the given stick channels (percent).
+    fn session_with_sticks(sticks: &[(StickAxis, f64)]) -> FlightSession {
+        let mut channels = ChannelSet::new();
+        for (axis, percent) in sticks {
+            channels.insert(Channel {
+                id: ChannelId::Stick { axis: *axis },
+                name: format!("stick {}", axis.name()),
+                unit: Unit::Percent,
+                data: Series::from_options((0..11).map(|i| (i != 5).then_some(*percent))),
+                origin: Origin::Derived {
+                    from: Vec::new(),
+                    by: "test".into(),
+                },
+            });
+        }
+        FlightSession {
+            index: 0,
+            offset_bytes: 0,
+            firmware: FirmwareInfo::unknown(),
+            profile_id: "test".into(),
+            settings: Settings::default(),
+            raw_headers: Vec::new(),
+            timebase: Timebase::from_times(
+                (0..11).map(|i| 1_000_000 + i * 100_000).collect(),
+                None,
+            ),
+            channels,
+            events: Vec::new(),
+            aux: Vec::new(),
+            flight_modes: Vec::new(),
+            diagnostics: Diagnostics::default(),
+        }
+    }
+
+    #[test]
+    fn modes_and_sticks_are_read_by_time() {
+        use crate::modes::{FlightMode, ModeChange};
+        let mut s = session_with_sticks(&[
+            (StickAxis::Roll, 50.0),
+            (StickAxis::Pitch, -25.0),
+            (StickAxis::Yaw, 150.0),
+            (StickAxis::Throttle, 40.0),
+        ]);
+        // time runs from the first sample; past the ends it is the first / last one
+        assert_eq!(s.sample_at(0.0), Some(0));
+        assert_eq!(s.sample_at(0.25), Some(3));
+        assert_eq!(s.sample_at(-1.0), Some(0));
+        assert_eq!(s.sample_at(99.0), Some(10));
+        assert_eq!(s.time_s(3), Some(0.3));
+        assert_eq!(s.time_s(11), None);
+        // sticks: percent to −1…1 (clamped), throttle 0…1; an invalid sample
+        // reads the one before it
+        let st = s.sticks_at(0.5).unwrap();
+        assert_eq!((st.roll, st.pitch, st.yaw), (0.5, -0.25, 1.0));
+        assert_eq!(st.throttle, Some(0.4));
+        // no modes recorded
+        assert!(s.flight_modes_at(0.5).is_none());
+        assert!(s.mode_changes().is_empty());
+        s.flight_modes = vec![
+            ModeChange {
+                sample_index: 0,
+                modes: vec![FlightMode::Arm],
+            },
+            ModeChange {
+                sample_index: 4,
+                modes: vec![FlightMode::Arm, FlightMode::Angle],
+            },
+        ];
+        assert_eq!(s.flight_modes_at(0.3).unwrap(), [FlightMode::Arm]);
+        assert_eq!(
+            s.flight_modes_at(0.4).unwrap(),
+            [FlightMode::Arm, FlightMode::Angle]
+        );
+        let changes = s.mode_changes();
+        assert_eq!(changes.len(), 2);
+        assert!((changes[1].0 - 0.4).abs() < 1e-9);
+        // a log without the throttle stick still has the others; without sticks, none
+        let partial = session_with_sticks(&[
+            (StickAxis::Roll, 0.0),
+            (StickAxis::Pitch, 0.0),
+            (StickAxis::Yaw, 0.0),
+        ]);
+        assert_eq!(partial.sticks_at(0.1).unwrap().throttle, None);
+        assert!(session_with_sticks(&[]).sticks_at(0.1).is_none());
+    }
 
     #[test]
     fn parse_revision() {

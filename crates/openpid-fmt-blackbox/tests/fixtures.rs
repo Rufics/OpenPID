@@ -280,3 +280,54 @@ fn flight_modes_are_decoded_per_firmware() {
         [Arm, FlightMode::Other("bit 21".into())]
     );
 }
+
+#[test]
+fn sticks_are_mapped_per_firmware() {
+    use openpid_core::StickAxis;
+    let format = BlackboxFormat::new();
+    let open = |name: &str| {
+        let path = common::all_logs()
+            .into_iter()
+            .find(|p| p.file_name().is_some_and(|n| n == name))
+            .unwrap();
+        format
+            .open(&std::fs::read(path).unwrap(), &OpenOptions::default())
+            .unwrap()
+            .sessions
+            .remove(0)
+    };
+    let stick = |s: &openpid_core::FlightSession, axis: StickAxis, i: usize| {
+        s.channel(&ChannelId::Stick { axis }).unwrap().data.values()[i]
+    };
+    let rc = |s: &openpid_core::FlightSession, ch: u8, i: usize| {
+        s.channel(&ChannelId::RcCommand { ch })
+            .unwrap()
+            .data
+            .values()[i]
+    };
+    // Betaflight: ±500 is full deflection; rcCommand yaw is stored inverted
+    // (its Blackbox Explorer negates it to draw the stick)
+    let s = open("betaflight-2025.12.2-btfl_027.bbl");
+    let yaw = s.channel(&ChannelId::RcCommand { ch: 2 }).unwrap();
+    let i = (0..s.len())
+        .max_by(|a, b| {
+            yaw.data.values()[*a]
+                .abs()
+                .total_cmp(&yaw.data.values()[*b].abs())
+        })
+        .unwrap();
+    assert!(rc(&s, 2, i).abs() > 100.0, "a yaw input in this flight");
+    assert!((stick(&s, StickAxis::Yaw, i) + rc(&s, 2, i) / 5.0).abs() < 1e-9);
+    assert!((stick(&s, StickAxis::Roll, i) - rc(&s, 0, i) / 5.0).abs() < 1e-9);
+    assert!((stick(&s, StickAxis::Pitch, i) - rc(&s, 1, i) / 5.0).abs() < 1e-9);
+    assert!((stick(&s, StickAxis::Throttle, i) - (rc(&s, 3, i) - 1000.0) / 10.0).abs() < 1e-9);
+    let st = s.sticks_at(s.time_s(i).unwrap()).unwrap();
+    assert!((st.yaw - stick(&s, StickAxis::Yaw, i) / 100.0).abs() < 1e-9);
+    // Rotorflight: the vertical stick is the collective, rcCommand[3] ±500
+    let s = open("rotorflight-4.3.0-LOG246.TXT");
+    let i = s.len() / 2;
+    assert!((stick(&s, StickAxis::Throttle, i) - (rc(&s, 3, i) + 500.0) / 10.0).abs() < 1e-9);
+    // INAV logs rcCommand as Betaflight does
+    let s = open("inav-9.0.1-truncated.TXT");
+    assert!(s.sticks_at(0.0).is_some());
+}
