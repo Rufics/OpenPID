@@ -22,13 +22,19 @@ pub struct Sticks {
     pub throttle: Option<f64>,
 }
 
-/// The sticks at `t_s` seconds from the start of the session (the sample at
-/// or just after it); `None` when the log has no RC commands.
-pub fn sticks_at(session: &FlightSession, t_s: f64) -> Option<Sticks> {
+/// The main-frame sample at or just after `t_s` seconds from the start of
+/// the session (the last one past the end); `None` for an empty session.
+pub(crate) fn sample_at(session: &FlightSession, t_s: f64) -> Option<usize> {
     let time = &session.timebase.time_us;
     let t0 = *time.first()?;
     let target = t0 + (t_s.max(0.0) * 1.0e6) as i64;
-    let i = time.partition_point(|t| *t < target).min(time.len() - 1);
+    Some(time.partition_point(|t| *t < target).min(time.len() - 1))
+}
+
+/// The sticks at `t_s` seconds from the start of the session (the sample at
+/// or just after it); `None` when the log has no RC commands.
+pub fn sticks_at(session: &FlightSession, t_s: f64) -> Option<Sticks> {
+    let i = sample_at(session, t_s)?;
     let read = |id: &ChannelId| -> Option<f64> {
         let c = session.channel(id)?;
         let v = c.data.values();

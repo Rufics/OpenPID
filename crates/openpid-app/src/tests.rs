@@ -908,9 +908,16 @@ fn log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor() {
     pointer_move(&mut h, p);
     // the pointer over a row shows the sticks of that moment, on the last row's right edge
     let st = app(&h).viewer.sticks.expect("sticks under the pointer");
+    // and the flight modes of that moment on the same card
+    let modes = app(&h)
+        .viewer
+        .modes
+        .clone()
+        .expect("modes under the pointer");
+    assert!(modes.iter().any(|m| m == "ARM"), "{modes:?}");
     assert!((0.0..=1.0).contains(&st.throttle.unwrap()));
     let card = app(&h).viewer.sticks_rect.unwrap();
-    assert!(card.right() <= frame.right() + 1.0 && card.top() > frame.bottom());
+    assert!(card.right() <= frame.right() + 1.0 && card.bottom() > frame.bottom());
     pointer_button(&mut h, p, true);
     pointer_button(&mut h, p, false);
     h.step();
@@ -931,7 +938,14 @@ fn log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor() {
     h.get_by_label("Sticks").click();
     h.run_steps(2);
     assert!(!app(&h).tools.log_display.sticks);
-    assert!(app(&h).viewer.sticks.is_none() && app(&h).viewer.sticks_rect.is_none());
+    assert!(app(&h).viewer.sticks.is_none());
+    assert!(app(&h).viewer.modes.is_some(), "the modes stay on the card");
+    h.get_by_label("Flight modes").scroll_to_me();
+    h.run_steps(12);
+    h.get_by_label("Flight modes").click();
+    h.run_steps(2);
+    assert!(!app(&h).tools.log_display.modes);
+    assert!(app(&h).viewer.modes.is_none() && app(&h).viewer.sticks_rect.is_none());
 }
 
 #[test]

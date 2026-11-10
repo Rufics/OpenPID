@@ -42,6 +42,8 @@ pub struct ViewerState {
     pub sticks: Option<openpid_analysis::Sticks>,
     /// Where the stick card was drawn last frame.
     pub sticks_rect: Option<egui::Rect>,
+    /// The flight modes on that card last frame.
+    pub modes: Option<Vec<String>>,
 }
 
 /// Pixel distance within which an epoch bound can be grabbed.

@@ -85,5 +85,5 @@ Rules shared by every topic of the sprint:
 | Filter Sim: the chain's magnitude, delay and phase per part beside the log | [filter-tab](filter-tab/README.md) |
 | Motors: R/P/Y spectra with the harmonics, each motor over the mean beside them | [motors-tab](motors-tab/README.md) |
 | One axis at full height on the axis-row tabs (Show, keys R / P / Y) | [axis-focus](axis-focus/README.md) |
-| Log viewer: the sticks at the pointer or the cursor, on the motors row | [log-sticks](log-sticks/README.md) |
+| Log viewer: the sticks and the flight modes at the pointer or the cursor, on the motors row | [log-sticks](log-sticks/README.md) |
 

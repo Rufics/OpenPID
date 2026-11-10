@@ -87,6 +87,10 @@ cargo run --release -p openpid-app                      # or ./target/release/op
   (across), as on a mode-2 transmitter. They follow the pointer while it is
   over the plots, else the cursor (from the log's RC commands). **Sticks**
   at the end of the panel hides them.
+- **The flight modes** of the same moment on that card, over the sticks
+  ("ARM · ANGLE", "ARM · POSHOLD"…), from the log's slow frames, named as
+  the firmware version names its mode boxes (Betaflight, Cleanflight,
+  EmuFlight). **Flight modes** at the end of the panel hides them.
 - **Other channels** (panel, folded): checkboxes of every channel of the log;
   the **filter** field narrows the list (`gyro`, `pid.d`, `motor`…). Channel
   names are the same for every firmware: `gyro.filtered.roll`,

@@ -1,4 +1,4 @@
-# Sticks on the Log viewer
+# Sticks and flight modes on the Log viewer
 
 The owner's remark (2026-11-10, #33, PR #143): the Log viewer does not show
 where the sticks were as the cursor moves; the reference tool does (the
@@ -47,18 +47,35 @@ owner's decision beats the score.
 - **Sticks** (`LogDisplay::sticks`, on by default; owner, 2026-11-10: "a
   way to hide them"): a check box at the end of the panel, after the
   cursor rows, so the fields above it keep their place.
+- **Flight modes** (owner, 2026-11-10: the flight-mode labels, following
+  the cursor; `LogDisplay::modes`, on by default, a check box after
+  Sticks): the modes active at the same moment, on a line over the sticks
+  (owner: over the sticks, not beside them), "ARM · ANGLE"; a card taller
+  than its row reaches up over the row above. `openpid_analysis::flight_modes_at` reads the last
+  slow frame's `flightModeFlags` at or before that moment. On the
+  Betaflight family the field is the mode-box activation mask, so bit `n`
+  is box `n` of the firmware's box list, which changed at 3.3, 3.4, 3.5,
+  4.0, 2025.12 and 2026.6 (`flight_mode_names`, the names Betaflight and
+  Blackbox Explorer print); Cleanflight, EmuFlight and Betaflight before 3.3
+  use the older list; INAV, Rotorflight and `ArduPilot` give the field
+  another meaning and show no modes. On btfl_027: ARM · ANGLE (0x3) from the start,
+  ARM · POSHOLD (0x201) from 12.8 s; the reference tool prints the same
+  bits as "ANGLE_MODE|HORIZON_MODE" and "ANGLE_MODE|SONAR", an older,
+  shifted list.
 - `ViewerState::sticks` and `sticks_rect` keep what was drawn, for tests.
 
 ## Tests
 
 `sticks_follow_the_rc_commands` (`openpid-analysis`, btfl_027: ranges, the
 flight's throttle and roll, the scaling at a sample, past the ends);
-`log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor` (none
+`box_names_follow_the_firmware_version` and `modes_of_a_real_flight`
+(`openpid-analysis`: the lists per version, btfl_027's ARM, ANGLE,
+POSHOLD); `log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor` (none
 without a cursor, under the pointer on the last row's right edge, at the
 cursor once the pointer leaves).
 
 ## Implementation
 
-btfl_027, the pointer at 6.8 s:
+btfl_027, the pointer at 22 s (ARM · POSHOLD):
 
 ![Sticks](sticks.jpg)

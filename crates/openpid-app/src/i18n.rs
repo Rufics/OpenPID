@@ -147,6 +147,7 @@ static UA: &[(&str, &str)] = &[
     ("Filter Sim", "Симуляція фільтрів"),
     ("Firmware defaults", "Типові значення прошивки"),
     ("First run", "Перший запуск"),
+    ("Flight modes", "Режими польоту"),
     ("Freestyle", "Фрістайл"),
     ("Freq × throttle", "Частота × газ"),
     ("Freq × time", "Частота × час"),
@@ -546,6 +547,7 @@ static UA: &[(&str, &str)] = &[
         "no gyro.filtered in the log to validate against",
         "у лозі немає gyro.filtered для перевірки",
     ),
+    ("no mode", "без режиму"),
     (
         "no unfiltered gyro in this log",
         "у цьому лозі немає нефільтрованого гіро",
@@ -676,6 +678,10 @@ static UA: &[(&str, &str)] = &[
     (
         "the filtered gyro, what the PID controller sees",
         "відфільтроване гіро, те, що бачить PID-регулятор",
+    ),
+    (
+        "the flight modes active at the pointer or the cursor, on the same card",
+        "режими польоту під вказівником або курсором, на тій самій картці",
     ),
     (
         "the frequency the notch removes; 0 switches it off",

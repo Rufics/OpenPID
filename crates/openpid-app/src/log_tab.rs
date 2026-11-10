@@ -219,6 +219,8 @@ pub struct LogDisplay {
     pub y_scale: f64,
     /// The stick card on the throttle / motors row (docs/design/log-sticks).
     pub sticks: bool,
+    /// The flight modes on that card.
+    pub modes: bool,
 }
 
 impl Default for LogDisplay {
@@ -233,6 +235,7 @@ impl Default for LogDisplay {
             ],
             y_scale: 500.0,
             sticks: true,
+            modes: true,
         }
     }
 }
@@ -425,12 +428,30 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
     }
     // the sticks under the pointer while it is over the rows, else at the cursor
     let at = act.hover.or(act.cursor);
+    let d = &app.tools.log_display;
     app.viewer.sticks = at
-        .filter(|_| app.tools.log_display.sticks)
+        .filter(|_| d.sticks)
         .and_then(|t| openpid_analysis::sticks_at(&s, t));
+    app.viewer.modes = at
+        .filter(|_| d.modes)
+        .and_then(|t| openpid_analysis::flight_modes_at(&s, t));
     app.viewer.sticks_rect = None;
-    if let (Some(st), Some(frame)) = (app.viewer.sticks, sticks_frame) {
-        app.viewer.sticks_rect = Some(draw_sticks(ui, frame, &st));
+    if let Some(frame) = sticks_frame
+        && (app.viewer.sticks.is_some() || app.viewer.modes.is_some())
+    {
+        let modes = app.viewer.modes.as_ref().map(|m| {
+            if m.is_empty() {
+                tr("no mode").to_string()
+            } else {
+                m.join(" · ")
+            }
+        });
+        app.viewer.sticks_rect = Some(draw_sticks(
+            ui,
+            frame,
+            app.viewer.sticks.as_ref(),
+            modes.as_deref(),
+        ));
     }
     if let Some(t) = first {
         let b = t.bounds();
@@ -605,18 +626,18 @@ fn pointer(app: &mut App, pu: &egui_plot::PlotUi<'_>, touch: bool, act: &mut Int
 /// Side of a stick box, points.
 const STICK_BOX: f32 = 54.0;
 
-/// The two sticks (mode 2: throttle and yaw on the left, pitch and roll on
-/// the right) at the right edge of `frame`, as the reference tool shows them
-/// beside its plots; returns the card's rectangle.
-fn draw_sticks(ui: &Ui, frame: egui::Rect, st: &openpid_analysis::Sticks) -> egui::Rect {
-    let painter = ui.painter().with_clip_rect(frame);
-    let gap = 8.0;
-    let label_h = 14.0;
-    let size = egui::vec2(2.0 * STICK_BOX + gap + 12.0, STICK_BOX + label_h + 10.0);
-    let card = egui::Rect::from_min_size(
-        egui::pos2(frame.right() - size.x - 6.0, frame.bottom() - size.y - 4.0),
-        size,
-    );
+/// The card at the bottom right of `frame`, as the reference tool shows it
+/// beside its plots: the flight modes on a line, and under it the two
+/// sticks (mode 2: throttle and yaw on the left, pitch and roll on the
+/// right). A card taller than the row reaches up over the row above it.
+/// Returns the card's rectangle.
+fn draw_sticks(
+    ui: &Ui,
+    frame: egui::Rect,
+    st: Option<&openpid_analysis::Sticks>,
+    modes: Option<&str>,
+) -> egui::Rect {
+    let painter = ui.painter().with_clip_rect(ui.clip_rect());
     let dark = crate::theme::is_dark();
     let (bg, line, text) = if dark {
         (
@@ -631,15 +652,46 @@ fn draw_sticks(ui: &Ui, frame: egui::Rect, st: &openpid_analysis::Sticks) -> egu
             Color32::from_gray(50),
         )
     };
-    painter.rect_filled(card, 6.0, bg);
     let font = egui::FontId::proportional(11.0);
+    let gap = 8.0;
+    let label_h = 14.0;
+    let modes_galley = modes.map(|m| painter.layout_no_wrap(m.to_string(), font.clone(), text));
+    let modes_w = modes_galley.as_ref().map_or(0.0, |g| g.size().x);
+    let modes_h = modes_galley.as_ref().map_or(0.0, |g| g.size().y + 4.0);
+    let sticks_w = if st.is_some() {
+        2.0 * STICK_BOX + gap
+    } else {
+        0.0
+    };
+    let sticks_h = if st.is_some() {
+        STICK_BOX + label_h
+    } else {
+        0.0
+    };
+    let card_size = egui::vec2(sticks_w.max(modes_w) + 12.0, modes_h + sticks_h + 10.0);
+    let card = egui::Rect::from_min_size(
+        egui::pos2(
+            frame.right() - card_size.x - 6.0,
+            frame.bottom() - card_size.y - 4.0,
+        ),
+        card_size,
+    );
+    painter.rect_filled(card, 6.0, bg);
+    let inner = card.shrink(5.0);
+    // the modes centred over the sticks
+    if let Some(g) = modes_galley {
+        let x = inner.center().x - g.size().x / 2.0;
+        painter.galley(egui::pos2(x, inner.top()), g, text);
+    }
+    let Some(st) = st else { return card };
     // throttle 0..1 runs bottom to top; the others are −1..1 around the centre
     let throttle = st.throttle.map_or(0.0, |t| t * 2.0 - 1.0);
     let boxes = [(st.yaw, throttle, "T / Y"), (st.roll, st.pitch, "P / R")];
+    let left0 = inner.center().x - sticks_w / 2.0;
     for (k, (x, y, name)) in boxes.into_iter().enumerate() {
-        let left = card.left() + 6.0 + k as f32 * (STICK_BOX + gap);
+        let left = left0 + k as f32 * (STICK_BOX + gap);
         let r = egui::Rect::from_min_size(
-            egui::pos2(left, card.top() + 5.0),
+            egui::pos2(left, inner.top() + modes_h),
             egui::vec2(STICK_BOX, STICK_BOX),
         );
         painter.rect_stroke(
@@ -765,6 +817,12 @@ fn controls(app: &mut App, ui: &mut Ui) {
         tr(
             "the sticks at the pointer or the cursor, at the bottom right of the throttle / motors row",
         ),
+    );
+    panel::check(
+        ui,
+        &mut app.tools.log_display.modes,
+        tr("Flight modes"),
+        tr("the flight modes active at the pointer or the cursor, on the same card"),
     );
 }
 

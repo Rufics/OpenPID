@@ -6,6 +6,7 @@
 pub mod epoch;
 pub mod filter_sim;
 pub mod fitness;
+pub mod modes;
 pub mod motor_noise;
 pub mod prepare;
 pub mod project;
@@ -25,6 +26,7 @@ pub use filter_sim::{
     PartResponse,
 };
 pub use fitness::{Check, Fitness, Level as FitnessLevel, check_session};
+pub use modes::{decode_flight_modes, flight_mode_names, flight_modes_at};
 pub use motor_noise::{
     HarmonicNoise, MotorNoise, MotorNoiseAnalysis, MotorNoiseOutput, MotorNoiseParams,
 };
