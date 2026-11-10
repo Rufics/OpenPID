@@ -75,10 +75,16 @@ owner's decision beats the score.
   vehicle (Copter, Plane with its Q modes); its session builder adds ARM
   from `EV` 10 / 11. The CSV reader takes `blackbox_decode`'s names.
 - **Mode changes** (owner, 2026-11-10: as the reference tool under its
-  throttle row, off by default; `LogDisplay::mode_marks`): a dashed line
-  where the modes change, with the modes from then on at its foot, on the
-  throttle / motors row.
-- `ViewerState::sticks` and `sticks_rect` keep what was drawn, for tests.
+  throttle row, off by default; `LogDisplay::mode_marks`; #141): a dashed
+  line where the modes change, through every row, with the modes from then
+  on at its foot on the throttle / motors row (cut where the next change
+  begins). The pointer within 5 px of a line gets a label beside it with
+  the time and the whole set, "12.9 s · ARM · POSHOLD". A log without
+  flight-mode data draws nothing.
+- `ViewerState::sticks`, `sticks_rect`, `mode_marks`, `mode_lines` and
+  `mode_hover` keep what was drawn, for tests.
+- Not done from #141: "epoch from mode" (select the span of one mode as
+  the analysis window), which the issue lists as optional.
 
 ## Tests
 
@@ -97,7 +103,10 @@ Plane ARM then ARM · RTL, QuadPlane QRTL); the CSV reader's
 without a cursor, under the pointer on the last row's right edge, at the
 cursor once the pointer leaves, the modes with ARM, both hidden with
 Sticks and Flight modes, the marks off by default and on with Mode
-changes).
+changes, the lines from the top of the first row to the bottom of the
+last, the label at the pointer on the change near 12.9 s and none away
+from it); `mode_changes_of_a_log_without_modes` (the sample log: no marks,
+no lines, no error).
 
 ## Implementation
 
@@ -105,6 +114,6 @@ btfl_027, the pointer at 22 s (ARM · POSHOLD):
 
 ![Sticks](sticks.jpg)
 
-With Mode changes on (ARM · ANGLE from the start, ARM · POSHOLD from 12.8 s):
+With Mode changes on (ARM · ANGLE from the start, ARM · POSHOLD from 12.9 s), the pointer on the second change:
 
 ![Mode changes](marks.jpg)

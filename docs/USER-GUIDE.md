@@ -93,8 +93,10 @@ cargo run --release -p openpid-app                      # or ./target/release/op
   (EmuFlight: ARM, the other switches by number), the modes and arming of
   `ArduPilot`, the names of a `blackbox_decode` CSV. **Flight modes** at the
   end of the panel hides them.
-- **Mode changes** (panel, off by default) marks where the modes change on
-  the throttle / motors row: a dashed line with the modes from then on.
+- **Mode changes** (panel, off by default) marks where the modes change: a
+  dashed line through every row, with the modes from then on at its foot
+  on the throttle / motors row. Rest the pointer on a line for the time
+  and the whole set of modes ("12.9 s · ARM · POSHOLD").
 - **Other channels** (panel, folded): checkboxes of every channel of the log;
   the **filter** field narrows the list (`gyro`, `pid.d`, `motor`…). Channel
   names are the same for every firmware: `gyro.filtered.roll`,
