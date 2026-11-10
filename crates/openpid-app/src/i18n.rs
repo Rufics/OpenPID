@@ -187,6 +187,7 @@ static UA: &[(&str, &str)] = &[
     ("Min", "Мін"),
     ("Min input", "Мін. вхід"),
     ("Min segments", "Мін. сегментів"),
+    ("Mode changes", "Зміни режиму"),
     ("Model", "Модель"),
     ("Most active 20 s", "Найактивніші 20 с"),
     ("Motor RPM", "Оберти моторів"),
@@ -340,6 +341,10 @@ static UA: &[(&str, &str)] = &[
     (
         "a coloured line per motor and harmonic instead of one line at the mean of the motors",
         "кольорова лінія на кожен мотор і гармоніку замість однієї лінії за середнім моторів",
+    ),
+    (
+        "a dashed line where the flight modes change, with the modes from then on, on the throttle / motors row",
+        "пунктир там, де змінюються режими польоту, з режимами від цього моменту, на рядку газу й моторів",
     ),
     (
         "a logarithmic frequency axis on the full spectrum",

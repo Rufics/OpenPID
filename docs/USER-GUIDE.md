@@ -88,9 +88,13 @@ cargo run --release -p openpid-app                      # or ./target/release/op
   over the plots, else the cursor (from the log's RC commands). **Sticks**
   at the end of the panel hides them.
 - **The flight modes** of the same moment on that card, over the sticks
-  ("ARM · ANGLE", "ARM · POSHOLD"…), from the log's slow frames, named as
-  the firmware version names its mode boxes (Betaflight, Cleanflight,
-  EmuFlight). **Flight modes** at the end of the panel hides them.
+  ("ARM · ANGLE", "ARM · POSHOLD"…), as the log records them: the mode
+  switches of Betaflight, INAV and Rotorflight by firmware version
+  (EmuFlight: ARM, the other switches by number), the modes and arming of
+  `ArduPilot`, the names of a `blackbox_decode` CSV. **Flight modes** at the
+  end of the panel hides them.
+- **Mode changes** (panel, off by default) marks where the modes change on
+  the throttle / motors row: a dashed line with the modes from then on.
 - **Other channels** (panel, folded): checkboxes of every channel of the log;
   the **filter** field narrows the list (`gyro`, `pid.d`, `motor`…). Channel
   names are the same for every firmware: `gyro.filtered.roll`,

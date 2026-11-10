@@ -15,6 +15,7 @@
 pub mod cli;
 pub mod encoding;
 pub mod headers;
+pub mod modes;
 pub mod parser;
 pub mod predictor;
 pub mod profiles;
@@ -153,6 +154,7 @@ impl LogFormat for BlackboxFormat {
                         channels: ChannelSet::new(),
                         events: Vec::new(),
                         aux: Vec::new(),
+                        flight_modes: Vec::new(),
                         diagnostics: Diagnostics {
                             total_bytes: bytes.len() as u64,
                             notes: vec![format!("undecodable log: {e}")],

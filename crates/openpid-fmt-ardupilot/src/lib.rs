@@ -13,6 +13,7 @@
 //! mapping: `docs/ARDUPILOT.md`.
 
 pub mod batch;
+mod modes;
 mod profile;
 pub mod reader;
 mod session;

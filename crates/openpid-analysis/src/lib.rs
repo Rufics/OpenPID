@@ -26,7 +26,7 @@ pub use filter_sim::{
     PartResponse,
 };
 pub use fitness::{Check, Fitness, Level as FitnessLevel, check_session};
-pub use modes::{decode_flight_modes, flight_mode_names, flight_modes_at};
+pub use modes::{flight_modes_at, mode_changes};
 pub use motor_noise::{
     HarmonicNoise, MotorNoise, MotorNoiseAnalysis, MotorNoiseOutput, MotorNoiseParams,
 };

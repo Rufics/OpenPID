@@ -515,6 +515,10 @@ pub struct FlightSession {
     pub events: Vec<Event>,
     /// Low-rate tables (slow state, GPS, ...).
     pub aux: Vec<AuxTable>,
+    /// Flight-mode changes in sample order, decoded by the format crate
+    /// (empty when the log records no modes).
+    #[serde(default)]
+    pub flight_modes: Vec<crate::modes::ModeChange>,
     /// Decoder observations.
     pub diagnostics: Diagnostics,
 }

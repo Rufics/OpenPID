@@ -7,6 +7,7 @@
 //! `openpid decode --scaled`) keeps its channel identity, anything else is a
 //! `Custom` channel.
 
+use openpid_core::modes::{FlightMode, ModeChange, push_change};
 use openpid_core::session::Diagnostics;
 use openpid_core::{
     Channel, ChannelId, ChannelSet, Confidence, FirmwareInfo, FlightSession, FormatError, LogFile,
@@ -32,6 +33,9 @@ pub struct CsvTable {
     pub rows: Vec<Vec<Option<f64>>>,
     /// Rows skipped because their field count did not match the header.
     pub bad_rows: usize,
+    /// The text of the `flightModeFlags` column per row (`ANGLE_MODE|AIRMODE`),
+    /// when the file has one.
+    pub flight_mode_text: Option<Vec<String>>,
 }
 
 impl CsvTable {
@@ -75,6 +79,8 @@ pub fn read_table(data: &[u8]) -> Result<CsvTable, FormatError> {
     }
     let mut rows = Vec::new();
     let mut bad_rows = 0;
+    let modes_col = columns.iter().position(|c| c.name == "flightModeFlags");
+    let mut mode_text = Vec::new();
     for line in lines {
         if line.trim().is_empty() {
             continue;
@@ -84,13 +90,33 @@ pub fn read_table(data: &[u8]) -> Result<CsvTable, FormatError> {
             bad_rows += 1;
             continue;
         }
+        if let Some(i) = modes_col {
+            mode_text.push(cells[i].trim().to_string());
+        }
         rows.push(cells.iter().map(|c| c.trim().parse::<f64>().ok()).collect());
     }
     Ok(CsvTable {
         columns,
         rows,
         bad_rows,
+        flight_mode_text: modes_col.map(|_| mode_text),
     })
+}
+
+/// The mode changes of the `flightModeFlags` text (`ANGLE_MODE|AIRMODE` per
+/// row, as `blackbox_decode` writes the field's names).
+fn flight_modes(table: &CsvTable) -> Vec<ModeChange> {
+    let mut out = Vec::new();
+    for (i, text) in table.flight_mode_text.iter().flatten().enumerate() {
+        let modes = text
+            .split('|')
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map(FlightMode::from_name)
+            .collect();
+        push_change(&mut out, i, modes);
+    }
+    out
 }
 
 /// [`LogFormat`] for CSV exports.
@@ -221,6 +247,7 @@ impl LogFormat for CsvFormat {
             channels,
             events: Vec::new(),
             aux: Vec::new(),
+            flight_modes: flight_modes(&table),
             diagnostics,
         };
         if let Some(p) = profile {
@@ -269,6 +296,9 @@ bad,row\n";
         let log = f.open(SAMPLE.as_bytes(), &OpenOptions::default()).unwrap();
         let s = &log.sessions[0];
         assert_eq!(s.len(), 2);
+        // the flight-mode names become modes, once per change
+        assert_eq!(s.flight_modes.len(), 1);
+        assert_eq!(s.flight_modes[0].modes, [FlightMode::Angle]);
         assert_eq!(s.timebase.time_us, vec![1000, 3000]);
         let g = s
             .channel(&ChannelId::Gyro {

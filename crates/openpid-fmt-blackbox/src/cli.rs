@@ -325,6 +325,7 @@ mod tests {
             channels: ChannelSet::new(),
             events: Vec::new(),
             aux: Vec::new(),
+            flight_modes: Vec::new(),
             diagnostics: Diagnostics::default(),
         }
     }

@@ -133,9 +133,19 @@ pub struct FlightSession {
     pub timebase: Timebase,            // nominal step, actual step, jitter, gaps
     pub channels: ChannelSet,          // every data series
     pub events: Vec<Event>,            // E frames: arm/disarm, inflight adjust, logging resume, …
+    pub flight_modes: Vec<ModeChange>, // flight modes over time, decoded per firmware
     pub diagnostics: Diagnostics,      // corrupt frames, resyncs, unknown fields
 }
 ```
+
+**Flight modes** are one set of values for every firmware (`FlightMode`: Arm,
+Angle, Horizon, AirMode, AltHold, PosHold, ReturnHome, GpsRescue, Failsafe, …,
+`Other(name)` for the rest). The format crate decodes what its log records:
+the Blackbox decoder the slow frames' `flightModeFlags` (the mode-box mask, by
+the firmware's box list and version: Betaflight, Cleanflight, INAV,
+Rotorflight; EmuFlight's bits other than ARM stay numbered), the `ArduPilot`
+decoder the `MODE` messages by vehicle and the arming `EV` messages, the CSV
+reader the `flightModeFlags` names. Nothing after the decoder reads the bits.
 
 A **channel** is one series with one unit:
 

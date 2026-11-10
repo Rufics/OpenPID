@@ -660,8 +660,10 @@ pub(crate) fn build(
         channels,
         events: events(raw, &times),
         aux: Vec::new(),
+        flight_modes: Vec::new(),
         diagnostics,
     };
+    session.flight_modes = crate::modes::changes(vehicle, &session.events);
     if use_profile {
         profile.derive(&mut session);
     }

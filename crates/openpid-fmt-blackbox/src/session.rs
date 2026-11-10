@@ -229,6 +229,7 @@ pub fn build_session(
     aux.extend(log.gps.iter().cloned());
     aux.extend(log.gps_home.iter().cloned());
 
+    let firmware_for_modes = firmware.clone();
     let mut session = FlightSession {
         index,
         offset_bytes,
@@ -239,6 +240,7 @@ pub fn build_session(
         timebase,
         channels,
         events: log.events.clone(),
+        flight_modes: crate::modes::changes(&firmware_for_modes, &log.slow),
         aux,
         diagnostics,
     };

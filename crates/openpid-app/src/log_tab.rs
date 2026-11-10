@@ -221,6 +221,9 @@ pub struct LogDisplay {
     pub sticks: bool,
     /// The flight modes on that card.
     pub modes: bool,
+    /// Marks where the flight modes change, on the throttle / motors row
+    /// (off by default, owner 2026-11-10).
+    pub mode_marks: bool,
 }
 
 impl Default for LogDisplay {
@@ -236,6 +239,7 @@ impl Default for LogDisplay {
             y_scale: 500.0,
             sticks: true,
             modes: true,
+            mode_marks: false,
         }
     }
 }
@@ -409,6 +413,7 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
     // the sticks sit on the throttle / motors row, else on the last row
     let sticks_row = specs.iter().position(|r| r.key == "motors").unwrap_or(last);
     let mut sticks_frame = None;
+    let mut sticks_transform = None;
     for (i, spec) in specs.iter().enumerate() {
         let h = unit_h * spec.weight + if i == last { 20.0 } else { 0.0 };
         let t = row(
@@ -424,7 +429,14 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
         first.get_or_insert(t);
         if i == sticks_row {
             sticks_frame = Some(*t.frame());
+            sticks_transform = Some(t);
         }
+    }
+    app.viewer.mode_marks = 0;
+    if app.tools.log_display.mode_marks
+        && let Some(t) = sticks_transform
+    {
+        app.viewer.mode_marks = draw_mode_marks(ui, &t, &openpid_analysis::mode_changes(&s));
     }
     // the sticks under the pointer while it is over the rows, else at the cursor
     let at = act.hover.or(act.cursor);
@@ -434,18 +446,13 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
         .and_then(|t| openpid_analysis::sticks_at(&s, t));
     app.viewer.modes = at
         .filter(|_| d.modes)
-        .and_then(|t| openpid_analysis::flight_modes_at(&s, t));
+        .and_then(|t| openpid_analysis::flight_modes_at(&s, t))
+        .map(<[openpid_core::FlightMode]>::to_vec);
     app.viewer.sticks_rect = None;
     if let Some(frame) = sticks_frame
         && (app.viewer.sticks.is_some() || app.viewer.modes.is_some())
     {
-        let modes = app.viewer.modes.as_ref().map(|m| {
-            if m.is_empty() {
-                tr("no mode").to_string()
-            } else {
-                m.join(" · ")
-            }
-        });
+        let modes = app.viewer.modes.as_ref().map(|m| mode_line(m));
         app.viewer.sticks_rect = Some(draw_sticks(
             ui,
             frame,
@@ -621,6 +628,56 @@ fn pointer(app: &mut App, pu: &egui_plot::PlotUi<'_>, touch: bool, act: &mut Int
         (Some((_, p0)), _) if !down && resp.rect.contains(p0) => app.viewer.press = None,
         _ => {}
     }
+}
+
+/// The modes on one line: "ARM · ANGLE", or "no mode".
+fn mode_line(modes: &[openpid_core::FlightMode]) -> String {
+    if modes.is_empty() {
+        tr("no mode").to_string()
+    } else {
+        modes
+            .iter()
+            .map(openpid_core::FlightMode::name)
+            .collect::<Vec<_>>()
+            .join(" · ")
+    }
+}
+
+/// Marks where the flight modes change, on the row of `transform`: a dashed
+/// line and the modes from then on at its foot, as the reference tool marks
+/// them under its throttle row. Returns how many were drawn.
+fn draw_mode_marks(
+    ui: &Ui,
+    transform: &PlotTransform,
+    changes: &[(f64, &[openpid_core::FlightMode])],
+) -> usize {
+    let frame = *transform.frame();
+    let painter = ui.painter().with_clip_rect(frame);
+    let text = ui.visuals().text_color();
+    let line = egui::Stroke::new(1.0, text.gamma_multiply(0.6));
+    let font = egui::FontId::proportional(10.5);
+    let mut drawn = 0;
+    for (t, modes) in changes {
+        let x = transform.position_from_point_x(*t);
+        if x < frame.left() || x > frame.right() {
+            continue;
+        }
+        painter.add(egui::Shape::dashed_line(
+            &[egui::pos2(x, frame.top()), egui::pos2(x, frame.bottom())],
+            line,
+            4.0,
+            3.0,
+        ));
+        painter.text(
+            egui::pos2(x + 3.0, frame.bottom() - 2.0),
+            egui::Align2::LEFT_BOTTOM,
+            mode_line(modes),
+            font.clone(),
+            text,
+        );
+        drawn += 1;
+    }
+    drawn
 }
 
 /// Side of a stick box, points.
@@ -823,6 +880,14 @@ fn controls(app: &mut App, ui: &mut Ui) {
         &mut app.tools.log_display.modes,
         tr("Flight modes"),
         tr("the flight modes active at the pointer or the cursor, on the same card"),
+    );
+    panel::check(
+        ui,
+        &mut app.tools.log_display.mode_marks,
+        tr("Mode changes"),
+        tr(
+            "a dashed line where the flight modes change, with the modes from then on, on the throttle / motors row",
+        ),
     );
 }
 

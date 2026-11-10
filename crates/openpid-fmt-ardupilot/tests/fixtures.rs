@@ -486,3 +486,33 @@ fn concatenated_logs_open_as_separate_sessions() {
         .unwrap();
     assert_eq!(log.sessions.len(), 1);
 }
+
+#[test]
+fn flight_modes_come_from_the_mode_and_arming_messages() {
+    use openpid_core::FlightMode;
+    let names = |name: &str| -> Vec<Vec<FlightMode>> {
+        open(name)
+            .flight_modes
+            .into_iter()
+            .map(|c| c.modes)
+            .collect()
+    };
+    // Copter 3.3 flew LOITER (mode 5), Plane RTL (11), QuadPlane QRTL (21)
+    let copter = names("ardupilot-copter-3.3-dronekit.bin");
+    assert!(
+        copter.iter().any(|m| m.contains(&FlightMode::Loiter)),
+        "{copter:?}"
+    );
+    let plane = names("ardupilot-plane-4.3.5.bin");
+    assert!(
+        plane.iter().any(|m| m.contains(&FlightMode::ReturnHome)),
+        "{plane:?}"
+    );
+    let quad = names("ardupilot-quadplane-4.4.4-esc-telemetry.bin");
+    assert!(
+        quad.iter().any(|m| m.contains(&FlightMode::ReturnHome)),
+        "{quad:?}"
+    );
+    // the plane log records its arming: ARM, then ARM with RTL
+    assert_eq!(plane[0], [FlightMode::Arm]);
+}

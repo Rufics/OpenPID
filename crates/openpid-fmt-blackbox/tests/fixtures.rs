@@ -243,3 +243,40 @@ fn no_discontinuity_at_intra_frame_boundaries() {
         }
     }
 }
+
+#[test]
+fn flight_modes_are_decoded_per_firmware() {
+    use openpid_core::FlightMode::{self, Angle, Arm, PosHold};
+    let format = BlackboxFormat::new();
+    let modes = |name: &str| -> Vec<Vec<FlightMode>> {
+        let path = common::all_logs()
+            .into_iter()
+            .find(|p| p.file_name().is_some_and(|n| n == name))
+            .unwrap();
+        let log = format
+            .open(&std::fs::read(path).unwrap(), &OpenOptions::default())
+            .unwrap();
+        log.sessions[0]
+            .flight_modes
+            .iter()
+            .map(|c| c.modes.clone())
+            .collect()
+    };
+    // Betaflight 2025.12: armed in ANGLE, then POSHOLD (bit 9), then disarmed
+    assert_eq!(
+        modes("betaflight-2025.12.2-btfl_027.bbl"),
+        [vec![Arm, Angle], vec![Arm, PosHold], vec![PosHold]]
+    );
+    // INAV numbers its boxes its own way
+    assert_eq!(modes("inav-9.0.1-truncated.TXT")[0], [Arm, Angle]);
+    // Rotorflight 4.3 has a list of its own too
+    assert_eq!(
+        modes("rotorflight-4.3.0-LOG246.TXT")[0],
+        [Arm, FlightMode::Other("BLACKBOX".into())]
+    );
+    // EmuFlight's boxes are not named anywhere: ARM, the others numbered
+    assert_eq!(
+        modes("emuflight-3.7.0-truncated.BFL")[0],
+        [Arm, FlightMode::Other("bit 21".into())]
+    );
+}

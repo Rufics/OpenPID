@@ -914,7 +914,7 @@ fn log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor() {
         .modes
         .clone()
         .expect("modes under the pointer");
-    assert!(modes.iter().any(|m| m == "ARM"), "{modes:?}");
+    assert!(modes.contains(&openpid_core::FlightMode::Arm), "{modes:?}");
     assert!((0.0..=1.0).contains(&st.throttle.unwrap()));
     let card = app(&h).viewer.sticks_rect.unwrap();
     assert!(card.right() <= frame.right() + 1.0 && card.bottom() > frame.bottom());
@@ -946,6 +946,14 @@ fn log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor() {
     h.run_steps(2);
     assert!(!app(&h).tools.log_display.modes);
     assert!(app(&h).viewer.modes.is_none() && app(&h).viewer.sticks_rect.is_none());
+    // the marks where the modes change: off by default
+    assert_eq!(app(&h).viewer.mode_marks, 0);
+    h.get_by_label("Mode changes").scroll_to_me();
+    h.run_steps(12);
+    h.get_by_label("Mode changes").click();
+    h.run_steps(2);
+    assert!(app(&h).tools.log_display.mode_marks);
+    assert!(app(&h).viewer.mode_marks >= 1, "btfl_027 changes modes");
 }
 
 #[test]

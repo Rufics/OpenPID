@@ -567,6 +567,7 @@ impl SignalSpec {
             channels,
             events: Vec::new(),
             aux: Vec::new(),
+            flight_modes: Vec::new(),
             diagnostics: Diagnostics {
                 notes: vec![format!(
                     "synthetic: plant gain {} tau {} ms delay {} ms, filter PT1 {} Hz, {} motors",

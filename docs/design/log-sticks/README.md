@@ -51,26 +51,41 @@ owner's decision beats the score.
   the cursor; `LogDisplay::modes`, on by default, a check box after
   Sticks): the modes active at the same moment, on a line over the sticks
   (owner: over the sticks, not beside them), "ARM · ANGLE"; a card taller
-  than its row reaches up over the row above. `openpid_analysis::flight_modes_at` reads the last
-  slow frame's `flightModeFlags` at or before that moment. On the
-  Betaflight family the field is the mode-box activation mask, so bit `n`
-  is box `n` of the firmware's box list, which changed at 3.3, 3.4, 3.5,
-  4.0, 2025.12 and 2026.6 (`flight_mode_names`, the names Betaflight and
-  Blackbox Explorer print); Cleanflight, EmuFlight and Betaflight before 3.3
-  use the older list; INAV, Rotorflight and `ArduPilot` give the field
-  another meaning and show no modes. On btfl_027: ARM · ANGLE (0x3) from the start,
-  ARM · POSHOLD (0x201) from 12.8 s; the reference tool prints the same
-  bits as "ANGLE_MODE|HORIZON_MODE" and "ANGLE_MODE|SONAR", an older,
-  shifted list.
+  than its row reaches up over the row above.
+- **Decoded by the format crates** (owner, 2026-11-10: the decoder turns
+  the value into a fixed internal one for each log type, as the other
+  fields): `openpid_core::FlightMode` (Arm, Angle, Horizon, AirMode,
+  AltHold, PosHold, Loiter, ReturnHome, GpsRescue, Rescue, Failsafe, Land,
+  Auto, Manual, …, `Other(name)`) and `FlightSession::flight_modes`, a
+  `ModeChange` per change. The Blackbox decoder (`openpid-fmt-blackbox`,
+  `modes.rs`) reads the slow frames' `flightModeFlags`, the mode-box mask:
+  bit `n` is box `n` of the firmware's list, by firmware and version
+  (Betaflight lists changed at 3.3, 3.4, 3.5, 4.0, 2025.12 and 2026.6;
+  Cleanflight and early Betaflight the old list; INAV its own box ids;
+  Rotorflight 4.2, 4.3 and 4.6 lists; EmuFlight's Explorer names none, so
+  only its ARM bit is named). The `ArduPilot` decoder turns `MODE`
+  messages into the vehicle's modes (Copter, Plane with its Q modes) and
+  `EV` 10 / 11 into arming. The CSV reader takes `blackbox_decode`'s
+  `flightModeFlags` names. `openpid_analysis::flight_modes_at` only finds
+  the moment.
+- **Mode changes** (owner, 2026-11-10: as the reference tool under its
+  throttle row, off by default; `LogDisplay::mode_marks`): a dashed line
+  where the modes change, with the modes from then on at its foot, on the
+  throttle / motors row.
 - `ViewerState::sticks` and `sticks_rect` keep what was drawn, for tests.
 
 ## Tests
 
 `sticks_follow_the_rc_commands` (`openpid-analysis`, btfl_027: ranges, the
 flight's throttle and roll, the scaling at a sample, past the ends);
-`box_names_follow_the_firmware_version` and `modes_of_a_real_flight`
-(`openpid-analysis`: the lists per version, btfl_027's ARM, ANGLE,
-POSHOLD); `log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor` (none
+`box_names_follow_the_firmware_and_its_version`, `bits_become_common_modes`
+and `flight_modes_are_decoded_per_firmware` (`openpid-fmt-blackbox`:
+the lists, btfl_027 ARM · ANGLE → ARM · POSHOLD → POSHOLD, INAV 9 ARM ·
+ANGLE, Rotorflight 4.3 ARM · BLACKBOX, EmuFlight ARM · bit 21);
+`modes_follow_the_vehicle_and_the_arming` and
+`flight_modes_come_from_the_mode_and_arming_messages` (`openpid-fmt-ardupilot`:
+Copter LOITER, Plane ARM then ARM · RTL, QuadPlane QRTL); the CSV reader's
+`opens_as_session`; `modes_of_a_real_flight` (`openpid-analysis`); `log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor` (none
 without a cursor, under the pointer on the last row's right edge, at the
 cursor once the pointer leaves).
 
@@ -79,3 +94,7 @@ cursor once the pointer leaves).
 btfl_027, the pointer at 22 s (ARM · POSHOLD):
 
 ![Sticks](sticks.jpg)
+
+With Mode changes on (ARM · ANGLE from the start, ARM · POSHOLD from 12.8 s):
+
+![Mode changes](marks.jpg)
