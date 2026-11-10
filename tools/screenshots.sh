@@ -45,9 +45,13 @@ shot "$OUT/start.png"
 shot "$OUT/slots-step.png" "$LOG" tests/logs/betaflight-4.5.1-two-sessions.bbl \
   tests/logs/betaflight-4.2.0.BFL --tab step
 
-for tab in log step spectrum throttle time surface filter motors advice sliders diagnostics settings; do
+for tab in log step spectrum throttle time filter advice sliders settings; do
   shot "$OUT/$tab.png" "$LOG" --tab "$tab"
 done
+
+# Setup info compares logs: two of them side by side
+shot "$OUT/setup.png" tests/logs/betaflight-4.5.0-gps-rescue.bbl \
+  tests/logs/betaflight-4.5.1-two-sessions.bbl --tab setup
 
 # the log viewer once more in Ukrainian (Settings → Language), for the README
 printf '{"lang":"ua","tour_done":true,"show_tour":false}' > "$OPENPID_CONFIG_DIR/prefs.json"

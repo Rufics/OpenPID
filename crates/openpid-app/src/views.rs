@@ -13,7 +13,6 @@ use openpid_analysis::{
     Epoch, Fitness, FitnessLevel, RpmOverlay, TargetPreset, Verdict, VerdictLevel,
 };
 use openpid_core::analysis::Grid2D;
-use openpid_core::settings::PidGains;
 use openpid_core::units::Unit;
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use openpid_dsp::Peak;
@@ -588,11 +587,20 @@ pub fn decimate(
 }
 
 /// Colour of a fitness level (green / yellow / red, colour-blind safe).
-fn level_color(level: FitnessLevel) -> Color32 {
+pub(crate) fn level_color(level: FitnessLevel) -> Color32 {
     match level {
         FitnessLevel::Ok => Color32::from_rgb(0, 158, 115),
         FitnessLevel::Warn => crate::theme::warn(),
         FitnessLevel::Fail => Color32::from_rgb(213, 94, 0),
+    }
+}
+
+/// The overall level of the log check in words.
+pub(crate) fn overall_text(level: FitnessLevel) -> &'static str {
+    match level {
+        FitnessLevel::Ok => tr("log ok"),
+        FitnessLevel::Warn => tr("log usable"),
+        FitnessLevel::Fail => tr("log unfit"),
     }
 }
 
@@ -605,12 +613,7 @@ fn fitness_badges(ui: &mut Ui, f: &Fitness) {
         .map(|c| format!("{} {}: {}", c.level.marker(), c.title, c.detail))
         .collect::<Vec<_>>()
         .join("\n");
-    let overall = match f.overall {
-        FitnessLevel::Ok => tr("log ok"),
-        FitnessLevel::Warn => tr("log usable"),
-        FitnessLevel::Fail => tr("log unfit"),
-    };
-    pill(ui, overall, f.overall).on_hover_text(summary);
+    pill(ui, overall_text(f.overall), f.overall).on_hover_text(summary);
     for id in ["raw_gyro", "erpm", "sticks"] {
         if let Some(c) = f.check(id) {
             pill(ui, &c.title, c.level).on_hover_text(match &c.fix {
@@ -649,36 +652,6 @@ pub(crate) fn no_raw_gyro(app: &App, ui: &mut Ui, slot: Slot, why: &str) {
         .and_then(|c| c.fix.clone())
         .unwrap_or_else(|| "log the unfiltered gyro".to_string());
     ui.label(RichText::new(format!("{why} {fix}")).color(MUTED));
-}
-
-/// The "Log check" card on Diagnostics: every check with its fix to copy.
-fn fitness_card(ui: &mut Ui, slot: Slot, f: &Fitness) {
-    ui.heading(format!("{} {}", tr("Log check"), f.overall.marker()));
-    egui::Grid::new(("fitness", slot.name()))
-        .striped(true)
-        .show(ui, |ui| {
-            for c in &f.checks {
-                ui.label(RichText::new(c.level.marker()).color(level_color(c.level)));
-                ui.label(RichText::new(&c.title).strong());
-                ui.label(&c.detail);
-                if let Some(fix) = &c.fix {
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(fix).monospace());
-                        if ui
-                            .small_button(tr("Copy"))
-                            .on_hover_text(format!("{} {}", tr("copy"), c.title))
-                            .clicked()
-                        {
-                            ui.ctx().copy_text(fix.clone());
-                        }
-                    });
-                } else {
-                    ui.label("");
-                }
-                ui.end_row();
-            }
-        });
-    ui.add_space(6.0);
 }
 
 /// What the chip buttons of a slot header asked for.
@@ -1139,48 +1112,6 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
     true
 }
 
-pub(crate) fn axis_selector(ui: &mut Ui, axis: &mut Axis) -> bool {
-    let before = *axis;
-    ui.horizontal(|ui| {
-        ui.label(tr("Axis"));
-        for a in Axis::ALL {
-            ui.selectable_value(axis, a, a.name());
-        }
-    });
-    before != *axis
-}
-
-fn channel_picker(
-    ui: &mut Ui,
-    id: &str,
-    session: Option<&FlightSession>,
-    current: &mut ChannelId,
-) -> bool {
-    let mut changed = false;
-    let l = ui.label(tr("channel"));
-    let combo = egui::ComboBox::from_id_salt(id)
-        .selected_text(current.key())
-        .width(220.0)
-        .show_ui(ui, |ui| {
-            if let Some(s) = session {
-                let mut keys: Vec<(String, ChannelId)> = s
-                    .channels
-                    .iter()
-                    .map(|c| (c.id.key(), c.id.clone()))
-                    .collect();
-                keys.sort();
-                for (k, id) in keys {
-                    if ui.selectable_label(*current == id, k).clicked() {
-                        *current = id;
-                        changed = true;
-                    }
-                }
-            }
-        });
-    combo.response.labelled_by(l.id);
-    changed
-}
-
 pub(crate) fn show_error(ui: &mut Ui, slot: Slot, e: &str) {
     ui.colored_label(Color32::LIGHT_RED, format!("{}: {e}", slot.name()));
 }
@@ -1310,78 +1241,13 @@ pub(crate) fn marker_hlines(pu: &mut egui_plot::PlotUi<'_>, markers: &[f64]) {
     }
 }
 
-pub(crate) fn heatmap_controls(app: &mut App, ui: &mut Ui) {
-    let session_a = app
-        .first_loaded()
-        .and_then(|s| app.loaded(s))
-        .and_then(|l| l.current().cloned());
-    ui.horizontal_wrapped(|ui| {
-        channel_picker(
-            ui,
-            "hm_channel",
-            session_a.as_deref(),
-            &mut app.tools.heatmap_channel,
-        );
-        if axis_selector(ui, &mut app.tools.axis) {
-            app.tools.heatmap_channel = ChannelId::Gyro {
-                axis: app.tools.axis,
-                stage: GyroStage::Filtered,
-            };
-        }
-        let l = ui.label(tr("colour max (0 = auto)"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.heatmap_max)
-                .speed(0.5)
-                .range(0.0..=10000.0),
-        )
-        .labelled_by(l.id);
-        let several = app.visible_slots().len() > 1;
-        ui.add_enabled(
-            several,
-            egui::Checkbox::new(&mut app.tools.heatmap_link, tr("link scales")),
-        )
-        .on_hover_text(tr(
-            "one colour scale for every log (the largest automatic maximum), so the same colour means the same value",
-        ));
-    });
-}
-
 /// Width taken by the colour scale beside a heatmap.
 pub(crate) const BAR_W: f32 = 56.0;
 
 /// The colour maximum a grid is drawn with: `max` when set, else the robust
 /// automatic maximum over the rows at or above `min_y`.
 pub(crate) fn effective_max(g: &Grid2D, max: f64, min_y: f64) -> f64 {
-    openpid_analysis::surface::colour_max(
-        g,
-        &openpid_analysis::surface::SurfaceOptions {
-            max,
-            min_y_for_scale: min_y,
-            ..openpid_analysis::surface::SurfaceOptions::default()
-        },
-    )
-}
-
-/// Colour maximum per slot for one tab: each grid's own, or, with "link
-/// scales", the largest of them for all; recorded in `app.colour_scales`.
-pub(crate) fn linked_scales(
-    app: &mut App,
-    grids: &[(Slot, &Grid2D)],
-    min_y: f64,
-) -> HashMap<Slot, f64> {
-    let max = app.tools.heatmap_max;
-    let mut per: Vec<(Slot, f64)> = grids
-        .iter()
-        .map(|(slot, g)| (*slot, effective_max(g, max, min_y)))
-        .collect();
-    if app.tools.heatmap_link && per.len() > 1 {
-        let shared = per.iter().map(|(_, m)| *m).fold(0.0_f64, f64::max);
-        for (_, m) in &mut per {
-            *m = shared;
-        }
-    }
-    app.colour_scales.clone_from(&per);
-    per.into_iter().collect()
+    openpid_analysis::render::colour_max(g, max, min_y)
 }
 
 /// A vertical colour scale: the colour map from 0 (bottom) to `max` (top)
@@ -1470,7 +1336,7 @@ pub(crate) fn heatmap_hover(
     g: &Grid2D,
 ) -> Option<(Slot, f64, f64, f64)> {
     let c = pu.pointer_coordinate()?;
-    let z = openpid_analysis::surface::value_at(g, c.x, c.y)?;
+    let z = openpid_analysis::render::value_at(g, c.x, c.y)?;
     Some((slot, c.x, c.y, z))
 }
 
@@ -1573,67 +1439,6 @@ pub struct OverlayState {
 /// draws the motors.
 pub(crate) fn motor_color(m: usize) -> Color32 {
     crate::colormap::line(m)
-}
-
-/// RPM overlay controls (shown once the motor count of a result is known);
-/// shared by the freq × throttle heatmap and the 3D surface.
-pub(crate) fn overlay_controls(app: &mut App, ui: &mut Ui, results: &[SlotResult]) {
-    let motors = results
-        .iter()
-        .filter_map(|(_, r)| match r {
-            Some(Ok(o)) => match o.as_ref() {
-                Output::Throttle(t) => t.overlay.as_ref().map(|ov| ov.motors.len()),
-                _ => None,
-            },
-            _ => None,
-        })
-        .max();
-    if let Some(n) = motors {
-        let ov = &mut app.overlay;
-        ov.motors.resize(n, true);
-        ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut ov.show, tr("RPM overlay"));
-            for (m, on) in ov.motors.iter_mut().enumerate() {
-                ui.checkbox(on, format!("M{}", m + 1));
-            }
-            let l = ui.label(tr("harmonics"));
-            ui.add(egui::DragValue::new(&mut ov.harmonics).range(0..=8))
-                .labelled_by(l.id)
-                .on_hover_text(tr("0 = as many as the RPM filter removes"));
-            ui.checkbox(&mut ov.notches, tr("notches"));
-        });
-    }
-}
-
-/// Harmonic frequencies to draw for `o` under `ov`: `(motor, harmonic, per-x Hz)`
-/// with `None` where the bin has no motor speed or the harmonic is above `y_max`.
-pub(crate) fn overlay_harmonics(
-    o: &RpmOverlay,
-    y_max: f64,
-    ov: &OverlayState,
-) -> Vec<(usize, u32, Vec<Option<f64>>)> {
-    if !ov.show {
-        return Vec::new();
-    }
-    let harmonics = if ov.harmonics == 0 {
-        o.harmonics
-    } else {
-        ov.harmonics
-    };
-    let mut out = Vec::new();
-    for (m, bins) in o.motors.iter().enumerate() {
-        if !ov.motors.get(m).copied().unwrap_or(true) {
-            continue;
-        }
-        for k in 1..=harmonics {
-            let f: Vec<Option<f64>> = bins
-                .iter()
-                .map(|rpm| rpm.map(|r| r / 60.0 * f64::from(k)).filter(|f| *f <= y_max))
-                .collect();
-            out.push((m, k, f));
-        }
-    }
-    out
 }
 
 /// The motor harmonics and notch bands of `o` over a heatmap whose frequency axis ends at `y_max`.
@@ -1856,88 +1661,6 @@ pub(crate) fn sparse_bins(
         .collect()
 }
 
-pub fn diagnostics(app: &mut App, ui: &mut Ui) {
-    ui.separator();
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        for slot in app.loaded_slots() {
-            let Some(l) = app.loaded(slot) else { continue };
-            let Some(s) = l.current() else { continue };
-            ui.heading(format!("Slot {} — {}", slot.name(), s.firmware.revision));
-            if let Some(f) = l.fitness() {
-                fitness_card(ui, slot, f);
-            }
-            egui::Grid::new(("diag", slot.name()))
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.label(tr("profile"));
-                    ui.label(&s.profile_id);
-                    ui.end_row();
-                    ui.label(tr("samples"));
-                    ui.label(format!(
-                        "{} over {:.2} s, median dt {} µs, {} gaps",
-                        s.len(),
-                        s.timebase.duration_s(),
-                        s.timebase.median_dt_us,
-                        s.timebase.gaps.len()
-                    ));
-                    ui.end_row();
-                    ui.label(tr("frames"));
-                    ui.label(
-                        s.diagnostics
-                            .frames
-                            .iter()
-                            .map(|(k, v)| format!("{k}:{}", v.valid))
-                            .collect::<Vec<_>>()
-                            .join("  "),
-                    );
-                    ui.end_row();
-                    ui.label(tr("corrupt / desync / skipped bytes"));
-                    ui.label(format!(
-                        "{} / {} / {}",
-                        s.diagnostics.corrupt_frames,
-                        s.diagnostics.desync_frames,
-                        s.diagnostics.skipped_bytes
-                    ));
-                    ui.end_row();
-                    if let Some(pid) = &s.settings.pid {
-                        ui.label("PID roll / pitch / yaw");
-                        let axis = |g: &PidGains| {
-                            [g.p, g.i, g.d].map(|v| s.settings.gain_text(v)).join("/")
-                        };
-                        ui.label(format!(
-                            "{}  {}  {}",
-                            axis(&pid.roll),
-                            axis(&pid.pitch),
-                            axis(&pid.yaw)
-                        ));
-                        ui.end_row();
-                    }
-                    if !s.diagnostics.unmapped_fields.is_empty() {
-                        ui.label(tr("unmapped fields"));
-                        ui.label(s.diagnostics.unmapped_fields.join(", "));
-                        ui.end_row();
-                    }
-                    for n in &s.diagnostics.notes {
-                        ui.label(tr("note"));
-                        ui.label(n);
-                        ui.end_row();
-                    }
-                });
-            ui.collapsing(format!("All {} headers", s.raw_headers.len()), |ui| {
-                egui::Grid::new(("headers", slot.name()))
-                    .striped(true)
-                    .show(ui, |ui| {
-                        for (k, v) in &s.raw_headers {
-                            ui.label(k);
-                            ui.label(v);
-                            ui.end_row();
-                        }
-                    });
-            });
-            ui.separator();
-        }
-    });
-}
 // ---------------------------------------------------------------------------
 
 /// The caption of a box of commands: "Betaflight CLI: commands to apply

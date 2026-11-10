@@ -36,8 +36,8 @@ impl PlotProbe {
         }
     }
 
-    /// An area that is not an `egui_plot` plot (the timeline strip, the 3D
-    /// surface) with the range it stands for.
+    /// An area that is not an `egui_plot` plot (the timeline strip) with the
+    /// range it stands for.
     pub fn area(frame: egui::Rect, x: (f64, f64), y: (f64, f64)) -> Self {
         PlotProbe {
             frame,

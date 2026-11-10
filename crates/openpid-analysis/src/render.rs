@@ -194,6 +194,43 @@ pub fn png_rgba(width: usize, height: usize, rgba: &[u8]) -> Vec<u8> {
     out
 }
 
+/// The colour maximum a grid is drawn with: `max` when it is set (> 0), else
+/// [`robust_max`] over the rows at or above `min_y` (all rows when none is).
+pub fn colour_max(g: &Grid2D, max: f64, min_y: f64) -> f64 {
+    if max > 0.0 {
+        return max;
+    }
+    let nx = g.x.len();
+    let rows: Vec<f64> =
+        g.y.iter()
+            .enumerate()
+            .filter(|(_, y)| **y >= min_y)
+            .flat_map(|(iy, _)| g.z[iy * nx..(iy + 1) * nx].iter().copied())
+            .collect();
+    robust_max(if rows.is_empty() { &g.z } else { &rows })
+}
+
+/// The value of the grid cell nearest to the data coordinates `(x, y)`
+/// (`None` outside the grid): what a pointer over a heatmap reads.
+pub fn value_at(g: &Grid2D, x: f64, y: f64) -> Option<f64> {
+    let nearest = |v: &[f64], t: f64| -> Option<usize> {
+        if v.is_empty() {
+            return None;
+        }
+        let (lo, hi) = (v[0].min(v[v.len() - 1]), v[0].max(v[v.len() - 1]));
+        if t < lo || t > hi {
+            return None;
+        }
+        v.iter()
+            .enumerate()
+            .min_by(|a, b| (a.1 - t).abs().total_cmp(&(b.1 - t).abs()))
+            .map(|(i, _)| i)
+    };
+    let ix = nearest(&g.x, x)?;
+    let iy = nearest(&g.y, y)?;
+    Some(g.z[iy * g.x.len() + ix])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,5 +345,34 @@ mod tests {
             &viridis(1.0),
             "auto scale over the top row only"
         );
+    }
+
+    #[test]
+    fn colour_maximum_and_value_lookup() {
+        // 11 throttle columns 0…100 %, 6 frequency rows 0…500 Hz, z = row·3 + column/10·...
+        let (nx, ny) = (11usize, 6usize);
+        let g = Grid2D {
+            x: (0..nx).map(|i| i as f64 * 10.0).collect(),
+            y: (0..ny).map(|i| i as f64 * 100.0).collect(),
+            z: (0..ny)
+                .flat_map(|iy| (0..nx).map(move |ix| iy as f64 + ix as f64))
+                .collect(),
+            x_label: String::new(),
+            y_label: String::new(),
+            z_label: String::new(),
+        };
+        // an explicit maximum wins; the automatic one is the robust maximum
+        assert_eq!(colour_max(&g, 3.0, 0.0), 3.0);
+        let auto = colour_max(&g, 0.0, 0.0);
+        assert!(auto > 10.0 && auto <= 15.0, "{auto}");
+        // rows below the floor do not count; a floor above every row falls back to all
+        assert!(colour_max(&g, 0.0, 400.0) >= auto);
+        assert_eq!(colour_max(&g, 0.0, 1e9), auto);
+        // the nearest cell, nothing outside the grid
+        assert_eq!(value_at(&g, 0.0, 0.0), Some(0.0));
+        assert_eq!(value_at(&g, 100.0, 500.0), Some(15.0));
+        assert_eq!(value_at(&g, 52.0, 101.0), Some(5.0 + 1.0));
+        assert_eq!(value_at(&g, -1.0, 0.0), None);
+        assert_eq!(value_at(&g, 0.0, 501.0), None);
     }
 }

@@ -54,7 +54,7 @@ cargo run --release -p openpid-app                      # or ./target/release/op
   "!" (a warning) or a cross (the data for this tab or analysis is missing);
   the chip in the top bar shows the overall mark. Hover for the explanation and the
   CLI command that fixes it (for example `set blackbox_disable_gyrounfilt = OFF`).
-  The full list of checks is on the Diagnostics tab (section 11).
+  The full list of checks is on the Setup info tab (section 11).
 - **Touch mode** (in the **···** menu and in Settings) enlarges the controls; it switches
   itself on at the first touch.
 - **One axis at full height.** The tabs with roll, pitch and yaw rows (Log
@@ -242,7 +242,7 @@ The control panel on the right (hover any field for its explanation):
 - **Colour max**: auto (the 99th percentile without the rows below 20 Hz) or a
   fixed ceiling; **Link scales** (on by default with several logs) gives every
   log the same ceiling, the largest of the automatic ones, so the same colour
-  means the same value. The same on Freq × time and Surface 3D.
+  means the same value. The same on Freq × time.
 - **RPM overlay** (off by default; when the log has eRPM): one thin line per harmonic
   `k·rpm/60` at the mean speed of the motors (**Harmonics** = how many to
   draw, 0 = as many as the RPM filter removes); **Per motor** draws a
@@ -254,26 +254,6 @@ The control panel on the right (hover any field for its explanation):
 - **Segment**, **Throttle window ±**, **Max frequency**, **Min segments**:
   throttle bins with fewer segments than the minimum are dimmed towards
   black: there is no data there, not silence.
-
-### Surface 3D
-
-![Surface 3D](screenshots/surface.png)
-
-The same freq × throttle × amplitude grid as a relief: height and colour are
-the amplitude (ceiling: **colour max**, as on the heatmap; **height** scales
-the relief). Drawn by our own software projection without GPU dependencies:
-up to 128 × 192 cells after averaging, so rotation stays smooth on big logs.
-
-- **Drag** rotates (horizontal around the vertical axis, vertical tilts down
-  to a top view, that is the plain heatmap); **wheel / pinch** zooms; **shift-
-  or right-drag, two fingers** pans; **double-click** or **Reset view**
-  restores the initial view.
-- **RPM overlay** and **notches** are the same as on the heatmap: the motor
-  harmonics and notch bands lie on the surface.
-- Hovering a node shows throttle, frequency and amplitude in the panel corner.
-- **shading** lights the surface by its slope (ridges stand out); switch it
-  off for colours that match the heatmap scale exactly.
-- CSV/PNG export from this tab gives the same grid as Freq × throttle.
 
 ## 6. Freq × time
 
@@ -392,13 +372,31 @@ configurator.
 The same in the terminal: `openpid sliders <log> --set simplified_master_multiplier=110`,
 or `--set master_multiplier=110,pd_ratio=120` for the ratio sliders.
 
-## 11. Diagnostics and Settings
+## 11. Setup info and Settings
 
-- **Diagnostics**: firmware, profile, rates, frames (valid / corrupt / resync),
-  gaps, unmapped fields, every log header (for ArduPilot every `PARM`), decoder
-  notes (batch sampler, the tail of another file, and so on).
-- **Log check** (the card above the Diagnostics table): whether the log is fit
-  for each analysis. The checks and thresholds:
+- **Setup info**: one table for every visible log, a column per log and a
+  row per fact, in four sections:
+  - **Log check**: whether the log is fit for each analysis (the table of
+    checks below), with the setting to change and a **Copy** button where
+    something is missing;
+  - **Decoder**: the profile, the samples and their step, the frames by
+    kind, corrupt and desynchronised frames, skipped bytes, unmapped fields,
+    the decoder's notes (batch sampler, the tail of another file, and so on);
+  - **Setup**: the setup in plain words: firmware, board, rates, PID gains,
+    the gyro and D-term filters, the dynamic notch, the RPM filter, motors;
+  - **All headers**: every header as logged (for ArduPilot every `PARM`).
+
+  A row the logs do not agree in is tinted; **Differences only** leaves
+  those rows (it needs two logs). **Search** leaves the rows whose name or
+  value contains the text, so `dshot` finds both the ESC protocol and the
+  `dshot_*` headers. The check boxes under Sections hide a section. A value
+  that does not fit its column is shown whole on hover. **Copy the table**
+  copies the rows shown as tab-separated text, for a spreadsheet or a
+  message. The table is of the session shown in each log; the eye in the
+  dock hides a log's column.
+
+  ![Setup info](screenshots/setup.png)
+- **Log check**: the checks and thresholds:
 
   | Check | Ok | Warning `[!]` | Failure `[x]` |
   |---|---|---|---|
@@ -416,7 +414,7 @@ or `--set master_multiplier=110,pd_ratio=120` for the ratio sliders.
   warn. Next to every fix is a **Copy** button: the command goes to the
   clipboard, ready for the configurator CLI. The Filter Sim tab shows the
   same fix when the raw gyro is missing. A log with several
-  sessions is checked per session; the card shows the selected one.
+  sessions is checked per session; the table shows the selected one.
 - **Settings**: theme (dark/light), the **interface language** (English /
   Ukrainian, switched instantly; units and numbers do not change), touch mode
   at start, the deg/s ↔ rad/s and g ↔ m/s² units, **Targets** (the step
@@ -434,7 +432,7 @@ or `--set master_multiplier=110,pd_ratio=120` for the ratio sliders.
   **Colour-blind safe** switches to the Okabe–Ito palette and viridis
   heatmaps). Line tabs (Log
   viewer, Step response, Spectrum, Filter Sim) overlay every slot on one plot;
-  panel tabs (the heatmaps, Surface 3D, Advice, Diagnostics) put
+  panel tabs (the heatmaps, Advice) put
   the panels side by side: two across the full width, more in a scroll. In the
   dock, for the docked log: the eye (show / hide), solo (this slot only;
   pressing it again shows every slot) and the cross (close; the other letters do
@@ -517,7 +515,7 @@ on Windows/Linux. Single keys (`1`…`=`, `?`, `Space`, `,`, `.`, `Home`,
 
 | Action | Key |
 |---|---|
-| Tabs in order (Log viewer … Settings) | `1`…`9`, `0` (10th, PID sliders), `-` (11th, Diagnostics), `=` (12th, Settings) |
+| Tabs in order (Log viewer … Settings) | `1`…`9`, `0` (10th, Settings) |
 | Next / previous tab (wrapping) | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 | Open a log into the first empty slot | `Ctrl+O` |
 | Open a log to compare (into the slot after the last loaded one) | `Ctrl+Shift+O` |
@@ -542,7 +540,7 @@ the table is updated with it.
 | No RPM overlay | The log has no eRPM (DShot telemetry off). The speed can be estimated (`run rpm`). |
 | Step response: "none of N windows had stick input" | The epoch has no manoeuvres, or `Min input` is too high; pick a span with stick movement. |
 | Freq × throttle almost empty | A short flight or a narrow throttle range: look at the segments-per-bin strip. |
-| The log opened with "corrupt frames" in Diagnostics | Corrupt frames are skipped; many of them point at the card or the log rate (see docs/BLACKBOX-VERSIONS.md). |
+| The log opened with "corrupt frames" in Setup info | Corrupt frames are skipped; many of them point at the card or the log rate (see docs/BLACKBOX-VERSIONS.md). |
 | ArduPilot: a stair-stepped setpoint | `RATE`/`PIDR` are written at 10 Hz; enable `ATTITUDE_FAST` and `PID` in `LOG_BITMASK`. |
 
 The screenshots are refreshed by `tools/screenshots.sh` (Xvfb + ImageMagick)

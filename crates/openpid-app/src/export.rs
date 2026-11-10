@@ -60,11 +60,11 @@ impl App {
         Some(match self.tab {
             Tab::Step => Kind::Step(self.tools.step.clone()),
             Tab::Spectrum => Kind::Psd(self.tools.psd.clone()),
-            Tab::ThrottleHeatmap | Tab::Surface => Kind::Throttle(self.tools.throttle.clone()),
+            Tab::ThrottleHeatmap => Kind::Throttle(self.tools.throttle.clone()),
             Tab::TimeHeatmap => Kind::Stft(self.tools.stft.clone()),
             Tab::FilterSim => Kind::FilterSim(self.tools.filter_sim.clone()),
             Tab::Advice => Kind::Recommend(self.tools.recommend.clone()),
-            Tab::LogViewer | Tab::Sliders | Tab::Diagnostics | Tab::Settings => return None,
+            Tab::LogViewer | Tab::Sliders | Tab::Setup | Tab::Settings => return None,
         })
     }
 

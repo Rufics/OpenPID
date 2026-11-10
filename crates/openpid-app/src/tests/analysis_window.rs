@@ -54,7 +54,7 @@ fn a_log_opens_on_its_automatic_trim_and_all_restores_the_whole_log() {
 
 #[test]
 fn a_short_session_is_too_short_to_trim() {
-    let mut ui = Ui::open(&[LOG_4_5_1], Tab::Diagnostics);
+    let mut ui = Ui::open(&[LOG_4_5_1], Tab::Setup);
     // the longest session opened on its trim; session 0 is a 3 s stub
     assert!(epoch(&ui).is_some());
     ui.choose("session", "session 0 (");

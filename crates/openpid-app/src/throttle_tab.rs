@@ -83,7 +83,7 @@ pub fn throttle(app: &mut App, ui: &mut Ui) {
     ui.separator();
     let quantity = Quantity::of(&app.tools.heatmap_channel);
     let display = app.tools.throttle_display.clone();
-    // the export, the surface and the project keep the selected axis
+    // the export and the project keep the selected axis
     app.tools.throttle.channel = quantity.channel(app.tools.axis);
     let base = app.tools.throttle.clone();
     let mut logs: Vec<LogColumn> = Vec::new();

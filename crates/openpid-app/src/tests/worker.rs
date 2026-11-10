@@ -140,18 +140,20 @@ fn tab_names_and_titles() {
         ("spectrum", Tab::Spectrum),
         ("throttle", Tab::ThrottleHeatmap),
         ("time", Tab::TimeHeatmap),
-        ("surface", Tab::Surface),
         ("filter", Tab::FilterSim),
         ("advice", Tab::Advice),
         ("sliders", Tab::Sliders),
-        ("diagnostics", Tab::Diagnostics),
+        ("setup", Tab::Setup),
+        // the tab's name in projects saved before it became Setup info
+        ("diagnostics", Tab::Setup),
         ("settings", Tab::Settings),
     ] {
         assert_eq!(Tab::from_name(name), Some(tab));
     }
     assert_eq!(Tab::from_name("nope"), None);
-    // a project saved on the removed Motors tab opens on the default tab
+    // a project saved on a removed tab (Motors, 3D) opens on the default tab
     assert_eq!(Tab::from_name("motors"), None);
+    assert_eq!(Tab::from_name("surface"), None);
     let titles: std::collections::BTreeSet<&str> = Tab::ALL.iter().map(|t| t.title()).collect();
     assert_eq!(titles.len(), Tab::ALL.len(), "titles are unique");
 }

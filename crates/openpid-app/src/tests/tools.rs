@@ -32,10 +32,12 @@ fn every_tab_runs_its_analysis_on_a_real_log() {
         ["advice", "fsim", "psd", "step", "stft", "thr"],
         "debug_mode GYRO_SCALED gives the 4.2.0 log a raw gyro, so Filter Sim runs too"
     );
-    ui.tab(Tab::Diagnostics);
-    assert!(ui.sees("profile"));
-    assert!(ui.sees("samples"));
-    assert!(ui.sees("frames"));
+    ui.tab(Tab::Setup);
+    // the table shows the rows that fit the window, so the search brings
+    // one into view whatever the screen
+    ui.type_into("Search", "frames");
+    assert!(ui.sees("Corrupt frames"));
+    assert!(ui.sees("I:525"), "the frames by kind");
 }
 
 #[test]

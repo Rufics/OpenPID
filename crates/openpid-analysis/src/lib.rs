@@ -15,7 +15,6 @@ pub mod render;
 pub mod rpm;
 pub mod step;
 pub mod stft;
-pub mod surface;
 pub mod targets;
 pub mod throttle;
 

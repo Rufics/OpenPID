@@ -141,7 +141,7 @@ fn many_slots_have_colours_visibility_solo_and_stable_letters() {
 
 #[test]
 fn session_picker_switches_session_and_clears_epoch() {
-    let mut ui = Ui::open(&[LOG_TWO], Tab::Diagnostics);
+    let mut ui = Ui::open(&[LOG_TWO], Tab::Setup);
     let other = 1 - ui.app().loaded(Slot::A).unwrap().session;
     ui.app_mut().loaded_mut(Slot::A).unwrap().epoch = Some(Epoch {
         start_s: 0.0,
@@ -158,7 +158,7 @@ fn log_check_badges_and_card_follow_the_session() {
     // 4.2.0: raw gyro logged, no eRPM, 17 s (a short-log warning), and only
     // gentle stick moves: no step window above the default 80 deg/s (the
     // overall level follows rate, duration and frames only)
-    let mut ui = Ui::open(&[LOG_4_2], Tab::Diagnostics);
+    let mut ui = Ui::open(&[LOG_4_2], Tab::Setup);
     let f = ui
         .app()
         .loaded(Slot::A)
@@ -173,19 +173,19 @@ fn log_check_badges_and_card_follow_the_session() {
     assert!(ui.sees("raw [ok]"), "badge in the slot header");
     assert!(ui.sees("rpm [!]"));
     assert!(ui.sees("sticks [x]"));
-    assert!(ui.sees("Log check [!]"), "card on Diagnostics");
+    assert!(ui.sees("A verdict [!]"), "the check's rows on Setup info");
     assert!(
         ui.sees("dshot_telemetry"),
         "the fix for the missing eRPM is shown"
     );
-    assert!(ui.has("Copy"));
+    assert!(ui.has("Copy A rpm: fix"));
     // the badges are in the header, so they show on every tab with slots
     ui.tab(Tab::Step);
     assert!(ui.sees("rpm [!]"));
-    assert!(!ui.sees("Log check"), "the card is Diagnostics-only");
+    assert!(!ui.sees("A verdict"), "the rows are on Setup info only");
 
     // 4.5.1: the longest session is fine, session 0 is a short stub
-    let mut ui = Ui::open(&[LOG_4_5_1], Tab::Diagnostics);
+    let mut ui = Ui::open(&[LOG_4_5_1], Tab::Setup);
     assert!(ui.sees("rpm [ok]"));
     let l = ui.app().loaded(Slot::A).unwrap();
     assert_eq!(l.fitness.len(), l.sessions.len(), "one check per session");
@@ -193,7 +193,7 @@ fn log_check_badges_and_card_follow_the_session() {
     assert_eq!(l.fitness[0].level("duration"), FitnessLevel::Fail);
     ui.choose("session", "session 0 (");
     assert_eq!(ui.app().loaded(Slot::A).unwrap().session, 0);
-    assert!(ui.sees("Log check [x]"));
+    assert!(ui.sees("A verdict [x]"));
 }
 
 #[test]
