@@ -2,6 +2,10 @@
 //! [`Proposal`]s, an [`Exporter`] turns them into something a firmware
 //! understands (Betaflight CLI `set …` lines), and [`diff_headers`] lists
 //! what changed between two logs so the same exporter can write the diff.
+//!
+//! The exporter of a log comes from its firmware profile
+//! ([`crate::FirmwareProfile::exporter`], reached through
+//! [`crate::FormatRegistry::exporter`]); nothing else names a firmware.
 
 use crate::session::FlightSession;
 use serde::{Deserialize, Serialize};
@@ -33,27 +37,24 @@ pub enum ExportError {
         /// The proposal's path.
         path: String,
     },
-    /// The session is not from a firmware the exporter writes for.
-    #[error("{target} exporter cannot write for {firmware}")]
-    WrongFirmware {
-        /// Export target.
-        target: &'static str,
-        /// The session's firmware revision.
-        firmware: String,
-    },
 }
 
-/// Turns proposals into text for a firmware or tool.
-pub trait Exporter {
+/// Turns proposals and header diffs into text for the firmware of one log.
+/// Created by the log's firmware profile, so it already knows the firmware
+/// version and its setting names.
+pub trait Exporter: Send + Sync + std::fmt::Debug {
     /// Identifier, e.g. `betaflight-cli`.
     fn id(&self) -> &'static str;
 
-    /// The text to apply `proposals` to the craft that wrote `session`.
-    fn export(
-        &self,
-        session: &FlightSession,
-        proposals: &[Proposal],
-    ) -> Result<String, ExportError>;
+    /// What the text is, for the user: `Betaflight CLI`.
+    fn label(&self) -> &'static str;
+
+    /// The text that applies `proposals` to the craft that wrote the log.
+    fn export(&self, proposals: &[Proposal]) -> Result<String, ExportError>;
+
+    /// The text that turns the settings of the first log of `diff` into
+    /// those of the second; what cannot be set becomes a comment.
+    fn diff(&self, diff: &[HeaderDiff]) -> String;
 }
 
 /// One header that differs between two sessions.

@@ -101,6 +101,10 @@ impl LogFormat for BlackboxFormat {
         "blackbox-binary"
     }
 
+    fn profile(&self, id: &str) -> Option<&dyn openpid_core::FirmwareProfile> {
+        self.profiles.get(id)
+    }
+
     fn extensions(&self) -> &'static [&'static str] {
         &["bbl", "bfl", "txt"]
     }
@@ -176,15 +180,6 @@ impl LogFormat for BlackboxFormat {
             sessions,
         })
     }
-}
-
-/// Slider ("simplified tuning") model for a decoded session, if its firmware
-/// profile provides one.
-pub fn slider_model_for(session: &FlightSession) -> Option<Box<dyn openpid_core::SliderModel>> {
-    let profiles = profiles::builtin();
-    let profile = profiles.get(&session.profile_id)?;
-    let headers = openpid_core::RawHeaders(session.raw_headers.clone());
-    profile.slider_model(&session.firmware, &headers)
 }
 
 #[cfg(test)]

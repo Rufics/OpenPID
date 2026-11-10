@@ -292,6 +292,10 @@ impl SliderModel for BetaflightSliders {
         "betaflight-simplified-tuning"
     }
 
+    fn cli_name(&self) -> &'static str {
+        "Betaflight CLI"
+    }
+
     fn sliders(&self) -> Vec<SliderDef> {
         SLIDERS
             .iter()

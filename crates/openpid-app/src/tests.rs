@@ -2590,7 +2590,10 @@ fn advice_tab_lists_proposals_evidence_and_cli() {
     // the 4.2.0 log overshoots on roll and pitch: D proposals with rationale and CLI text
     assert!(has_label_containing(&h, "pid.roll.d"), "roll D proposed");
     assert!(has_label_containing(&h, "overshoots"));
-    assert!(has_label_containing(&h, "Betaflight CLI to apply"));
+    assert!(has_label_containing(
+        &h,
+        "Betaflight CLI: commands to apply"
+    ));
     let cached = app(&h).cache.len();
     // a looser overshoot limit: recomputed, nothing left to propose on the PIDs
     app_mut(&mut h).tools.recommend.targets.overshoot_warn_pct = 90.0;

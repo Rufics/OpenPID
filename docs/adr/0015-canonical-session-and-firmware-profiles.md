@@ -69,6 +69,19 @@ through `Settings::round_gain` and `gain_text`; none of them assumes an
 integer. Before that an `ArduPilot` log showed "0, 0, 0" in the Step legend
 and a D advice of "0 → 0".
 
+What a firmware can be told is firmware knowledge too. The app and the CLI
+had called `openpid_fmt_blackbox::BetaflightCli` and `slider_model_for`
+directly, so an INAV or `ArduPilot` log got a box titled "Betaflight CLI to
+apply" and `openpid diff --cli` printed Betaflight commands for any pair of
+logs. `FirmwareProfile::exporter` now stands next to `slider_model`; a
+format answers `LogFormat::profile(id)` and `FormatRegistry::profile_for`,
+`exporter` and `slider_model` find the profile that built a session. The
+exporter is created for one log (it holds the firmware version, hence the
+setting names of that version) and gives its own caption; a profile without
+one means "no ready commands", which the app and the CLI say as it is. The
+consumers name a format crate in one place each: where they fill the
+registry.
+
 ## Consequences
 
 - A new firmware or version is one profile; a new consumer needs no

@@ -1,6 +1,9 @@
 //! Log-format extension point.
 
-use crate::session::LogFile;
+use crate::profile::{FirmwareProfile, RawHeaders};
+use crate::recommend::Exporter;
+use crate::session::{FlightSession, LogFile};
+use crate::sliders::SliderModel;
 use std::fmt;
 
 /// How confident a format is that it can read a given file.
@@ -66,6 +69,12 @@ pub trait LogFormat: Send + Sync {
 
     /// Decode the whole file.
     fn open(&self, data: &[u8], options: &OpenOptions) -> Result<LogFile, FormatError>;
+
+    /// The firmware profile this format names `id` in
+    /// [`FlightSession::profile_id`], when it has one.
+    fn profile(&self, _id: &str) -> Option<&dyn FirmwareProfile> {
+        None
+    }
 }
 
 impl fmt::Debug for dyn LogFormat {
@@ -123,5 +132,26 @@ impl FormatRegistry {
             .detect(data, file_name)
             .ok_or(FormatError::Unrecognized)?;
         format.open(data, options)
+    }
+
+    /// The firmware profile that built `session`.
+    pub fn profile_for(&self, session: &FlightSession) -> Option<&dyn FirmwareProfile> {
+        self.iter().find_map(|f| f.profile(&session.profile_id))
+    }
+
+    /// The slider ("simplified tuning") model of `session`, when its firmware
+    /// has one.
+    pub fn slider_model(&self, session: &FlightSession) -> Option<Box<dyn SliderModel>> {
+        let headers = RawHeaders(session.raw_headers.clone());
+        self.profile_for(session)?
+            .slider_model(&session.firmware, &headers)
+    }
+
+    /// What writes proposals and setting diffs for the firmware of `session`,
+    /// when its profile has one.
+    pub fn exporter(&self, session: &FlightSession) -> Option<Box<dyn Exporter>> {
+        let headers = RawHeaders(session.raw_headers.clone());
+        self.profile_for(session)?
+            .exporter(&session.firmware, &headers)
     }
 }

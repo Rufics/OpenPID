@@ -503,6 +503,22 @@ fn diff_command_lists_changed_headers_and_cli_commands() {
         "9",
     ]);
     assert!(!ok && err.contains("no session 9"));
+    // the commands are those of the log's firmware: none is made up for a
+    // firmware whose profile has no exporter
+    let ardu = log("ardupilot-copter-3.3-dronekit.bin");
+    let (ok, out, err) = run(&[
+        "diff",
+        ardu.to_str().unwrap(),
+        ardu.to_str().unwrap(),
+        "--cli",
+    ]);
+    assert!(!ok && out.is_empty(), "{out}");
+    assert!(err.contains("no command export for APM:Copter"), "{err}");
+    let inav = log("inav-9.0.1-truncated.TXT");
+    let (ok, _, err) = run(&["run", "recommend", inav.to_str().unwrap(), "--cli"]);
+    assert!(!ok && err.contains("no command export for INAV"), "{err}");
+    let (ok, _, err) = run(&["sliders", ardu.to_str().unwrap()]);
+    assert!(!ok && err.contains("no slider model"), "{err}");
 }
 
 #[test]

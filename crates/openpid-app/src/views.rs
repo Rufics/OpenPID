@@ -2069,7 +2069,7 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
         );
         return;
     };
-    let Some(model) = openpid_fmt_blackbox::slider_model_for(&session) else {
+    let Some(model) = crate::worker::formats().slider_model(&session) else {
         ui.label(
             RichText::new(format!(
                 "{}: no simplified-tuning headers in this log.",
@@ -2103,7 +2103,7 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
         ui.label(filters);
     }
     ui.separator();
-    ui.label(tr("Betaflight CLI to apply (select all, copy):"));
+    ui.label(apply_label(model.cli_name()));
     let mut cli = result.cli.join("\n");
     ui.add(
         egui::TextEdit::multiline(&mut cli)
@@ -2116,8 +2116,14 @@ pub fn sliders(app: &mut App, ui: &mut Ui) {
 
 // ---------------------------------------------------------------------------
 
+/// The caption of a box of commands: "Betaflight CLI: commands to apply
+/// (select all, copy)".
+fn apply_label(target: &str) -> String {
+    format!("{target}: {}", tr("commands to apply (select all, copy)"))
+}
+
 /// Advice tab: the recommender's proposals with their evidence, and the
-/// Betaflight CLI commands that apply them.
+/// commands of the log's firmware that apply them.
 pub fn advice(app: &mut App, ui: &mut Ui) {
     ui.separator();
     ui.horizontal_wrapped(|ui| {
@@ -2210,7 +2216,6 @@ fn advice_slot(
     slot: Slot,
     r: &openpid_analysis::RecommendOutput,
 ) -> Option<egui::Rect> {
-    use openpid_core::Exporter as _;
     let mut cli_rect: Option<egui::Rect> = None;
     ui.label(
         RichText::new(format!("{} {}", tr("Slot"), slot.name()))
@@ -2261,12 +2266,24 @@ fn advice_slot(
                 && let Some(session) = app.loaded(slot).and_then(Loaded::current)
             {
                 ui.add_space(6.0);
-                let l = ui.label(tr("Betaflight CLI to apply (select all, copy):"));
-                let mut cli =
-                    match openpid_fmt_blackbox::BetaflightCli.export(session, &r.proposals) {
-                        Ok(text) => text,
-                        Err(e) => format!("# {e}"),
-                    };
+                // the firmware profile of the log writes the commands; a
+                // firmware without one gets the proposals as they are
+                let Some(exporter) = crate::worker::formats().exporter(session) else {
+                    ui.label(
+                        RichText::new(format!(
+                            "{}: {}",
+                            session.firmware.revision,
+                            tr("no ready commands for this firmware; set the values by hand")
+                        ))
+                        .color(MUTED),
+                    );
+                    return None;
+                };
+                let l = ui.label(apply_label(exporter.label()));
+                let mut cli = match exporter.export(&r.proposals) {
+                    Ok(text) => text,
+                    Err(e) => format!("# {e}"),
+                };
                 let edit = ui.add(
                     egui::TextEdit::multiline(&mut cli)
                         .code_editor()

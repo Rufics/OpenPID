@@ -41,7 +41,8 @@ COMMANDS:
              recommend       rule-based tuning proposals with their evidence (overshoot →
                              more D, an uncovered spectrum peak → a notch, headroom above
                              the gyro LPF → a higher cutoff); --cli prints them as
-                             Betaflight CLI `set …` commands instead of JSON
+                             commands of the log's firmware (Betaflight CLI `set …`)
+                             instead of JSON
              Channel keys look like gyro.filtered.roll, gyro.raw.pitch, pid.d.roll,
              motor.0, debug.2 (see `openpid info`). Default: gyro.filtered.<axis>.
 
@@ -50,8 +51,9 @@ COMMANDS:
              the resulting gains plus the CLI commands to apply them.
 
     diff     Headers (settings) that differ between two logs, A → B. --cli prints the
-             Betaflight CLI `set …` commands that turn A's settings into B's (per-axis
-             and min/max headers expanded, structural headers as comments), then `save`.
+             commands of B's firmware (Betaflight CLI `set …`) that turn A's settings
+             into B's (per-axis and min/max headers expanded, structural headers as
+             comments), then `save`.
 
     gen      Write a synthetic session with known ground truth (stick steps or a
              chirp, a first-order plant with delay, motor harmonics tied to the
@@ -72,7 +74,7 @@ OPTIONS:
     --axis AXIS   roll, pitch or yaw
     --json        Machine-readable output
     --session-b M diff: session index in the second file (default: --session)
-    --cli         diff / run recommend: Betaflight CLI commands instead of the table / JSON
+    --cli         diff / run recommend: the firmware's commands instead of the table / JSON
     --example     gen: print the default spec instead of generating
     --raw         Skip firmware-profile scaling and derived channels
     --out <path>  Write to a file instead of stdout
@@ -615,7 +617,6 @@ fn cmd_run(args: &Args) -> Result<(), String> {
                 .run(&ctx, &openpid_analysis::RecommendParams::default())
                 .map_err(|e| e.to_string())?;
             if args.cli {
-                use openpid_core::Exporter as _;
                 use std::fmt::Write as _;
                 let mut text = String::from("# evidence\n");
                 for f in &out.findings {
@@ -630,11 +631,10 @@ fn cmd_run(args: &Args) -> Result<(), String> {
                 if out.proposals.is_empty() {
                     text.push_str("# nothing to change: every rule is satisfied\n");
                 }
-                text.push_str(
-                    &openpid_fmt_blackbox::BetaflightCli
-                        .export(s, &out.proposals)
-                        .map_err(|e| e.to_string())?,
-                );
+                let exporter = registry()
+                    .exporter(s)
+                    .ok_or_else(|| format!("no command export for {}", s.firmware.revision))?;
+                text.push_str(&exporter.export(&out.proposals).map_err(|e| e.to_string())?);
                 Ok(text)
             } else {
                 serde_json::to_string_pretty(&out)
@@ -720,10 +720,11 @@ fn cmd_diff(args: &Args) -> Result<(), String> {
         return Ok(());
     }
     if args.cli {
-        print!(
-            "{}",
-            openpid_fmt_blackbox::BetaflightCli::diff_commands(&diff)
-        );
+        // the commands are for the craft of log B: its values are the target
+        let exporter = registry()
+            .exporter(&sess_b)
+            .ok_or_else(|| format!("no command export for {}", sess_b.firmware.revision))?;
+        print!("{}", exporter.diff(&diff));
         return Ok(());
     }
     println!(
@@ -776,7 +777,7 @@ fn cmd_sliders(args: &Args) -> Result<(), String> {
         .iter()
         .find(|s| s.index == session)
         .ok_or_else(|| format!("no session {session}"))?;
-    let model = openpid_fmt_blackbox::slider_model_for(s).ok_or_else(|| {
+    let model = registry().slider_model(s).ok_or_else(|| {
         format!(
             "{} has no slider model (firmware {} without simplified tuning headers)",
             path.display(),

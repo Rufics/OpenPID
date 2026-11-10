@@ -145,6 +145,10 @@ impl LogFormat for CsvFormat {
         "blackbox-csv"
     }
 
+    fn profile(&self, id: &str) -> Option<&dyn openpid_core::FirmwareProfile> {
+        self.profiles.get(id)
+    }
+
     fn extensions(&self) -> &'static [&'static str] {
         &["csv"]
     }

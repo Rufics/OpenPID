@@ -13,7 +13,7 @@
 
 use crate::app::Tab;
 use crate::log_tab::row_summary;
-use crate::testkit::{Ui, at_every_size};
+use crate::testkit::{SCREENS, Ui, at_every_size};
 use crate::worker::Slot;
 use eframe::egui::Key;
 use openpid_analysis::Epoch;
@@ -145,4 +145,37 @@ fn epoch_bounds_drag_on_the_rows_and_a_drag_elsewhere_pans() {
         assert_eq!(epoch(&ui), before);
         assert_ne!(ui.plot("log/roll").x_range(), view, "the plot panned");
     });
+}
+
+const LOG_ARDUCOPTER: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/logs/ardupilot-copter-3.3-dronekit.bin"
+);
+
+/// The Advice tab speaks the log's firmware: gains at its own step, and no
+/// Betaflight commands for a firmware whose profile has no exporter.
+#[test]
+fn advice_is_in_the_firmwares_own_terms() {
+    let mut ui = Ui::open(&[LOG_ARDUCOPTER], Tab::Advice, SCREENS[0]);
+    // the advice below is about the whole log, not the automatic trim
+    ui.app_mut()
+        .loaded_mut(Slot::A)
+        .unwrap()
+        .set_epoch(None, false);
+    ui.settle();
+    assert!(ui.sees("pid.pitch.d"), "pitch D proposed");
+    assert!(ui.sees("0.008 -> 0.0088"), "a gain of 0.0001 steps");
+    assert!(ui.sees("no ready commands for this firmware"));
+    assert!(!ui.sees("Betaflight"));
+
+    let mut ui = Ui::open(&[LOG_4_2], Tab::Advice, SCREENS[0]);
+    ui.app_mut()
+        .loaded_mut(Slot::A)
+        .unwrap()
+        .set_epoch(None, false);
+    // this log has only gentle stick inputs, none above the default 80 deg/s
+    ui.app_mut().tools.recommend.step.min_input = 20.0;
+    ui.settle();
+    assert!(ui.sees("pid.roll.d"));
+    assert!(ui.sees("Betaflight CLI: commands to apply"));
 }

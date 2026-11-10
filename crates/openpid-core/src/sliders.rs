@@ -49,6 +49,9 @@ pub trait SliderModel: Send + Sync + std::fmt::Debug {
     /// Stable identifier, e.g. `betaflight-simplified-tuning`.
     fn id(&self) -> &'static str;
 
+    /// What [`SliderResult::cli`] is written for, for the user: `Betaflight CLI`.
+    fn cli_name(&self) -> &'static str;
+
     /// The sliders with their current values.
     fn sliders(&self) -> Vec<SliderDef>;
 

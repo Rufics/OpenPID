@@ -2,8 +2,10 @@
 //! field names are mapped with Betaflight 4 conventions.
 
 use super::common::{self, Scales};
+use crate::cli::BetaflightCli;
 use openpid_core::{
-    FieldMapping, FirmwareInfo, FirmwareProfile, FlightSession, RawHeaders, Settings,
+    FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor, FlightSession, RawHeaders,
+    Settings,
 };
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -35,5 +37,17 @@ impl FirmwareProfile for Generic {
         // an unknown firmware's other boxes are not known: the boxes every
         // Cleanflight fork starts with, the other bits stay numbered
         openpid_core::modes::modes_from_mask(word, &common::BOXES_COMMON)
+    }
+
+    fn exporter(
+        &self,
+        fw: &FirmwareInfo,
+        h: &RawHeaders,
+    ) -> Option<Box<dyn openpid_core::Exporter>> {
+        // a log that does not name its firmware (a CSV export, an unknown
+        // fork) is taken for Betaflight; a named other firmware has its own
+        // setting names, which this profile does not know
+        matches!(fw.vendor, FirmwareVendor::Unknown(_))
+            .then(|| Box::new(BetaflightCli::for_log(fw, h)) as Box<dyn openpid_core::Exporter>)
     }
 }

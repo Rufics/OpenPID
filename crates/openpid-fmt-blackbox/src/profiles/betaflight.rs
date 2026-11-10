@@ -1,10 +1,11 @@
 //! Betaflight (and Cleanflight) profile.
 
 use super::common::{self, Scales};
+use crate::cli::BetaflightCli;
 use openpid_core::modes::modes_from_mask;
 use openpid_core::{
-    FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor, FirmwareVersion, FlightMode,
-    FlightSession, RawHeaders, Settings, SliderModel,
+    Exporter, FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor, FirmwareVersion,
+    FlightMode, FlightSession, RawHeaders, Settings, SliderModel,
 };
 
 /// Mode boxes of Betaflight before 3.3 and of Cleanflight, in bit order.
@@ -230,6 +231,13 @@ impl FirmwareProfile for Betaflight {
     fn slider_model(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Option<Box<dyn SliderModel>> {
         super::sliders::BetaflightSliders::from_headers(fw, h)
             .map(|m| Box::new(m) as Box<dyn SliderModel>)
+    }
+
+    fn exporter(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Option<Box<dyn Exporter>> {
+        // Cleanflight is read with this profile too, but its CLI has other
+        // setting names
+        (fw.vendor == FirmwareVendor::Betaflight)
+            .then(|| Box::new(BetaflightCli::for_log(fw, h)) as Box<dyn Exporter>)
     }
 }
 

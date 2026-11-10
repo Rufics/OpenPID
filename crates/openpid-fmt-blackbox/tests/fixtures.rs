@@ -331,3 +331,54 @@ fn sticks_are_mapped_per_firmware() {
     let s = open("inav-9.0.1-truncated.TXT");
     assert!(s.sticks_at(0.0).is_some());
 }
+
+/// The exporter and the slider model of a log come from its firmware
+/// profile, found through the format registry: Betaflight has both, the
+/// other firmwares of the family have their own setting names and get none.
+#[test]
+fn exporter_and_sliders_come_from_the_logs_profile() {
+    let mut registry = openpid_core::FormatRegistry::new();
+    registry.register(Box::new(BlackboxFormat::new()));
+    let first = |name: &str| {
+        let data = std::fs::read(common::logs_dir().join(name)).unwrap();
+        let log = registry
+            .open(&data, Some(name), &OpenOptions::default())
+            .unwrap();
+        log.sessions.into_iter().find(|s| !s.is_empty()).unwrap()
+    };
+    let new = first("betaflight-4.5.1-two-sessions.bbl");
+    assert_eq!(registry.profile_for(&new).unwrap().id(), "betaflight");
+    let exporter = registry.exporter(&new).unwrap();
+    assert_eq!(
+        (exporter.id(), exporter.label()),
+        ("betaflight-cli", "Betaflight CLI")
+    );
+    let lpf = openpid_core::Proposal {
+        path: "gyro_filters.lpf1.cutoff_hz".into(),
+        from: None,
+        to: "300".into(),
+        rationale: String::new(),
+        confidence: 1.0,
+    };
+    let text = exporter.export(std::slice::from_ref(&lpf)).unwrap();
+    assert!(text.contains("set gyro_lpf1_static_hz = 300\n"), "{text}");
+    assert_eq!(
+        registry.slider_model(&new).unwrap().cli_name(),
+        "Betaflight CLI"
+    );
+    // before 4.3 the same setting had another name, and there were no sliders
+    let old = first("betaflight-4.2.0.BFL");
+    let text = registry.exporter(&old).unwrap().export(&[lpf]).unwrap();
+    assert!(text.contains("set gyro_lowpass_hz = 300\n"), "{text}");
+    assert!(registry.slider_model(&old).is_none());
+    for name in [
+        "inav-9.0.1-truncated.TXT",
+        "rotorflight-4.3.0-LOG246.TXT",
+        "emuflight-3.7.0-truncated.BFL",
+    ] {
+        let s = first(name);
+        assert!(registry.profile_for(&s).is_some(), "{name}");
+        assert!(registry.exporter(&s).is_none(), "{name}");
+        assert!(registry.slider_model(&s).is_none(), "{name}");
+    }
+}

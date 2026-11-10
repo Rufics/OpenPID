@@ -87,10 +87,6 @@ static UA: &[(&str, &str)] = &[
     ("Axes", "Осі"),
     ("Axis", "Вісь"),
     ("Back", "Назад"),
-    (
-        "Betaflight CLI to apply (select all, copy):",
-        "Команди Betaflight CLI (виділити все, скопіювати):",
-    ),
     ("Blackbox Explorer", "Blackbox Explorer"),
     (
         "Blackbox Explorer's line colours and its black-red-white heatmaps",
@@ -406,6 +402,10 @@ static UA: &[(&str, &str)] = &[
     ),
     ("close", "закрити"),
     ("colour max (0 = auto)", "стеля кольору (0 = авто)"),
+    (
+        "commands to apply (select all, copy)",
+        "команди для застосування (виділити все, скопіювати)",
+    ),
     ("copy", "скопіювати"),
     (
         "corrupt / desync / skipped bytes",
@@ -553,6 +553,10 @@ static UA: &[(&str, &str)] = &[
         "у лозі немає gyro.filtered для перевірки",
     ),
     ("no mode", "без режиму"),
+    (
+        "no ready commands for this firmware; set the values by hand",
+        "для цієї прошивки готових команд немає; встановіть значення вручну",
+    ),
     (
         "no unfiltered gyro in this log",
         "у цьому лозі немає нефільтрованого гіро",

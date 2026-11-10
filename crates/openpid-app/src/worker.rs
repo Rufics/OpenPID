@@ -146,18 +146,23 @@ impl std::fmt::Debug for Worker {
     }
 }
 
-fn registry() -> FormatRegistry {
-    let mut r = FormatRegistry::new();
-    r.register(Box::new(openpid_fmt_blackbox::BlackboxFormat::new()))
-        .register(Box::new(openpid_fmt_csv::CsvFormat::new()))
-        .register(Box::new(openpid_fmt_ardupilot::ArdupilotFormat::new()));
-    r
+/// Every log format the app reads, with its firmware profiles. The only
+/// place of the app that names the format crates.
+pub fn formats() -> &'static FormatRegistry {
+    static FORMATS: std::sync::LazyLock<FormatRegistry> = std::sync::LazyLock::new(|| {
+        let mut r = FormatRegistry::new();
+        r.register(Box::new(openpid_fmt_blackbox::BlackboxFormat::new()))
+            .register(Box::new(openpid_fmt_csv::CsvFormat::new()))
+            .register(Box::new(openpid_fmt_ardupilot::ArdupilotFormat::new()));
+        r
+    });
+    &FORMATS
 }
 
 fn load(path: &PathBuf) -> Result<LogFile, String> {
     let data = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     let name = path.file_name().and_then(std::ffi::OsStr::to_str);
-    let mut log = registry()
+    let mut log = formats()
         .open(&data, name, &OpenOptions::default())
         .map_err(|e| e.to_string())?;
     log.source.path = Some(path.clone());

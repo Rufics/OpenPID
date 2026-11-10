@@ -237,6 +237,7 @@ pub trait FirmwareProfile: Send + Sync {
     fn derive(&self, session: &mut FlightSession);      // throttle %, pid error, gyro stage, …
     fn filter_model(&self, s: &Settings) -> Option<FilterChainModel>; // for Filter Sim
     fn slider_model(&self) -> Option<Box<dyn SliderModel>>;          // for the PID slider tool
+    fn exporter(&self) -> Option<Box<dyn Exporter>>;                 // proposals / a diff as the firmware's commands
 }
 
 /// A computation over a session. A pure function of (data, parameters).
@@ -254,10 +255,13 @@ pub trait Recommender: Send + Sync {
     fn recommend(&self, s: &FlightSession, results: &ResultStore) -> Vec<Proposal>;
 }
 
-/// Export to an external form (a firmware CLI diff, CSV, JSON, PNG).
+/// Proposals and setting diffs as text for the firmware of one log; created
+/// by that log's `FirmwareProfile`, so it knows the version's setting names.
 pub trait Exporter: Send + Sync {
-    fn id(&self) -> &'static str;
-    fn export(&self, what: &Exportable, w: &mut dyn Write) -> Result<(), ExportError>;
+    fn id(&self) -> &'static str;                       // "betaflight-cli"
+    fn label(&self) -> &'static str;                    // "Betaflight CLI", shown to the user
+    fn export(&self, proposals: &[Proposal]) -> Result<String, ExportError>;
+    fn diff(&self, diff: &[HeaderDiff]) -> String;
 }
 ```
 
@@ -428,6 +432,7 @@ The CLI uses the same registries as the GUI and is the basis of the golden tests
 - A `Recommender` receives a `FlightSession` plus the analysis results and returns `Vec<Proposal>` (`{ path: "pid.roll.d", from, to, rationale, confidence }`).
 - `Exporter("betaflight-cli")` turns `Proposal`s into `set …` commands / a diff.
 - Implemented (v1.0): `openpid-core::recommend` (`Proposal`, `Exporter`, `diff_headers`), `openpid-analysis::recommend::Recommend` with three rules and explicit evidence (overshoot → D, an uncovered peak → notch, headroom above the gyro LPF → cutoff), `openpid-fmt-blackbox::BetaflightCli`, `openpid diff` and `openpid run recommend --cli`.
+- The exporter and the slider model of a log are asked from its firmware profile through the format registry (`FormatRegistry::exporter(&session)`, `slider_model(&session)`; ADR-0015): the app and the CLI name no firmware. Betaflight (and a log that does not name its firmware) has the CLI exporter; INAV, Rotorflight, `EmuFlight` and `ArduPilot` have none yet, so the Advice tab shows their proposals without commands and `--cli` reports that there is no export.
 - Later: a `Device` trait (MSP over serial) to read and write settings and to download logs from the FC. The decision is ADR-0014: no device access in v1.0; later a separate `openpid-msp` crate behind the `device` feature on `serial2` (pure Rust), writes only with confirmation and a read-back.
 
 None of these parts needs a change in `core`: all of them are new implementations of existing traits.

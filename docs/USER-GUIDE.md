@@ -463,10 +463,14 @@ prominence**, **LPF headroom**) are saved in the project; the **Proposals**
 table (path, from → to, confidence, rationale), the **Evidence** table (● the
 rule fired, ○ it did not) and ready text for the Betaflight CLI; Export → JSON
 gives the same result. In the CLI, `--cli` prints the evidence as comments and
-the `set … / save` commands for the Betaflight CLI instead of JSON
-(`openpid-fmt-blackbox::BetaflightCli`, the same name table as `openpid diff
---cli`). The rules are hints with evidence, not an autotune: apply one change
-at a time and check it with a new log.
+the `set … / save` commands for the Betaflight CLI instead of JSON (the same
+name table as `openpid diff --cli`). The commands are written by the firmware
+profile of the log: Betaflight logs get them; for INAV, Rotorflight, EmuFlight
+and ArduPilot logs the tab shows the proposals in the firmware's own numbers
+and says that there are no ready commands, and `--cli` ends with an error
+instead of printing Betaflight commands for another firmware. The rules are
+hints with evidence, not an autotune: apply one change at a time and check it
+with a new log.
 
 ## 13. CLI equivalents
 

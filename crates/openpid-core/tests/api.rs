@@ -200,6 +200,7 @@ fn profile_registry_selects_by_score() {
     let p = r.select(&fw, &h).unwrap();
     assert_eq!(p.id(), "none");
     assert!(p.slider_model(&fw, &h).is_none());
+    assert!(p.exporter(&fw, &h).is_none());
     assert!(p.map_field("x", &fw, &h).is_none());
 }
 

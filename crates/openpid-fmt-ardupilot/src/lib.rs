@@ -41,6 +41,11 @@ impl LogFormat for ArdupilotFormat {
         "ardupilot-dataflash"
     }
 
+    fn profile(&self, id: &str) -> Option<&dyn openpid_core::FirmwareProfile> {
+        use openpid_core::FirmwareProfile as _;
+        (id == self.profile.id()).then_some(&self.profile as &dyn openpid_core::FirmwareProfile)
+    }
+
     fn extensions(&self) -> &'static [&'static str] {
         &["bin"]
     }

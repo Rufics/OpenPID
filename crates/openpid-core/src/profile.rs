@@ -3,6 +3,7 @@
 
 use crate::channel::ChannelId;
 use crate::modes::FlightMode;
+use crate::recommend::Exporter;
 use crate::session::{FirmwareInfo, FlightSession};
 use crate::settings::Settings;
 use crate::sliders::SliderModel;
@@ -123,6 +124,16 @@ pub trait FirmwareProfile: Send + Sync {
         _firmware: &FirmwareInfo,
         _headers: &RawHeaders,
     ) -> Option<Box<dyn SliderModel>> {
+        None
+    }
+
+    /// What writes proposals and setting diffs for this log's firmware (its
+    /// CLI, a parameter file), when the profile has one.
+    fn exporter(
+        &self,
+        _firmware: &FirmwareInfo,
+        _headers: &RawHeaders,
+    ) -> Option<Box<dyn Exporter>> {
         None
     }
 }
