@@ -41,7 +41,7 @@ Five designs on the real bar, each with 1, 3 and 8 logs:
 
 ## Decision (2026-11-10)
 
-**K2**, by the score. Waiting for the owner's approval.
+**K2**, by the score. Approved by the owner on 2026-11-10 ("Підтверджую").
 
 ## Implementation requirements
 
