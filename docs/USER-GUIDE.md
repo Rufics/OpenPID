@@ -40,7 +40,11 @@ cargo run --release -p openpid-app                      # or ./target/release/op
   top bar (`Ctrl+O`), or drop files into the window: one file takes the free
   slot (A first), two take A and B. Shortcuts: section 13a.
 - Every open log is a chip in the top bar: its colour, letter, file name and
-  log-check mark. The **timeline dock** at the bottom shows one log: its name,
+  log-check mark. The chips share a zone of fixed width and shrink to fit
+  it: with three or more logs only the docked one keeps its name, then the
+  chips are letters, and from seven logs discs in the logs' colours (a dot
+  on a disc marks a log check that is not fine). The whole name is in the
+  chip's tooltip and in the dock. The **timeline dock** at the bottom shows one log: its name,
   firmware, length and rate, the session, the log check, the show / solo /
   close icons and the epoch strip. It shows the log opened last; click a chip
   to dock another one. The tabs never move as logs are added.

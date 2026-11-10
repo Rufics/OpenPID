@@ -265,6 +265,12 @@ impl Default for Tools {
     }
 }
 
+/// Space between the parts of the top bar.
+const BAR_GAP: f32 = 10.0;
+/// The narrowest the log zone of the top bar gets: four discs and "+". On a
+/// window too narrow for this and the tabs, the tabs scroll.
+const LOG_ZONE_MIN: f32 = 150.0;
+
 pub struct App {
     pub worker: Worker,
     /// Open logs in slot-bar order (docs/design/multi-slot, R2).
@@ -318,6 +324,8 @@ pub struct App {
     theme_applied: Option<Theme>,
     /// Session and epoch to apply to a slot once its file has loaded (project files).
     pending: HashMap<Slot, (Option<usize>, Option<Epoch>)>,
+    /// What the top bar drew last frame.
+    pub shell: views::ShellState,
     /// Screen rectangle of the tab area, for the PNG export.
     pub central_rect: egui::Rect,
     /// Outcome of the last PNG export, filled by the screenshot callback.
@@ -412,6 +420,7 @@ impl App {
             prefs_path,
             theme_applied: None,
             pending: HashMap::new(),
+            shell: views::ShellState::default(),
             central_rect: egui::Rect::NOTHING,
             export_message: Arc::new(std::sync::Mutex::new(None)),
             show_help: false,
@@ -936,6 +945,7 @@ impl App {
         }
     }
 
+    /// Draws the top bar.
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         // docs/design/app-shell (R4): word mark, the log chips, the tabs as
@@ -948,21 +958,54 @@ impl App {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     crate::theme::word_mark(ui);
-                    ui.add_space(10.0);
-                    if !self.start_screen_wanted() {
-                        views::log_chips(self, ui);
-                        ui.add_space(10.0);
-                    }
+                    // the gaps of this row are explicit, so the widths add up
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    ui.add_space(BAR_GAP);
+                    // docs/design/log-chips (K2): the tabs take their own
+                    // width beside the menu and the logs the rest, so the
+                    // number of logs moves nothing. The zone is kept on the
+                    // start screen too, empty.
+                    let total = ui.available_width();
+                    let row_h = ui.spacing().interact_size.y.max(26.0);
+                    let zone_w = (total - self.shell.tabs_w - self.shell.menu_w - 2.0 * BAR_GAP)
+                        .max(LOG_ZONE_MIN)
+                        .min((total - self.shell.menu_w - 2.0 * BAR_GAP).max(0.0));
+                    let zone = ui
+                        .allocate_ui_with_layout(
+                            egui::vec2(zone_w, row_h),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(zone_w);
+                                ui.set_max_width(zone_w);
+                                if !self.start_screen_wanted() {
+                                    views::log_chips(self, ui);
+                                }
+                            },
+                        )
+                        .response
+                        .rect;
+                    self.shell.log_zone = zone;
+                    ui.add_space(BAR_GAP);
+                    let tabs_w = (ui.available_width() - self.shell.menu_w - BAR_GAP).max(0.0);
+                    let tabs = ui
+                        .allocate_ui_with_layout(
+                            egui::vec2(tabs_w, row_h),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                egui::ScrollArea::horizontal()
+                                    .id_salt("tabs")
+                                    .max_width(tabs_w)
+                                    .scroll_bar_visibility(
+                                        egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                                    )
+                                    .show(ui, |ui| self.tab_group(ui, &ctx))
+                            },
+                        )
+                        .inner;
+                    self.shell.tabs_w = tabs.content_size.x;
+                    self.shell.tabs_rect = tabs.inner_rect;
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        self.main_menu(ui);
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            egui::ScrollArea::horizontal()
-                                .id_salt("tabs")
-                                .scroll_bar_visibility(
-                                    egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
-                                )
-                                .show(ui, |ui| self.tab_group(ui, &ctx));
-                        });
+                        self.shell.menu_w = ui.scope(|ui| self.main_menu(ui)).response.rect.width();
                     });
                 });
             });

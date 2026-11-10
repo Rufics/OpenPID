@@ -78,7 +78,9 @@ verdict colour uses, so a highlighted control is never mistaken for a log.
   in the bar (Log, 3D, Motors, Sliders); each tab is still read out by its full
   title and shows it in its tooltip. The tabs scroll sideways rather than wrap
   when the window is too narrow.
-- **Log chips** (`views::log_chips`): the slot's colour dot (dimmed when hidden),
+- **Log chips** (`views::log_chips`; since 2026-11-10 in a zone of fixed
+  width with the richest form that fits it, see [log-chips](../log-chips/README.md)):
+  the slot's colour dot (dimmed when hidden),
   its letter, the file stem (≤ 18 characters; with more than two logs only the
   active chip shows it, ≤ 14) and the log check drawn as a tick, "!" or cross.
   Read out as "Slot A: file.bbl". Empty slots get no chip. A click puts the log
