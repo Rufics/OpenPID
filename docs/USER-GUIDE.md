@@ -62,11 +62,24 @@ cargo run --release -p openpid-app                      # or ./target/release/op
 
 ## 2. Log viewer — epoch and channels
 
-- **Channels**: checkboxes of slot A's channels; the **filter** field narrows
-  the list (`gyro`, `pid.d`, `motor`…). Channel names are the same for every
-  firmware: `gyro.filtered.roll`, `gyro.raw.pitch`, `setpoint.yaw`,
-  `pid.p.roll`, `motor.0`, `motor_rpm.0`, `throttle`, `rc.3`, `debug.0`,
-  `custom:…`.
+![Log viewer](design/log-tab/one-log.jpg)
+
+- **Rows**: roll, pitch and yaw of the docked log (the one in the timeline
+  dock at the bottom) at one scale, **Y scale ±** in the panel (500 deg/s by
+  default), and under them a row for the throttle and the motors (0–100 %).
+  Motor speeds, debug values and other channels get rows of their own when
+  chosen. Every row shares the time axis: zoom and pan move time only.
+- **Quantities** (panel): Gyro, Gyro prefilt, P-term, I-term, D-term, F-term,
+  Setpoint, PID sum, PID error (on every axis), Motors, Throttle, Motor RPM,
+  Debug. Their names are drawn in their line colours; one the log does not
+  have is greyed. The default is Gyro, Setpoint, Motors and Throttle.
+- **At the top left of each row** the names of its lines in their colours,
+  with the values at the cursor once you place it.
+- **Other channels** (panel, folded): checkboxes of every channel of the log;
+  the **filter** field narrows the list (`gyro`, `pid.d`, `motor`…). Channel
+  names are the same for every firmware: `gyro.filtered.roll`,
+  `gyro.raw.pitch`, `setpoint.yaw`, `pid.p.roll`, `motor.0`, `motor_rpm.0`,
+  `throttle`, `rc.3`, `debug.0`, `custom:…`.
 - **Epoch**: the time window every tool analyses. Under each slot row, on every
   tab, sits a **timeline strip**: the grey throttle envelope (or |gyro| when
   there is no throttle) over the whole session, with the chosen window in the
@@ -83,10 +96,12 @@ cargo run --release -p openpid-app                      # or ./target/release/op
   pitch, which gives the step response the most windows.
 - **A log opens on its Auto trim** (the "auto" badge in the label) when that is
   possible; otherwise the whole log is analysed. A project keeps its own epoch.
-- **Cursor**: click or tap the plot. The **A start = cursor** / **A end =
-  cursor** buttons set an epoch bound from the cursor.
-- **Epoch bounds** can also be dragged on the plot itself (the shaded region,
-  8 px handles, 22 px in touch mode); dragging away from a handle pans.
+- **Cursor**: click or tap a row (or rest a finger on it in touch mode). The
+  panel shows its **Position**; **start = cursor** / **end = cursor** set an
+  epoch bound of the docked log from it.
+- **Epoch bounds** can also be dragged on any row (the parts outside the
+  epoch are dimmed; 8 px handles, 22 px in touch mode); dragging away from a
+  handle pans.
 - Zoom with the wheel or a pinch, pan by dragging, double-click resets the view.
 - The angular-rate unit (deg/s or rad/s) and the acceleration unit (g or m/s²)
   are chosen in Settings and apply to the traces of this tab only.

@@ -120,6 +120,20 @@ pub fn drag(
     })
 }
 
+/// A number with a [`egui::DragValue`] built by the caller (decimals and the
+/// like), as [`drag`].
+pub fn drag_value(
+    ui: &mut Ui,
+    label: &str,
+    hint: &str,
+    value: egui::DragValue<'_>,
+    unit: &str,
+) -> Response {
+    row(ui, label, hint, |ui| {
+        unit_pair(ui, value, unit, Some(UNIT_W))
+    })
+}
+
 /// A whole number, as [`drag`].
 pub fn drag_usize(
     ui: &mut Ui,

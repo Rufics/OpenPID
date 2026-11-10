@@ -12,9 +12,9 @@ use crate::app::{App, Cached, Dialog, SlotState, Tab};
 use crate::worker::{Done, Job, JobKey, Kind, Slot, Worker};
 use eframe::egui::{self, Key, Modifiers, accesskit::Role};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use openpid_analysis::{Epoch, FitnessLevel, StepParams};
-use openpid_core::Axis;
+use openpid_core::{Axis, ChannelId, GyroStage};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -664,7 +664,7 @@ fn cursor_buttons_set_the_epoch() {
     let mut h = harness(vec![LOG_4_2.into()], Some(Tab::LogViewer));
     run_until(&mut h, no_slot_loading);
     assert!(has_label_containing(&h, "Click or tap the plot"));
-    assert!(h.query_by_label("A start = cursor").is_none());
+    assert!(h.query_by_label("start = cursor").is_none());
     // the log opened on its automatic trim; start from the whole log
     h.get_by_label("All").click();
     h.step();
@@ -678,22 +678,22 @@ fn cursor_buttons_set_the_epoch() {
         .duration_s();
     app_mut(&mut h).viewer.cursor_s = Some(1.0);
     h.step();
-    assert!(has_label_containing(&h, "cursor: 1.000 s"));
-    h.get_by_label("A start = cursor").click();
+    assert!(h.query_by_label("Position").is_some(), "the cursor's time");
+    h.get_by_label("start = cursor").click();
     h.step();
     let e = app(&h).loaded(Slot::A).unwrap().epoch.unwrap();
     assert_eq!(e.start_s, 1.0);
     assert!((e.end_s - duration).abs() < 1e-9);
     app_mut(&mut h).viewer.cursor_s = Some(2.0);
     h.step();
-    h.get_by_label("A end = cursor").click();
+    h.get_by_label("end = cursor").click();
     h.step();
     let e = app(&h).loaded(Slot::A).unwrap().epoch.unwrap();
     assert_eq!((e.start_s, e.end_s), (1.0, 2.0));
     // end before start swaps the bounds rather than producing an empty epoch
     app_mut(&mut h).viewer.cursor_s = Some(0.5);
     h.step();
-    h.get_by_label("A end = cursor").click();
+    h.get_by_label("end = cursor").click();
     h.step();
     let e = app(&h).loaded(Slot::A).unwrap().epoch.unwrap();
     assert_eq!((e.start_s, e.end_s), (0.5, 1.0));
@@ -813,33 +813,104 @@ fn epoch_bounds_can_be_dragged_on_the_plot() {
 fn channel_filter_and_toggles_edit_the_channel_list() {
     let mut h = harness(vec![LOG_4_2.into()], Some(Tab::LogViewer));
     run_until(&mut h, no_slot_loading);
-    let first = app(&h).tools.viewer_channels[0].key();
-    assert!(h.query_by_label(&first).is_some(), "toggle for {first}");
-    h.get_by_label(&first).click();
+    assert!(app(&h).tools.viewer_channels.is_empty(), "none by default");
+    // the other channels are folded away under the quantities
+    assert!(h.query_by_label("rc.0").is_none());
+    h.get_by_label("Other channels").click();
     h.step();
-    assert!(
-        !app(&h)
-            .tools
-            .viewer_channels
-            .iter()
-            .any(|c| c.key() == first)
-    );
-    h.get_by_label(&first).click();
+    // the list scrolls; the filter brings a channel into view
+    let filter = h.get_by_role_and_label(Role::TextInput, "filter");
+    filter.focus();
+    filter.type_text("rc.");
     h.step();
-    assert!(
-        app(&h)
-            .tools
-            .viewer_channels
-            .iter()
-            .any(|c| c.key() == first)
+    h.get_by_label("rc.0").click();
+    h.step();
+    assert_eq!(
+        app(&h).tools.viewer_channels,
+        vec![ChannelId::RcCommand { ch: 0 }]
     );
+    h.step();
+    assert!(h.query_by_label("Other channels (1)").is_some());
+    h.get_by_label("rc.0").click();
+    h.step();
+    assert!(app(&h).tools.viewer_channels.is_empty());
+    app_mut(&mut h).viewer.channel_filter.clear();
+    h.step();
     let filter = h.get_by_role_and_label(Role::TextInput, "filter");
     filter.focus();
     filter.type_text("thr");
     h.step();
     assert_eq!(app(&h).viewer.channel_filter, "thr");
-    assert!(h.query_by_label(&first).is_none(), "filtered out: {first}");
+    assert!(h.query_by_label("rc.0").is_none(), "filtered out");
     assert!(h.query_by_label("throttle").is_some());
+}
+
+#[test]
+fn log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor() {
+    use crate::log_tab::{LogQuantity, row_summary};
+    let mut h = harness(vec![LOG_2025.into()], Some(Tab::LogViewer));
+    run_until(&mut h, no_slot_loading);
+    h.run_steps(2);
+    // the reference tool's default: gyro and setpoint on every axis, the
+    // throttle and the motors under them; the setpoint drawn first
+    let rows = row_summary(app(&h));
+    let keys: Vec<&str> = rows.iter().map(|r| r.0).collect();
+    assert_eq!(keys, ["roll", "pitch", "yaw", "motors"]);
+    assert_eq!(rows[0].1, ["setpoint", "gyro"]);
+    assert_eq!(rows[3].1, ["throttle", "M1", "M2", "M3", "M4"]);
+    // one scale for the three axes: ± 500 deg/s
+    let (lo, hi) = app(&h).viewer.y_bounds.expect("rows drawn");
+    assert!(
+        (lo + 500.0).abs() < 1.0 && (hi - 500.0).abs() < 1.0,
+        "{lo} {hi}"
+    );
+    // a quantity adds a line on every axis; one the log lacks is greyed out
+    h.get_by_label("P-term").click();
+    h.get_by_label("Motor RPM").click();
+    h.step();
+    assert!(app(&h).tools.log_display.shows(LogQuantity::PTerm));
+    let rows = row_summary(app(&h));
+    assert_eq!(rows[1].1, ["setpoint", "gyro", "P"]);
+    assert_eq!(rows[4].0, "rpm");
+    assert!(
+        h.get_by_label("Debug").accesskit_node().is_disabled(),
+        "no debug in this log"
+    );
+    h.get_by_label("Motors").click();
+    h.get_by_label("Throttle").click();
+    h.step();
+    let keys: Vec<&str> = row_summary(app(&h)).iter().map(|r| r.0).collect();
+    assert_eq!(keys, ["roll", "pitch", "yaw", "rpm"], "no motor row left");
+    // other channels get a row of their own, unless a quantity draws them
+    app_mut(&mut h).tools.viewer_channels = vec![
+        ChannelId::Gyro {
+            axis: Axis::Roll,
+            stage: GyroStage::Filtered,
+        },
+        ChannelId::RcCommand { ch: 3 },
+    ];
+    let rows = row_summary(app(&h));
+    assert_eq!(rows.last().unwrap(), &("other", vec!["rc.3".to_string()]));
+    // the y scale
+    let scale = h.get_by_role_and_label(Role::SpinButton, "Y scale ±");
+    scale.set_value_accesskit(250.0);
+    h.run_steps(3);
+    let (lo, hi) = app(&h).viewer.y_bounds.unwrap();
+    assert!(
+        (lo + 250.0).abs() < 1.0 && (hi - 250.0).abs() < 1.0,
+        "{lo} {hi}"
+    );
+    // a click places the cursor; its time is in the panel
+    let frame = app(&h).viewer.plot_frame.unwrap();
+    let p = frame.center();
+    pointer_move(&mut h, p);
+    pointer_button(&mut h, p, true);
+    pointer_button(&mut h, p, false);
+    h.step();
+    let t = app(&h).viewer.cursor_s.expect("cursor placed");
+    let (x0, x1) = app(&h).viewer.x_bounds.unwrap();
+    assert!((t - f64::midpoint(x0, x1)).abs() < 0.01 * (x1 - x0), "{t}");
+    assert!(h.query_by_label("Position").is_some());
 }
 
 #[test]
@@ -2307,7 +2378,7 @@ fn language_switch_translates_labels_and_persists() {
         "an empty slot has no chip"
     );
     assert!(h.query_by_label("Додати лог").is_some());
-    assert!(has_label_containing(&h, "Канали"));
+    assert!(has_label_containing(&h, "Інші канали"));
     // dynamic read-outs keep their units and numbers
     assert!(has_label_containing(&h, " s"));
     // the choice is saved and restored
@@ -2998,9 +3069,9 @@ fn time_tab_stacks_the_axes_in_db_with_the_throttle_under_them() {
     assert!(app(&h).tools.time_display.db && app(&h).tools.time_display.prefilt);
     assert_eq!(
         app(&h).tools.stft.channel,
-        openpid_core::ChannelId::Gyro {
+        ChannelId::Gyro {
             axis: Axis::Roll,
-            stage: openpid_core::GyroStage::Raw
+            stage: GyroStage::Raw
         },
         "prefilt by default, as the reference tool"
     );

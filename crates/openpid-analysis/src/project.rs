@@ -89,7 +89,7 @@ pub struct Project {
     pub heatmap_link: bool,
     /// Throttle bins with fewer segments are greyed out.
     pub min_segments: usize,
-    /// Channels shown in the log viewer.
+    /// Channels the log viewer shows besides its quantities ("Other channels").
     pub viewer_channels: Vec<ChannelId>,
 }
 
@@ -118,11 +118,7 @@ impl Default for Project {
             heatmap_max: 0.0,
             heatmap_link: true,
             min_segments: 3,
-            viewer_channels: vec![
-                gyro,
-                ChannelId::Setpoint { axis: Axis::Roll },
-                ChannelId::Throttle,
-            ],
+            viewer_channels: Vec::new(),
         }
     }
 }

@@ -9,6 +9,7 @@ mod colormap;
 mod export;
 mod grid;
 mod i18n;
+mod log_tab;
 mod panel;
 mod prefs;
 mod shortcuts;

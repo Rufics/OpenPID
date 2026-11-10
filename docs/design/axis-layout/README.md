@@ -96,7 +96,7 @@ segment and throttle window. The full preset list is #142.
 **Freq × time** (implemented: [time-tab](../time-tab/README.md)). Three rows (roll / pitch / yaw) of the chosen channel, the
 existing player under them. Panel: channel, colour max, segment, overlays.
 
-**Log viewer.** Rows roll / pitch / yaw at a shared y scale (default ± 500 °/s,
+**Log viewer** (implemented: [log-tab](../log-tab/README.md)). Rows roll / pitch / yaw at a shared y scale (default ± 500 °/s,
 "y scale" in the panel) plus a fourth row for throttle and motors (0–100 %).
 A checklist of quantities on the left (Gyro, Gyro prefilt, P, I, D, D prefilt,
 F, Set point, PID sum, PID error, Motors, eRPM, Throttle, Debug), each applying

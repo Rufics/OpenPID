@@ -81,4 +81,5 @@ Rules shared by every topic of the sprint:
 | Freq × throttle: R/P/Y × (prefilt \| gyro) per log, flown range | [throttle-tab](throttle-tab/README.md) |
 | Plot colours as Blackbox Explorer, colour-blind safe option | [plot-colours](plot-colours/README.md) |
 | Freq × time: R/P/Y spectrograms in dB, spectrum at the position, throttle | [time-tab](time-tab/README.md) |
+| Log viewer: R/P/Y at one scale, throttle / motors, quantities, values at the cursor | [log-tab](log-tab/README.md) |
 

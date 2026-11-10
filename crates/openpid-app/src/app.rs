@@ -224,7 +224,10 @@ pub struct Tools {
     pub heatmap_link: bool,
     /// Throttle bins with fewer segments than this are greyed out on the freq × throttle heatmap.
     pub min_segments: usize,
+    /// Log viewer: channels shown besides the quantities ("Other channels").
     pub viewer_channels: Vec<ChannelId>,
+    /// Log viewer display options (docs/design/log-tab).
+    pub log_display: crate::log_tab::LogDisplay,
     /// Step tab display options (docs/design/axis-layout).
     pub step_display: crate::axis_layout::StepDisplay,
     /// Spectrum tab display options (docs/design/spectrum-tab).
@@ -256,11 +259,8 @@ impl Default for Tools {
             heatmap_max: 0.0,
             heatmap_link: true,
             min_segments: 3,
-            viewer_channels: vec![
-                gyro,
-                ChannelId::Setpoint { axis: Axis::Roll },
-                ChannelId::Throttle,
-            ],
+            viewer_channels: Vec::new(),
+            log_display: crate::log_tab::LogDisplay::default(),
             step_display: crate::axis_layout::StepDisplay::default(),
             spectrum_display: crate::spectrum_tab::SpectrumDisplay::default(),
             throttle_display: crate::throttle_tab::ThrottleDisplay::default(),
@@ -756,6 +756,7 @@ impl App {
             min_segments: p.min_segments,
             viewer_channels: p.viewer_channels.clone(),
             // display options are the viewer's, not the project's
+            log_display: self.tools.log_display.clone(),
             step_display: self.tools.step_display.clone(),
             spectrum_display: self.tools.spectrum_display.clone(),
             throttle_display: self.tools.throttle_display.clone(),
@@ -1252,7 +1253,7 @@ impl App {
             )
             .show(ui, |ui| match self.tab {
                 _ if self.start_screen_wanted() => views::start_screen(self, ui),
-                Tab::LogViewer => views::log_viewer(self, ui),
+                Tab::LogViewer => crate::log_tab::log_viewer(self, ui),
                 Tab::Step => crate::axis_layout::step(self, ui),
                 Tab::Spectrum => crate::spectrum_tab::spectrum(self, ui),
                 Tab::ThrottleHeatmap => crate::throttle_tab::throttle(self, ui),

@@ -43,12 +43,12 @@ pub struct ViewerState {
 }
 
 /// Pixel distance within which an epoch bound can be grabbed.
-fn grab_radius(touch: bool) -> f32 {
+pub(crate) fn grab_radius(touch: bool) -> f32 {
     if touch { 22.0 } else { 8.0 }
 }
 
 /// Moves one epoch bound to `t` (clamped to the log), keeping start <= end.
-fn set_epoch_bound(app: &mut App, slot: Slot, start: bool, t: f64) {
+pub(crate) fn set_epoch_bound(app: &mut App, slot: Slot, start: bool, t: f64) {
     let Some(l) = app.loaded_mut(slot) else {
         return;
     };
@@ -71,32 +71,56 @@ fn set_epoch_bound(app: &mut App, slot: Slot, start: bool, t: f64) {
     });
 }
 
-/// Shades every slot's epoch on a time plot. Painted over the plot rather
-/// than as a plot polygon: a polygon spanning the visible y range would feed
-/// the auto-bounds and grow them by the margin fraction every frame.
-fn shade_epochs(ui: &Ui, app: &App, transform: &egui_plot::PlotTransform) {
+/// Dims what lies outside the epochs of `slots` on a time plot, as the
+/// reference tool and Blackbox Explorer dim what is trimmed off. Painted over
+/// the plot rather than as a plot polygon: a polygon spanning the visible y
+/// range would feed the auto-bounds and grow them by the margin fraction
+/// every frame.
+pub(crate) fn shade_epochs(
+    ui: &Ui,
+    app: &App,
+    slots: &[Slot],
+    transform: &egui_plot::PlotTransform,
+) {
     let frame = *transform.frame();
     let painter = ui.painter().with_clip_rect(frame);
-    for slot in app.slot_ids() {
+    let dim = if crate::theme::is_dark() {
+        Color32::from_black_alpha(150)
+    } else {
+        Color32::from_white_alpha(170)
+    };
+    for &slot in slots {
         let Some(e) = app.loaded(slot).and_then(|l| l.epoch) else {
             continue;
         };
         let x0 = transform.position_from_point_x(e.start_s);
         let x1 = transform.position_from_point_x(e.end_s);
-        painter.rect_filled(
-            egui::Rect::from_min_max(egui::pos2(x0, frame.top()), egui::pos2(x1, frame.bottom())),
-            0.0,
-            slot_color(slot).gamma_multiply(0.12),
-        );
+        for (a, b) in [(frame.left(), x0), (x1, frame.right())] {
+            if b > a {
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(a, frame.top()),
+                        egui::pos2(b, frame.bottom()),
+                    ),
+                    0.0,
+                    dim,
+                );
+            }
+        }
     }
 }
 
-/// Draggable epoch bounds of every slot; returns the handle under the pointer.
-fn draw_epochs(pu: &mut egui_plot::PlotUi<'_>, app: &App, grab_px: f32) -> Option<(Slot, bool)> {
+/// Draggable epoch bounds of `slots`; returns the handle under the pointer.
+pub(crate) fn draw_epochs(
+    pu: &mut egui_plot::PlotUi<'_>,
+    app: &App,
+    slots: &[Slot],
+    grab_px: f32,
+) -> Option<(Slot, bool)> {
     let hover_pos = pu.response().hover_pos();
     let transform = *pu.transform();
     let mut hovered = None;
-    for slot in app.slot_ids() {
+    for &slot in slots {
         let Some(e) = app.loaded(slot).and_then(|l| l.epoch) else {
             continue;
         };
@@ -1207,40 +1231,8 @@ pub(crate) fn grid_heatmap(
 
 // ---------------------------------------------------------------------------
 
-/// Channel toggles for the log viewer (slot A's channel list, filtered).
-fn viewer_channel_picker(app: &mut App, ui: &mut Ui, session: Option<&FlightSession>) {
-    ui.horizontal_wrapped(|ui| {
-        ui.label(tr("Channels:"));
-        let filter = &mut app.viewer.channel_filter;
-        let l = ui.label(tr("filter"));
-        ui.add(
-            egui::TextEdit::singleline(filter)
-                .hint_text(tr("filter…"))
-                .desired_width(120.0),
-        )
-        .labelled_by(l.id);
-        let Some(s) = session else { return };
-        let mut keys: Vec<ChannelId> = s.channels.iter().map(|c| c.id.clone()).collect();
-        keys.sort_by_key(ChannelId::key);
-        for id in keys {
-            let k = id.key();
-            if !filter.is_empty() && !k.contains(filter.as_str()) {
-                continue;
-            }
-            let mut on = app.tools.viewer_channels.contains(&id);
-            if ui.toggle_value(&mut on, k).changed() {
-                if on {
-                    app.tools.viewer_channels.push(id);
-                } else {
-                    app.tools.viewer_channels.retain(|c| *c != id);
-                }
-            }
-        }
-    });
-}
-
 /// Moves one slot's epoch boundary to the cursor time `t`.
-fn set_epoch_from_cursor(app: &mut App, slot: Slot, t: f64, start: bool) {
+pub(crate) fn set_epoch_from_cursor(app: &mut App, slot: Slot, t: f64, start: bool) {
     let Some(l) = app.loaded_mut(slot) else {
         return;
     };
@@ -1262,33 +1254,6 @@ fn set_epoch_from_cursor(app: &mut App, slot: Slot, t: f64, start: bool) {
     });
 }
 
-/// Cursor read-out and the "epoch from cursor" buttons.
-fn viewer_cursor_controls(app: &mut App, ui: &mut Ui) {
-    ui.horizontal(|ui| {
-        let Some(t) = app.viewer.cursor_s else {
-            ui.label(
-                RichText::new(tr(
-                    "Click or tap the plot to place the cursor, then set the epoch from it.",
-                ))
-                .color(MUTED),
-            );
-            return;
-        };
-        ui.label(format!("cursor: {t:.3} s"));
-        for slot in app.loaded_slots() {
-            if ui
-                .button(format!("{} start = cursor", slot.name()))
-                .clicked()
-            {
-                set_epoch_from_cursor(app, slot, t, true);
-            }
-            if ui.button(format!("{} end = cursor", slot.name())).clicked() {
-                set_epoch_from_cursor(app, slot, t, false);
-            }
-        }
-    });
-}
-
 /// Scale factor and symbol for showing a channel in the preferred display units
 /// (angular rates and accelerations; everything else is shown as logged).
 pub fn display_unit(unit: &Unit, prefs: &Prefs) -> (f64, String) {
@@ -1302,169 +1267,6 @@ pub fn display_unit(unit: &Unit, prefs: &Prefs) -> (f64, String) {
             (k, sym.to_string())
         }
         other => (1.0, other.to_string()),
-    }
-}
-
-/// Draws one slot's selected channels (decimated to the plot width) and its epoch lines.
-fn viewer_plot_slot(
-    pu: &mut egui_plot::PlotUi<'_>,
-    app: &App,
-    slot: Slot,
-    channels: &[ChannelId],
-    n_lines: f32,
-    px: usize,
-) {
-    let Some(l) = app.loaded(slot) else { return };
-    let Some(s) = l.current() else { return };
-    let t0 = s.timebase.time_us.first().copied().unwrap_or(0);
-    let xs: Vec<f64> = s
-        .timebase
-        .time_us
-        .iter()
-        .map(|t| (t - t0) as f64 / 1.0e6)
-        .collect();
-    for (ci, id) in channels.iter().enumerate() {
-        let Some(c) = s.channel(id) else { continue };
-        let (scale, symbol) = display_unit(&c.unit, &app.prefs);
-        let mut pts = decimate(&xs, c.data.values(), |i| c.data.is_valid(i), px * 2);
-        if scale != 1.0 {
-            for p in &mut pts {
-                p[1] *= scale;
-            }
-        }
-        let color: Color32 = match crate::colormap::scheme() {
-            // as Blackbox Explorer: the palette in channel order, each log
-            // starting further along it
-            PlotColours::Explorer => {
-                let p = &crate::colormap::EXPLORER_PALETTE;
-                p[(ci + usize::from(slot.0) * 3) % p.len()]
-            }
-            PlotColours::ColourBlindSafe => {
-                let hue = (ci as f32 / n_lines + f32::from(slot.0) * 0.37) % 1.0;
-                egui::ecolor::Hsva::new(hue, 0.7, 0.95, 1.0).into()
-            }
-        };
-        pu.line(
-            Line::new(
-                format!("{} {} ({symbol})", slot.name(), id.key()),
-                PlotPoints::from(pts),
-            )
-            .color(color)
-            .width(1.2),
-        );
-    }
-}
-
-pub fn log_viewer(app: &mut App, ui: &mut Ui) {
-    ui.separator();
-    let session_a: Option<Arc<FlightSession>> = app
-        .first_loaded()
-        .and_then(|s| app.loaded(s))
-        .and_then(|l| l.current().cloned());
-    // many channels in touch mode would wrap over the whole panel: cap the
-    // picker and let it scroll, the plot keeps its height
-    egui::ScrollArea::vertical()
-        .id_salt("viewer_channels")
-        .max_height(if app.touch_mode { 150.0 } else { 180.0 })
-        .show(ui, |ui| {
-            viewer_channel_picker(app, ui, session_a.as_deref())
-        });
-    viewer_cursor_controls(app, ui);
-    let touch = app.touch_mode;
-    let channels = app.tools.viewer_channels.clone();
-    let mut cursor = app.viewer.cursor_s;
-    let plot_h = ui.available_height() - 4.0;
-    let visible = app.visible_slots();
-    let n_lines = channels.len().max(1) as f32 * visible.len().max(1) as f32;
-    // a drag that starts on an epoch bound moves the bound, not the plot
-    let prev_hover = app.viewer.hover_handle;
-    let handle_interaction = prev_hover.is_some() || app.viewer.drag_handle.is_some();
-    let mut hovered = None;
-    let mut drag_to: Option<(Slot, bool, f64)> = None;
-    let mut drag_started = false;
-    let mut drag_stopped = false;
-    let mut frame = None;
-    let mut x_bounds = None;
-    let mut y_bounds = None;
-    let plot = Plot::new("log_viewer")
-        .legend(Legend::default())
-        .x_axis_label("time (s)")
-        .height(plot_h)
-        .allow_boxed_zoom(!touch)
-        .allow_drag(!handle_interaction)
-        .show(ui, |pu| {
-            let px = pu.response().rect.width().max(100.0) as usize;
-            for slot in &visible {
-                viewer_plot_slot(pu, app, *slot, &channels, n_lines, px);
-            }
-            hovered = draw_epochs(pu, app, grab_radius(touch));
-            if let Some(t) = cursor {
-                pu.vline(VLine::new("cursor", t).color(ACCENT).width(1.5));
-            }
-            let resp = pu.response();
-            drag_started = resp.drag_started();
-            drag_stopped = resp.drag_stopped();
-            // hover_pos() is unreliable mid-drag; interact_pointer_pos() follows the drag
-            if let Some(handle) = app.viewer.drag_handle
-                && resp.dragged()
-                && let Some(p) = resp.interact_pointer_pos()
-            {
-                let t = pu.transform().value_from_position(p).x;
-                drag_to = Some((handle.0, handle.1, t));
-            }
-            // a click, or a long press on a touch screen, places the cursor;
-            // hover_pos() is gone once egui counts the press as a drag, so the
-            // long press reads the interact position instead
-            if resp.clicked()
-                && app.viewer.drag_handle.is_none()
-                && let Some(p) = pu.pointer_coordinate()
-            {
-                cursor = Some(p.x);
-            }
-            if resp.long_touched()
-                && app.viewer.drag_handle.is_none()
-                && let Some(p) = resp.interact_pointer_pos()
-            {
-                cursor = Some(pu.transform().value_from_position(p).x);
-            }
-            // in touch mode a finger held still for a moment places the cursor too
-            // (not every backend reports long touches)
-            if touch && app.viewer.drag_handle.is_none() {
-                let now = pu.ctx().input(|i| i.time);
-                let down = resp.is_pointer_button_down_on();
-                match (app.viewer.press, resp.interact_pointer_pos()) {
-                    (None, Some(p)) if down => app.viewer.press = Some((now, p)),
-                    (Some((t0, p0)), Some(p)) if down => {
-                        if p.distance(p0) > LONG_PRESS_SLOP_PX {
-                            app.viewer.press = None; // it is a pan
-                        } else if now - t0 >= LONG_PRESS_S {
-                            cursor = Some(pu.transform().value_from_position(p0).x);
-                            app.viewer.press = None;
-                        }
-                    }
-                    _ => app.viewer.press = None,
-                }
-            }
-            let b = pu.plot_bounds();
-            x_bounds = Some((b.min()[0], b.max()[0]));
-            y_bounds = Some((b.min()[1], b.max()[1]));
-            frame = Some(*pu.transform().frame());
-        });
-    shade_epochs(ui, app, &plot.transform);
-    app.viewer.cursor_s = cursor;
-    app.viewer.hover_handle = hovered;
-    app.viewer.plot_frame = frame;
-    app.viewer.x_bounds = x_bounds;
-    app.viewer.y_bounds = y_bounds;
-    // the drag is recognised a few pixels after the press: use the handle hovered at the press
-    if drag_started && let Some(h) = prev_hover.or(hovered) {
-        app.viewer.drag_handle = Some(h);
-    }
-    if let Some((slot, start, t)) = drag_to {
-        set_epoch_bound(app, slot, start, t);
-    }
-    if drag_stopped {
-        app.viewer.drag_handle = None;
     }
 }
 
@@ -1745,9 +1547,9 @@ pub(crate) fn grid_image(
 }
 
 /// How long a finger must rest on the log viewer to place the cursor, seconds.
-const LONG_PRESS_S: f64 = 0.6;
+pub(crate) const LONG_PRESS_S: f64 = 0.6;
 /// Movement that turns a resting finger into a pan, logical pixels.
-const LONG_PRESS_SLOP_PX: f32 = 8.0;
+pub(crate) const LONG_PRESS_SLOP_PX: f32 = 8.0;
 
 /// A slot's analysis result: `None` while it is still computing.
 pub(crate) type SlotResult = (Slot, Option<Result<Arc<Output>, String>>);
