@@ -115,15 +115,13 @@ pub fn throttle(app: &mut App, ui: &mut Ui) {
         (full_w / logs.len().max(1) as f32).max(columns as f32 * (MIN_CELL_W + gap) + BAR_W);
     let h = ui.available_height() - TITLE_H - X_LABEL_H - 22.0;
     let row_h = (h / 3.0 - ui.spacing().item_spacing.y).max(60.0);
-    let mut hover_unit = String::new();
     egui::ScrollArea::horizontal()
         .id_salt("thr-groups")
         .show(ui, |ui| {
             ui.horizontal_top(|ui| {
                 for log in &logs {
                     let cell_w = ((group_w - BAR_W - gap) / columns as f32 - gap).max(MIN_CELL_W);
-                    let unit = group(app, ui, log, cell_w, row_h, reset, range);
-                    hover_unit = unit;
+                    group(app, ui, log, cell_w, row_h, reset, range);
                 }
             });
         });
@@ -136,7 +134,7 @@ pub fn throttle(app: &mut App, ui: &mut Ui) {
                 ui.separator();
             }
         }
-        hover_label(ui, hover, &hover_unit, false);
+        hover_label(ui, hover, false);
     });
 }
 
@@ -255,7 +253,7 @@ fn throttle_range(logs: &[LogColumn], min_segments: usize, full: bool) -> (f64, 
     }
 }
 
-/// One log's columns and its colour bar; returns the unit of its heatmaps.
+/// One log's columns and its colour bar.
 fn group(
     app: &mut App,
     ui: &mut Ui,
@@ -264,9 +262,8 @@ fn group(
     row_h: f32,
     reset: bool,
     range: (f64, f64),
-) -> String {
+) {
     let colour = slot_color(log.slot);
-    let mut unit = String::new();
     ui.vertical(|ui| {
         ui.horizontal(|ui| {
             if let Some((_, cells)) = log.rows.first() {
@@ -295,7 +292,6 @@ fn group(
                     ui.horizontal(|ui| {
                         for (j, c) in cells.iter().enumerate() {
                             let Some(t) = c.heatmap() else { continue };
-                            unit.clone_from(&t.unit);
                             let size =
                                 egui::vec2(cell_w, if last { row_h + X_LABEL_H } else { row_h });
                             heat_cell(
@@ -315,10 +311,9 @@ fn group(
                 }
             });
             let bar_h = 3.0 * row_h + X_LABEL_H;
-            colour_bar(ui, log.scale, &unit, bar_h);
+            colour_bar(ui, log.scale, bar_h);
         });
     });
-    unit
 }
 
 /// One heatmap cell with its overlays, markers and hover read-out.

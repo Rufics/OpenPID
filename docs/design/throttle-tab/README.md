@@ -115,3 +115,13 @@ lies within the four motors' fundamentals in every sampled throttle bin
 The colour map stays Blackbox Explorer's black → red → white
 ([plot-colours](../plot-colours/README.md)); the video's tool uses MATLAB's
 "hot" (black → red → yellow → white).
+
+Second pass the same day: the owner pointed out that the reference tool draws
+no line from the data on this screen at all, only fixed guide lines (the
+dashed 20 / 60 Hz band limits of its "<100Hz" view), and that our motor line
+reads as part of the data. The RPM overlay is now **off by default**; the
+maps show the data alone, and "RPM overlay" (mean of the motors, or "Per
+motor") is an option for checking motor noise. The colour bar and the value
+under the pointer carry **no unit** any more: the amplitude of broadband
+noise depends on the segment length and the logging, so "deg/s" there read
+as an exact rate it is not; the numbers compare maps.

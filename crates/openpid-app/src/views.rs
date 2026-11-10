@@ -1588,7 +1588,7 @@ pub(crate) fn linked_scales(
 
 /// A vertical colour scale: the viridis gradient from 0 (bottom) to `max`
 /// (top) with five ticks and the unit (docs/design/colour-scale, R1).
-pub(crate) fn colour_bar(ui: &mut Ui, max: f64, unit: &str, height: f32) -> egui::Response {
+pub(crate) fn colour_bar(ui: &mut Ui, max: f64, height: f32) -> egui::Response {
     let stops = crate::colormap::heatmap().stops();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(BAR_W, height), egui::Sense::hover());
     let painter = ui.painter_at(rect);
@@ -1643,18 +1643,14 @@ pub(crate) fn colour_bar(ui: &mut Ui, max: f64, unit: &str, height: f32) -> egui
             colour,
         );
     }
-    painter.text(
-        egui::pos2(bar.min.x, bar.max.y + 4.0),
-        egui::Align2::LEFT_TOP,
-        unit,
-        font,
-        colour,
-    );
+    // no unit under the bar (the owner, 2026-11-10): the amplitude of
+    // broadband noise depends on the segment length and the logging, so a
+    // "deg/s" there read as an exact rate it is not; the numbers compare maps
     resp.widget_info(|| {
         egui::WidgetInfo::labeled(
             egui::Role::Label,
             true,
-            format!("colour scale 0 to {} {unit}", fmt(max)),
+            format!("colour scale 0 to {}", fmt(max)),
         )
     });
     resp
@@ -1672,15 +1668,11 @@ pub(crate) fn heatmap_hover(
 }
 
 /// Read-out of the hovered cell under a heatmap (`x` in percent or seconds).
-pub(crate) fn hover_label(
-    ui: &mut Ui,
-    hover: Option<(Slot, f64, f64, f64)>,
-    unit: &str,
-    x_is_time: bool,
-) {
+pub(crate) fn hover_label(ui: &mut Ui, hover: Option<(Slot, f64, f64, f64)>, x_is_time: bool) {
+    // the value without a unit, as the colour bar
     let text = match hover {
-        Some((_, x, y, z)) if x_is_time => format!("{x:.2} s, {y:.0} Hz: {z:.3} {unit}"),
-        Some((_, x, y, z)) => format!("{x:.0} %, {y:.0} Hz: {z:.3} {unit}"),
+        Some((_, x, y, z)) if x_is_time => format!("{x:.2} s, {y:.0} Hz: {z:.3}"),
+        Some((_, x, y, z)) => format!("{x:.0} %, {y:.0} Hz: {z:.3}"),
         None => tr("hover the map for a value").to_string(),
     };
     ui.label(RichText::new(text).color(MUTED));
@@ -1752,9 +1744,11 @@ const LONG_PRESS_SLOP_PX: f32 = 8.0;
 pub(crate) type SlotResult = (Slot, Option<Result<Arc<Output>, String>>);
 
 /// What of the RPM / notch overlay is drawn on the freq × throttle heatmap.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct OverlayState {
-    /// Draw the motor harmonics at all.
+    /// Draw the motor harmonics at all; off by default, as the reference
+    /// tool's Freq × throttle: the maps show the data alone (the owner,
+    /// 2026-11-10).
     pub show: bool,
     /// Per motor (index order); a motor past the end is shown.
     pub motors: Vec<bool>,
@@ -1766,18 +1760,6 @@ pub struct OverlayState {
     /// harmonic at the mean of the motors (docs/design/throttle-tab, the
     /// owner's comparison with the reference tool's video).
     pub per_motor: bool,
-}
-
-impl Default for OverlayState {
-    fn default() -> Self {
-        OverlayState {
-            show: true,
-            motors: Vec::new(),
-            harmonics: 0,
-            notches: false,
-            per_motor: false,
-        }
-    }
 }
 
 pub(crate) fn motor_color(m: usize) -> Color32 {
@@ -2203,7 +2185,7 @@ pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
                                         frame = Some(*pu.transform().frame());
                                         hover = heatmap_hover(pu, slot, &t.grid);
                                     });
-                                colour_bar(ui, scale, &t.unit, plot_h);
+                                colour_bar(ui, scale, plot_h);
                             });
                             if hover.is_some() {
                                 app.heatmap_hover = hover;
@@ -2211,7 +2193,7 @@ pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
                             if let Some(f) = frame {
                                 app.heatmap_frames.insert(slot, f);
                             }
-                            hover_label(ui, hover, &t.unit, true);
+                            hover_label(ui, hover, true);
                             if i == 0 {
                                 app.player.plot_frame = frame;
                                 app.player.x_bounds = x_bounds;

@@ -2137,11 +2137,12 @@ fn rpm_overlay_on_the_throttle_heatmap_has_per_motor_toggles() {
     assert!(overlay.motors[0].iter().flatten().any(|r| *r > 1000.0));
     assert!(overlay.dyn_notch_hz.is_some());
     h.step();
+    assert!(!app(&h).overlay.show, "the maps alone by default");
+    h.get_by_role_and_label(Role::CheckBox, "RPM overlay")
+        .click();
+    h.step();
     assert!(app(&h).overlay.show);
-    assert!(
-        !app(&h).overlay.per_motor,
-        "one line per harmonic by default"
-    );
+    assert!(!app(&h).overlay.per_motor, "one line per harmonic");
     assert!(!app(&h).overlay.notches, "notches off by default");
     assert!(
         h.query_by_label("M2").is_none(),
@@ -2490,7 +2491,11 @@ fn heatmaps_show_a_colour_scale_with_linked_maxima_and_a_hover_value() {
     app_mut(&mut h).tools.heatmap_max = 5.0;
     h.run_steps(2);
     assert!(app(&h).colour_scales.iter().all(|s| s.1 == 5.0));
-    assert!(has_label_containing(&h, "colour scale 0 to 5.00 deg/s"));
+    assert!(has_label_containing(&h, "colour scale 0 to 5.00"));
+    assert!(
+        !has_label_containing(&h, "deg/s"),
+        "no unit on the heatmaps"
+    );
     // the cell under the pointer is read out and matches the grid
     let frame = app(&h).heatmap_frames[&Slot::A];
     pointer_move(&mut h, frame.center());
@@ -2521,7 +2526,7 @@ fn heatmaps_show_a_colour_scale_with_linked_maxima_and_a_hover_value() {
     run_until(&mut h, idle);
     h.run_steps(2);
     assert_eq!(app(&h).colour_scales.len(), 2);
-    assert!(has_label_containing(&h, "colour scale 0 to 5.00 deg/s"));
+    assert!(has_label_containing(&h, "colour scale 0 to 5.00"));
     // the project keeps the link setting
     assert!(!app(&h).project(Path::new("p.openpid.json")).heatmap_link);
 }

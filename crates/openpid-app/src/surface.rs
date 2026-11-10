@@ -148,7 +148,7 @@ pub fn surface(app: &mut App, ui: &mut Ui) {
                                             size,
                                             i == 0,
                                         );
-                                        colour_bar(ui, scale, &t.unit, size.y);
+                                        colour_bar(ui, scale, size.y);
                                     });
                                 }
                             }

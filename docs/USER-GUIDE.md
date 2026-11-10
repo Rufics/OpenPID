@@ -190,14 +190,15 @@ The control panel on the right (hover any field for its explanation):
 Heatmaps of the spectrum amplitude against throttle (DESIGN §6.4), roll, pitch
 and yaw stacked. Every log gets two columns: the unfiltered gyro (**prefilt**)
 and the chosen quantity, on one colour scale, so the work of the filters reads
-as a darker map; the colour bar on the right of each log has ticks and the
-unit. The epoch is cut into segments, each gets a spectrum and a mean
+as a darker map; the colour bar on the right of each log has ticks (relative
+values: the amplitude of noise depends on the segment length, so no unit is
+shown). The epoch is cut into segments, each gets a spectrum and a mean
 throttle; for every throttle bin the segments within **Throttle window ±** %
 are averaged. The throttle axis is 0–100 %; **Zoom to the flown range**
 narrows it to the bins the logs sampled. All maps move and
 zoom together; a double click resets them. Under the maps: per log how many
 throttle bins have too few segments, and the value under the pointer
-("23 %, 128 Hz: 0.13 deg/s"). With more than two logs the columns scroll
+("23 %, 128 Hz: 0.13"). With more than two logs the columns scroll
 sideways.
 
 The control panel on the right (hover any field for its explanation):
@@ -208,7 +209,7 @@ The control panel on the right (hover any field for its explanation):
   fixed ceiling; **Link scales** (on by default with several logs) gives every
   log the same ceiling, the largest of the automatic ones, so the same colour
   means the same value. The same on Freq × time and Surface 3D.
-- **RPM overlay** (when the log has eRPM): one thin line per harmonic
+- **RPM overlay** (off by default; when the log has eRPM): one thin line per harmonic
   `k·rpm/60` at the mean speed of the motors (**Harmonics** = how many to
   draw, 0 = as many as the RPM filter removes); **Per motor** draws a
   coloured line per motor instead, with M1…Mn toggles; **Notches** (off by
