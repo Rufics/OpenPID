@@ -51,3 +51,22 @@ impl FirmwareProfile for Generic {
             .then(|| Box::new(BetaflightCli::for_log(fw, h)) as Box<dyn openpid_core::Exporter>)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_log_that_names_no_firmware_is_taken_for_betaflight() {
+        let h = RawHeaders::default();
+        let unknown = FirmwareInfo::unknown();
+        let exporter = Generic.exporter(&unknown, &h).expect("an exporter");
+        assert_eq!(exporter.label(), "Betaflight CLI");
+        let named = FirmwareInfo {
+            vendor: FirmwareVendor::Baseflight,
+            ..FirmwareInfo::unknown()
+        };
+        assert!(Generic.exporter(&named, &h).is_none());
+        assert!(Generic.slider_model(&unknown, &h).is_none());
+    }
+}
