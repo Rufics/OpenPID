@@ -354,40 +354,7 @@ impl ChainModel {
         let fs = self.fs;
         let nyq = MAX_NOTCH_FRACTION * fs;
         let mut parts = Vec::new();
-        if let Some(r) = &self.rpm_notch
-            && !op.motor_hz.is_empty()
-        {
-            let mut stages = Vec::new();
-            for f_motor in &op.motor_hz {
-                for k in 0..r.harmonics {
-                    let f = f_motor * f64::from(k + 1);
-                    let fade = if r.fade_range_hz > 0.0 {
-                        ((f - r.min_hz) / r.fade_range_hz).clamp(0.0, 1.0)
-                    } else if f >= r.min_hz {
-                        1.0
-                    } else {
-                        0.0
-                    };
-                    let weight = fade * r.weights.get(k as usize).copied().unwrap_or(1.0);
-                    if f < nyq && f > 0.0 && weight > 0.0 {
-                        let notch = Biquad::notch_q(f.max(r.min_hz), r.q, fs);
-                        stages.push((Stage::Biquad(notch), weight));
-                    }
-                }
-            }
-            if !stages.is_empty() {
-                let mean = op.motor_hz.iter().sum::<f64>() / op.motor_hz.len() as f64;
-                parts.push(ChainPart {
-                    label: format!(
-                        "RPM {} × {} motors, {mean:.0} Hz",
-                        r.harmonics,
-                        op.motor_hz.len()
-                    ),
-                    group: PartGroup::Notch,
-                    stages,
-                });
-            }
-        }
+        parts.extend(self.rpm_part(op));
         for n in &self.notches {
             if n.center_hz > 0.0 && n.center_hz < nyq {
                 parts.push(ChainPart {
@@ -415,23 +382,64 @@ impl ChainModel {
                 });
             }
         }
-        if let Some(d) = &self.dyn_notch {
-            let stages: Vec<(Stage, f64)> = op
-                .dyn_hz
-                .iter()
-                .filter(|f| **f > 0.0 && **f < nyq)
-                .map(|f| (Stage::Biquad(Biquad::notch_q(*f, d.q, fs)), 1.0))
-                .collect();
-            if !stages.is_empty() {
-                let centres: Vec<String> = op.dyn_hz.iter().map(|f| format!("{f:.0}")).collect();
-                parts.push(ChainPart {
-                    label: format!("Dyn notch {} Hz", centres.join(", ")),
-                    group: PartGroup::Notch,
-                    stages,
-                });
-            }
-        }
+        parts.extend(self.dyn_part(op));
         parts
+    }
+
+    /// The RPM notches at the motor frequencies of `op`, one stage per motor
+    /// and harmonic, faded and weighted as in [`ChainModel::run`].
+    fn rpm_part(&self, op: &OperatingPoint) -> Option<ChainPart> {
+        let r = self.rpm_notch.as_ref()?;
+        if op.motor_hz.is_empty() {
+            return None;
+        }
+        let nyq = MAX_NOTCH_FRACTION * self.fs;
+        let stages: Vec<(Stage, f64)> = op
+            .motor_hz
+            .iter()
+            .flat_map(|f_motor| (0..r.harmonics).map(move |k| (f_motor * f64::from(k + 1), k)))
+            .filter_map(|(f, k)| {
+                let weight = rpm_fade(r, f) * r.weights.get(k as usize).copied().unwrap_or(1.0);
+                (f < nyq && f > 0.0 && weight > 0.0).then(|| {
+                    let notch = Biquad::notch_q(f.max(r.min_hz), r.q, self.fs);
+                    (Stage::Biquad(notch), weight)
+                })
+            })
+            .collect();
+        if stages.is_empty() {
+            return None;
+        }
+        let mean = op.motor_hz.iter().sum::<f64>() / op.motor_hz.len() as f64;
+        Some(ChainPart {
+            label: format!(
+                "RPM {} × {} motors, {mean:.0} Hz",
+                r.harmonics,
+                op.motor_hz.len()
+            ),
+            group: PartGroup::Notch,
+            stages,
+        })
+    }
+
+    /// The dynamic notches at the centres of `op`.
+    fn dyn_part(&self, op: &OperatingPoint) -> Option<ChainPart> {
+        let d = self.dyn_notch.as_ref()?;
+        let nyq = MAX_NOTCH_FRACTION * self.fs;
+        let stages: Vec<(Stage, f64)> = op
+            .dyn_hz
+            .iter()
+            .filter(|f| **f > 0.0 && **f < nyq)
+            .map(|f| (Stage::Biquad(Biquad::notch_q(*f, d.q, self.fs)), 1.0))
+            .collect();
+        if stages.is_empty() {
+            return None;
+        }
+        let centres: Vec<String> = op.dyn_hz.iter().map(|f| format!("{f:.0}")).collect();
+        Some(ChainPart {
+            label: format!("Dyn notch {} Hz", centres.join(", ")),
+            group: PartGroup::Notch,
+            stages,
+        })
     }
 
     /// Response of [`ChainModel::static_chain`] at `f_hz`.
@@ -516,14 +524,8 @@ impl ChainModel {
                     let f_motor = smoothers[m].update(rpm_now / 60.0);
                     for (k, notch) in filters[m].iter_mut().enumerate() {
                         let f = f_motor * (k + 1) as f64;
-                        let fade = if model.fade_range_hz > 0.0 {
-                            ((f - model.min_hz) / model.fade_range_hz).clamp(0.0, 1.0)
-                        } else if f >= model.min_hz {
-                            1.0
-                        } else {
-                            0.0
-                        };
-                        let weight = fade * model.weights.get(k).copied().unwrap_or(1.0);
+                        let weight =
+                            rpm_fade(model, f) * model.weights.get(k).copied().unwrap_or(1.0);
                         if f >= nyq || weight <= 0.0 || f <= 0.0 {
                             // the notch keeps running on its last centre but contributes nothing
                             notch.update(v);
@@ -583,6 +585,18 @@ impl ChainModel {
 }
 
 /// A low-pass stage of `l`'s topology at `cutoff_hz` (none for a zero cutoff).
+/// Fade-in of an RPM notch at `f`: 0 below `min_hz`, rising over the fade
+/// range (a hard switch without one).
+fn rpm_fade(r: &RpmNotchModel, f: f64) -> f64 {
+    if r.fade_range_hz > 0.0 {
+        ((f - r.min_hz) / r.fade_range_hz).clamp(0.0, 1.0)
+    } else if f >= r.min_hz {
+        1.0
+    } else {
+        0.0
+    }
+}
+
 fn kind_label(k: &LowpassKind) -> &'static str {
     match k {
         LowpassKind::Pt2 => "PT2",
