@@ -14,11 +14,16 @@ mod log_tab;
 mod motors_tab;
 mod panel;
 mod prefs;
+mod probe;
 mod shortcuts;
 mod spectrum_tab;
 mod surface;
 #[cfg(test)]
+mod testkit;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_kit;
 mod theme;
 mod throttle_tab;
 mod time_tab;

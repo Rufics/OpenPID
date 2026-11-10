@@ -321,6 +321,8 @@ pub struct App {
     pub auto_tour: bool,
     /// Rectangles of the widgets the tour points at, registered every frame.
     pub anchors: HashMap<&'static str, egui::Rect>,
+    /// The plots of the current frame by name (`probe.rs`).
+    pub probes: crate::probe::Probes,
     /// Persisted preferences (Settings tab).
     pub prefs: Prefs,
     /// Where `prefs` are saved; `None` = no config directory, keep them for the session.
@@ -419,6 +421,7 @@ impl App {
             tour: crate::tour::Tour::default(),
             auto_tour: true,
             anchors: HashMap::new(),
+            probes: crate::probe::Probes::default(),
             prefs,
             prefs_path,
             theme_applied: None,
@@ -1227,6 +1230,7 @@ impl App {
     /// One frame of the whole UI: input handling, worker results, panels and the active tab.
     pub fn frame(&mut self, ui: &mut egui::Ui) {
         crate::i18n::set(self.prefs.lang);
+        self.probes.clear();
         let ctx = ui.ctx().clone();
         if !self.touch_mode && ctx.input(egui::InputState::any_touches) {
             self.touch_mode = true;

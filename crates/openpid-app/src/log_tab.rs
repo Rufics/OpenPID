@@ -570,6 +570,8 @@ fn row(
     });
     shade_epochs(ui, app, &[slot], &shown.transform);
     read_out(ui, app, s, spec, act.cursor, &shown.transform, xs);
+    app.probes
+        .record(format!("log/{}", spec.key), &shown.transform);
     transform.unwrap_or(shown.transform)
 }
 
