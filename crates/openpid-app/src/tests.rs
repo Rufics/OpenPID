@@ -2907,6 +2907,57 @@ fn step_tab_stacks_the_axes_and_the_panel_collapses() {
 }
 
 #[test]
+fn one_axis_takes_the_full_height_on_every_axis_tab() {
+    // docs/design/axis-focus (A1): "Show: all | roll | pitch | yaw" in the
+    // panel and the keys R, P, Y; three axes by default
+    use crate::log_tab::row_summary;
+    let mut h = harness(vec![LOG_2025.into()], Some(Tab::LogViewer));
+    run_until(&mut h, no_slot_loading);
+    h.run_steps(2);
+    assert_eq!(app(&h).tools.axis_focus, None, "three axes by default");
+    let tall = |h: &H| app(h).viewer.plot_frame.unwrap().height();
+    let three = tall(&h);
+    // the key P: pitch alone, taller; the motors row stays
+    h.key_press(Key::P);
+    h.run_steps(2);
+    assert_eq!(app(&h).tools.axis_focus, Some(Axis::Pitch));
+    let keys: Vec<&str> = row_summary(app(&h)).iter().map(|r| r.0).collect();
+    assert_eq!(keys, ["pitch", "motors"]);
+    assert!(tall(&h) > 2.0 * three, "{} vs {three}", tall(&h));
+    // P again: all three back
+    h.key_press(Key::P);
+    h.run_steps(2);
+    assert_eq!(app(&h).tools.axis_focus, None);
+    // the panel's buttons, and the choice carries over to the other tabs
+    h.get_by_label("yaw").click();
+    h.run_steps(2);
+    assert_eq!(app(&h).tools.axis_focus, Some(Axis::Yaw));
+    assert_eq!(app(&h).tools.axis, Axis::Yaw, "the selected axis follows");
+    select_tab(&mut h, Tab::TimeHeatmap);
+    run_until(&mut h, idle);
+    let stft = app(&h).cache.keys().filter(|k| k.kind == "stft").count();
+    assert_eq!(stft, 1, "one spectrogram for one axis");
+    select_tab(&mut h, Tab::Spectrum);
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    let one = app(&h).spectrum.plot_frame.unwrap().height();
+    h.get_by_label("all").click();
+    h.run_steps(2);
+    assert_eq!(app(&h).tools.axis_focus, None);
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    let all = app(&h).spectrum.plot_frame.unwrap().height();
+    assert!(one > 2.0 * all, "{one} vs {all}");
+    // the step tab's verdict table picks the axis too
+    select_tab(&mut h, Tab::Step);
+    run_until(&mut h, idle);
+    h.key_press(Key::R);
+    h.run_steps(2);
+    assert_eq!(app(&h).tools.axis_focus, Some(Axis::Roll));
+    assert_eq!(app(&h).tools.step.axis, Axis::Roll);
+}
+
+#[test]
 fn the_shell_keeps_its_height_as_logs_are_added() {
     // docs/design/app-shell, R4: logs are chips in the one-line top bar and
     // the timeline sits in a fixed dock, so adding logs never moves the tab

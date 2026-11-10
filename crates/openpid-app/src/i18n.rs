@@ -84,6 +84,7 @@ static UA: &[(&str, &str)] = &[
     ("Angular rate", "Кутова швидкість"),
     ("Appearance", "Вигляд"),
     ("Auto", "Авто"),
+    ("Axes", "Осі"),
     ("Axis", "Вісь"),
     ("Back", "Назад"),
     (
@@ -141,7 +142,6 @@ static UA: &[(&str, &str)] = &[
     ("Dyn notch", "Dyn notch"),
     ("Dynamic notch", "Динамічний notch"),
     ("Evidence", "Докази"),
-    ("Expand one axis", "Одна вісь на всю висоту"),
     ("Export", "Експорт"),
     ("F-term", "F-складова"),
     ("Filter Sim", "Симуляція фільтрів"),
@@ -266,6 +266,7 @@ static UA: &[(&str, &str)] = &[
     ("Segment", "Сегмент"),
     ("Setpoint", "Уставка"),
     ("Settings", "Налаштування"),
+    ("Show", "Показати"),
     ("Show the control panel", "Показати панель керування"),
     (
         "Show the tour on the first opened log",
@@ -362,6 +363,11 @@ static UA: &[(&str, &str)] = &[
         "a term of the PID output, in the firmware's units, on the axis rows",
         "складова виходу PID в одиницях прошивки, у рядках осей",
     ),
+    ("all", "усі"),
+    (
+        "all three axes, or one at full height; the key of the shown axis brings all three back",
+        "усі три осі або одна на всю висоту; клавіша показаної осі повертає всі три",
+    ),
     ("amplitude", "амплітуда"),
     ("as flown (dashed)", "як у польоті (пунктир)"),
     ("at", "при"),
@@ -383,10 +389,13 @@ static UA: &[(&str, &str)] = &[
         "клацніть графік, щоб поставити мітку",
     ),
     ("click to fix this end", "клацніть, щоб зафіксувати цю межу"),
-    ("click: expand this axis", "клік: ця вісь на всю висоту"),
     (
         "click: show this axis on the plot",
         "клік: показати цю вісь на графіку",
+    ),
+    (
+        "click: this axis at full height",
+        "клік: ця вісь на всю висоту",
     ),
     ("close", "закрити"),
     ("colour max (0 = auto)", "стеля кольору (0 = авто)"),
@@ -566,7 +575,6 @@ static UA: &[(&str, &str)] = &[
     ),
     ("of", "з"),
     ("off", "вимк."),
-    ("one axis at full height", "одна вісь на всю висоту"),
     (
         "one colour scale for every log (the largest automatic maximum), so the same colour means the same value",
         "одна шкала кольору для всіх логів (найбільша з автоматичних стель): однаковий колір означає однакове значення",

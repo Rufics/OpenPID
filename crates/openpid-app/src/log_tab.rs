@@ -271,7 +271,7 @@ fn rows(app: &App, s: &FlightSession) -> Vec<RowSpec> {
     let d = &app.tools.log_display;
     let has = |id: &ChannelId| s.channel(id).is_some();
     let rate = display_unit(&openpid_core::units::Unit::DegreesPerSecond, &app.prefs);
-    let mut out: Vec<RowSpec> = Axis::ALL
+    let mut out: Vec<RowSpec> = crate::axis_layout::shown_axes(app)
         .iter()
         .map(|axis| RowSpec {
             key: axis.name(),
@@ -624,6 +624,23 @@ fn controls(app: &mut App, ui: &mut Ui) {
         .dock_slot()
         .and_then(|s| app.loaded(s))
         .and_then(|l| l.current().cloned());
+    crate::axis_layout::axes_row(app, ui);
+    let rate = display_unit(&openpid_core::units::Unit::DegreesPerSecond, &app.prefs);
+    let mut y = app.tools.log_display.y_scale * rate.0;
+    let r = panel::drag(
+        ui,
+        tr("Y scale ±"),
+        tr(
+            "the roll, pitch and yaw rows span ± this rate; the same on every row, so the axes compare",
+        ),
+        &mut y,
+        5.0 * rate.0,
+        (10.0 * rate.0)..=(5000.0 * rate.0),
+        &rate.1,
+    );
+    if r.changed() {
+        app.tools.log_display.y_scale = y / rate.0;
+    }
     panel::section(ui, tr("Quantities"));
     for q in LogQuantity::ALL {
         let logged = session
@@ -645,23 +662,6 @@ fn controls(app: &mut App, ui: &mut Ui) {
         }
     }
     other_channels(app, ui, session.as_deref());
-    panel::section(ui, tr("Scale"));
-    let rate = display_unit(&openpid_core::units::Unit::DegreesPerSecond, &app.prefs);
-    let mut y = app.tools.log_display.y_scale * rate.0;
-    let r = panel::drag(
-        ui,
-        tr("Y scale ±"),
-        tr(
-            "the roll, pitch and yaw rows span ± this rate; the same on every row, so the axes compare",
-        ),
-        &mut y,
-        5.0 * rate.0,
-        (10.0 * rate.0)..=(5000.0 * rate.0),
-        &rate.1,
-    );
-    if r.changed() {
-        app.tools.log_display.y_scale = y / rate.0;
-    }
     cursor_rows(app, ui);
 }
 

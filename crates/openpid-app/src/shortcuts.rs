@@ -12,6 +12,7 @@
 use crate::app::{App, Tab};
 use crate::i18n::tr;
 use eframe::egui::{self, Key, KeyboardShortcut, Modifiers};
+use openpid_core::Axis;
 
 /// What a shortcut does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +43,8 @@ pub enum Action {
     TouchMode,
     /// Open or collapse the control panel of the analysis tabs.
     TogglePanel,
+    /// Show one axis at full height on the axis-row tabs; again: all three.
+    FocusAxis(Axis),
 }
 
 impl Action {
@@ -71,6 +74,7 @@ impl Action {
             Action::EpochWhole => format!("{}: {}", tr("epoch"), tr("whole log, every slot")),
             Action::TouchMode => tr("Touch mode").into(),
             Action::TogglePanel => tr("Control panel").into(),
+            Action::FocusAxis(a) => format!("{}: {} / {}", tr("Axes"), a.name(), tr("all")),
         }
     }
 
@@ -132,6 +136,9 @@ pub const TABLE: &[Binding] = &[
     b(Modifiers::NONE, Key::Home, Action::ToStart),
     b(Modifiers::SHIFT, Key::A, Action::EpochWhole),
     b(Modifiers::COMMAND, Key::T, Action::TouchMode),
+    b(Modifiers::NONE, Key::R, Action::FocusAxis(Axis::Roll)),
+    b(Modifiers::NONE, Key::P, Action::FocusAxis(Axis::Pitch)),
+    b(Modifiers::NONE, Key::Y, Action::FocusAxis(Axis::Yaw)),
 ];
 
 /// A binding without Cmd/Ctrl/Alt: it must not steal keys from text fields.
@@ -264,6 +271,10 @@ impl App {
             Action::TogglePanel => {
                 self.prefs.panel_open = !self.prefs.panel_open;
                 self.save_prefs();
+            }
+            Action::FocusAxis(a) => {
+                let next = (self.tools.axis_focus != Some(a)).then_some(a);
+                crate::axis_layout::focus_axis(self, next);
             }
         }
     }

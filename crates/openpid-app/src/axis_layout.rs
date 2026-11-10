@@ -83,6 +83,70 @@ pub fn control_panel(app: &mut App, ui: &mut Ui, id: &str, body: impl FnOnce(&mu
         });
 }
 
+/// The axes the axis-row tabs show (docs/design/axis-focus): all three, or
+/// the one chosen with "Show" in the panel or the keys R, P, Y.
+pub fn shown_axes(app: &App) -> Vec<Axis> {
+    app.tools
+        .axis_focus
+        .map_or_else(|| Axis::ALL.to_vec(), |a| vec![a])
+}
+
+/// Show one axis at full height (`Some`) or all three (`None`); the chosen
+/// axis becomes the tabs' selected axis (export, project).
+pub fn focus_axis(app: &mut App, axis: Option<Axis>) {
+    app.tools.axis_focus = axis;
+    if let Some(a) = axis {
+        app.tools.axis = a;
+        app.tools.step.axis = a;
+    }
+}
+
+/// The "Show" row at the top of an axis-row tab's panel: all, roll, pitch, yaw.
+pub fn axes_row(app: &mut App, ui: &mut Ui) {
+    panel::section(ui, tr("Axes"));
+    let current = app.tools.axis_focus;
+    let mut chosen = current;
+    let keys = shortcuts::keys_of(ui.ctx(), Action::FocusAxis(Axis::Roll));
+    let hint = format!(
+        "{} ({keys}, P, Y)",
+        tr(
+            "all three axes, or one at full height; the key of the shown axis brings all three back"
+        )
+    );
+    // as a panel row, but each button keeps its own name for screen readers
+    let w = ui.available_width();
+    ui.allocate_ui_with_layout(
+        egui::vec2(w, 24.0),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.add(egui::Label::new(tr("Show")).sense(egui::Sense::hover()))
+                .on_hover_text(&hint);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                // right to left: yaw first, "all" last
+                let options = [
+                    (Some(Axis::Yaw), "yaw"),
+                    (Some(Axis::Pitch), "pitch"),
+                    (Some(Axis::Roll), "roll"),
+                    (None, tr("all")),
+                ];
+                for (value, name) in options {
+                    if ui
+                        .selectable_label(current == value, name)
+                        .on_hover_text(&hint)
+                        .clicked()
+                    {
+                        chosen = value;
+                    }
+                }
+            });
+        },
+    );
+    if chosen != current {
+        focus_axis(app, chosen);
+    }
+}
+
 /// Height of each of `n` stacked plot rows in the remaining space, `extra`
 /// pixels per row taken by labels above the plot.
 pub fn row_height(ui: &Ui, n: usize, extra: f32) -> f32 {
@@ -110,8 +174,6 @@ pub struct StepDisplay {
     pub y_max: f64,
     /// Draw the histogram of the individual responses.
     pub raw: bool,
-    /// One axis (`Tools::axis`) at full height instead of the three rows.
-    pub expand: bool,
     /// What the Latency plot shows.
     pub latency: LatencyShown,
     /// The verdict table under the plots is open.
@@ -123,7 +185,6 @@ impl Default for StepDisplay {
         StepDisplay {
             y_max: 1.5,
             raw: false,
-            expand: false,
             latency: LatencyShown::HalfRise,
             details: false,
         }
@@ -139,6 +200,7 @@ const SMOOTHING: [(&str, f64); 4] = [
 ];
 
 fn step_controls(app: &mut App, ui: &mut Ui) {
+    axes_row(app, ui);
     panel::section(ui, tr("Display"));
     let smoothing: Vec<(f64, String)> = SMOOTHING
         .iter()
@@ -188,15 +250,6 @@ fn step_controls(app: &mut App, ui: &mut Ui) {
         tr("Raw responses"),
         tr("the individual responses behind the mean, as a density"),
     );
-    panel::check(
-        ui,
-        &mut app.tools.step_display.expand,
-        tr("Expand one axis"),
-        tr("one axis at full height"),
-    );
-    if app.tools.step_display.expand {
-        crate::views::axis_selector(ui, &mut app.tools.axis);
-    }
     panel::section(ui, tr("Analysis"));
     panel::drag(
         ui,
@@ -281,11 +334,7 @@ pub fn step(app: &mut App, ui: &mut Ui) {
         }
     }
     details_panel(app, ui, &rows, &targets);
-    let axes: Vec<Axis> = if display.expand {
-        vec![app.tools.axis]
-    } else {
-        Axis::ALL.to_vec()
-    };
+    let axes = shown_axes(app);
     let end_ms = params.response_s * 1000.0;
     let band = (
         targets.settling_ms_max.min(end_ms),
@@ -496,14 +545,14 @@ fn verdict_table(app: &mut App, ui: &mut Ui, rows: &[AxisResult]) {
             }
             ui.end_row();
             for (axis, slot, result) in rows {
-                let active = app.tools.step_display.expand && *axis == app.tools.axis;
+                let active = app.tools.axis_focus == Some(*axis);
                 let name = format!("{} {}", slot.name(), axis.name());
                 if ui
                     .selectable_label(
                         active,
                         RichText::new(name).color(slot_color(*slot)).strong(),
                     )
-                    .on_hover_text(tr("click: expand this axis"))
+                    .on_hover_text(tr("click: this axis at full height"))
                     .clicked()
                 {
                     switch_to = Some(*axis);
@@ -537,9 +586,7 @@ fn verdict_table(app: &mut App, ui: &mut Ui, rows: &[AxisResult]) {
             }
         });
     if let Some(axis) = switch_to {
-        app.tools.axis = axis;
-        app.tools.step.axis = axis;
-        app.tools.step_display.expand = true;
+        focus_axis(app, Some(axis));
     }
 }
 

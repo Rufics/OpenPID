@@ -108,7 +108,7 @@ pub fn time(app: &mut App, ui: &mut Ui) {
     app.tools.stft.channel = channel(q, &display, Axis::Roll);
     let base = app.tools.stft.clone();
     let mut rows: Vec<Row> = Vec::new();
-    for axis in Axis::ALL {
+    for axis in crate::axis_layout::shown_axes(app) {
         let params = StftParams {
             channel: channel(q, &display, axis),
             ..base.clone()
@@ -139,7 +139,7 @@ pub fn time(app: &mut App, ui: &mut Ui) {
         0.0
     };
     let gap = ui.spacing().item_spacing;
-    let row_h = ((ui.available_height() - strip_h - 22.0) / 3.0 - gap.y).max(70.0);
+    let row_h = ((ui.available_height() - strip_h - 22.0) / rows.len() as f32 - gap.y).max(70.0);
     let plot_w = (full_w - SLICE_W - BAR_W - 2.0 * gap.x).max(200.0);
     app.heatmap_hover = None;
     let mut clicked_at = None;
@@ -553,6 +553,7 @@ fn throttle_strip(
 
 /// The panel: data, colour, player, analysis.
 fn controls(app: &mut App, ui: &mut Ui) {
+    crate::axis_layout::axes_row(app, ui);
     panel::section(ui, tr("Data"));
     let mut q = Quantity::of(&app.tools.heatmap_channel);
     let quantities: Vec<(Quantity, String)> = Quantity::ALL

@@ -228,6 +228,9 @@ pub struct Tools {
     pub viewer_channels: Vec<ChannelId>,
     /// Log viewer display options (docs/design/log-tab).
     pub log_display: crate::log_tab::LogDisplay,
+    /// The one axis the axis-row tabs show at full height; `None` = all
+    /// three (docs/design/axis-focus).
+    pub axis_focus: Option<Axis>,
     /// Motors tab display options (docs/design/motors-tab).
     pub motors_display: crate::motors_tab::MotorsDisplay,
     /// Step tab display options (docs/design/axis-layout).
@@ -263,6 +266,7 @@ impl Default for Tools {
             min_segments: 3,
             viewer_channels: Vec::new(),
             log_display: crate::log_tab::LogDisplay::default(),
+            axis_focus: None,
             motors_display: crate::motors_tab::MotorsDisplay::default(),
             step_display: crate::axis_layout::StepDisplay::default(),
             spectrum_display: crate::spectrum_tab::SpectrumDisplay::default(),
@@ -760,6 +764,7 @@ impl App {
             viewer_channels: p.viewer_channels.clone(),
             // display options are the viewer's, not the project's
             log_display: self.tools.log_display.clone(),
+            axis_focus: self.tools.axis_focus,
             motors_display: self.tools.motors_display.clone(),
             step_display: self.tools.step_display.clone(),
             spectrum_display: self.tools.spectrum_display.clone(),

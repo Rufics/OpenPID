@@ -66,7 +66,8 @@ pub fn motors(app: &mut App, ui: &mut Ui) {
         .color(MUTED),
     );
     let gap = ui.spacing().item_spacing.y;
-    let h = ((ui.available_height() - gap * 2.0 - 20.0) / 3.0).max(60.0);
+    let n = rows.len().max(1) as f32;
+    let h = ((ui.available_height() - gap * (n - 1.0) - 20.0) / n).max(60.0);
     let link = egui::Id::unique("motors-x");
     let last = rows.len() - 1;
     for (i, (axis, r)) in rows.iter().enumerate() {
@@ -112,7 +113,7 @@ fn results(app: &mut App) -> Rows {
     // the export and the project read the roll row's job
     app.tools.motor_noise.channel = raw(Axis::Roll);
     let mut rows = Vec::new();
-    for axis in Axis::ALL {
+    for axis in crate::axis_layout::shown_axes(app) {
         let has_raw = app
             .loaded(slot)
             .and_then(Loaded::current)
@@ -302,6 +303,7 @@ fn bars(ui: &mut Ui, axis: Axis, m: &MotorNoiseOutput, size: egui::Vec2) {
 
 /// The panel: data, markers, the motors.
 fn controls(app: &mut App, ui: &mut Ui, rows: &Rows) {
+    crate::axis_layout::axes_row(app, ui);
     panel::section(ui, tr("Data"));
     let mut harmonics = app.tools.motor_noise.harmonics as usize;
     if panel::drag_usize(

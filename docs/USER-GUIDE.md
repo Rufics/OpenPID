@@ -57,6 +57,13 @@ cargo run --release -p openpid-app                      # or ./target/release/op
   The full list of checks is on the Diagnostics tab (section 11).
 - **Touch mode** (in the **···** menu and in Settings) enlarges the controls; it switches
   itself on at the first touch.
+- **One axis at full height.** The tabs with roll, pitch and yaw rows (Log
+  viewer, Step response, Spectrum, Freq × throttle, Freq × time, Motors)
+  show the three axes by default; **Show** at the top of the control panel
+  (`all` / `roll` / `pitch` / `yaw`) or the keys `R`, `P`, `Y` keep one axis
+  and give it the full height, and the same key again brings the three
+  back. The choice holds on every tab, and the chosen axis is the one the
+  export uses.
 
 ![Log viewer](screenshots/log.png)
 
@@ -150,7 +157,6 @@ The control panel on the right (hover any field for its explanation):
 | Y max | upper end of the response axis | 1.5 |
 | Y correction | normalise every window on its settled tail | off |
 | Raw responses | the individual windows behind the mean, as a density | off |
-| Expand one axis | one axis at full height | off |
 | Window | window length, s | 2 |
 | Cut-off | deconvolution cut-off, Hz (higher = more noise) | 25 |
 | Min input | minimum setpoint peak in a window, °/s | 80 |
@@ -476,7 +482,7 @@ trims the take-off and landing, `--epoch active` takes the most active 20 s
 The reference is `?` (or `Ctrl+/`, `F1`, the **Help → Keyboard shortcuts**
 menu); every button with a key shows it in its tooltip. `Cmd` on macOS, `Ctrl`
 on Windows/Linux. Single keys (`1`…`=`, `?`, `Space`, `,`, `.`, `Home`,
-`Shift+A`, `Esc`) work only while no text field has the keyboard: in a field,
+`R`, `P`, `Y`, `Shift+A`, `Esc`) work only while no text field has the keyboard: in a field,
 `2` types a digit and `Esc` leaves the field.
 
 | Action | Key |
@@ -493,6 +499,7 @@ on Windows/Linux. Single keys (`1`…`=`, `?`, `Space`, `,`, `.`, `Home`,
 | Player on Freq × time: play/pause, column back/forward, to start | `Space`, `,` / `.`, `Home` |
 | Epoch: whole log for every slot | `Shift+A` |
 | Touch mode | `Ctrl+T` |
+| One axis at full height (again: all three) | `R`, `P`, `Y` |
 
 The digits follow the order of the tabs in the top bar; when a tab is added,
 the table is updated with it.

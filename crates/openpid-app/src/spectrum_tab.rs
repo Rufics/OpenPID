@@ -243,7 +243,7 @@ pub fn spectrum(app: &mut App, ui: &mut Ui) {
     };
     // the export and the project keep the channel of the selected axis
     app.tools.psd.channel = setup.quantity.channel(app.tools.axis);
-    let rows: Vec<(Axis, AxisTraces)> = Axis::ALL
+    let rows: Vec<(Axis, AxisTraces)> = crate::axis_layout::shown_axes(app)
         .into_iter()
         .map(|axis| (axis, axis_traces(app, ui, &setup, axis)))
         .collect();
@@ -251,7 +251,8 @@ pub fn spectrum(app: &mut App, ui: &mut Ui) {
     let y = y_range(&rows, &setup.display, setup.db);
     legend(app, ui, setup.quantity, &setup.display, full_w);
     // the last row also carries the frequency label: every plot area the same height
-    let h = row_height(ui, 3, X_LABEL_H / 3.0);
+    let n = rows.len().max(1);
+    let h = row_height(ui, n, X_LABEL_H / n as f32);
     let markers = app.spectrum.markers.clone();
     let mut clicked_at: Option<f64> = None;
     for (i, (axis, t)) in rows.iter().enumerate() {
@@ -277,7 +278,8 @@ pub fn spectrum(app: &mut App, ui: &mut Ui) {
                     last,
                 },
             );
-            if *axis == Axis::Roll {
+            // the first row's frame: the export and the tests read it
+            if i == 0 {
                 app.spectrum.plot_frame = Some(full.frame);
                 app.spectrum.x_bounds = Some(full.x_bounds);
             }
@@ -662,6 +664,7 @@ fn column_plot(ui: &mut Ui, c: ColumnPlot<'_>) -> Drawn {
 
 /// The panel of the Spectrum tab.
 fn controls(app: &mut App, ui: &mut Ui) {
+    crate::axis_layout::axes_row(app, ui);
     panel::section(ui, tr("Data"));
     let mut q = Quantity::of(&app.tools.spectrum_channel);
     let quantities: Vec<(Quantity, String)> = Quantity::ALL

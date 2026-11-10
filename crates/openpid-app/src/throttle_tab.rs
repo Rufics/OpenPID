@@ -89,7 +89,7 @@ pub fn throttle(app: &mut App, ui: &mut Ui) {
     let base = app.tools.throttle.clone();
     let mut logs: Vec<LogColumn> = Vec::new();
     for slot in app.visible_slots() {
-        let rows = Axis::ALL
+        let rows = crate::axis_layout::shown_axes(app)
             .into_iter()
             .map(|axis| (axis, cells(app, ui, slot, quantity, &display, &base, axis)))
             .collect();
@@ -114,7 +114,8 @@ pub fn throttle(app: &mut App, ui: &mut Ui) {
     let group_w =
         (full_w / logs.len().max(1) as f32).max(columns as f32 * (MIN_CELL_W + gap) + BAR_W);
     let h = ui.available_height() - TITLE_H - X_LABEL_H - 22.0;
-    let row_h = (h / 3.0 - ui.spacing().item_spacing.y).max(60.0);
+    let n = crate::axis_layout::shown_axes(app).len() as f32;
+    let row_h = (h / n - ui.spacing().item_spacing.y).max(60.0);
     egui::ScrollArea::horizontal()
         .id_salt("thr-groups")
         .show(ui, |ui| {
@@ -310,7 +311,7 @@ fn group(
                     });
                 }
             });
-            let bar_h = 3.0 * row_h + X_LABEL_H;
+            let bar_h = log.rows.len() as f32 * row_h + X_LABEL_H;
             colour_bar(ui, log.scale, bar_h);
         });
     });
@@ -377,9 +378,9 @@ fn heat_cell(
     if hover.is_some() {
         app.heatmap_hover = hover;
     }
-    // the quantity on roll is the result the export, the surface and the
-    // tests read: its frame is the slot's heatmap frame
-    if axis == Axis::Roll
+    // the quantity on the first shown axis is the result the export, the
+    // surface and the tests read: its frame is the slot's heatmap frame
+    if crate::axis_layout::shown_axes(app).first() == Some(&axis)
         && !cell.prefilt
         && let Some(f) = frame
     {
@@ -389,6 +390,7 @@ fn heat_cell(
 
 /// The panel of the tab.
 fn controls(app: &mut App, ui: &mut Ui) {
+    crate::axis_layout::axes_row(app, ui);
     panel::section(ui, tr("Data"));
     let mut q = Quantity::of(&app.tools.heatmap_channel);
     let quantities: Vec<(Quantity, String)> = Quantity::ALL
