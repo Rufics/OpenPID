@@ -64,7 +64,7 @@ owner's decision beats the score.
   (Arm, Angle, Horizon, AirMode, AltHold, PosHold, Loiter, ReturnHome,
   GpsRescue, Rescue, Failsafe, Land, Auto, Manual, …, `Other(name)`) and
   `FlightSession::flight_modes`, a `ModeChange` per change, read with
-  `flight_modes_at(t)` and `mode_changes()`. `FirmwareProfile::flight_modes`
+  `flight_modes_at(t)` and `mode_changes()`. `BoundProfile::flight_modes`
   turns the firmware's mode word into them: on Blackbox logs the slow
   frames' `flightModeFlags`, the mode-box mask (bit `n` is box `n` of the
   firmware's list: Betaflight by version, the lists changed at 3.3, 3.4,

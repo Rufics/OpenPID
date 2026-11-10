@@ -4,7 +4,7 @@
 //! what changed between two logs so the same exporter can write the diff.
 //!
 //! The exporter of a log comes from its firmware profile
-//! ([`crate::FirmwareProfile::exporter`], reached through
+//! ([`crate::BoundProfile::exporter`], reached through
 //! [`crate::FormatRegistry::exporter`]); nothing else names a firmware.
 
 use crate::session::FlightSession;

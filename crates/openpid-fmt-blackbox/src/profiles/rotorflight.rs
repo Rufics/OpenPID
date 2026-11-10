@@ -7,10 +7,10 @@
 //! centi-units and `attitude[]` is in decidegrees. Governor, rescue and
 //! airborne state changes arrive as events (see the parser).
 
-use super::common::{self, Scales};
+use super::common::{self, Log};
 use openpid_core::{
-    Axis, BatteryField, ChannelId, FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor,
-    FlightSession, RawHeaders, Settings, Unit,
+    Axis, BatteryField, BoundProfile, ChannelId, FieldMapping, FirmwareInfo, FirmwareProfile,
+    FirmwareVendor, FlightSession, RawHeaders, Settings, Unit,
 };
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -142,7 +142,25 @@ impl FirmwareProfile for Rotorflight {
         (fw.vendor == FirmwareVendor::Rotorflight).then_some(100)
     }
 
-    fn map_field(&self, field: &str, fw: &FirmwareInfo, h: &RawHeaders) -> Option<FieldMapping> {
+    fn bind<'a>(&self, fw: &'a FirmwareInfo, h: &'a RawHeaders) -> Box<dyn BoundProfile + 'a> {
+        let boxes: &'static [&'static str] = if fw.is_at_least(4, 6) {
+            &BOXES_RF_4_6
+        } else if fw.is_at_least(4, 3) {
+            &BOXES_RF_4_3
+        } else if fw.is_at_least(4, 2) {
+            &BOXES_RF_4_2
+        } else {
+            &common::BOXES_COMMON
+        };
+        Box::new(Bound(Log::new(fw, h, boxes)))
+    }
+}
+
+/// The profile of one Rotorflight log.
+struct Bound<'a>(Log<'a>);
+
+impl BoundProfile for Bound<'_> {
+    fn map_field(&self, field: &str) -> Option<FieldMapping> {
         let (base, idx) = common::split_indexed(field);
         let axis = idx.and_then(Axis::from_index);
         match (base, idx) {
@@ -180,12 +198,13 @@ impl FirmwareProfile for Rotorflight {
                 0.1,
             ),
             ("attitude", _) => custom(&format!("attitude.{}", axis?.name()), Unit::Degrees, 0.1),
-            _ => common::map_field(field, &Scales::betaflight(fw, h)),
+            _ => self.0.map_field(field),
         }
     }
 
-    fn settings(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
-        let mut s = common::settings(fw, h);
+    fn settings(&self) -> Settings {
+        let h = self.0.h;
+        let mut s = self.0.settings();
         for key in [
             "gyro_rpm_filter_bank_motor_index",
             "gyro_rpm_filter_bank_gear_ratio",
@@ -225,17 +244,8 @@ impl FirmwareProfile for Rotorflight {
         common::derive_collective_stick(session);
     }
 
-    fn flight_modes(&self, fw: &FirmwareInfo, word: i64) -> Vec<openpid_core::FlightMode> {
-        let names: &[&str] = if fw.is_at_least(4, 6) {
-            &BOXES_RF_4_6
-        } else if fw.is_at_least(4, 3) {
-            &BOXES_RF_4_3
-        } else if fw.is_at_least(4, 2) {
-            &BOXES_RF_4_2
-        } else {
-            &common::BOXES_COMMON
-        };
-        openpid_core::modes::modes_from_mask(word, names)
+    fn flight_modes(&self, word: i64) -> Vec<openpid_core::FlightMode> {
+        self.0.flight_modes(word)
     }
 }
 
@@ -255,28 +265,29 @@ mod tests {
         ]);
         let p = Rotorflight;
         assert_eq!(p.score(&fw, &h), Some(100));
-        let m = p.map_field("motor[0]", &fw, &h).unwrap();
+        let log = p.bind(&fw, &h);
+        let m = log.map_field("motor[0]").unwrap();
         assert_eq!(m.id, ChannelId::Motor { idx: 0 });
         assert_eq!((m.unit, m.scale, m.offset), (Unit::Percent, 0.1, 0.0));
         assert_eq!(
-            p.map_field("setpoint[3]", &fw, &h).unwrap().id,
+            log.map_field("setpoint[3]").unwrap().id,
             ChannelId::Custom("collective".into())
         );
         assert_eq!(
-            p.map_field("mixer[2]", &fw, &h).unwrap().id,
+            log.map_field("mixer[2]").unwrap().id,
             ChannelId::Custom("mixer.yaw".into())
         );
-        assert!(p.map_field("mixer[4]", &fw, &h).is_none());
-        assert_eq!(p.map_field("tailspeed", &fw, &h).unwrap().unit, Unit::Rpm);
+        assert!(log.map_field("mixer[4]").is_none());
+        assert_eq!(log.map_field("tailspeed").unwrap().unit, Unit::Rpm);
         assert_eq!(
-            p.map_field("attitude[1]", &fw, &h).unwrap().id,
+            log.map_field("attitude[1]").unwrap().id,
             ChannelId::Custom("attitude.pitch".into())
         );
         assert_eq!(
-            p.map_field("setpoint[1]", &fw, &h).unwrap().id,
+            log.map_field("setpoint[1]").unwrap().id,
             ChannelId::Setpoint { axis: Axis::Pitch }
         );
-        let s = p.settings(&fw, &h);
+        let s = log.settings();
         assert_eq!(s.motor.poles, None, "a RAM address is not a pole count");
         assert_eq!(
             s.extra

@@ -7,11 +7,11 @@
 //! `rcData[]`, `AirSpeed`) get units, and the filter headers are named
 //! `gyro_lpf_hz`/`dterm_lpf_hz`/`dynamicGyroNotch*`/`rpm_gyro_*`.
 
-use super::common::{self, Scales};
+use super::common::{self, Log};
 use openpid_core::settings::{DynNotch, FilterChain, Lowpass, LowpassKind, Notch, RpmNotch};
 use openpid_core::{
-    Axis, BatteryField, ChannelId, FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor,
-    FlightSession, RawHeaders, Settings, Unit,
+    Axis, BatteryField, BoundProfile, ChannelId, FieldMapping, FirmwareInfo, FirmwareProfile,
+    FirmwareVendor, FlightSession, RawHeaders, Settings, Unit,
 };
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -157,7 +157,16 @@ impl FirmwareProfile for Inav {
         (fw.vendor == FirmwareVendor::Inav).then_some(100)
     }
 
-    fn map_field(&self, field: &str, fw: &FirmwareInfo, h: &RawHeaders) -> Option<FieldMapping> {
+    fn bind<'a>(&self, fw: &'a FirmwareInfo, h: &'a RawHeaders) -> Box<dyn BoundProfile + 'a> {
+        Box::new(Bound(Log::new(fw, h, &BOXES_INAV[..])))
+    }
+}
+
+/// The profile of one INAV log.
+struct Bound<'a>(Log<'a>);
+
+impl BoundProfile for Bound<'_> {
+    fn map_field(&self, field: &str) -> Option<FieldMapping> {
         let (base, idx) = common::split_indexed(field);
         let axis = idx.and_then(Axis::from_index);
         match base {
@@ -220,12 +229,13 @@ impl FirmwareProfile for Inav {
                     1.0,
                 )
             }
-            _ => common::map_field(field, &Scales::betaflight(fw, h)),
+            _ => self.0.map_field(field),
         }
     }
 
-    fn settings(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
-        let mut s = common::settings(fw, h);
+    fn settings(&self) -> Settings {
+        let (fw, h) = (self.0.fw, self.0.h);
+        let mut s = self.0.settings();
         s.gyro_filters = gyro_filters(h);
         s.dterm_filters = dterm_filters(h);
         // INAV logs none of Betaflight's detail headers: the defaults apply
@@ -267,8 +277,8 @@ impl FirmwareProfile for Inav {
         common::derive(session);
     }
 
-    fn flight_modes(&self, _fw: &FirmwareInfo, word: i64) -> Vec<openpid_core::FlightMode> {
-        openpid_core::modes::modes_from_mask(word, &BOXES_INAV)
+    fn flight_modes(&self, word: i64) -> Vec<openpid_core::FlightMode> {
+        self.0.flight_modes(word)
     }
 }
 
@@ -291,35 +301,36 @@ mod tests {
         let h = headers(&[("acc_1G", "2048"), ("motorOutput", "1050,2000")]);
         let p = Inav;
         assert_eq!(p.score(&fw, &h), Some(100));
-        let att = p.map_field("attitude[2]", &fw, &h).unwrap();
+        let log = p.bind(&fw, &h);
+        let att = log.map_field("attitude[2]").unwrap();
         assert_eq!(att.id, ChannelId::Custom("attitude.yaw".into()));
         assert_eq!(att.unit, Unit::Degrees);
         assert_eq!(att.scale, 0.1);
         assert_eq!(
-            p.map_field("servo[3]", &fw, &h).unwrap().id,
+            log.map_field("servo[3]").unwrap().id,
             ChannelId::Custom("servo.3".into())
         );
         assert_eq!(
-            p.map_field("navVel[1]", &fw, &h).unwrap().id,
+            log.map_field("navVel[1]").unwrap().id,
             ChannelId::Custom("nav.vel.y".into())
         );
         assert_eq!(
-            p.map_field("fwAltOut", &fw, &h).unwrap().id,
+            log.map_field("fwAltOut").unwrap().id,
             ChannelId::Custom("fw_alt.out".into())
         );
         assert_eq!(
-            p.map_field("fwPosP", &fw, &h).unwrap().id,
+            log.map_field("fwPosP").unwrap().id,
             ChannelId::Custom("fw_pos.p".into())
         );
         assert_eq!(
-            p.map_field("axisRate[0]", &fw, &h).unwrap().id,
+            log.map_field("axisRate[0]").unwrap().id,
             ChannelId::Setpoint { axis: Axis::Roll }
         );
-        assert_eq!(p.map_field("vbat", &fw, &h).unwrap().scale, 0.01);
-        assert!(p.map_field("navPos[3]", &fw, &h).is_none());
+        assert_eq!(log.map_field("vbat").unwrap().scale, 0.01);
+        assert!(log.map_field("navPos[3]").is_none());
         // shared fields still go through the common table
         assert_eq!(
-            p.map_field("motor[0]", &fw, &h).unwrap().id,
+            log.map_field("motor[0]").unwrap().id,
             ChannelId::Motor { idx: 0 }
         );
     }
@@ -344,7 +355,7 @@ mod tests {
             ("gyro_notch_hz", "0"),
             ("motor_pwm_protocol", "5"),
         ]);
-        let s = Inav.settings(&FirmwareInfo::unknown(), &h);
+        let s = Inav.bind(&FirmwareInfo::unknown(), &h).settings();
         let pid = s.pid.unwrap();
         assert_eq!((pid.roll.p, pid.roll.i, pid.roll.f), (5.0, 7.0, Some(50.0)));
         let g = s.gyro_filters;
@@ -373,7 +384,10 @@ mod tests {
             ("dynamicGyroNotchMinHz", "30"),
             ("rpm_gyro_filter_enabled", "0"),
         ]);
-        let g = Inav.settings(&FirmwareInfo::unknown(), &h).gyro_filters;
+        let g = Inav
+            .bind(&FirmwareInfo::unknown(), &h)
+            .settings()
+            .gyro_filters;
         assert_eq!(g.lowpass1.unwrap().kind, Some(LowpassKind::Biquad));
         assert_eq!(g.notches.len(), 1);
         assert_eq!(g.notches[0].cutoff_hz, 150.0);

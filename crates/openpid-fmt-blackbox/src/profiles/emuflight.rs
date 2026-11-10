@@ -1,22 +1,15 @@
 //! `EmuFlight` profile: Betaflight 3.5 lineage, so battery voltage is logged in
 //! decivolts (confirmed on `EmuFlight` 0.4.1 logs where `vbatref` is ~250 for 6S).
 
-use super::common::{self, Scales};
+use super::common::{self, Log};
 use openpid_core::{
-    FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor, FlightSession, RawHeaders,
-    Settings,
+    BoundProfile, FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor, FlightSession,
+    RawHeaders, Settings,
 };
 
 #[derive(Debug, Default, Clone, Copy)]
 /// `EmuFlight`.
 pub struct Emuflight;
-
-fn scales(fw: &FirmwareInfo, h: &RawHeaders) -> Scales {
-    Scales {
-        vbat: 0.1,
-        ..Scales::betaflight(fw, h)
-    }
-}
 
 impl FirmwareProfile for Emuflight {
     fn id(&self) -> &'static str {
@@ -27,15 +20,33 @@ impl FirmwareProfile for Emuflight {
         (fw.vendor == FirmwareVendor::Emuflight).then_some(100)
     }
 
-    fn map_field(&self, field: &str, fw: &FirmwareInfo, h: &RawHeaders) -> Option<FieldMapping> {
-        common::map_field(field, &scales(fw, h))
+    fn bind<'a>(&self, fw: &'a FirmwareInfo, h: &'a RawHeaders) -> Box<dyn BoundProfile + 'a> {
+        // `EmuFlight`'s own Explorer names none of its boxes, and its list
+        // is not Betaflight's: the boxes every Cleanflight fork starts with,
+        // the other bits stay numbered
+        let mut log = Log::new(fw, h, &common::BOXES_COMMON[..]);
+        log.scales.vbat = 0.1;
+        Box::new(Bound(log))
+    }
+}
+
+/// The profile of one `EmuFlight` log.
+struct Bound<'a>(Log<'a>);
+
+impl BoundProfile for Bound<'_> {
+    fn map_field(&self, field: &str) -> Option<FieldMapping> {
+        self.0.map_field(field)
     }
 
-    fn settings(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
-        let mut s = common::settings(fw, h);
+    fn settings(&self) -> Settings {
+        let mut s = self.0.settings();
         // EmuFlight has per-axis gyro lowpass cutoffs; expose the roll value as the chain cutoff.
         if s.gyro_filters.lowpass1.is_none()
-            && let Some(hz) = h.get_f64("gyro_lowpass_hz_roll").filter(|v| *v > 0.0)
+            && let Some(hz) = self
+                .0
+                .h
+                .get_f64("gyro_lowpass_hz_roll")
+                .filter(|v| *v > 0.0)
         {
             s.gyro_filters.lowpass1 = Some(openpid_core::settings::Lowpass {
                 kind: None,
@@ -52,9 +63,7 @@ impl FirmwareProfile for Emuflight {
         common::derive(session);
     }
 
-    fn flight_modes(&self, _fw: &FirmwareInfo, word: i64) -> Vec<openpid_core::FlightMode> {
-        // `EmuFlight`'s own Explorer names none of its boxes, and its list is not Betaflight's: the boxes every
-        // Cleanflight fork starts with, the other bits stay numbered
-        openpid_core::modes::modes_from_mask(word, &common::BOXES_COMMON)
+    fn flight_modes(&self, word: i64) -> Vec<openpid_core::FlightMode> {
+        self.0.flight_modes(word)
     }
 }

@@ -69,6 +69,52 @@ impl Scales {
     }
 }
 
+/// What a profile of the Cleanflight family keeps for one log: its firmware
+/// and headers, the scales read from them once, and the names of its mode
+/// boxes in bit order. The profiles wrap it and override what differs.
+#[derive(Debug)]
+pub struct Log<'a> {
+    /// The firmware that wrote the log.
+    pub fw: &'a FirmwareInfo,
+    /// The log's headers.
+    pub h: &'a RawHeaders,
+    /// Raw-to-physical scale factors of the log.
+    pub scales: Scales,
+    /// The mode boxes of `flightModeFlags`, in bit order.
+    pub boxes: std::borrow::Cow<'static, [&'static str]>,
+}
+
+impl<'a> Log<'a> {
+    /// A log with Betaflight 4 conventions and the mode boxes `boxes`.
+    pub fn new(
+        fw: &'a FirmwareInfo,
+        h: &'a RawHeaders,
+        boxes: impl Into<std::borrow::Cow<'static, [&'static str]>>,
+    ) -> Self {
+        Log {
+            fw,
+            h,
+            scales: Scales::betaflight(fw, h),
+            boxes: boxes.into(),
+        }
+    }
+
+    /// A field the whole family names and scales alike.
+    pub fn map_field(&self, field: &str) -> Option<FieldMapping> {
+        map_field(field, &self.scales)
+    }
+
+    /// The settings the whole family logs alike.
+    pub fn settings(&self) -> Settings {
+        settings(self.fw, self.h)
+    }
+
+    /// The modes whose boxes are set in `word`.
+    pub fn flight_modes(&self, word: i64) -> Vec<openpid_core::FlightMode> {
+        openpid_core::modes::modes_from_mask(word, &self.boxes)
+    }
+}
+
 /// `gyro_scale` header: IEEE-754 bits of the deg/s-per-unit factor (1.0 on Betaflight).
 pub fn gyro_scale(h: &RawHeaders) -> f64 {
     h.first_of(&["gyro_scale", "gyro.scale"])

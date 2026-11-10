@@ -148,7 +148,7 @@ analysis, the simulator and the app never branch on the firmware.
 **Flight modes** are one set of values for every firmware (`FlightMode`: Arm,
 Angle, Horizon, AirMode, AltHold, PosHold, ReturnHome, GpsRescue, Failsafe, …,
 `Other(name)` for the rest). The profile turns the firmware's mode word into
-them (`FirmwareProfile::flight_modes`): the mode-box mask of
+them (`BoundProfile::flight_modes`): the mode-box mask of
 `flightModeFlags` by box list and version (Betaflight, Cleanflight, INAV,
 Rotorflight; EmuFlight and unknown firmware: ARM, ANGLE, HORIZON, the other
 bits numbered), the `ArduPilot` mode number by vehicle (arming from its `EV`
@@ -229,13 +229,20 @@ pub trait LogFormat: Send + Sync {
     fn open(&self, src: &dyn ByteSource, opts: &OpenOptions) -> Result<LogFile, FormatError>;
 }
 
-/// The semantics of a specific firmware / version: field mapping, units, defaults.
+/// A firmware family (and its versions): which logs are its own, and the profile of one of them.
 pub trait FirmwareProfile: Send + Sync {
-    fn matches(&self, headers: &RawHeaders) -> Option<Score>;
-    fn map_field(&self, field: &str, headers: &RawHeaders) -> Option<(ChannelId, Unit, Scale)>;
-    fn settings(&self, headers: &RawHeaders) -> Settings;
-    fn derive(&self, session: &mut FlightSession);      // throttle %, pid error, gyro stage, …
-    fn filter_model(&self, s: &Settings) -> Option<FilterChainModel>; // for Filter Sim
+    fn id(&self) -> &'static str;                       // "betaflight"
+    fn score(&self, fw: &FirmwareInfo, headers: &RawHeaders) -> Option<u8>;
+    /// Reads the firmware version and the headers once (ADR-0015, #144).
+    fn bind<'a>(&self, fw: &'a FirmwareInfo, headers: &'a RawHeaders) -> Box<dyn BoundProfile + 'a>;
+}
+
+/// The profile of one log: field mapping, units, settings, what its firmware can be told.
+pub trait BoundProfile {
+    fn map_field(&self, field: &str) -> Option<FieldMapping>;        // channel, unit, scale, offset
+    fn settings(&self) -> Settings;
+    fn derive(&self, session: &mut FlightSession);      // throttle %, pid error, gyro stage, the sticks, …
+    fn flight_modes(&self, word: i64) -> Vec<FlightMode>;            // a box mask or a mode number
     fn slider_model(&self) -> Option<Box<dyn SliderModel>>;          // for the PID slider tool
     fn exporter(&self) -> Option<Box<dyn Exporter>>;                 // proposals / a diff as the firmware's commands
 }

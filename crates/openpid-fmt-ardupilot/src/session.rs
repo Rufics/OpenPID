@@ -15,8 +15,8 @@ use openpid_core::session::{
     Channel, ChannelSet, Diagnostics, Event, EventKind, FrameStats, Origin, Timebase,
 };
 use openpid_core::{
-    Axis, ChannelId, FirmwareInfo, FirmwareProfile, FirmwareVendor, FirmwareVersion, FlightSession,
-    FormatError, GyroStage, OpenOptions, RawHeaders, Series, Unit,
+    Axis, BoundProfile, ChannelId, FirmwareInfo, FirmwareProfile, FirmwareVendor, FirmwareVersion,
+    FlightSession, FormatError, GyroStage, OpenOptions, RawHeaders, Series, Unit,
 };
 use std::collections::BTreeMap;
 
@@ -347,11 +347,9 @@ fn skip_column(def: &FormatDef, col: usize) -> bool {
 fn export_channels(
     raw: &RawLog,
     times: &[i64],
-    firmware: &FirmwareInfo,
-    h: &RawHeaders,
-    profile: ArdupilotProfile,
-    use_profile: bool,
+    profile: Option<&dyn BoundProfile>,
 ) -> (ChannelSet, Vec<String>) {
+    let use_profile = profile.is_some();
     let mut channels = ChannelSet::new();
     let mut unmapped = Vec::new();
     for ex in exports(raw) {
@@ -365,9 +363,7 @@ fn export_channels(
                 continue;
             }
             let field = format!("{}.{}", ex.name, col_name);
-            let mapped = use_profile
-                .then(|| profile.map_field(&field, firmware, h))
-                .flatten();
+            let mapped = profile.and_then(|p| p.map_field(&field));
             let target = column_target(raw, &ex, col, col_name, mapped, use_profile);
             // the first field of a channel wins (RATE.RDes over PIDR.Tar); a
             // later one stays under its logged name, in the mapped unit
@@ -595,19 +591,16 @@ pub(crate) fn build(
     let h = headers(raw);
     let (primary_name, times, dropped) = primary_timebase(raw)?;
     let timebase = Timebase::from_times(times.clone(), None);
-    let use_profile = !options.raw;
+    // the profile of this log: it reads the firmware string and the
+    // parameters here, once
+    let bound = (!options.raw).then(|| profile.bind(&firmware, &h));
 
-    let (mut channels, unmapped) =
-        export_channels(raw, &times, &firmware, &h, profile, use_profile);
+    let (mut channels, unmapped) = export_channels(raw, &times, bound.as_deref());
     let batch = batch_channels(raw, &times, instances(raw, "IMU").len(), &mut channels);
     timebase_channels(&mut channels, primary_name, &times);
     channels.reindex();
 
-    let mut settings = if use_profile {
-        profile.settings(&firmware, &h)
-    } else {
-        openpid_core::Settings::default()
-    };
+    let mut settings = bound.as_ref().map(|b| b.settings()).unwrap_or_default();
     settings.loop_rates.log_hz = Some(timebase.sample_rate_hz());
 
     let frames = frame_stats(raw);
@@ -631,10 +624,10 @@ pub(crate) fn build(
     let mut session = FlightSession {
         index: 0,
         offset_bytes: 0,
-        firmware,
-        profile_id: if use_profile { profile.id() } else { "raw" }.to_string(),
+        firmware: firmware.clone(),
+        profile_id: if bound.is_some() { profile.id() } else { "raw" }.to_string(),
         settings,
-        raw_headers: h.0,
+        raw_headers: h.0.clone(),
         timebase,
         channels,
         events: events(raw, &times),
@@ -642,9 +635,9 @@ pub(crate) fn build(
         flight_modes: Vec::new(),
         diagnostics,
     };
-    if use_profile {
-        session.flight_modes = mode_changes(&profile, &session.firmware, &session.events);
-        profile.derive(&mut session);
+    if let Some(b) = &bound {
+        session.flight_modes = mode_changes(b.as_ref(), &session.events);
+        b.derive(&mut session);
     }
     Ok(session)
 }
@@ -657,11 +650,7 @@ const EV_DISARMED: i64 = 11;
 /// the mode the profile reads from the `MODE` number, with
 /// [`FlightMode::Arm`] first while armed. Before the first arming `EV` the
 /// arming state is unknown and not shown.
-fn mode_changes(
-    profile: &dyn FirmwareProfile,
-    firmware: &FirmwareInfo,
-    events: &[Event],
-) -> Vec<ModeChange> {
+fn mode_changes(profile: &dyn BoundProfile, events: &[Event]) -> Vec<ModeChange> {
     let mut out = Vec::new();
     let mut armed = false;
     let mut current: Vec<FlightMode> = Vec::new();
@@ -674,7 +663,7 @@ fn mode_changes(
                 let Some(n) = data.get("ModeNum").or_else(|| data.get("Mode")) else {
                     continue;
                 };
-                current = profile.flight_modes(firmware, *n);
+                current = profile.flight_modes(*n);
             }
             "EV" => match data.get("Id") {
                 Some(&EV_ARMED) => armed = true,
@@ -751,7 +740,9 @@ mod tests {
             revision: "ArduCopter V4.5.0".into(),
             ..FirmwareInfo::unknown()
         };
-        let seq: Vec<(usize, Vec<FlightMode>)> = mode_changes(&ArdupilotProfile, &fw, &events)
+        let h = RawHeaders::default();
+        let log = ArdupilotProfile.bind(&fw, &h);
+        let seq: Vec<(usize, Vec<FlightMode>)> = mode_changes(log.as_ref(), &events)
             .into_iter()
             .map(|c| (c.sample_index, c.modes))
             .collect();

@@ -9,7 +9,7 @@
 | Q3 | Development logs come from the community (see `tests/logs/README.md`); the owner's own logs are for the final check only. |
 | Q4 | "Touch support" means touch screens on the desktop; mobile platforms are not blocked but not planned. |
 | Q5 | `rustfft` is acceptable. |
-| Q6 | PID slider tool: Betaflight only (simplified tuning 4.3+). Implemented through `FirmwareProfile::slider_model`. |
+| Q6 | PID slider tool: Betaflight only (simplified tuning 4.3+). Implemented through `BoundProfile::slider_model`. |
 
 The rest (Q6–Q12) stay open until the relevant phase.
 
@@ -22,7 +22,7 @@ The rest (Q6–Q12) stay open until the relevant phase.
 | Q3 | **Sample logs.** Conformance and golden tests need short (5–30 s) real logs from every firmware and version, ideally with `gyroUnfilt`, eRPM and various `debug_mode` values. Can you provide them (or allow collecting them from the community) and put them in the repository under the project licence? | Yes/no; if yes, which firmwares are at hand. |
 | Q4 | **"Touch support"**: touch screens (laptops and tablets with Windows/Linux, iPad-like scenarios) or something else (for example mobile platforms later)? | Multi-touch gestures are in the desktop GUI (egui supports them natively) and future iOS/Android builds are not blocked. Confirm. |
 | Q5 | **The "minimal dependencies" line.** Is `rustfft` (pure Rust) acceptable for the FFT, or do you want an own FFT? `wgpu`/`winit` are unavoidable for the GUI. | `rustfft` recommended (see ADR-0001). |
-| Q6 | **PID slider tool**: the Betaflight sliders (Configurator 10.9+ / 4.3+ "simplified tuning") that turn positions into P/I/D/F/D_min? Other firmwares? | Implemented through `FirmwareProfile::slider_model`, Betaflight first. Your access to the PTB UI will help to compare the behaviour. |
+| Q6 | **PID slider tool**: the Betaflight sliders (Configurator 10.9+ / 4.3+ "simplified tuning") that turn positions into P/I/D/F/D_min? Other firmwares? | Implemented through `BoundProfile::slider_model`, Betaflight first. Your access to the PTB UI will help to compare the behaviour. |
 | Q7 | **A/B comparison** (two logs at once, as in PTB): needed in phase 1 or can it wait? | Phase 1 recommended: it is the core of the PTB workflow. |
 | Q8 | **Scope of the "Pro" features.** All seven rows of the table (notch overlay 2D/3D, RPM estimator, filter sim, generator, motor noise, spectrum player) in phase 2, or are some priorities? | Suggested order: filter sim → notch/RPM overlay 2D → RPM estimator → motor noise → overlay 3D → generator → player. |
 | Q9 | **Interface and documentation language.** | UI EN + UA (a switch); code, comments and documents in English. |

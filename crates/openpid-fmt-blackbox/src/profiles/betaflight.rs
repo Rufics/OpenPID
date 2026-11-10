@@ -1,11 +1,10 @@
 //! Betaflight (and Cleanflight) profile.
 
-use super::common::{self, Scales};
+use super::common::{self, Log};
 use crate::cli::BetaflightCli;
-use openpid_core::modes::modes_from_mask;
 use openpid_core::{
-    Exporter, FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor, FirmwareVersion,
-    FlightMode, FlightSession, RawHeaders, Settings, SliderModel,
+    BoundProfile, Exporter, FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor,
+    FirmwareVersion, FlightMode, FlightSession, RawHeaders, Settings, SliderModel,
 };
 
 /// Mode boxes of Betaflight before 3.3 and of Cleanflight, in bit order.
@@ -212,32 +211,41 @@ impl FirmwareProfile for Betaflight {
         }
     }
 
-    fn map_field(&self, field: &str, fw: &FirmwareInfo, h: &RawHeaders) -> Option<FieldMapping> {
-        common::map_field(field, &Scales::betaflight(fw, h))
+    fn bind<'a>(&self, fw: &'a FirmwareInfo, h: &'a RawHeaders) -> Box<dyn BoundProfile + 'a> {
+        Box::new(Bound(Log::new(fw, h, box_names(fw))))
+    }
+}
+
+/// The profile of one Betaflight log.
+struct Bound<'a>(Log<'a>);
+
+impl BoundProfile for Bound<'_> {
+    fn map_field(&self, field: &str) -> Option<FieldMapping> {
+        self.0.map_field(field)
     }
 
-    fn settings(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
-        common::settings(fw, h)
+    fn settings(&self) -> Settings {
+        self.0.settings()
     }
 
     fn derive(&self, session: &mut FlightSession) {
         common::derive(session);
     }
 
-    fn flight_modes(&self, fw: &FirmwareInfo, word: i64) -> Vec<FlightMode> {
-        modes_from_mask(word, &box_names(fw))
+    fn flight_modes(&self, word: i64) -> Vec<FlightMode> {
+        self.0.flight_modes(word)
     }
 
-    fn slider_model(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Option<Box<dyn SliderModel>> {
-        super::sliders::BetaflightSliders::from_headers(fw, h)
+    fn slider_model(&self) -> Option<Box<dyn SliderModel>> {
+        super::sliders::BetaflightSliders::from_headers(self.0.fw, self.0.h)
             .map(|m| Box::new(m) as Box<dyn SliderModel>)
     }
 
-    fn exporter(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Option<Box<dyn Exporter>> {
+    fn exporter(&self) -> Option<Box<dyn Exporter>> {
         // Cleanflight is read with this profile too, but its CLI has other
         // setting names
-        (fw.vendor == FirmwareVendor::Betaflight)
-            .then(|| Box::new(BetaflightCli::for_log(fw, h)) as Box<dyn Exporter>)
+        (self.0.fw.vendor == FirmwareVendor::Betaflight)
+            .then(|| Box::new(BetaflightCli::for_log(self.0.fw, self.0.h)) as Box<dyn Exporter>)
     }
 }
 
@@ -295,9 +303,13 @@ mod tests {
             "ANTIGRAVITY"
         );
         // the profile turns the mask into modes: 0x201 on 2025.12 is ARM and POSHOLD
+        let (fw, h) = (fw(bf, 2025, 12, 2), RawHeaders::default());
+        let log = Betaflight.bind(&fw, &h);
         assert_eq!(
-            Betaflight.flight_modes(&fw(bf, 2025, 12, 2), 0x201),
+            log.flight_modes(0x201),
             [FlightMode::Arm, FlightMode::PosHold]
         );
+        // the box table of a log is built once, when the profile is bound
+        assert_eq!(log.flight_modes(0x1), [FlightMode::Arm]);
     }
 }

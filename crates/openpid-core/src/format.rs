@@ -144,7 +144,8 @@ impl FormatRegistry {
     pub fn slider_model(&self, session: &FlightSession) -> Option<Box<dyn SliderModel>> {
         let headers = RawHeaders(session.raw_headers.clone());
         self.profile_for(session)?
-            .slider_model(&session.firmware, &headers)
+            .bind(&session.firmware, &headers)
+            .slider_model()
     }
 
     /// What writes proposals and setting diffs for the firmware of `session`,
@@ -152,6 +153,7 @@ impl FormatRegistry {
     pub fn exporter(&self, session: &FlightSession) -> Option<Box<dyn Exporter>> {
         let headers = RawHeaders(session.raw_headers.clone());
         self.profile_for(session)?
-            .exporter(&session.firmware, &headers)
+            .bind(&session.firmware, &headers)
+            .exporter()
     }
 }
