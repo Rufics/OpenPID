@@ -25,8 +25,6 @@ use std::sync::Arc;
 pub struct ViewerState {
     /// Time (s) of the last click, tap or long press on the log viewer plot.
     pub cursor_s: Option<f64>,
-    /// Vertical range of the last drawn log-viewer plot.
-    pub y_bounds: Option<(f64, f64)>,
     /// A finger resting on the plot: when it started (s) and where, for the long press.
     pub press: Option<(f64, egui::Pos2)>,
     pub channel_filter: String,
@@ -34,10 +32,6 @@ pub struct ViewerState {
     pub hover_handle: Option<(Slot, bool)>,
     /// Epoch handle being dragged.
     pub drag_handle: Option<(Slot, bool)>,
-    /// Screen rectangle of the plot area last frame (for touch targets and tests).
-    pub plot_frame: Option<egui::Rect>,
-    /// Plot x range (seconds) last frame.
-    pub x_bounds: Option<(f64, f64)>,
     /// The sticks drawn on the Log viewer last frame (at the pointer or the cursor).
     pub sticks: Option<openpid_core::Sticks>,
     /// Where the stick card was drawn last frame.
@@ -165,10 +159,6 @@ pub struct SpectrumState {
     pub min_prominence_db: f64,
     /// Peaks found on the last frame, per slot and axis (for the read-out and tests).
     pub peaks: Vec<(Slot, Axis, Vec<Peak>)>,
-    /// Screen rectangle of the plot area last frame.
-    pub plot_frame: Option<egui::Rect>,
-    /// Plot x range (Hz) last frame.
-    pub x_bounds: Option<(f64, f64)>,
 }
 
 impl Default for SpectrumState {
@@ -178,8 +168,6 @@ impl Default for SpectrumState {
             auto_peaks: 3,
             min_prominence_db: 6.0,
             peaks: Vec::new(),
-            plot_frame: None,
-            x_bounds: None,
         }
     }
 }
@@ -211,10 +199,6 @@ pub struct PlayerState {
     pub synced_cursor: Option<f64>,
     /// Column of slot A's grid at the position (for the read-out and tests).
     pub column: Option<usize>,
-    /// Screen rectangle of slot A's heatmap last frame.
-    pub plot_frame: Option<egui::Rect>,
-    /// Plot x range (seconds) of slot A's heatmap last frame.
-    pub x_bounds: Option<(f64, f64)>,
 }
 
 impl Default for PlayerState {
@@ -227,8 +211,6 @@ impl Default for PlayerState {
             last_frame_time: None,
             synced_cursor: None,
             column: None,
-            plot_frame: None,
-            x_bounds: None,
         }
     }
 }
@@ -836,8 +818,6 @@ pub enum StripDrag {
 pub struct StripState {
     /// The handle or window being dragged, if any.
     pub drag: Option<(Slot, StripDrag)>,
-    /// Screen rectangle of every strip last frame (tests, hit tests).
-    pub rects: HashMap<Slot, egui::Rect>,
     /// Throttle (or gyro) min/max envelope per pixel column, by slot,
     /// session and width.
     envelopes: HashMap<(Slot, usize, u32), Envelope>,
@@ -849,7 +829,6 @@ type Envelope = Arc<Vec<[f32; 2]>>;
 impl StripState {
     /// Drop everything cached for a slot (closed or reloaded).
     pub fn forget(&mut self, slot: Slot) {
-        self.rects.remove(&slot);
         self.envelopes.retain(|k, _| k.0 != slot);
         if self.drag.is_some_and(|(s, _)| s == slot) {
             self.drag = None;
@@ -1047,7 +1026,10 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
         if resp.double_clicked() {
             update = Some((None, false));
         }
-        app.strip.rects.insert(slot, rect);
+        app.probes.insert(
+            format!("strip/{}", slot.name()),
+            crate::probe::PlotProbe::area(rect, (0.0, duration), (0.0, 1.0)),
+        );
         if app.first_loaded() == Some(slot) {
             app.anchors.insert("epoch-handles", rect);
         }

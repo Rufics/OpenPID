@@ -291,8 +291,6 @@ pub struct App {
     pub colour_scales: Vec<(Slot, f64)>,
     /// Heatmap cell under the pointer last frame: slot, x, y, value.
     pub heatmap_hover: Option<(Slot, f64, f64, f64)>,
-    /// Screen rectangle of every heatmap plot last frame.
-    pub heatmap_frames: HashMap<Slot, egui::Rect>,
     /// Freq × throttle view state (the throttle range last applied).
     pub throttle_view: crate::throttle_tab::ThrottleView,
     /// Freq × time view state.
@@ -402,7 +400,6 @@ impl App {
             heatmap_textures: HashMap::new(),
             colour_scales: Vec::new(),
             heatmap_hover: None,
-            heatmap_frames: HashMap::new(),
             throttle_view: crate::throttle_tab::ThrottleView::default(),
             time_view: crate::time_tab::TimeView::default(),
             tab: tab.unwrap_or(Tab::LogViewer),

@@ -38,8 +38,6 @@ pub struct SurfaceState {
     pub fitted: bool,
     /// `(throttle %, Hz, amplitude)` of the node under the pointer last frame.
     pub hover: Option<(f64, f64, f64)>,
-    /// Screen rectangle of the (first) surface panel last frame.
-    pub frame: Option<egui::Rect>,
     /// Cells of the last mesh drawn (after decimation).
     pub cells: usize,
 }
@@ -52,7 +50,6 @@ impl Default for SurfaceState {
             shade: true,
             fitted: false,
             hover: None,
-            frame: None,
             cells: 0,
         }
     }
@@ -221,6 +218,11 @@ fn draw_surface(
     let rect = resp.rect;
     let painter = painter.with_clip_rect(rect);
     painter.rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
+    // the panel in fractions of its width and height
+    app.probes.insert(
+        format!("surface/{}", slot.name()),
+        crate::probe::PlotProbe::area(rect, (0.0, 1.0), (0.0, 1.0)),
+    );
     let st = &mut app.surface;
     if !st.fitted {
         st.camera.zoom = rect.width().min(rect.height()) * 0.95;
@@ -239,7 +241,6 @@ fn draw_surface(
     let m = build(&grid, max, &cam, st.shade);
     if first {
         st.cells = m.cols.saturating_sub(1) * m.rows.saturating_sub(1);
-        st.frame = Some(rect);
     }
     // the surface
     let mut mesh = egui::Mesh::default();

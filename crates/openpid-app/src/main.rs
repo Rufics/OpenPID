@@ -22,8 +22,6 @@ mod surface;
 mod testkit;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod tests_kit;
 mod theme;
 mod throttle_tab;
 mod time_tab;

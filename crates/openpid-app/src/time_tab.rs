@@ -150,10 +150,11 @@ pub fn time(app: &mut App, ui: &mut Ui) {
             let drawn = spectrogram(app, ui, slot, row, t, pos, range, egui::vec2(plot_w, row_h));
             clicked_at = clicked_at.or(drawn.clicked);
             if i == 0 {
-                app.player.plot_frame = Some(drawn.frame);
-                app.player.x_bounds = Some(drawn.x_bounds);
                 app.player.column = column;
-                app.heatmap_frames.insert(slot, drawn.frame);
+            }
+            if let Some(probe) = drawn.probe {
+                app.probes
+                    .insert(format!("time/{}", row.axis.name()), probe);
             }
             slice(
                 ui,
@@ -310,8 +311,8 @@ fn title(ui: &mut Ui, slot: Slot, q: Quantity, d: &TimeDisplay, pos: f64) {
 
 /// What a spectrogram reports back.
 struct Drawn {
-    frame: egui::Rect,
-    x_bounds: (f64, f64),
+    /// Where the plot is and what it shows.
+    probe: Option<crate::probe::PlotProbe>,
     clicked: Option<f64>,
 }
 
@@ -332,8 +333,7 @@ fn spectrogram(
     let touch = app.touch_mode;
     let link = egui::Id::unique("time-x");
     let mut drawn = Drawn {
-        frame: egui::Rect::NOTHING,
-        x_bounds: (0.0, 0.0),
+        probe: None,
         clicked: None,
     };
     let mut hover = None;
@@ -371,9 +371,7 @@ fn spectrogram(
             {
                 drawn.clicked = Some(pu.transform().value_from_position(p).x);
             }
-            let b = pu.plot_bounds();
-            drawn.x_bounds = (b.min()[0], b.max()[0]);
-            drawn.frame = *pu.transform().frame();
+            drawn.probe = Some(crate::probe::PlotProbe::of(pu.transform()));
             hover = heatmap_hover(pu, slot, &t.grid);
         });
     if hover.is_some() {

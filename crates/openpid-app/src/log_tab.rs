@@ -458,12 +458,6 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
             modes.as_deref(),
         ));
     }
-    if let Some(t) = first {
-        let b = t.bounds();
-        app.viewer.x_bounds = Some((b.min()[0], b.max()[0]));
-        app.viewer.y_bounds = Some((b.min()[1], b.max()[1]));
-        app.viewer.plot_frame = Some(*t.frame());
-    }
     let prev_hover = app.viewer.hover_handle;
     app.viewer.cursor_s = act.cursor;
     app.viewer.hover_handle = act.hovered;

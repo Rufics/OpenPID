@@ -278,11 +278,8 @@ pub fn spectrum(app: &mut App, ui: &mut Ui) {
                     last,
                 },
             );
-            // the first row's frame: the export and the tests read it
-            if i == 0 {
-                app.spectrum.plot_frame = Some(full.frame);
-                app.spectrum.x_bounds = Some(full.x_bounds);
-            }
+            app.probes
+                .insert(format!("spectrum/{}", axis.name()), full.probe);
             let low = column_plot(
                 ui,
                 ColumnPlot {
@@ -505,8 +502,8 @@ struct ColumnPlot<'a> {
 
 /// What a plot of the grid reports back.
 struct Drawn {
-    frame: egui::Rect,
-    x_bounds: (f64, f64),
+    /// Where the plot is and what it shows, in Hz.
+    probe: crate::probe::PlotProbe,
     clicked: Option<f64>,
 }
 
@@ -635,8 +632,7 @@ fn column_plot(ui: &mut Ui, c: ColumnPlot<'_>) -> Drawn {
     };
     let (x0, x1) = home_x(&c, fa);
     let mut clicked = None;
-    let mut frame = egui::Rect::NOTHING;
-    let mut bounds = (x0, x1);
+    let mut probe = None;
     let plot = cell_plot(&c, fa);
     plot.show(ui, |pu| {
         pu.set_plot_bounds_y(c.y.0..=c.y.1);
@@ -651,13 +647,15 @@ fn column_plot(ui: &mut Ui, c: ColumnPlot<'_>) -> Drawn {
         if pu.response().clicked() {
             clicked = pu.pointer_coordinate().map(|p| fa.to_hz(p.x));
         }
-        let b = pu.plot_bounds();
-        bounds = (fa.to_hz(b.min()[0]), fa.to_hz(b.max()[0]));
-        frame = *pu.transform().frame();
+        probe = Some(crate::probe::PlotProbe::of(pu.transform()));
     });
+    let probe = probe.unwrap_or(crate::probe::PlotProbe::area(
+        egui::Rect::NOTHING,
+        (0.0, 1.0),
+        (0.0, 1.0),
+    ));
     Drawn {
-        frame,
-        x_bounds: bounds,
+        probe: if fa.log { probe.with_log_x() } else { probe },
         clicked,
     }
 }

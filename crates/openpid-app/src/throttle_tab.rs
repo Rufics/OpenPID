@@ -356,7 +356,7 @@ fn heat_cell(
         plot = plot.x_axis_label(tr("throttle (%)"));
     }
     let mut hover = None;
-    let mut frame = None;
+    let mut probe = None;
     plot.show(ui, |pu| {
         if reset || pu.response().double_clicked() {
             pu.set_plot_bounds_x(range.0..=range.1);
@@ -373,18 +373,21 @@ fn heat_cell(
         }
         marker_hlines(pu, &markers);
         hover = heatmap_hover(pu, log.slot, &t.grid);
-        frame = Some(*pu.transform().frame());
+        probe = Some(crate::probe::PlotProbe::of(pu.transform()));
     });
     if hover.is_some() {
         app.heatmap_hover = hover;
     }
-    // the quantity on the first shown axis is the result the export, the
-    // surface and the tests read: its frame is the slot's heatmap frame
-    if crate::axis_layout::shown_axes(app).first() == Some(&axis)
-        && !cell.prefilt
-        && let Some(f) = frame
-    {
-        app.heatmap_frames.insert(log.slot, f);
+    if let Some(probe) = probe {
+        app.probes.insert(
+            format!(
+                "throttle/{}/{}{}",
+                log.slot.name(),
+                axis.name(),
+                if cell.prefilt { "/prefilt" } else { "" }
+            ),
+            probe,
+        );
     }
 }
 

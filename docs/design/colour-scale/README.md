@@ -69,7 +69,7 @@ S (≈ 1 day).
   maximum above 20 Hz) and `linked_scales` (the shared ceiling = the largest of
   the automatic ones when `Tools.heatmap_link` is on); `heatmap_hover` /
   `hover_label`, the cell under the pointer (`surface::value_at`) under the
-  map; `app.colour_scales`, `app.heatmap_hover`, `app.heatmap_frames` for the tests.
+  map; `app.colour_scales` and `app.heatmap_hover` for the tests (the frames of the maps are in `app.probes`).
 - **Placement:** Freq × throttle and Freq × time are `[plot][bar]` in
   `ui.horizontal`, the plot `BAR_W = 56 px` narrower, the segment strip the
   same width; Surface 3D has the bar right of the relief, the ceiling passed to

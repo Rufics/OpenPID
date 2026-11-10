@@ -19,5 +19,5 @@
 ## Consequences
 
 - CI has no `--exclude openpid-app`; the 90 % threshold applies to the whole workspace.
-- New widgets and tabs get a test in `crates/openpid-app/src/tests.rs`; widget labels are a contract for the tests and change together with them.
+- New widgets and tabs get a test in `crates/openpid-app/src/tests/`, written with the driver in `testkit.rs` (controls by name, plots in data units through `App::probes`; docs/design/ui-tests); widget labels are a contract for the tests and change together with them.
 - `rfd` (the native file dialog) is never called in tests; opening files is tested through `App::open` and drag-and-drop events.
