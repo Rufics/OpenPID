@@ -94,7 +94,7 @@ Rules shared by every topic of the sprint:
 | Freq × time: R/P/Y spectrograms in dB, spectrum at the position, throttle | [time-tab](time-tab/README.md) |
 | Log viewer: R/P/Y at one scale, throttle / motors, quantities, values at the cursor | [log-tab](log-tab/README.md) |
 | Filter Sim: the chain's magnitude, delay and phase per part beside the log | [filter-tab](filter-tab/README.md) |
-| Motors: R/P/Y spectra with the harmonics, each motor over the mean beside them | [motors-tab](motors-tab/README.md) |
+| Motors tab (built, then removed on 2026-11-10: the reference tool has no such screen) | [motors-tab](motors-tab/README.md) |
 | One axis at full height on the axis-row tabs (Show, keys R / P / Y) | [axis-focus](axis-focus/README.md) |
 | UI tests by control names and data units, on every screen | [ui-tests](ui-tests/README.md) |
 | Log viewer: the sticks and the flight modes at the pointer or the cursor, on the motors row | [log-sticks](log-sticks/README.md) |

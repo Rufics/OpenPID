@@ -621,7 +621,7 @@ fn fitness_badges(ui: &mut Ui, f: &Fitness) {
     }
 }
 
-/// The unfiltered gyro of `axis`: what Filter Sim and Motor noise read.
+/// The unfiltered gyro of `axis`: what Filter Sim reads.
 pub(crate) fn raw_gyro(axis: Axis) -> ChannelId {
     ChannelId::Gyro {
         axis,

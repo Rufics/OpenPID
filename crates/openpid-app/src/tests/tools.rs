@@ -1,8 +1,8 @@
-//! The tools on top of the analyses: Filter Sim, Motor noise, Advice, the
-//! PID sliders, the export, and every tab on one real log.
+//! The tools on top of the analyses: Filter Sim, Advice, the PID sliders,
+//! the export, and every tab on one real log.
 
 use super::temp_dir;
-use super::{LOG_4_2, LOG_4_5, LOG_4_5_1, LOG_2025, LOG_ARDUCOPTER, LOG_TWO, result, set_epoch};
+use super::{LOG_4_2, LOG_4_5, LOG_2025, LOG_ARDUCOPTER, LOG_TWO, result, set_epoch};
 use crate::app::{Cached, Tab};
 use crate::testkit::Ui;
 use crate::worker::{Output, Slot};
@@ -29,8 +29,8 @@ fn every_tab_runs_its_analysis_on_a_real_log() {
     let kinds: std::collections::BTreeSet<&str> = ui.app().cache.keys().map(|k| k.kind).collect();
     assert_eq!(
         kinds.into_iter().collect::<Vec<_>>(),
-        ["advice", "fsim", "motors", "psd", "step", "stft", "thr"],
-        "debug_mode GYRO_SCALED gives the 4.2.0 log a raw gyro, so Filter Sim and Motor noise run too"
+        ["advice", "fsim", "psd", "step", "stft", "thr"],
+        "debug_mode GYRO_SCALED gives the 4.2.0 log a raw gyro, so Filter Sim runs too"
     );
     ui.tab(Tab::Diagnostics);
     assert!(ui.sees("profile"));
@@ -101,37 +101,6 @@ fn filter_sim_tab_validates_the_model_and_applies_what_if_changes() {
     assert!(ui.sees("Harmonics"));
     // a log without unfiltered gyro gets a hint and no job
     let ui = Ui::open(&[LOG_TWO], Tab::FilterSim);
-    assert!(ui.sees("no unfiltered gyro"));
-    assert!(ui.app().cache.is_empty());
-}
-
-#[test]
-fn motor_noise_tab_lists_every_motor() {
-    let mut ui = Ui::open(&[LOG_4_5_1], Tab::MotorNoise);
-    assert!(ui.sees("rpm logged"));
-    for m in ["M1", "M2", "M3", "M4"] {
-        assert!(ui.has(m), "{m}");
-    }
-    assert!(ui.sees("loudest: roll M"));
-    assert!(ui.sees("×1 over the mean of the motors"));
-    // a row per axis: three jobs on the unfiltered gyro
-    assert_eq!(ui.app().cache.len(), 3);
-    assert!(!ui.app().tools.motors_display.per_motor);
-    ui.click("Per motor");
-    assert!(ui.app().tools.motors_display.per_motor);
-    let out = result(&ui, |o| match o {
-        Output::MotorNoise(m) => Some(m.clone()),
-        _ => None,
-    })
-    .unwrap();
-    assert_eq!(out.motors.len(), 4);
-    assert!(out.motors.iter().all(|m| m.harmonics.len() == 3));
-    // a log without eRPM falls back to the estimate: one row
-    let ui = Ui::open(&[LOG_4_2], Tab::MotorNoise);
-    assert!(ui.sees("rpm estimated"));
-    assert!(ui.has("M1") && !ui.has("M2"));
-    // a log without unfiltered gyro gets the hint
-    let ui = Ui::open(&[LOG_TWO], Tab::MotorNoise);
     assert!(ui.sees("no unfiltered gyro"));
     assert!(ui.app().cache.is_empty());
 }

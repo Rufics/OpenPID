@@ -161,10 +161,6 @@ static UA: &[(&str, &str)] = &[
     ("Language", "Мова"),
     ("Latency", "Затримка"),
     ("Light", "Світла"),
-    (
-        "Lines: the motor harmonics, ×1 solid, ×2 and ×3 dashed. Bars: each motor's ×1, ×2, ×3 over the mean of the motors (1 = average); a louder motor stands out on every axis.",
-        "Лінії: гармоніки моторів, ×1 суцільна, ×2 і ×3 пунктир. Стовпчики: ×1, ×2, ×3 кожного мотора відносно середнього по моторах (1 = середнє); гучніший мотор видно на кожній осі.",
-    ),
     ("Link scales", "Спільна шкала"),
     (
         "Load a Betaflight 4.3+ log into slot A to use the PID sliders.",
@@ -176,7 +172,6 @@ static UA: &[(&str, &str)] = &[
     ("Log viewer", "Перегляд логу"),
     ("Low-pass 1", "Low-pass 1"),
     ("Low-pass 2", "Low-pass 2"),
-    ("Markers", "Позначки"),
     ("Max", "Макс"),
     ("Max frequency", "Макс. частота"),
     ("Menu", "Меню"),
@@ -187,7 +182,6 @@ static UA: &[(&str, &str)] = &[
     ("Model", "Модель"),
     ("Most active 20 s", "Найактивніші 20 с"),
     ("Motor RPM", "Оберти моторів"),
-    ("Motor noise", "Шум моторів"),
     ("Motors", "Мотори"),
     ("Next", "Далі"),
     ("Next tab", "Наступна вкладка"),
@@ -345,10 +339,6 @@ static UA: &[(&str, &str)] = &[
     (
         "a logarithmic frequency axis on the full spectrum",
         "логарифмічна вісь частот на повному спектрі",
-    ),
-    (
-        "a marker per motor and harmonic in the motor's colour; off: one per harmonic at the mean motor speed",
-        "позначка на кожен мотор і гармоніку кольором мотора; вимкнено: одна на гармоніку при середніх обертах",
     ),
     (
         "a moving average of the power over 0, 2, 4, 8, 16 or 32 Hz; medium (8 Hz) by default",
@@ -516,7 +506,6 @@ static UA: &[(&str, &str)] = &[
     ("log:", "лог:"),
     ("logged", "у лозі"),
     ("logged filtered", "записаний відфільтрований"),
-    ("loudest", "найгучніший"),
     ("low", "низька"),
     ("low-med", "нижче середньої"),
     (
@@ -530,22 +519,16 @@ static UA: &[(&str, &str)] = &[
     ("magnitude (dB)", "амплітуда (дБ)"),
     ("markers", "мітки"),
     ("max", "макс"),
-    ("mean of the motors", "середнє по моторах"),
     ("med-high", "вище середньої"),
     ("medium", "середня"),
     ("min input", "мін. вхід"),
     ("min segments", "мін. сегментів"),
     ("min windows ok", "мін. вікон (ok)"),
     ("min windows weak", "мін. вікон (слабко)"),
-    ("motor", "мотор"),
     ("motors", "мотори"),
     (
         "motors whose logged speed moved the RPM notches",
         "мотори, чиї записані оберти рухали RPM notch",
-    ),
-    (
-        "multiples of each motor's frequency to read: 1 is the motor itself, 2 and 3 its overtones",
-        "кратні частоти мотора, які читати: 1 — сам мотор, 2 і 3 — його обертони",
     ),
     ("new slot, to compare", "новий слот, для порівняння"),
     (
@@ -560,10 +543,6 @@ static UA: &[(&str, &str)] = &[
     (
         "no unfiltered gyro in this log",
         "у цьому лозі немає нефільтрованого гіро",
-    ),
-    (
-        "no unfiltered gyro in this log (the filtered one has the motor peaks removed);",
-        "у цьому лозі немає нефільтрованого гіро (у відфільтрованому піки моторів прибрано);",
     ),
     (
         "normalise every window on its settled tail before averaging",
@@ -614,7 +593,6 @@ static UA: &[(&str, &str)] = &[
         "потужність у децибелах (10·log10) замість одиниця²/Гц",
     ),
     ("prefilt", "до фільтра"),
-    ("prefilt (dB)", "до фільтра (дБ)"),
     ("profile", "профіль"),
     ("prominence", "виразність"),
     ("raw", "сирий"),
