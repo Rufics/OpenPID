@@ -108,6 +108,41 @@ fn log_viewer_rows_quantities_cursor_and_sticks() {
         assert_eq!(ui.app().viewer.mode_marks, 0);
         ui.check("Mode changes", true);
         assert!(ui.app().viewer.mode_marks >= 1, "btfl_027 changes modes");
+        // the lines run through every row, from the top of the first to
+        // the bottom of the last (#141)
+        let (top, bottom) = ui.app().viewer.mode_lines.expect("the lines are drawn");
+        let first = ui.plot("log/roll").probe().frame;
+        let last = ui.plot("log/other").probe().frame;
+        assert!((top - first.top()).abs() < 1.0, "{top} vs {first:?}");
+        assert!((bottom - last.bottom()).abs() < 1.0, "{bottom} vs {last:?}");
+        assert!(bottom - top > 3.0 * first.height(), "more than one row");
+        // the pointer on a line reads the time and the modes from then on
+        let session = ui.app().loaded(Slot::A).unwrap().current().unwrap().clone();
+        let changes = session.mode_changes();
+        let (at, modes) = changes
+            .iter()
+            .find(|(t, _)| (12.0..14.0).contains(t))
+            .expect("ANGLE to POSHOLD near 12.9 s");
+        assert!(modes.contains(&FlightMode::PosHold));
+        assert!(
+            changes[0].0 < 0.5,
+            "the modes at the start: {}",
+            changes[0].0
+        );
+        assert!(
+            ui.app().viewer.mode_hover.is_none(),
+            "the pointer is elsewhere"
+        );
+        ui.plot("log/pitch").hover(*at);
+        let label = ui
+            .app()
+            .viewer
+            .mode_hover
+            .clone()
+            .expect("a label at the pointer");
+        assert_eq!(label, format!("{at:.1} s · ARM · POSHOLD"));
+        ui.plot("log/pitch").hover(at + 4.0);
+        assert!(ui.app().viewer.mode_hover.is_none(), "away from the line");
     });
 }
 
@@ -204,4 +239,25 @@ fn one_axis_takes_the_full_height_on_every_axis_tab() {
     ui.key(Key::R);
     assert_eq!(ui.app().tools.axis_focus, Some(Axis::Roll));
     assert_eq!(ui.app().tools.step.axis, Axis::Roll);
+}
+
+/// A log without flight-mode data has no marks, and asking for them is no error (#141).
+#[test]
+fn mode_changes_of_a_log_without_modes() {
+    let mut ui = Ui::setup().open();
+    ui.click("Open sample log");
+    let session = ui.app().loaded(Slot::A).unwrap().current().unwrap().clone();
+    assert!(
+        session.mode_changes().is_empty(),
+        "the sample logs no modes"
+    );
+    ui.check("Mode changes", true);
+    assert_eq!(ui.app().viewer.mode_marks, 0);
+    assert!(ui.app().viewer.mode_lines.is_none());
+    ui.plot("log/roll").hover_middle();
+    assert!(ui.app().viewer.mode_hover.is_none());
+    assert!(
+        ui.app().viewer.modes.is_none(),
+        "no modes on the card either"
+    );
 }

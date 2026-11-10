@@ -2,6 +2,7 @@
 
 pub mod betaflight;
 pub mod common;
+pub mod details;
 pub mod emuflight;
 pub mod generic;
 pub mod inav;

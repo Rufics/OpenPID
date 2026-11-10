@@ -93,8 +93,10 @@ cargo run --release -p openpid-app                      # or ./target/release/op
   (EmuFlight: ARM, the other switches by number), the modes and arming of
   `ArduPilot`, the names of a `blackbox_decode` CSV. **Flight modes** at the
   end of the panel hides them.
-- **Mode changes** (panel, off by default) marks where the modes change on
-  the throttle / motors row: a dashed line with the modes from then on.
+- **Mode changes** (panel, off by default) marks where the modes change: a
+  dashed line through every row, with the modes from then on at its foot
+  on the throttle / motors row. Rest the pointer on a line for the time
+  and the whole set of modes ("12.9 s · ARM · POSHOLD").
 - **Other channels** (panel, folded): checkboxes of every channel of the log;
   the **filter** field narrows the list (`gyro`, `pid.d`, `motor`…). Channel
   names are the same for every firmware: `gyro.filtered.roll`,
@@ -382,8 +384,12 @@ or `--set master_multiplier=110,pd_ratio=120` for the ratio sliders.
   - **Decoder**: the profile, the samples and their step, the frames by
     kind, corrupt and desynchronised frames, skipped bytes, unmapped fields,
     the decoder's notes (batch sampler, the tail of another file, and so on);
-  - **Setup**: the setup in plain words: firmware, board, rates, PID gains,
-    the gyro and D-term filters, the dynamic notch, the RPM filter, motors;
+  - **Setup**: the setup in plain words: firmware, board, log date, loop
+    rates, PID gains, the gyro and D-term filters, the dynamic notch, the
+    RPM filter, motors; and, on Betaflight 4.x logs, the tuning settings:
+    rates, throttle curve, TPA, I-term relax, anti-gravity, throttle boost,
+    feedforward, the simplified-tuning sliders, motor idle and battery (on
+    other firmwares these are under All headers);
   - **All headers**: every header as logged (for ArduPilot every `PARM`).
 
   A row the logs do not agree in is tinted; **Differences only** leaves

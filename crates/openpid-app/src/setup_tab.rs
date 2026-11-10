@@ -19,6 +19,7 @@ use eframe::egui::{self, Color32, RichText, Ui};
 use openpid_analysis::{Fitness, FitnessLevel};
 use openpid_core::FlightSession;
 use openpid_core::describe::{self, Compared};
+use std::borrow::Cow;
 use std::sync::Arc;
 
 /// Height of a table row.
@@ -247,18 +248,18 @@ fn plain<L: ToString>(
 fn all_rows(logs: &[Column]) -> Vec<Line> {
     let mut out = check_rows(logs);
     let facts =
-        |of: fn(&FlightSession) -> Vec<describe::Fact>| -> Vec<Vec<(&'static str, String)>> {
+        |of: fn(&FlightSession) -> Vec<describe::Fact>| -> Vec<Vec<(Cow<'static, str>, String)>> {
             logs.iter().map(|c| describe::rows(of(c.session))).collect()
         };
     out.extend(plain(
         Section::Decoder,
         describe::compare(&facts(describe::decoder)),
-        |l| tr(l).to_string(),
+        |l| i18n::tr_text(l),
     ));
     out.extend(plain(
         Section::Setup,
         describe::compare(&facts(describe::setup)),
-        |l| tr(l).to_string(),
+        |l| i18n::tr_text(l),
     ));
     let headers: Vec<Vec<(String, String)>> =
         logs.iter().map(|c| c.session.raw_headers.clone()).collect();

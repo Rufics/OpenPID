@@ -44,7 +44,9 @@ owner's decision beats the score.
   the stick), throttle `(rcCommand[3] − 1000) / 10`, on Rotorflight the
   collective `(rcCommand[3] + 500) / 10`. `ArduPilot`: `RCIN` by `RCMAP_*`
   and `RCn_MIN / MAX / TRIM / REVERSED`, pitch negated (a stick pushed
-  forward lowers the pulse width), a pulse width of 0 left missing.
+  forward lowers the pulse width; checked on the Copter fixture against
+  the attitude the flight controller asked for, `ATT.DesPitch`), a pulse
+  width of 0 left missing.
   `FlightSession::sticks_at(t)` reads them back; `None` without them.
 - `log_tab.rs`: the card at the bottom right of the throttle / motors row
   (the last row when it is hidden), two 54 px boxes in mode 2 (left:
@@ -75,10 +77,16 @@ owner's decision beats the score.
   vehicle (Copter, Plane with its Q modes); its session builder adds ARM
   from `EV` 10 / 11. The CSV reader takes `blackbox_decode`'s names.
 - **Mode changes** (owner, 2026-11-10: as the reference tool under its
-  throttle row, off by default; `LogDisplay::mode_marks`): a dashed line
-  where the modes change, with the modes from then on at its foot, on the
-  throttle / motors row.
-- `ViewerState::sticks` and `sticks_rect` keep what was drawn, for tests.
+  throttle row, off by default; `LogDisplay::mode_marks`; #141): a dashed
+  line where the modes change, through every row, with the modes from then
+  on at its foot on the throttle / motors row (cut where the next change
+  begins). The pointer within 5 px of a line gets a label beside it with
+  the time and the whole set, "12.9 s · ARM · POSHOLD". A log without
+  flight-mode data draws nothing.
+- `ViewerState::sticks`, `sticks_rect`, `mode_marks`, `mode_lines` and
+  `mode_hover` keep what was drawn, for tests.
+- Not done from #141: "epoch from mode" (select the span of one mode as
+  the analysis window), which the issue lists as optional.
 
 ## Tests
 
@@ -90,14 +98,18 @@ Rotorflight 4.3 ARM · BLACKBOX and its collective, EmuFlight ARM · bit 21);
 `modes_follow_the_vehicle`, `rc_inputs_follow_their_calibration`,
 `modes_follow_the_mode_and_arming_events`,
 `flight_modes_come_from_the_mode_and_arming_messages` and
-`sticks_come_from_the_rc_inputs` (`openpid-fmt-ardupilot`: Copter LOITER,
+`sticks_come_from_the_rc_inputs`,
+`stick_signs_agree_with_the_attitude_the_copter_asked_for` (`openpid-fmt-ardupilot`: Copter LOITER,
 Plane ARM then ARM · RTL, QuadPlane QRTL); the CSV reader's
 `opens_as_session`;
 `log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor` (none
 without a cursor, under the pointer on the last row's right edge, at the
 cursor once the pointer leaves, the modes with ARM, both hidden with
 Sticks and Flight modes, the marks off by default and on with Mode
-changes).
+changes, the lines from the top of the first row to the bottom of the
+last, the label at the pointer on the change near 12.9 s and none away
+from it); `mode_changes_of_a_log_without_modes` (the sample log: no marks,
+no lines, no error).
 
 ## Implementation
 
@@ -105,6 +117,6 @@ btfl_027, the pointer at 22 s (ARM · POSHOLD):
 
 ![Sticks](sticks.jpg)
 
-With Mode changes on (ARM · ANGLE from the start, ARM · POSHOLD from 12.8 s):
+With Mode changes on (ARM · ANGLE from the start, ARM · POSHOLD from 12.9 s), the pointer on the second change:
 
 ![Mode changes](marks.jpg)

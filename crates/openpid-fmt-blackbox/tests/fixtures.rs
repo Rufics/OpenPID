@@ -396,3 +396,85 @@ fn exporter_and_sliders_come_from_the_logs_profile() {
         );
     }
 }
+
+/// The board, the log date and the tuning settings in words (#140): every
+/// Betaflight 4.x log has them from its own headers; the other firmwares of
+/// the family, whose headers reuse the names with other meanings, get the
+/// board and the date only.
+#[test]
+fn settings_in_words_come_from_the_betaflight_profile_only() {
+    let first = |name: &str| {
+        let data = std::fs::read(common::logs_dir().join(name)).unwrap();
+        let log = BlackboxFormat::new()
+            .open(&data, &OpenOptions::default())
+            .unwrap();
+        log.sessions.into_iter().find(|s| !s.is_empty()).unwrap()
+    };
+    let detail = |s: &openpid_core::FlightSession, label: &str| {
+        s.settings
+            .details
+            .iter()
+            .find(|d| d.label == label)
+            .map(|d| d.value.clone())
+    };
+    let old = first("betaflight-4.2.0.BFL");
+    assert_eq!(old.settings.board.as_deref(), Some("HBRO KAKUTEF7"));
+    assert_eq!(
+        old.settings.log_start.as_deref(),
+        Some("2022-02-02T15:04:53.139+00:00")
+    );
+    assert_eq!(
+        detail(&old, "Rates").as_deref(),
+        Some(
+            "Betaflight: RC rate 1.00 / 1.00 / 1.00, super rate 0.62 / 0.62 / 0.65, expo 0.30 / 0.30 / 0.20"
+        )
+    );
+    assert_eq!(
+        detail(&old, "Anti-gravity").as_deref(),
+        Some("gain 10.0, smooth, threshold 250")
+    );
+    assert_eq!(detail(&old, "Simplified tuning"), None, "4.3 and later");
+    let new = first("betaflight-2025.12.2-btfl_027.bbl");
+    assert_eq!(new.settings.board.as_deref(), Some("SLGD SOLOGOODF722"));
+    assert_eq!(
+        detail(&new, "Motor idle").as_deref(),
+        Some("6.5 %, dynamic idle off"),
+        "motor_idle replaced dshot_idle_value"
+    );
+    assert!(
+        detail(&new, "Simplified tuning")
+            .unwrap()
+            .contains("D max 100"),
+        "simplified_d_max_gain, renamed from simplified_dmax_gain"
+    );
+    // a flight controller without a clock logs the year 0000: no date
+    let no_clock = first("betaflight-4.5.1-two-sessions.bbl");
+    assert_eq!(no_clock.settings.log_start, None);
+    for name in [
+        "inav-9.0.1-truncated.TXT",
+        "inav-3.0.1-truncated.TXT",
+        "rotorflight-4.3.0-LOG246.TXT",
+        "emuflight-3.7.0-truncated.BFL",
+    ] {
+        let s = first(name);
+        assert!(
+            s.settings.details.is_empty(),
+            "{name}: {:?}",
+            s.settings.details
+        );
+    }
+    assert_eq!(
+        first("rotorflight-4.3.0-LOG246.TXT")
+            .settings
+            .board
+            .as_deref(),
+        Some("AIRB NOX")
+    );
+    assert_eq!(
+        first("inav-9.0.1-truncated.TXT")
+            .settings
+            .log_start
+            .as_deref(),
+        Some("2026-02-20T09:16:22.352+00:00")
+    );
+}

@@ -37,6 +37,11 @@ pub struct ViewerState {
     pub modes: Option<Vec<openpid_core::FlightMode>>,
     /// Mode-change marks drawn last frame.
     pub mode_marks: usize,
+    /// Top and bottom of the mode-change lines drawn last frame: they run
+    /// through every row.
+    pub mode_lines: Option<(f32, f32)>,
+    /// What the label of the mode change under the pointer said last frame.
+    pub mode_hover: Option<String>,
 }
 
 /// Pixel distance within which an epoch bound can be grabbed.

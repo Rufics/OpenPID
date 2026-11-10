@@ -518,6 +518,18 @@ pub fn settings(fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(str::to_string),
+        board: h
+            .get("Board information")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        // a flight controller without a clock logs the year 0000
+        log_start: h
+            .get("Log start datetime")
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && !s.starts_with("0000"))
+            .map(str::to_string),
+        details: Vec::new(),
         extra,
     }
 }

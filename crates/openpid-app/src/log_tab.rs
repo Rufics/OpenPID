@@ -397,20 +397,29 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
     let sticks_row = specs.iter().position(|r| r.key == "motors").unwrap_or(last);
     let mut sticks_frame = None;
     let mut sticks_transform = None;
+    // the plot frames of all the rows together: the mode-change lines span it
+    let mut rows_rect: Option<egui::Rect> = None;
     for (i, spec) in specs.iter().enumerate() {
         let h = unit_h * spec.weight + if i == last { 20.0 } else { 0.0 };
         let t = row(app, ui, (slot, &s, &xs), spec, h, i == last, &mut act);
         first.get_or_insert(t);
+        rows_rect = Some(rows_rect.map_or(*t.frame(), |r| r.union(*t.frame())));
         if i == sticks_row {
             sticks_frame = Some(*t.frame());
             sticks_transform = Some(t);
         }
     }
     app.viewer.mode_marks = 0;
+    app.viewer.mode_lines = None;
+    app.viewer.mode_hover = None;
     if app.tools.log_display.mode_marks
         && let Some(t) = sticks_transform
+        && let Some(rows_rect) = rows_rect
     {
-        app.viewer.mode_marks = draw_mode_marks(ui, &t, &s.mode_changes());
+        let marks = draw_mode_marks(ui, &t, rows_rect, &s.mode_changes());
+        app.viewer.mode_marks = marks.drawn;
+        app.viewer.mode_lines = (marks.drawn > 0).then_some((rows_rect.top(), rows_rect.bottom()));
+        app.viewer.mode_hover = marks.hovered;
     }
     // the sticks under the pointer while it is over the rows, else at the cursor
     let at = act.hover.or(act.cursor);
@@ -607,41 +616,95 @@ fn mode_line(modes: &[openpid_core::FlightMode]) -> String {
     }
 }
 
-/// Marks where the flight modes change, on the row of `transform`: a dashed
-/// line and the modes from then on at its foot, as the reference tool marks
-/// them under its throttle row. Returns how many were drawn.
+/// What [`draw_mode_marks`] drew.
+struct ModeMarks {
+    /// How many changes are in view.
+    drawn: usize,
+    /// The label of the change under the pointer: its time and its modes.
+    hovered: Option<String>,
+}
+
+/// How near the pointer must be to a mode-change line to get its label.
+const MODE_HOVER_PX: f32 = 5.0;
+
+/// Marks where the flight modes change, as the reference tool does: a
+/// dashed line through every row (`rows`), and the modes from then on at
+/// the foot of the row of `transform`, the throttle / motors row. The
+/// pointer on a line gets the time and the whole set of modes beside it,
+/// which the foot label cuts where two changes are close.
 fn draw_mode_marks(
     ui: &Ui,
     transform: &PlotTransform,
+    rows: egui::Rect,
     changes: &[(f64, &[openpid_core::FlightMode])],
-) -> usize {
+) -> ModeMarks {
     let frame = *transform.frame();
-    let painter = ui.painter().with_clip_rect(frame);
+    let painter = ui.painter().with_clip_rect(rows);
     let text = ui.visuals().text_color();
     let line = egui::Stroke::new(1.0, text.gamma_multiply(0.6));
     let font = egui::FontId::proportional(10.5);
-    let mut drawn = 0;
-    for (t, modes) in changes {
+    let hover_pos = ui.ctx().pointer_hover_pos().filter(|p| rows.contains(*p));
+    let mut marks = ModeMarks {
+        drawn: 0,
+        hovered: None,
+    };
+    let mut nearest: Option<(f32, egui::Pos2, String)> = None;
+    for (i, (t, modes)) in changes.iter().enumerate() {
         let x = transform.position_from_point_x(*t);
         if x < frame.left() || x > frame.right() {
             continue;
         }
         painter.add(egui::Shape::dashed_line(
-            &[egui::pos2(x, frame.top()), egui::pos2(x, frame.bottom())],
+            &[egui::pos2(x, rows.top()), egui::pos2(x, rows.bottom())],
             line,
             4.0,
             3.0,
         ));
-        painter.text(
+        // the foot label ends where the next change begins
+        let next = changes
+            .get(i + 1)
+            .map_or(frame.right(), |(t, _)| transform.position_from_point_x(*t));
+        let room = egui::Rect::from_min_max(
+            egui::pos2(x, frame.top()),
+            egui::pos2(next.max(x).min(frame.right()), frame.bottom()),
+        );
+        painter.with_clip_rect(room).text(
             egui::pos2(x + 3.0, frame.bottom() - 2.0),
             egui::Align2::LEFT_BOTTOM,
             mode_line(modes),
             font.clone(),
             text,
         );
-        drawn += 1;
+        marks.drawn += 1;
+        if let Some(p) = hover_pos {
+            let d = (p.x - x).abs();
+            if d <= MODE_HOVER_PX && nearest.as_ref().is_none_or(|(best, ..)| d < *best) {
+                nearest = Some((d, p, format!("{t:.1} s · {}", mode_line(modes))));
+            }
+        }
     }
-    drawn
+    if let Some((_, p, label)) = nearest {
+        let galley = painter.layout_no_wrap(label.clone(), egui::FontId::proportional(12.0), text);
+        let size = galley.size() + egui::vec2(12.0, 8.0);
+        // beside the pointer, on the side that has room
+        let left = if p.x + 12.0 + size.x <= rows.right() {
+            p.x + 12.0
+        } else {
+            p.x - 12.0 - size.x
+        };
+        let top = (p.y - size.y - 6.0).max(rows.top());
+        let rect = egui::Rect::from_min_size(egui::pos2(left, top), size);
+        let overlay = ui.painter().with_clip_rect(ui.clip_rect());
+        overlay.rect_filled(
+            rect,
+            5.0,
+            ui.visuals().extreme_bg_color.gamma_multiply(0.92),
+        );
+        overlay.rect_stroke(rect, 5.0, line, egui::StrokeKind::Inside);
+        overlay.galley(rect.min + egui::vec2(6.0, 4.0), galley, text);
+        marks.hovered = Some(label);
+    }
+    marks
 }
 
 /// Side of a stick box, points.

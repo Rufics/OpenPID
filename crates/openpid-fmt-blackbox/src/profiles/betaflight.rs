@@ -225,7 +225,12 @@ impl BoundProfile for Bound<'_> {
     }
 
     fn settings(&self) -> Settings {
-        self.0.settings()
+        let mut s = self.0.settings();
+        // Cleanflight is read with this profile too; the words are Betaflight's
+        if self.0.fw.vendor == FirmwareVendor::Betaflight {
+            s.details = super::details::betaflight(self.0.fw, self.0.h);
+        }
+        s
     }
 
     fn derive(&self, session: &mut FlightSession) {

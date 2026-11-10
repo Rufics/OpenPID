@@ -311,7 +311,8 @@ impl Sticks {
 /// The stick channels from `RCIN`, in the canonical convention of
 /// [`ChannelId::Stick`]: each input by its channel map and calibration;
 /// pitch negated, as `ArduPilot` reads a stick pushed forward as a lower
-/// pulse width.
+/// pulse width (checked on the Copter fixture: a stick forward goes with a
+/// negative `ATT.DesPitch`, nose down).
 fn derive_sticks(session: &mut FlightSession, sticks: &Sticks) {
     for (input, axis, sign) in [
         (&sticks.roll, StickAxis::Roll, 1.0),
@@ -691,6 +692,9 @@ impl BoundProfile for Bound<'_> {
             dterm_filters,
             debug_mode: None,
             craft_name: h.get("craft_name").map(str::to_string),
+            board: None,
+            log_start: None,
+            details: Vec::new(),
             extra,
         }
     }

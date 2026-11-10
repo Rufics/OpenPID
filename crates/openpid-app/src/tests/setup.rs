@@ -92,9 +92,91 @@ fn setup_info_has_a_column_per_log_and_marks_what_differs() {
         ))
     );
     assert_eq!(
-        row(&ui, Section::Setup, "Board"),
+        row(&ui, Section::Setup, "Target"),
         Some((vec![Some("STM32F7X2"), Some("STM32F7X2")], false))
     );
+    assert_eq!(
+        row(&ui, Section::Setup, "Board"),
+        Some((
+            vec![Some("TMTR TMOTORF7"), Some("GEPR GEPRC_F722_AIO")],
+            true
+        ))
+    );
+    assert_eq!(
+        row(&ui, Section::Setup, "Log date"),
+        Some((vec![Some("2024-03-31T15:22:09.505+00:00"), None], true)),
+        "the second flight controller had no clock"
+    );
+    // the tuning settings the firmware profile puts in words (#140)
+    assert_eq!(
+        row(&ui, Section::Setup, "Rates"),
+        Some((
+            vec![
+                Some(
+                    "Actual: centre 70 / 70 / 70 deg/s, max 670 / 670 / 670 deg/s, expo 0.15 / 0.15 / 0.15"
+                ),
+                Some(
+                    "Actual: centre 70 / 70 / 70 deg/s, max 670 / 670 / 670 deg/s, expo 0.00 / 0.00 / 0.00"
+                )
+            ],
+            true
+        ))
+    );
+    assert_eq!(
+        row(&ui, Section::Setup, "TPA"),
+        Some((
+            vec![
+                Some("65 % above 1350, on D; 20 % below 1050"),
+                Some("65 % above 1350, on D; 80 % below 1050")
+            ],
+            true
+        ))
+    );
+    assert_eq!(
+        row(&ui, Section::Setup, "I-term relax"),
+        Some((
+            vec![Some("roll and pitch, from the setpoint, cut-off 15 Hz"); 2],
+            false
+        ))
+    );
+    for (name, a, b) in [
+        (
+            "Anti-gravity",
+            "gain 80, cut-off 5 Hz, P gain 100",
+            "gain 100, cut-off 5 Hz, P gain 100",
+        ),
+        ("Throttle boost", "5, cut-off 15 Hz", "0, cut-off 15 Hz"),
+        (
+            "Motor idle",
+            "5.5 %, dynamic idle off",
+            "10.5 %, dynamic idle off",
+        ),
+        (
+            "Battery",
+            "cell min 3.25 V, warning 3.42 V, max 4.30 V; 24.58 V at arming",
+            "cell min 3.30 V, warning 3.50 V, max 4.35 V; 15.92 V at arming",
+        ),
+    ] {
+        assert_eq!(
+            row(&ui, Section::Setup, name),
+            Some((vec![Some(a), Some(b)], true)),
+            "{name}"
+        );
+    }
+    let (sliders, _) = row(&ui, Section::Setup, "Simplified tuning").unwrap();
+    assert!(
+        sliders[0]
+            .unwrap()
+            .starts_with("roll, pitch and yaw, master 75, ")
+    );
+    assert!(
+        sliders[1]
+            .unwrap()
+            .starts_with("roll and pitch, master 130, ")
+    );
+    let (ff, _) = row(&ui, Section::Setup, "Feedforward").unwrap();
+    assert!(ff[0].unwrap().contains("averaging 2 point"));
+    assert!(ff[1].unwrap().contains("averaging off"));
     assert_eq!(
         row(&ui, Section::Setup, "Craft name"),
         Some((vec![None, Some("Cinelog 30 V3")], true)),
@@ -135,7 +217,7 @@ fn setup_info_has_a_column_per_log_and_marks_what_differs() {
     let left = rows(&ui);
     assert_eq!(left.len(), differing);
     assert!(left.iter().all(|r| r.1));
-    assert!(row(&ui, Section::Setup, "Board").is_none());
+    assert!(row(&ui, Section::Setup, "Target").is_none());
     assert!(row(&ui, Section::Setup, "Firmware").is_some());
     ui.check("Differences only", false);
 
@@ -231,6 +313,12 @@ fn setup_info_follows_the_session_and_the_firmware() {
         row(&ui, Section::Setup, "ESC protocol").is_none(),
         "what the log does not say has no row"
     );
+    for name in ["Rates", "TPA", "Board", "Log date"] {
+        assert!(
+            row(&ui, Section::Setup, name).is_none(),
+            "{name}: Betaflight's words are not put on another firmware"
+        );
+    }
 
     // without a log there is no table
     let ui = Ui::open(&[], Tab::Setup);
