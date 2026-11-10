@@ -100,7 +100,7 @@ const RATIO_SLIDERS: [(&str, &str); 5] = [
 
 impl RatioSliders {
     /// Identifier of the model.
-    pub const ID: &'static str = "ratio-sliders";
+    pub const ID: &str = "ratio-sliders";
 
     /// The ratio sliders of a log, when it has PID gains.
     pub fn from_settings(settings: &Settings) -> Option<Self> {
