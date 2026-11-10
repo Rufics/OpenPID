@@ -2,6 +2,10 @@
 //! [`Proposal`]s, an [`Exporter`] turns them into something a firmware
 //! understands (Betaflight CLI `set …` lines), and [`diff_headers`] lists
 //! what changed between two logs so the same exporter can write the diff.
+//!
+//! The exporter of a log comes from its firmware profile
+//! ([`crate::FirmwareProfile::exporter`], reached through
+//! [`crate::FormatRegistry::exporter`]); nothing else names a firmware.
 
 use crate::session::FlightSession;
 use serde::{Deserialize, Serialize};
@@ -22,6 +26,57 @@ pub struct Proposal {
     pub confidence: f64,
 }
 
+impl Proposal {
+    /// The setting in words: "Roll D", "Gyro low-pass 1 cut-off"; the path
+    /// itself for a setting without a name here.
+    pub fn title(&self) -> String {
+        let parts: Vec<&str> = self.path.split('.').collect();
+        let axis = |a: &str| match a {
+            "roll" => Some("Roll"),
+            "pitch" => Some("Pitch"),
+            "yaw" => Some("Yaw"),
+            _ => None,
+        };
+        let chain = |c: &str| match c {
+            "gyro_filters" => Some("Gyro"),
+            "dterm_filters" => Some("D-term"),
+            _ => None,
+        };
+        match parts.as_slice() {
+            ["pid", a, term] => axis(a).map(|a| {
+                let term = match *term {
+                    "f" => "feedforward".to_string(),
+                    "d_min" => "D min".to_string(),
+                    "d_max" => "D max".to_string(),
+                    t => t.to_uppercase(),
+                };
+                format!("{a} {term}")
+            }),
+            [c, "lpf1", "cutoff_hz"] => chain(c).map(|c| format!("{c} low-pass 1 cut-off")),
+            [c, "lpf2", "cutoff_hz"] => chain(c).map(|c| format!("{c} low-pass 2 cut-off")),
+            [c, "dyn_notch", "min_hz"] => chain(c).map(|c| format!("{c} dynamic notch minimum")),
+            [c, "dyn_notch", "max_hz"] => chain(c).map(|c| format!("{c} dynamic notch maximum")),
+            [c, notch, what @ ("center_hz" | "cutoff_hz")] => {
+                chain(c).zip(notch.strip_prefix("notch")).map(|(c, n)| {
+                    let what = if *what == "center_hz" {
+                        "centre"
+                    } else {
+                        "cut-off"
+                    };
+                    format!("{c} notch {n} {what}")
+                })
+            }
+            _ => None,
+        }
+        .unwrap_or_else(|| self.path.clone())
+    }
+
+    /// The unit of the value: "Hz" for a frequency, empty for a gain.
+    pub fn unit(&self) -> &'static str {
+        if self.path.ends_with("_hz") { "Hz" } else { "" }
+    }
+}
+
 /// Why an exporter could not write a proposal.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ExportError {
@@ -33,27 +88,28 @@ pub enum ExportError {
         /// The proposal's path.
         path: String,
     },
-    /// The session is not from a firmware the exporter writes for.
-    #[error("{target} exporter cannot write for {firmware}")]
-    WrongFirmware {
-        /// Export target.
-        target: &'static str,
-        /// The session's firmware revision.
-        firmware: String,
-    },
 }
 
-/// Turns proposals into text for a firmware or tool.
-pub trait Exporter {
+/// Turns proposals and header diffs into text for the firmware of one log.
+/// Created by the log's firmware profile, so it already knows the firmware
+/// version and its setting names.
+pub trait Exporter: Send + Sync + std::fmt::Debug {
     /// Identifier, e.g. `betaflight-cli`.
     fn id(&self) -> &'static str;
 
-    /// The text to apply `proposals` to the craft that wrote `session`.
-    fn export(
-        &self,
-        session: &FlightSession,
-        proposals: &[Proposal],
-    ) -> Result<String, ExportError>;
+    /// What the text is, for the user: `Betaflight CLI`.
+    fn label(&self) -> &'static str;
+
+    /// The one command that applies `proposal`, without what frames a
+    /// list of them (a header, a final "save").
+    fn command(&self, proposal: &Proposal) -> Result<String, ExportError>;
+
+    /// The text that applies `proposals` to the craft that wrote the log.
+    fn export(&self, proposals: &[Proposal]) -> Result<String, ExportError>;
+
+    /// The text that turns the settings of the first log of `diff` into
+    /// those of the second; what cannot be set becomes a comment.
+    fn diff(&self, diff: &[HeaderDiff]) -> String;
 }
 
 /// One header that differs between two sessions.
@@ -135,7 +191,51 @@ mod tests {
             channels: ChannelSet::new(),
             events: Vec::new(),
             aux: Vec::new(),
+            flight_modes: Vec::new(),
             diagnostics: Diagnostics::default(),
+        }
+    }
+
+    #[test]
+    fn proposals_name_their_setting_in_words() {
+        let p = |path: &str| Proposal {
+            path: path.to_string(),
+            from: None,
+            to: "1".to_string(),
+            rationale: String::new(),
+            confidence: 0.5,
+        };
+        for (path, title, unit) in [
+            ("pid.roll.d", "Roll D", ""),
+            ("pid.pitch.f", "Pitch feedforward", ""),
+            ("pid.yaw.d_min", "Yaw D min", ""),
+            (
+                "gyro_filters.lpf1.cutoff_hz",
+                "Gyro low-pass 1 cut-off",
+                "Hz",
+            ),
+            (
+                "dterm_filters.lpf2.cutoff_hz",
+                "D-term low-pass 2 cut-off",
+                "Hz",
+            ),
+            (
+                "gyro_filters.dyn_notch.min_hz",
+                "Gyro dynamic notch minimum",
+                "Hz",
+            ),
+            ("gyro_filters.notch2.center_hz", "Gyro notch 2 centre", "Hz"),
+            (
+                "gyro_filters.notch1.cutoff_hz",
+                "Gyro notch 1 cut-off",
+                "Hz",
+            ),
+            // a setting without a name here keeps its path
+            ("gyro_lpf1_static_hz", "gyro_lpf1_static_hz", "Hz"),
+            ("pid.roll", "pid.roll", ""),
+        ] {
+            assert_eq!(p(path).title(), title, "{path}");
+            assert_eq!(p(path).unit(), unit, "{path}");
         }
     }
 

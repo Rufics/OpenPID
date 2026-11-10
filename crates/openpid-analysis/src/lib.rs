@@ -15,12 +15,12 @@ pub mod render;
 pub mod rpm;
 pub mod step;
 pub mod stft;
-pub mod surface;
 pub mod targets;
 pub mod throttle;
 
 pub use filter_sim::{
-    FilterFit, FilterOverrides, FilterSimAnalysis, FilterSimOutput, FilterSimParams,
+    ChainResponse, FilterFit, FilterOverrides, FilterSimAnalysis, FilterSimOutput, FilterSimParams,
+    PartResponse,
 };
 pub use fitness::{Check, Fitness, Level as FitnessLevel, check_session};
 pub use motor_noise::{
@@ -32,9 +32,9 @@ pub use openpid_core::analysis::{
 pub use prepare::{Prepared, prepare};
 pub use project::{Project, ProjectSlot};
 pub use psd::{PsdAnalysis, PsdOutput, PsdParams};
-pub use recommend::{Finding, Recommend, RecommendOutput, RecommendParams};
+pub use recommend::{Finding, FindingStatus, Recommend, RecommendOutput, RecommendParams};
 pub use rpm::{RpmEstimateOutput, RpmEstimateParams, RpmEstimator};
-pub use step::{StepAnalysis, StepMetrics, StepOutput, StepParams};
+pub use step::{StepAnalysis, StepMetrics, StepOutput, StepParams, StepSpread};
 pub use stft::{StftAnalysis, StftOutput, StftParams};
 pub use targets::{StepTargets, TargetPreset, Verdict, VerdictLevel, verdicts};
 pub use throttle::{RpmOverlay, ThrottleHeatmap, ThrottleHeatmapOutput, ThrottleHeatmapParams};

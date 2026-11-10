@@ -83,7 +83,7 @@ pub struct BetaflightSliders {
 const SLIDERS: [(&str, &str, f64, f64, f64, &str); 12] = [
     (
         "simplified_pids_mode",
-        "PID sliders mode (0 off, 1 RP, 2 RPY)",
+        "PID sliders mode",
         2.0,
         0.0,
         2.0,
@@ -141,7 +141,7 @@ const SLIDERS: [(&str, &str, f64, f64, f64, &str); 12] = [
     ),
     (
         "simplified_dterm_filter",
-        "D-term filter sliders on",
+        "D-term filter sliders",
         1.0,
         0.0,
         1.0,
@@ -183,7 +183,7 @@ impl BetaflightSliders {
             "simplified_gyro_filter".into(),
             h.get_f64("simplified_gyro_filter").unwrap_or(1.0),
         );
-        let logged = super::common::settings(h).pid;
+        let logged = super::common::settings(firmware, h).pid;
         let list = |k: &str| h.get_list(k).unwrap_or_default();
         let gyro_dyn_hz = list("gyro_lpf1_dyn_hz");
         let dterm_dyn_hz = list("dterm_lpf1_dyn_hz");
@@ -292,6 +292,10 @@ impl SliderModel for BetaflightSliders {
         "betaflight-simplified-tuning"
     }
 
+    fn cli_name(&self) -> &'static str {
+        "Betaflight CLI"
+    }
+
     fn sliders(&self) -> Vec<SliderDef> {
         SLIDERS
             .iter()
@@ -303,6 +307,11 @@ impl SliderModel for BetaflightSliders {
                 max: *max,
                 default: *default,
                 group: (*group).to_string(),
+                options: match *key {
+                    "simplified_pids_mode" => vec!["off".into(), "RP".into(), "RPY".into()],
+                    "simplified_dterm_filter" => vec!["off".into(), "on".into()],
+                    _ => Vec::new(),
+                },
             })
             .collect()
     }

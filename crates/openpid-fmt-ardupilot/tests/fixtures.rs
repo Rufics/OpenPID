@@ -79,7 +79,14 @@ fn copter_3_3_legacy_format() {
     assert_eq!(s.firmware.vendor, FirmwareVendor::Ardupilot);
     assert_eq!(s.firmware.version, Some(FirmwareVersion::new(3, 3, 0)));
     assert!(s.firmware.revision.starts_with("APM:Copter V3.3-dev"));
-    assert_eq!(s.header("vehicle"), Some("Copter"));
+    assert_eq!(
+        Vehicle::from_firmware(&s.firmware.revision),
+        Vehicle::Copter
+    );
+    // the headers are the log's own parameters: nothing made up for the profile
+    for made_up in ["vehicle", "firmware", "has_rate_msg"] {
+        assert_eq!(s.header(made_up), None, "{made_up}");
+    }
     assert_eq!(s.profile_id, "ardupilot");
     // IMU (50 Hz in this log) is the timebase; the 10 Hz RATE message is held onto it
     let rate = s.timebase.sample_rate_hz();
@@ -151,7 +158,6 @@ fn copter_3_3_legacy_format() {
 fn plane_4_3_5_pid_messages() {
     let s = open(PLANE);
     assert_eq!(s.firmware.version, Some(FirmwareVersion::new(4, 3, 5)));
-    assert_eq!(s.header("vehicle"), Some("Plane"));
     assert_eq!(Vehicle::from_firmware(&s.firmware.revision), Vehicle::Plane);
     // units from FMTU/UNIT/MULT: attitude in degrees, battery in volts
     let att = s
@@ -485,4 +491,119 @@ fn concatenated_logs_open_as_separate_sessions() {
         .open(&header_only, &OpenOptions::default())
         .unwrap();
     assert_eq!(log.sessions.len(), 1);
+}
+
+#[test]
+fn flight_modes_come_from_the_mode_and_arming_messages() {
+    use openpid_core::FlightMode;
+    let names = |name: &str| -> Vec<Vec<FlightMode>> {
+        open(name)
+            .flight_modes
+            .into_iter()
+            .map(|c| c.modes)
+            .collect()
+    };
+    // Copter 3.3 flew LOITER (mode 5), Plane RTL (11), QuadPlane QRTL (21)
+    let copter = names("ardupilot-copter-3.3-dronekit.bin");
+    assert!(
+        copter.iter().any(|m| m.contains(&FlightMode::Loiter)),
+        "{copter:?}"
+    );
+    let plane = names("ardupilot-plane-4.3.5.bin");
+    assert!(
+        plane.iter().any(|m| m.contains(&FlightMode::ReturnHome)),
+        "{plane:?}"
+    );
+    let quad = names("ardupilot-quadplane-4.4.4-esc-telemetry.bin");
+    assert!(
+        quad.iter().any(|m| m.contains(&FlightMode::ReturnHome)),
+        "{quad:?}"
+    );
+    // the plane log records its arming: ARM, then ARM with RTL
+    assert_eq!(plane[0], [FlightMode::Arm]);
+}
+
+#[test]
+fn sticks_come_from_the_rc_inputs() {
+    use openpid_core::StickAxis;
+    let mut seen = 0;
+    for name in [
+        "ardupilot-copter-3.3-dronekit.bin",
+        "ardupilot-plane-4.3.5.bin",
+        "ardupilot-quadplane-4.4.4-esc-telemetry.bin",
+    ] {
+        let s = open(name);
+        if s.channel(&ChannelId::RcCommand { ch: 0 }).is_none() {
+            // no RCIN in this log: no sticks either
+            assert!(s.sticks_at(1.0).is_none(), "{name}");
+            continue;
+        }
+        // a log whose RC input stays at 0 (no receiver: an autonomous flight)
+        // has no stick positions, the others have them from the first pulse on
+        let roll = s
+            .channel(&ChannelId::Stick {
+                axis: StickAxis::Roll,
+            })
+            .unwrap();
+        let has_rc = roll.data.iter().flatten().next().is_some();
+        let at_end = s.sticks_at(s.timebase.duration_s());
+        assert_eq!(at_end.is_some(), has_rc, "{name}");
+        if !has_rc {
+            continue;
+        }
+        seen += 1;
+        for axis in StickAxis::ALL {
+            let (lo, hi) = range(&s, &ChannelId::Stick { axis });
+            let floor = if axis == StickAxis::Throttle {
+                0.0
+            } else {
+                -100.0
+            };
+            assert!(lo >= floor && hi <= 100.0, "{name} {axis:?}: {lo}..{hi}");
+        }
+        // the two Plane logs never got a throttle pulse (RCIN.C3 is 0): no
+        // throttle stick there, the Copter log has one
+        let throttle = s.channel(&ChannelId::RcCommand { ch: 2 }).unwrap();
+        let pulsed = throttle.data.iter().flatten().any(|pwm| pwm > 0.0);
+        assert_eq!(at_end.unwrap().throttle.is_some(), pulsed, "{name}");
+    }
+    assert_eq!(seen, 3, "every fixture logs RCIN");
+}
+
+/// The sign of the roll and pitch sticks, checked against what the flight
+/// controller did with them: `ATT.DesRoll` and `ATT.DesPitch`, the attitude
+/// it asked for (positive = right wing down, nose up). In the Copter log,
+/// flown by hand, a stick to the right asks for a positive roll, and a
+/// stick pushed forward (positive in the canonical convention) for a
+/// negative pitch, nose down.
+#[test]
+fn stick_signs_agree_with_the_attitude_the_copter_asked_for() {
+    use openpid_core::StickAxis;
+    let s = open("ardupilot-copter-3.3-dronekit.bin");
+    let values =
+        |id: &ChannelId| -> Vec<Option<f64>> { s.channel(id).unwrap().data.iter().collect() };
+    // of the samples with the stick off its centre, the share where the
+    // desired angle has the same sign as the stick
+    let same_sign = |axis: StickAxis, desired: &str| -> (usize, f64) {
+        let stick = values(&ChannelId::Stick { axis });
+        let angle = values(&ChannelId::Custom(desired.to_string()));
+        let moved: Vec<(f64, f64)> = stick
+            .iter()
+            .zip(&angle)
+            .filter_map(|(a, b)| Some(((*a)?, (*b)?)))
+            .filter(|(stick, angle)| stick.abs() > 5.0 && *angle != 0.0)
+            .collect();
+        let same = moved.iter().filter(|(a, b)| a * b > 0.0).count();
+        (moved.len(), same as f64 / moved.len() as f64)
+    };
+    let (n, share) = same_sign(StickAxis::Roll, "attitude.desroll");
+    assert!(
+        n > 100 && share > 0.9,
+        "roll: {n} samples, {share:.2} same sign"
+    );
+    let (n, share) = same_sign(StickAxis::Pitch, "attitude.despitch");
+    assert!(
+        n > 100 && share < 0.1,
+        "pitch: {n} samples, {share:.2} same sign"
+    );
 }

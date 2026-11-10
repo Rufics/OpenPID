@@ -10,9 +10,8 @@
 use openpid_analysis::{
     Analysis, AnalysisCtx, FilterSimAnalysis, FilterSimParams, MotorNoiseAnalysis,
     MotorNoiseParams, PsdAnalysis, PsdParams, RpmEstimateParams, RpmEstimator, StepAnalysis,
-    StepParams, StftAnalysis, StftParams, ThrottleHeatmap, ThrottleHeatmapParams, surface,
+    StepParams, StftAnalysis, StftParams, ThrottleHeatmap, ThrottleHeatmapParams,
 };
-use openpid_core::analysis::Grid2D;
 use openpid_core::{Axis, ChannelId, GyroStage, LogFormat, OpenOptions};
 use openpid_fmt_blackbox::BlackboxFormat;
 use std::path::PathBuf;
@@ -168,27 +167,6 @@ fn main() {
                     },
                 )
                 .unwrap()
-        })
-        .0,
-    );
-    // the 3D surface: the acceptance of #26 is 60 fps on a 100 × 1000 grid
-    let grid = Grid2D {
-        x: (0..100).map(f64::from).collect(),
-        y: (0..1000).map(|i| f64::from(i) * 0.5).collect(),
-        z: (0..100_000)
-            .map(|i| f64::from(i % 997) / 997.0 + f64::from(i % 13) / 13.0)
-            .collect(),
-        x_label: "throttle (%)".into(),
-        y_label: "frequency (Hz)".into(),
-        z_label: "amplitude".into(),
-    };
-    let cam = surface::Camera::default();
-    let opts = surface::SurfaceOptions::default();
-    row(
-        "surface 3D mesh (synthetic 100 × 1000 grid)",
-        time(runs, || {
-            let g = surface::decimate(&grid, opts.max_cols, opts.max_rows);
-            surface::build(&g, 1.0, &cam, true)
         })
         .0,
     );

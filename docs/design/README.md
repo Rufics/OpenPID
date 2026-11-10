@@ -48,3 +48,58 @@ Rules shared by every topic of the sprint:
   tests of the pure logic in `openpid-analysis`/`openpid-core`; coverage stays ≥ 90 %.
 - **Documentation**: the USER-GUIDE and the screenshots (`tools/screenshots.sh`)
   are updated in the same PR.
+- **Control panels** (owner's rule, 2026-11-09, every tab's right-hand panel):
+  - one row per field: the **label on the left, the value right-aligned** in one
+    column (combo boxes `panel::VALUE_W` wide, numbers at the right edge);
+  - **sections** with a small upper-case muted title (DISPLAY, ANALYSIS…);
+  - labels in sentence case ("Cut-off", "Min input"); option values without
+    repeating the label ("medium", not "smoothing medium");
+  - **units beside the number, not inside it** (`panel::with_unit`, in a
+    column of `panel::UNIT_W`): a `DragValue` suffix disappears while the
+    value is typed, the unit beside it stays; this holds for every number
+    field of the app, panels or not;
+- **Plot grids** (owner's remark of 2026-11-09 on a trimmed epoch): every plot
+  of the reworked tabs steps its grid on the 1–2–5 series with nested steps
+  and labels with the decimals its step needs (`grid.rs`: `spacer_x`,
+  `spacer_y`, `label`); egui_plot's powers of ten left narrow axes with one
+  label and printed 1.5 as "2". Heatmaps fill their frame (no margin around
+  the data), and a plot with nothing to draw says why inside it.
+  A plot is built from `grid::plot(id)` (that grid on both axes) or, in a
+  stack of rows that share the x axis, `grid::row(id, link, y_axis_w)`;
+  a tab does not repeat the four grid calls.
+- **One helper per shared thing** (audit of 2026-11-10, B5): the lines of a
+  plot that are not logs take `colormap::line(i)`, "the whole beside the
+  parts" (the chain's total, the throttle) takes `theme::ink()`; a tab that
+  needs the unfiltered gyro asks `views::has_raw_gyro` and shows
+  `views::no_raw_gyro`; a plot of a tab's grid of axis rows is described by
+  one `axis_layout::PlotCell` (log, axis, size, first column, last row)
+  instead of five arguments. No function of the app needs
+  `#[allow(clippy::too_many_arguments)]`.
+  - **every field explains itself on hover**, over the label and over the value:
+    what it changes and, where it matters, the default and the trade-off;
+  - built only with `crates/openpid-app/src/panel.rs` (`section`, `row`, `drag`,
+    `choice`, `check`, `optional`), whose functions take the hint as a
+    parameter, so a field without one does not compile. Test:
+    `panel_rows_put_values_in_one_column_and_explain_on_hover`.
+
+## Interface rework ([#33](https://github.com/Rufics/OpenPID/issues/33), PR [#143](https://github.com/Rufics/OpenPID/pull/143))
+
+| Topic | Document |
+|---|---|
+| R/P/Y stacked, collapsible control panel | [axis-layout](axis-layout/README.md) |
+| Top bar, log chips, timeline dock, look | [app-shell](app-shell/README.md) |
+| Spectrum: R/P/Y × (full \| below 100 Hz), prefilt, smoothing | [spectrum-tab](spectrum-tab/README.md) |
+| Freq × throttle: R/P/Y × (prefilt \| gyro) per log, flown range | [throttle-tab](throttle-tab/README.md) |
+| Plot colours as Blackbox Explorer, colour-blind safe option | [plot-colours](plot-colours/README.md) |
+| Freq × time: R/P/Y spectrograms in dB, spectrum at the position, throttle | [time-tab](time-tab/README.md) |
+| Log viewer: R/P/Y at one scale, throttle / motors, quantities, values at the cursor | [log-tab](log-tab/README.md) |
+| Filter Sim: the chain's magnitude, delay and phase per part beside the log | [filter-tab](filter-tab/README.md) |
+| Motors tab (built, then removed on 2026-11-10: the reference tool has no such screen) | [motors-tab](motors-tab/README.md) |
+| PID sliders: a track per slider with every log's position; ratio sliders for a firmware without its own | [sliders-tab](sliders-tab/README.md) |
+| One axis at full height on the axis-row tabs (Show, keys R / P / Y) | [axis-focus](axis-focus/README.md) |
+| UI tests by control names and data units, on every screen | [ui-tests](ui-tests/README.md) |
+| Log viewer: the sticks and the flight modes at the pointer or the cursor, on the motors row | [log-sticks](log-sticks/README.md) |
+| Setup info: one table of the log check, the decoder, the setup and the headers, a column per log, differences marked | [setup-tab](setup-tab/README.md) |
+| Advice: a card per proposal with its command, the other checks with their marks, per log | [advice-tab](advice-tab/README.md) |
+| Settings: four cards with everything in view, the targets open, every row explained | [settings-tab](settings-tab/README.md) |
+

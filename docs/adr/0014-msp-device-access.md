@@ -45,7 +45,7 @@ Options considered:
      `MSP_FC_VARIANT`, `MSP_PID`, `MSP_FILTER_CONFIG`, `MSP_SET_*`,
      `MSP_EEPROM_WRITE`, `MSP_DATAFLASH_SUMMARY/READ`;
    - **writes only after an explicit confirmation** in the UI showing the diff
-     (the same `BetaflightCli::diff_commands`), with a mandatory read-back and
+     (the same `Exporter::diff` of the log's firmware profile), with a mandatory read-back and
      comparison; never an automatic `save`;
    - the `Device` trait lives in `openpid-core` (no dependencies) and
      `openpid-msp` implements it; headless tests on a fake port (`Read + Write`

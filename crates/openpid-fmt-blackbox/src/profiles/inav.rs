@@ -57,6 +57,7 @@ fn lowpass(h: &RawHeaders, hz_key: &str, type_key: &str) -> Option<Lowpass> {
         cutoff_hz,
         dyn_min_hz: None,
         dyn_max_hz: None,
+        dyn_expo: 0.0,
     })
 }
 
@@ -86,6 +87,9 @@ fn gyro_filters(h: &RawHeaders) -> FilterChain {
             harmonics: h.get_f64("rpm_gyro_harmonics").map_or(1, |v| v as u32),
             q: centi(h, "rpm_gyro_q").unwrap_or(0.0),
             min_hz: h.get_f64("rpm_gyro_min_hz").unwrap_or(0.0),
+            fade_range_hz: 0.0,
+            weights: Vec::new(),
+            lpf_hz: 0.0,
         });
     FilterChain {
         lowpass1: lowpass(h, "gyro_lpf_hz", "gyro_lpf_type"),
@@ -107,6 +111,42 @@ fn dterm_filters(h: &RawHeaders) -> FilterChain {
         ..FilterChain::default()
     }
 }
+
+/// INAV's RC modes by box id, the first 32 `flightModeFlags` holds.
+const BOXES_INAV: [&str; 32] = [
+    "ARM",
+    "ANGLE",
+    "HORIZON",
+    "NAV ALTHOLD",
+    "HEADING HOLD",
+    "HEADFREE",
+    "HEADADJ",
+    "CAMSTAB",
+    "NAV RTH",
+    "NAV POSHOLD",
+    "MANUAL",
+    "BEEPER",
+    "LEDS OFF",
+    "LIGHTS",
+    "NAV LAUNCH",
+    "OSD OFF",
+    "TELEMETRY",
+    "BLACKBOX",
+    "FAILSAFE",
+    "NAV WP",
+    "AIR MODE",
+    "HOME RESET",
+    "GCS NAV",
+    "KILLSWITCH",
+    "SURFACE",
+    "FLAPERON",
+    "TURN ASSIST",
+    "SERVO AUTOTRIM",
+    "AUTO TUNE",
+    "CAMERA CONTROL 1",
+    "CAMERA CONTROL 2",
+    "CAMERA CONTROL 3",
+];
 
 impl FirmwareProfile for Inav {
     fn id(&self) -> &'static str {
@@ -184,10 +224,13 @@ impl FirmwareProfile for Inav {
         }
     }
 
-    fn settings(&self, _fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
-        let mut s = common::settings(h);
+    fn settings(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
+        let mut s = common::settings(fw, h);
         s.gyro_filters = gyro_filters(h);
         s.dterm_filters = dterm_filters(h);
+        // INAV logs none of Betaflight's detail headers: the defaults apply
+        common::filter_details(&mut s.gyro_filters, "gyro", fw, h);
+        common::filter_details(&mut s.dterm_filters, "dterm", fw, h);
         for key in [
             "gyro_lpf_hz",
             "gyro_lpf_type",
@@ -222,6 +265,10 @@ impl FirmwareProfile for Inav {
 
     fn derive(&self, session: &mut FlightSession) {
         common::derive(session);
+    }
+
+    fn flight_modes(&self, _fw: &FirmwareInfo, word: i64) -> Vec<openpid_core::FlightMode> {
+        openpid_core::modes::modes_from_mask(word, &BOXES_INAV)
     }
 }
 

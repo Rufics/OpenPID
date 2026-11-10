@@ -100,6 +100,10 @@ pub struct Lowpass {
     pub dyn_min_hz: Option<f64>,
     /// Dynamic cut-off at full throttle.
     pub dyn_max_hz: Option<f64>,
+    /// Curve of the dynamic cut-off over the throttle: 0 = linear, up to 1
+    /// (the firmware's expo setting scaled to 0…1).
+    #[serde(default)]
+    pub dyn_expo: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -124,7 +128,7 @@ pub struct DynNotch {
     pub count: Option<u32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// RPM (ESC telemetry) notch configuration.
 pub struct RpmNotch {
     /// Harmonics filtered per motor.
@@ -133,6 +137,16 @@ pub struct RpmNotch {
     pub q: f64,
     /// Lowest filtered frequency.
     pub min_hz: f64,
+    /// Width of the fade-in above `min_hz`, Hz (0 = switched hard at `min_hz`).
+    #[serde(default)]
+    pub fade_range_hz: f64,
+    /// Weight of each harmonic, 0…1; a harmonic without one counts as 1.
+    #[serde(default)]
+    pub weights: Vec<f64>,
+    /// Cut-off of the low-pass that smooths the motor frequency, Hz
+    /// (0 = not given).
+    #[serde(default)]
+    pub lpf_hz: f64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -159,11 +173,26 @@ pub struct DebugMode {
     pub name: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A setting in words: what it is and its value, as its firmware's profile
+/// reads it ("TPA", "65 % above 1350, on D").
+pub struct Detail {
+    /// The setting, in the firmware's own terms.
+    pub label: String,
+    /// Its value, with units.
+    pub value: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 /// Typed flight-controller settings; everything optional.
 pub struct Settings {
     /// PID gains per axis.
     pub pid: Option<PerAxis<PidGains>>,
+    /// The smallest step of a PID gain on this firmware, which is also the
+    /// precision the gains are written with: 1 for the integer gains of the
+    /// Cleanflight family, 0.0001 for `ArduPilot`'s. `None` reads as 1.
+    #[serde(default)]
+    pub pid_step: Option<f64>,
     /// Loop rates.
     pub loop_rates: LoopRates,
     /// Motor configuration.
@@ -176,6 +205,92 @@ pub struct Settings {
     pub debug_mode: Option<DebugMode>,
     /// Craft name from the headers.
     pub craft_name: Option<String>,
+    /// The board the firmware was built for, as the log names it
+    /// ("HBRO KAKUTEF7").
+    #[serde(default)]
+    pub board: Option<String>,
+    /// When the log was started, as the firmware wrote it; `None` when the
+    /// flight controller had no clock.
+    #[serde(default)]
+    pub log_start: Option<String>,
+    /// Further settings the profile read and put in words, in the order
+    /// to show them: what a firmware has and the typed model has no field
+    /// for (rates, TPA, feedforward tuning, …).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub details: Vec<Detail>,
     /// Headers the profile did not interpret, verbatim.
     pub extra: BTreeMap<String, String>,
+}
+impl Settings {
+    /// The smallest step of a PID gain (1 when the profile gave none).
+    pub fn gain_step(&self) -> f64 {
+        self.pid_step
+            .filter(|s| *s > 0.0 && s.is_finite())
+            .unwrap_or(1.0)
+    }
+
+    /// `gain` rounded to the firmware's step.
+    pub fn round_gain(&self, gain: f64) -> f64 {
+        let step = self.gain_step();
+        // a decimal step (0.0001) is rounded through its whole inverse, so
+        // the result is the nearest number to the decimal, not 0.1546000…2
+        let inverse = (1.0 / step).round();
+        if step < 1.0 && (inverse * step - 1.0).abs() < 1e-9 {
+            (gain * inverse).round() / inverse
+        } else {
+            (gain / step).round() * step
+        }
+    }
+
+    /// `gain` as the firmware writes it: at the step's precision, without
+    /// trailing zeros ("45" on Betaflight, "0.135" and "0.0036" on `ArduPilot`).
+    pub fn gain_text(&self, gain: f64) -> String {
+        let step = self.gain_step();
+        let decimals = if step >= 1.0 {
+            0
+        } else {
+            (-step.log10()).ceil().clamp(0.0, 9.0) as usize
+        };
+        let text = format!("{:.decimals$}", self.round_gain(gain));
+        if decimals == 0 {
+            return text;
+        }
+        let text = text.trim_end_matches('0').trim_end_matches('.');
+        if text.is_empty() || text == "-" {
+            "0".to_string()
+        } else {
+            text.to_string()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gains_are_written_at_the_firmware_step() {
+        let integer = Settings::default();
+        assert_eq!(integer.gain_step(), 1.0);
+        assert_eq!(integer.gain_text(45.0), "45");
+        assert_eq!(integer.round_gain(37.4), 37.0);
+        let fine = Settings {
+            pid_step: Some(0.0001),
+            ..Settings::default()
+        };
+        assert_eq!(fine.gain_text(0.135), "0.135");
+        assert_eq!(fine.gain_text(0.0036), "0.0036");
+        assert_eq!(fine.gain_text(0.0), "0");
+        assert_eq!(fine.gain_text(0.00396), "0.004");
+        assert!((fine.round_gain(0.00396) - 0.004).abs() < 1e-12);
+        // exactly the decimal, without binary noise
+        assert_eq!(fine.round_gain(0.1288 * 1.2), 0.1546);
+        assert_eq!(fine.round_gain(0.008 * 1.2), 0.0096);
+        // a step that makes no sense reads as 1
+        let odd = Settings {
+            pid_step: Some(0.0),
+            ..Settings::default()
+        };
+        assert_eq!(odd.gain_step(), 1.0);
+    }
 }

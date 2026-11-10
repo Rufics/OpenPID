@@ -84,7 +84,9 @@ layout 2, tests and documentation 1.
 
 - **`worker.rs`:** the `Slot(u8)` newtype with the constants `A`, `B`,
   `MAX = 8` and the letters A…H.
-- **`colormap.rs`:** `SLOT_PALETTE`, 8 Okabe–Ito colours.
+- **`colormap.rs`:** `SLOT_PALETTE`, 8 Okabe–Ito colours (since 2026-11-10 the
+  "Colour-blind safe" plot colours; Blackbox Explorer's palette is the default,
+  see [plot-colours](../plot-colours/README.md)).
 - **`app.rs`:** `slots: Vec<SlotEntry { id, state, visible }>` in the order of
   adding; `slot_ids / loaded_slots / visible_slots / first_loaded`, `free_slot`
   (the first empty one, else the lowest free letter), `add_slot`, `close_slot`

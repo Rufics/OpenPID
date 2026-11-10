@@ -31,7 +31,7 @@ response is stair-stepped; for tuning, enable fast logging (`LOG_BITMASK` bits
 | `IMU.AccX/Y/Z` | `acc.*` | g | m/s² ÷ 9.80665 |
 | `RATE.RDes/PDes/YDes` | `setpoint.*` | deg/s | Copter < 3.4: centidegrees/s × 0.01 |
 | `RATE.R/P/Y`, `ROut/…` | `custom:rate.*`, `custom:rate_out.*` | deg/s, — | |
-| `PIDR/PIDP/PIDY.Tar` | `setpoint.*` (without `RATE`) or `custom:pid_target.*` | deg/s | Copter: rad/s × 57.3; Plane: already deg/s |
+| `PIDR/PIDP/PIDY.Tar` | `setpoint.*`, or `custom:PIDR.Tar` … when `RATE.*Des` already gave the setpoint (the first field of a channel wins) | deg/s | Copter: rad/s × 57.3; Plane: already deg/s |
 | `PID*.Err` | `pid_error.*` | deg/s | the same scaling |
 | `PID*.P/I/D/FF` | `pid.p/i/d/f.*` | raw | controller output |
 | `RCOU.C1…` | Copter: `motor.N` (%, by `MOT_PWM_MIN/MAX`); Plane: `custom:servo.N` (µs) | | |
@@ -83,15 +83,15 @@ samples and the base coverage of every channel in percent.
 
 | What | Parameters |
 |------|------------|
-| PID per axis | Copter: `ATC_RAT_{RLL,PIT,YAW}_{P,I,D,FF}` (3.x: `RATE_*`); Plane: `{RLL,PTCH,YAW}_RATE_*` (without a yaw controller: zeros) |
+| PID per axis | Copter: `ATC_RAT_{RLL,PIT,YAW}_{P,I,D,FF}` (3.x: `RATE_*`); Plane: `{RLL,PTCH,YAW}_RATE_*` (without a yaw controller: zeros); shown and rounded to 0.0001 (`Settings::pid_step`) |
 | Rates | `SCHED_LOOP_RATE` → pid_hz; `INS_GYRO_RATE` → gyro_hz (1/2/4/8 kHz); log_hz is the timebase rate |
 | Gyro filter | `INS_GYRO_FILTER` → lowpass1 (second-order biquad) |
 | D-term | `*_FLTD` → dterm lowpass1 (PT1) |
 | Harmonic notch | `INS_HNTCH_*`: mode 2/3 (RPM/ESC) → `rpm_notch`; 4 (FFT) → `dyn_notch`; 0/1 (static / by throttle) → a static `notch`; every parameter in `settings.extra` |
 | Motors | `MOT_PWM_MIN/MAX`, `MOT_PWM_TYPE`, `FRAME_CLASS` → count |
 
-Every `PARM` and every `MSG` line is available as a raw header (the Diagnostics
-tab).
+Every `PARM` and every `MSG` line is available as a raw header (the Setup info
+tab, "All headers").
 
 ## Test logs
 

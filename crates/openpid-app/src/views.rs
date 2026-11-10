@@ -2,27 +2,18 @@
 //! with `egui_plot`; nothing here computes.
 
 use crate::app::{App, Loaded, SlotState};
-use crate::colormap::{ACCENT, MUTED, SLOT_PALETTE};
-use crate::i18n::{Lang, tr};
-use crate::prefs::{AccUnit, Prefs, RateUnit, Theme};
+use crate::colormap::{ACCENT, MUTED};
+use crate::i18n::tr;
+use crate::prefs::Prefs;
 use crate::shortcuts::{self, Action};
-use crate::worker::{Kind, Output, Slot};
+use crate::worker::{Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
-use egui_plot::{
-    Bar, BarChart, HLine, Heatmap, Legend, Line, LineStyle, Plot, PlotPoint, PlotPoints, Text,
-    VLine,
-};
-use openpid_analysis::{
-    Epoch, FilterOverrides, Fitness, FitnessLevel, RpmOverlay, StepParams, TargetPreset, Verdict,
-    VerdictLevel, verdicts,
-};
+use egui_plot::{HLine, Heatmap, Line, LineStyle, PlotPoint, PlotPoints, VLine};
+use openpid_analysis::{Epoch, Fitness, FitnessLevel, RpmOverlay, Verdict, VerdictLevel};
 use openpid_core::analysis::Grid2D;
-use openpid_core::settings::LowpassKind;
-use openpid_core::settings::{PerAxis, PidGains};
 use openpid_core::units::Unit;
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use openpid_dsp::Peak;
-use openpid_sim::{ChainModel, LowpassModel};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -31,8 +22,6 @@ use std::sync::Arc;
 pub struct ViewerState {
     /// Time (s) of the last click, tap or long press on the log viewer plot.
     pub cursor_s: Option<f64>,
-    /// Vertical range of the last drawn log-viewer plot.
-    pub y_bounds: Option<(f64, f64)>,
     /// A finger resting on the plot: when it started (s) and where, for the long press.
     pub press: Option<(f64, egui::Pos2)>,
     pub channel_filter: String,
@@ -40,19 +29,28 @@ pub struct ViewerState {
     pub hover_handle: Option<(Slot, bool)>,
     /// Epoch handle being dragged.
     pub drag_handle: Option<(Slot, bool)>,
-    /// Screen rectangle of the plot area last frame (for touch targets and tests).
-    pub plot_frame: Option<egui::Rect>,
-    /// Plot x range (seconds) last frame.
-    pub x_bounds: Option<(f64, f64)>,
+    /// The sticks drawn on the Log viewer last frame (at the pointer or the cursor).
+    pub sticks: Option<openpid_core::Sticks>,
+    /// Where the stick card was drawn last frame.
+    pub sticks_rect: Option<egui::Rect>,
+    /// The flight modes on that card last frame.
+    pub modes: Option<Vec<openpid_core::FlightMode>>,
+    /// Mode-change marks drawn last frame.
+    pub mode_marks: usize,
+    /// Top and bottom of the mode-change lines drawn last frame: they run
+    /// through every row.
+    pub mode_lines: Option<(f32, f32)>,
+    /// What the label of the mode change under the pointer said last frame.
+    pub mode_hover: Option<String>,
 }
 
 /// Pixel distance within which an epoch bound can be grabbed.
-fn grab_radius(touch: bool) -> f32 {
+pub(crate) fn grab_radius(touch: bool) -> f32 {
     if touch { 22.0 } else { 8.0 }
 }
 
 /// Moves one epoch bound to `t` (clamped to the log), keeping start <= end.
-fn set_epoch_bound(app: &mut App, slot: Slot, start: bool, t: f64) {
+pub(crate) fn set_epoch_bound(app: &mut App, slot: Slot, start: bool, t: f64) {
     let Some(l) = app.loaded_mut(slot) else {
         return;
     };
@@ -75,32 +73,56 @@ fn set_epoch_bound(app: &mut App, slot: Slot, start: bool, t: f64) {
     });
 }
 
-/// Shades every slot's epoch on a time plot. Painted over the plot rather
-/// than as a plot polygon: a polygon spanning the visible y range would feed
-/// the auto-bounds and grow them by the margin fraction every frame.
-fn shade_epochs(ui: &Ui, app: &App, transform: &egui_plot::PlotTransform) {
+/// Dims what lies outside the epochs of `slots` on a time plot, as the
+/// reference tool and Blackbox Explorer dim what is trimmed off. Painted over
+/// the plot rather than as a plot polygon: a polygon spanning the visible y
+/// range would feed the auto-bounds and grow them by the margin fraction
+/// every frame.
+pub(crate) fn shade_epochs(
+    ui: &Ui,
+    app: &App,
+    slots: &[Slot],
+    transform: &egui_plot::PlotTransform,
+) {
     let frame = *transform.frame();
     let painter = ui.painter().with_clip_rect(frame);
-    for slot in app.slot_ids() {
+    let dim = if crate::theme::is_dark() {
+        Color32::from_black_alpha(150)
+    } else {
+        Color32::from_white_alpha(170)
+    };
+    for &slot in slots {
         let Some(e) = app.loaded(slot).and_then(|l| l.epoch) else {
             continue;
         };
         let x0 = transform.position_from_point_x(e.start_s);
         let x1 = transform.position_from_point_x(e.end_s);
-        painter.rect_filled(
-            egui::Rect::from_min_max(egui::pos2(x0, frame.top()), egui::pos2(x1, frame.bottom())),
-            0.0,
-            slot_color(slot).gamma_multiply(0.12),
-        );
+        for (a, b) in [(frame.left(), x0), (x1, frame.right())] {
+            if b > a {
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(a, frame.top()),
+                        egui::pos2(b, frame.bottom()),
+                    ),
+                    0.0,
+                    dim,
+                );
+            }
+        }
     }
 }
 
-/// Draggable epoch bounds of every slot; returns the handle under the pointer.
-fn draw_epochs(pu: &mut egui_plot::PlotUi<'_>, app: &App, grab_px: f32) -> Option<(Slot, bool)> {
+/// Draggable epoch bounds of `slots`; returns the handle under the pointer.
+pub(crate) fn draw_epochs(
+    pu: &mut egui_plot::PlotUi<'_>,
+    app: &App,
+    slots: &[Slot],
+    grab_px: f32,
+) -> Option<(Slot, bool)> {
     let hover_pos = pu.response().hover_pos();
     let transform = *pu.transform();
     let mut hovered = None;
-    for slot in app.slot_ids() {
+    for &slot in slots {
         let Some(e) = app.loaded(slot).and_then(|l| l.epoch) else {
             continue;
         };
@@ -137,12 +159,8 @@ pub struct SpectrumState {
     pub auto_peaks: usize,
     /// Minimum prominence (dB) for an automatic peak.
     pub min_prominence_db: f64,
-    /// Peaks found on the last frame, per slot (for the read-out and tests).
-    pub peaks: Vec<(Slot, Vec<Peak>)>,
-    /// Screen rectangle of the plot area last frame.
-    pub plot_frame: Option<egui::Rect>,
-    /// Plot x range (Hz) last frame.
-    pub x_bounds: Option<(f64, f64)>,
+    /// Peaks found on the last frame, per slot and axis (for the read-out and tests).
+    pub peaks: Vec<(Slot, Axis, Vec<Peak>)>,
 }
 
 impl Default for SpectrumState {
@@ -152,8 +170,6 @@ impl Default for SpectrumState {
             auto_peaks: 3,
             min_prominence_db: 6.0,
             peaks: Vec::new(),
-            plot_frame: None,
-            x_bounds: None,
         }
     }
 }
@@ -185,10 +201,6 @@ pub struct PlayerState {
     pub synced_cursor: Option<f64>,
     /// Column of slot A's grid at the position (for the read-out and tests).
     pub column: Option<usize>,
-    /// Screen rectangle of slot A's heatmap last frame.
-    pub plot_frame: Option<egui::Rect>,
-    /// Plot x range (seconds) of slot A's heatmap last frame.
-    pub x_bounds: Option<(f64, f64)>,
 }
 
 impl Default for PlayerState {
@@ -201,8 +213,6 @@ impl Default for PlayerState {
             last_frame_time: None,
             synced_cursor: None,
             column: None,
-            plot_frame: None,
-            x_bounds: None,
         }
     }
 }
@@ -216,7 +226,7 @@ pub(crate) fn nearest_column(x: &[f64], t: f64) -> Option<usize> {
 }
 
 /// `123 Hz` / `1.23 kHz`.
-fn hz(f: f64) -> String {
+pub(crate) fn hz(f: f64) -> String {
     if f >= 1000.0 {
         format!("{:.2} kHz", f / 1000.0)
     } else {
@@ -225,7 +235,7 @@ fn hz(f: f64) -> String {
 }
 
 /// Frequency bin of `freq` closest to `x`.
-fn nearest_bin(freq: &[f64], x: f64) -> Option<usize> {
+pub(crate) fn nearest_bin(freq: &[f64], x: f64) -> Option<usize> {
     freq.iter()
         .enumerate()
         .min_by(|a, b| (a.1 - x).abs().total_cmp(&(b.1 - x).abs()))
@@ -233,17 +243,8 @@ fn nearest_bin(freq: &[f64], x: f64) -> Option<usize> {
 }
 
 pub(crate) fn slot_color(slot: Slot) -> Color32 {
-    SLOT_PALETTE[slot.0 as usize % SLOT_PALETTE.len()]
-}
-
-/// Colour of a slot's simulated (what-if) trace on Filter Sim: distinct from
-/// the slot's own colour, which draws the logged signal.
-fn sim_color(slot: Slot) -> Color32 {
-    match slot.0 {
-        0 => ACCENT,
-        1 => Color32::LIGHT_GREEN,
-        n => SLOT_PALETTE[(n as usize + 3) % SLOT_PALETTE.len()],
-    }
+    let p = crate::colormap::slot_palette();
+    p[slot.0 as usize % p.len()]
 }
 
 /// Width of one panel when `n` slots share the tab side by side: half the
@@ -254,34 +255,295 @@ pub(crate) fn panel_width(ui: &Ui, n: usize) -> f32 {
     if n <= 2.0 { w } else { w.max(480.0) }
 }
 
-/// The slot bar: one header row per slot and the "Add log" button
-/// (docs/design/multi-slot, R2).
-pub(crate) fn slot_headers(app: &mut App, ui: &mut Ui) {
-    let top = ui.cursor().top();
+/// The log chips in the top bar (docs/design/app-shell, R4): one chip per
+/// slot and "+" to add a log. The bar keeps its height however many logs
+/// are open; a click picks the log the timeline dock shows.
+pub(crate) fn log_chips(app: &mut App, ui: &mut Ui) {
+    let top_left = ui.cursor().min;
+    let active = app.dock_slot();
+    let compact = app
+        .slots
+        .iter()
+        .filter(|e| !matches!(e.state, SlotState::Empty))
+        .count()
+        > 2;
     for slot in app.slot_ids() {
-        slot_header(app, ui, slot);
-    }
-    let bar = egui::Rect::from_min_max(
-        egui::pos2(ui.max_rect().left(), top),
-        egui::pos2(ui.max_rect().right(), ui.cursor().top()),
-    );
-    app.anchors
-        .insert("slot-bar", bar.intersect(ui.clip_rect()));
-    ui.horizontal(|ui| {
-        let full = app.slots.len() >= Slot::MAX;
-        let button = ui.add_enabled(!full, egui::Button::new(format!("+ {}", tr("Add log"))));
-        if button
-            .on_hover_text(shortcuts::hint(
-                ui.ctx(),
-                tr("open another log to compare (up to 8)"),
-                Action::OpenLogNext,
-            ))
-            .clicked()
-            && let Some(slot) = app.free_slot()
-        {
-            app.dialog = Some(crate::app::Dialog::OpenLog(slot));
+        if matches!(app.slot_state(slot), Some(SlotState::Empty)) {
+            continue;
         }
+        if log_chip(app, ui, slot, active == Some(slot), compact).clicked() {
+            app.dock = Some(slot);
+        }
+    }
+    let full = app.slots.len() >= Slot::MAX;
+    let add = ui.add_enabled(
+        !full,
+        egui::Button::new(RichText::new("+").strong()).min_size(egui::vec2(28.0, 0.0)),
+    );
+    add.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, !full, tr("Add log")));
+    let add_rect = add.rect;
+    if add
+        .on_hover_text(shortcuts::hint(
+            ui.ctx(),
+            tr("Add log: open another log to compare (up to 8), or drop it on the window"),
+            Action::OpenLogNext,
+        ))
+        .clicked()
+        && let Some(slot) = app.free_slot()
+    {
+        app.dialog = Some(crate::app::Dialog::OpenLog(slot));
+    }
+    app.anchors
+        .insert("slot-bar", egui::Rect::from_min_max(top_left, add_rect.max));
+}
+
+/// One log chip: the slot's dot and letter, the file name (only the
+/// active one when more than two logs are open) and the log check's mark.
+fn log_chip(app: &App, ui: &mut Ui, slot: Slot, active: bool, compact: bool) -> egui::Response {
+    let font = egui::FontId::proportional(13.0);
+    let visible = app.slot_entry(slot).is_some_and(|e| e.visible);
+    let (name, mark, accessible) = match app.slot_state(slot) {
+        Some(SlotState::Ready(_)) => {
+            let loaded = app.loaded(slot).expect("ready");
+            let file = loaded
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let stem = loaded
+                .path
+                .file_stem()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let max = if compact { 14 } else { 18 };
+            let short: String = if stem.chars().count() > max {
+                stem.chars().take(max - 1).chain(['…']).collect()
+            } else {
+                stem
+            };
+            let mark = loaded.fitness().map(|f| f.overall);
+            ((!compact || active).then_some(short), mark, file)
+        }
+        Some(SlotState::Loading(p)) => (
+            Some(format!("{}…", tr("loading"))),
+            None,
+            format!("{} {}", tr("loading"), p.display()),
+        ),
+        Some(SlotState::Failed(p, e)) => (
+            None,
+            Some(FitnessLevel::Fail),
+            format!("{} — {e}", p.display()),
+        ),
+        Some(SlotState::Empty) | None => (None, None, tr("empty").to_string()),
+    };
+    let strong = ui.visuals().strong_text_color();
+    let letter = ui
+        .painter()
+        .layout_no_wrap(slot.name().to_string(), font.clone(), strong);
+    let name = name.map(|n| {
+        ui.painter()
+            .layout_no_wrap(n, font.clone(), ui.visuals().text_color())
     });
+    let mut w = 8.0 + 8.0 + 6.0 + letter.size().x + 8.0;
+    if let Some(g) = &name {
+        w += g.size().x + 6.0;
+    }
+    if mark.is_some() {
+        w += 14.0;
+    }
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 26.0), egui::Sense::click());
+    let label = format!("{} {}: {accessible}", tr("Slot"), slot.name());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, active, &label));
+    let v = ui.visuals();
+    let (fill, stroke) = if active {
+        (
+            crate::theme::ACCENT.gamma_multiply(0.22),
+            egui::Stroke::new(1.0, crate::theme::ACCENT.gamma_multiply(0.8)),
+        )
+    } else if resp.hovered() {
+        (v.widgets.hovered.weak_bg_fill, v.widgets.hovered.bg_stroke)
+    } else {
+        (
+            v.widgets.inactive.weak_bg_fill,
+            v.widgets.inactive.bg_stroke,
+        )
+    };
+    let p = ui.painter();
+    p.rect(rect, 6.0, fill, stroke, egui::StrokeKind::Inside);
+    let cy = rect.center().y;
+    let mut x = rect.left() + 8.0;
+    let dot = if visible {
+        slot_color(slot)
+    } else {
+        slot_color(slot).gamma_multiply(0.3)
+    };
+    p.circle_filled(egui::pos2(x + 4.0, cy), 4.0, dot);
+    x += 14.0;
+    let lw = letter.size();
+    p.galley(egui::pos2(x, cy - lw.y / 2.0), letter, strong);
+    x += lw.x + 6.0;
+    if let Some(g) = name {
+        let gs = g.size();
+        p.galley(egui::pos2(x, cy - gs.y / 2.0), g, strong);
+        x += gs.x + 6.0;
+    }
+    if let Some(level) = mark {
+        paint_mark(p, egui::pos2(x + 4.0, cy), level, level_color(level));
+    }
+    resp.on_hover_text(label)
+}
+
+/// Height of the timeline dock's content.
+pub(crate) const DOCK_H: f32 = 84.0;
+
+/// The timeline dock at the bottom (docs/design/app-shell, R4): the
+/// active log's name, firmware, length, rate, session, log check and its
+/// show / solo / close icons over its timeline strip. Returns whether the
+/// epoch or the session changed.
+pub(crate) fn timeline_dock(app: &mut App, ui: &mut Ui) -> bool {
+    let Some(slot) = app.dock_slot() else {
+        return false;
+    };
+    match app.slot_state(slot) {
+        Some(SlotState::Ready(_)) => dock_body(app, ui, slot),
+        Some(SlotState::Loading(p)) => {
+            let text = format!(
+                "{} {}: {} {}",
+                tr("Slot"),
+                slot.name(),
+                tr("loading"),
+                p.display()
+            );
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.add(egui::Label::new(RichText::new(text).color(MUTED)).truncate());
+            });
+            false
+        }
+        Some(SlotState::Failed(p, e)) => {
+            let text = format!("Slot {}: {} — {e}", slot.name(), p.display());
+            ui.add(egui::Label::new(RichText::new(text).color(Color32::LIGHT_RED)).wrap());
+            false
+        }
+        Some(SlotState::Empty) | None => {
+            ui.label(
+                RichText::new(format!("{} {}: {}", tr("Slot"), slot.name(), tr("empty")))
+                    .color(MUTED),
+            );
+            false
+        }
+    }
+}
+
+fn dock_body(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
+    let mut changed = false;
+    let visible = app.slot_entry(slot).is_some_and(|e| e.visible);
+    let mut action: Option<SlotAction> = None;
+    let loaded = app.loaded_mut(slot).expect("ready");
+    ui.horizontal(|ui| {
+        let colour = slot_color(slot);
+        slot_disc(
+            ui,
+            slot,
+            if visible {
+                colour
+            } else {
+                colour.gamma_multiply(0.35)
+            },
+        );
+        let name = loaded
+            .path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        ui.label(RichText::new(name).strong());
+        if let Some(s) = loaded.current() {
+            let meta = [
+                format!(
+                    "{} {}",
+                    s.firmware.vendor.name(),
+                    s.firmware
+                        .version
+                        .map(|v| v.to_string())
+                        .unwrap_or_default()
+                ),
+                format!("{:.1} s", s.timebase.duration_s()),
+                format!("{:.0} Hz", s.timebase.sample_rate_hz()),
+            ];
+            ui.label(RichText::new(meta.join("  ·  ")).color(MUTED));
+        }
+        let n = loaded.sessions.len();
+        if n > 1 {
+            let before = loaded.session;
+            let l = ui.label(RichText::new(tr("session")).color(MUTED));
+            let combo = egui::ComboBox::from_id_salt(("session", slot.name()))
+                .selected_text(format!("session {}", loaded.session))
+                .show_ui(ui, |ui| {
+                    for (i, s) in loaded.sessions.iter().enumerate() {
+                        ui.selectable_value(
+                            &mut loaded.session,
+                            i,
+                            format!("session {i} ({:.1} s)", s.timebase.duration_s()),
+                        );
+                    }
+                });
+            combo.response.labelled_by(l.id);
+            if loaded.session != before {
+                loaded.apply_auto_epoch();
+                changed = true;
+            }
+        }
+        if let Some(f) = loaded.fitness() {
+            fitness_badges(ui, f);
+        }
+        if let Some(s) = loaded.current()
+            && s.diagnostics.corrupt_frames > 0
+        {
+            pill(
+                ui,
+                &format!("{} corrupt frames", s.diagnostics.corrupt_frames),
+                FitnessLevel::Warn,
+            );
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if icon_button(
+                ui,
+                CardIcon::Close,
+                format!("{} {}", tr("close"), slot.name()),
+            )
+            .clicked()
+            {
+                action = Some(SlotAction::Close);
+            }
+            if icon_button(
+                ui,
+                CardIcon::Solo,
+                format!("{} {}", tr("solo"), slot.name()),
+            )
+            .clicked()
+            {
+                action = Some(SlotAction::Solo);
+            }
+            let eye = format!(
+                "{} {}",
+                if visible { tr("hide") } else { tr("show") },
+                slot.name()
+            );
+            if icon_button(ui, CardIcon::Eye(visible), eye).clicked() {
+                action = Some(SlotAction::Visible(!visible));
+            }
+        });
+    });
+    match action {
+        Some(SlotAction::Visible(v)) => app.set_visible(slot, v),
+        Some(SlotAction::Solo) => app.solo(slot),
+        Some(SlotAction::Close) => app.close_slot(slot),
+        None => {}
+    }
+    if app.loaded(slot).is_some() {
+        changed |= timeline_strip(app, ui, slot);
+    }
+    changed
 }
 
 /// Min/max decimation so a line never carries more than ~2 points per pixel.
@@ -328,11 +590,20 @@ pub fn decimate(
 }
 
 /// Colour of a fitness level (green / yellow / red, colour-blind safe).
-fn level_color(level: FitnessLevel) -> Color32 {
+pub(crate) fn level_color(level: FitnessLevel) -> Color32 {
     match level {
         FitnessLevel::Ok => Color32::from_rgb(0, 158, 115),
-        FitnessLevel::Warn => Color32::from_rgb(240, 228, 66),
+        FitnessLevel::Warn => crate::theme::warn(),
         FitnessLevel::Fail => Color32::from_rgb(213, 94, 0),
+    }
+}
+
+/// The overall level of the log check in words.
+pub(crate) fn overall_text(level: FitnessLevel) -> &'static str {
+    match level {
+        FitnessLevel::Ok => tr("log ok"),
+        FitnessLevel::Warn => tr("log usable"),
+        FitnessLevel::Fail => tr("log unfit"),
     }
 }
 
@@ -345,15 +616,10 @@ fn fitness_badges(ui: &mut Ui, f: &Fitness) {
         .map(|c| format!("{} {}: {}", c.level.marker(), c.title, c.detail))
         .collect::<Vec<_>>()
         .join("\n");
-    ui.label(RichText::new(f.overall.marker()).color(level_color(f.overall)))
-        .on_hover_text(summary.clone());
+    pill(ui, overall_text(f.overall), f.overall).on_hover_text(summary);
     for id in ["raw_gyro", "erpm", "sticks"] {
         if let Some(c) = f.check(id) {
-            ui.label(
-                RichText::new(format!("{} {}", c.title, c.level.marker()))
-                    .color(level_color(c.level)),
-            )
-            .on_hover_text(match &c.fix {
+            pill(ui, &c.title, c.level).on_hover_text(match &c.fix {
                 Some(fix) => format!("{}\n{fix}", c.detail),
                 None => c.detail.clone(),
             });
@@ -361,43 +627,34 @@ fn fitness_badges(ui: &mut Ui, f: &Fitness) {
     }
 }
 
-/// The log check's fix for a missing unfiltered gyro, for the tabs that need it.
-fn raw_gyro_fix(app: &App, slot: Slot) -> String {
+/// The unfiltered gyro of `axis`: what Filter Sim reads.
+pub(crate) fn raw_gyro(axis: Axis) -> ChannelId {
+    ChannelId::Gyro {
+        axis,
+        stage: GyroStage::Raw,
+    }
+}
+
+/// Whether the session shown in `slot` logs the unfiltered gyro of `axis`.
+pub(crate) fn has_raw_gyro(app: &App, slot: Slot, axis: Axis) -> bool {
     app.loaded(slot)
+        .and_then(Loaded::current)
+        .is_some_and(|s| s.channel(&raw_gyro(axis)).is_some())
+}
+
+/// What a tab that needs the unfiltered gyro shows for a log without it:
+/// `why`, then the log check's fix.
+pub(crate) fn no_raw_gyro(app: &App, ui: &mut Ui, slot: Slot, why: &str) {
+    if app.loaded(slot).is_none() {
+        return;
+    }
+    let fix = app
+        .loaded(slot)
         .and_then(|l| l.fitness())
         .and_then(|f| f.check("raw_gyro"))
         .and_then(|c| c.fix.clone())
-        .unwrap_or_else(|| "log the unfiltered gyro".to_string())
-}
-
-/// The "Log check" card on Diagnostics: every check with its fix to copy.
-fn fitness_card(ui: &mut Ui, slot: Slot, f: &Fitness) {
-    ui.heading(format!("{} {}", tr("Log check"), f.overall.marker()));
-    egui::Grid::new(("fitness", slot.name()))
-        .striped(true)
-        .show(ui, |ui| {
-            for c in &f.checks {
-                ui.label(RichText::new(c.level.marker()).color(level_color(c.level)));
-                ui.label(RichText::new(&c.title).strong());
-                ui.label(&c.detail);
-                if let Some(fix) = &c.fix {
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(fix).monospace());
-                        if ui
-                            .small_button(tr("Copy"))
-                            .on_hover_text(format!("{} {}", tr("copy"), c.title))
-                            .clicked()
-                        {
-                            ui.ctx().copy_text(fix.clone());
-                        }
-                    });
-                } else {
-                    ui.label("");
-                }
-                ui.end_row();
-            }
-        });
-    ui.add_space(6.0);
+        .unwrap_or_else(|| "log the unfiltered gyro".to_string());
+    ui.label(RichText::new(format!("{why} {fix}")).color(MUTED));
 }
 
 /// What the chip buttons of a slot header asked for.
@@ -407,128 +664,139 @@ enum SlotAction {
     Close,
 }
 
-pub(crate) fn slot_header(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
-    match app.slot_state(slot) {
-        Some(SlotState::Empty) | None => {
-            ui.label(
-                RichText::new(format!("{} {}: {}", tr("Slot"), slot.name(), tr("empty")))
-                    .color(MUTED),
-            );
-            false
-        }
-        Some(SlotState::Loading(p)) => {
-            ui.spinner();
-            ui.label(format!(
-                "{} {}: {} {}",
-                tr("Slot"),
-                slot.name(),
-                tr("loading"),
-                p.display()
+/// Paint the mark of a fitness level centred on `c`: a tick, an
+/// exclamation mark or a cross, so the level reads without its colour.
+pub(crate) fn paint_mark(p: &egui::Painter, c: egui::Pos2, level: FitnessLevel, colour: Color32) {
+    let stroke = egui::Stroke::new(1.6, colour);
+    match level {
+        FitnessLevel::Ok => {
+            p.add(egui::Shape::line(
+                vec![
+                    c + egui::vec2(-3.5, 0.0),
+                    c + egui::vec2(-1.0, 2.8),
+                    c + egui::vec2(3.8, -3.2),
+                ],
+                stroke,
             ));
-            false
         }
-        Some(SlotState::Failed(p, e)) => {
-            ui.colored_label(
-                Color32::LIGHT_RED,
-                format!("Slot {}: {} — {e}", slot.name(), p.display()),
+        FitnessLevel::Warn => {
+            p.line_segment(
+                [c + egui::vec2(0.0, -4.0), c + egui::vec2(0.0, 1.2)],
+                stroke,
             );
-            false
+            p.circle_filled(c + egui::vec2(0.0, 3.6), 0.9, colour);
         }
-        Some(SlotState::Ready(_)) => {
-            let mut changed = false;
-            let mut visible = app.slot_entry(slot).is_some_and(|e| e.visible);
-            let mut action: Option<SlotAction> = None;
-            let loaded = app.loaded_mut(slot).expect("ready");
-            ui.horizontal_wrapped(|ui| {
-                ui.label(
-                    RichText::new(format!("{} {}", tr("Slot"), slot.name()))
-                        .color(slot_color(slot))
-                        .strong(),
-                );
-                if ui
-                    .add(egui::Checkbox::without_text(&mut visible))
-                    .on_hover_text(format!("{} {}", tr("show"), slot.name()))
-                    .changed()
-                {
-                    action = Some(SlotAction::Visible(visible));
-                }
-                if ui
-                    .small_button("S")
-                    .on_hover_text(format!("{} {}", tr("solo"), slot.name()))
-                    .clicked()
-                {
-                    action = Some(SlotAction::Solo);
-                }
-                if ui
-                    .small_button("x")
-                    .on_hover_text(format!("{} {}", tr("close"), slot.name()))
-                    .clicked()
-                {
-                    action = Some(SlotAction::Close);
-                }
-                ui.label(
-                    loaded
-                        .path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_default(),
-                );
-                let n = loaded.sessions.len();
-                if n > 1 {
-                    let before = loaded.session;
-                    let l = ui.label(tr("session"));
-                    let combo = egui::ComboBox::from_id_salt(("session", slot.name()))
-                        .selected_text(format!("session {}", loaded.session))
-                        .show_ui(ui, |ui| {
-                            for (i, s) in loaded.sessions.iter().enumerate() {
-                                ui.selectable_value(
-                                    &mut loaded.session,
-                                    i,
-                                    format!("session {i} ({:.1} s)", s.timebase.duration_s()),
-                                );
-                            }
-                        });
-                    combo.response.labelled_by(l.id);
-                    if loaded.session != before {
-                        loaded.apply_auto_epoch();
-                        changed = true;
-                    }
-                }
-                if let Some(s) = loaded.current() {
-                    ui.label(format!(
-                        "{} {}",
-                        s.firmware.vendor.name(),
-                        s.firmware
-                            .version
-                            .map(|v| v.to_string())
-                            .unwrap_or_default()
-                    ));
-                    ui.label(format!(
-                        "{:.1} s @ {:.0} Hz",
-                        s.timebase.duration_s(),
-                        s.timebase.sample_rate_hz()
-                    ));
-                    if let Some(f) = loaded.fitness() {
-                        fitness_badges(ui, f);
-                    }
-                    if s.diagnostics.corrupt_frames > 0 {
-                        ui.colored_label(
-                            Color32::YELLOW,
-                            format!("{} corrupt frames", s.diagnostics.corrupt_frames),
-                        );
-                    }
-                }
-            });
-            match action {
-                Some(SlotAction::Visible(v)) => app.set_visible(slot, v),
-                Some(SlotAction::Solo) => app.solo(slot),
-                Some(SlotAction::Close) => app.close_slot(slot),
-                None => {}
-            }
-            changed |= timeline_strip(app, ui, slot);
-            changed
+        FitnessLevel::Fail => {
+            let d = 3.2;
+            p.line_segment([c + egui::vec2(-d, -d), c + egui::vec2(d, d)], stroke);
+            p.line_segment([c + egui::vec2(-d, d), c + egui::vec2(d, -d)], stroke);
         }
     }
+}
+
+/// A pill: rounded tinted background, the text and the level's mark in its
+/// colour (fitness badges); read out as `raw [ok]`.
+pub(crate) fn pill(ui: &mut Ui, text: &str, level: FitnessLevel) -> egui::Response {
+    let colour = level_color(level);
+    let galley =
+        ui.painter()
+            .layout_no_wrap(text.to_string(), egui::FontId::proportional(12.0), colour);
+    let size = egui::vec2(galley.size().x + 28.0, 18.0);
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let label = format!("{text} {}", level.marker());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &label));
+    let p = ui.painter();
+    p.rect_filled(rect, 9.0, colour.gamma_multiply(0.16));
+    p.galley(
+        egui::pos2(rect.left() + 8.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        colour,
+    );
+    paint_mark(
+        p,
+        egui::pos2(rect.right() - 11.0, rect.center().y),
+        level,
+        colour,
+    );
+    resp
+}
+
+/// The small painted icons of a log card.
+#[derive(Clone, Copy)]
+enum CardIcon {
+    /// Shown (`true`) or hidden.
+    Eye(bool),
+    Solo,
+    Close,
+}
+
+/// A frameless 22 px icon button with an accessible name.
+fn icon_button(ui: &mut Ui, icon: CardIcon, name: String) -> egui::Response {
+    let size = egui::vec2(22.0, 22.0);
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
+    let visuals = ui.style().interact(&resp);
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, 5.0, visuals.weak_bg_fill);
+    }
+    let c = rect.center();
+    let colour = if resp.hovered() {
+        visuals.fg_stroke.color
+    } else {
+        MUTED
+    };
+    let stroke = egui::Stroke::new(1.4, colour);
+    let p = ui.painter();
+    match icon {
+        CardIcon::Eye(shown) => {
+            let pts: Vec<egui::Pos2> = (0..=24)
+                .map(|i| {
+                    let t = std::f32::consts::TAU * i as f32 / 24.0;
+                    c + egui::vec2(7.0 * t.cos(), 4.2 * t.sin())
+                })
+                .collect();
+            p.add(egui::Shape::line(pts, stroke));
+            if shown {
+                p.circle_filled(c, 2.2, colour);
+            } else {
+                p.line_segment(
+                    [c + egui::vec2(-7.0, 6.0), c + egui::vec2(7.0, -6.0)],
+                    stroke,
+                );
+            }
+        }
+        CardIcon::Solo => {
+            p.circle_stroke(c, 6.5, stroke);
+            p.circle_filled(c, 2.5, colour);
+        }
+        CardIcon::Close => {
+            let d = 4.5;
+            p.line_segment([c + egui::vec2(-d, -d), c + egui::vec2(d, d)], stroke);
+            p.line_segment([c + egui::vec2(-d, d), c + egui::vec2(d, -d)], stroke);
+        }
+    }
+    resp.on_hover_text(name)
+}
+
+/// The slot letter on a disc in the slot's colour; named "Slot A" for
+/// screen readers.
+fn slot_disc(ui: &mut Ui, slot: Slot, colour: Color32) {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+    resp.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::Role::Label,
+            true,
+            format!("{} {}", tr("Slot"), slot.name()),
+        )
+    });
+    ui.painter().circle_filled(rect.center(), 10.0, colour);
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        slot.name(),
+        egui::FontId::proportional(12.0),
+        Color32::from_rgb(16, 18, 22),
+    );
 }
 
 /// What a drag on a timeline strip moves.
@@ -547,8 +815,6 @@ pub enum StripDrag {
 pub struct StripState {
     /// The handle or window being dragged, if any.
     pub drag: Option<(Slot, StripDrag)>,
-    /// Screen rectangle of every strip last frame (tests, hit tests).
-    pub rects: HashMap<Slot, egui::Rect>,
     /// Throttle (or gyro) min/max envelope per pixel column, by slot,
     /// session and width.
     envelopes: HashMap<(Slot, usize, u32), Envelope>,
@@ -560,7 +826,6 @@ type Envelope = Arc<Vec<[f32; 2]>>;
 impl StripState {
     /// Drop everything cached for a slot (closed or reloaded).
     pub fn forget(&mut self, slot: Slot) {
-        self.rects.remove(&slot);
         self.envelopes.retain(|k, _| k.0 != slot);
         if self.drag.is_some_and(|(s, _)| s == slot) {
             self.drag = None;
@@ -646,7 +911,10 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
     let mut update: Option<(Option<Epoch>, bool)> = None;
     let mut status: Option<String> = None;
     ui.horizontal(|ui| {
-        let fields_w = if touch { 420.0 } else { 360.0 };
+        // room for start, end, Auto, All and the summary; the summary
+        // truncates rather than push the row past the window
+        // (docs/design/axis-layout: a wider row stretched the whole tab)
+        let fields_w = if touch { 540.0 } else { 470.0 };
         let width = (ui.available_width() - fields_w).max(120.0);
         let (rect, resp) =
             ui.allocate_exact_size(egui::vec2(width, STRIP_H), egui::Sense::click_and_drag());
@@ -755,29 +1023,32 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
         if resp.double_clicked() {
             update = Some((None, false));
         }
-        app.strip.rects.insert(slot, rect);
+        app.probes.insert(
+            format!("strip/{}", slot.name()),
+            crate::probe::PlotProbe::area(rect, (0.0, duration), (0.0, 1.0)),
+        );
         if app.first_loaded() == Some(slot) {
             app.anchors.insert("epoch-handles", rect);
         }
         // fields
         let l = ui.label(tr("start"));
-        let a = ui
-            .add(
-                egui::DragValue::new(&mut e.start_s)
-                    .speed(0.1)
-                    .range(0.0..=duration)
-                    .suffix(" s"),
-            )
-            .labelled_by(l.id);
+        let a = crate::panel::with_unit(
+            ui,
+            egui::DragValue::new(&mut e.start_s)
+                .speed(0.1)
+                .range(0.0..=duration),
+            " s",
+        )
+        .labelled_by(l.id);
         let l = ui.label(tr("end"));
-        let b = ui
-            .add(
-                egui::DragValue::new(&mut e.end_s)
-                    .speed(0.1)
-                    .range(0.0..=duration)
-                    .suffix(" s"),
-            )
-            .labelled_by(l.id);
+        let b = crate::panel::with_unit(
+            ui,
+            egui::DragValue::new(&mut e.end_s)
+                .speed(0.1)
+                .range(0.0..=duration),
+            " s",
+        )
+        .labelled_by(l.id);
         if a.changed() || b.changed() {
             update = Some((
                 Some(Epoch {
@@ -830,7 +1101,7 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
         if was_auto && update.is_none() {
             text.push_str(" · auto");
         }
-        ui.label(RichText::new(text).color(MUTED));
+        ui.add(egui::Label::new(RichText::new(text).color(MUTED)).truncate());
     });
     if let Some(s) = status {
         app.status = s;
@@ -844,48 +1115,6 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
     true
 }
 
-fn axis_selector(ui: &mut Ui, axis: &mut Axis) -> bool {
-    let before = *axis;
-    ui.horizontal(|ui| {
-        ui.label(tr("Axis"));
-        for a in Axis::ALL {
-            ui.selectable_value(axis, a, a.name());
-        }
-    });
-    before != *axis
-}
-
-fn channel_picker(
-    ui: &mut Ui,
-    id: &str,
-    session: Option<&FlightSession>,
-    current: &mut ChannelId,
-) -> bool {
-    let mut changed = false;
-    let l = ui.label(tr("channel"));
-    let combo = egui::ComboBox::from_id_salt(id)
-        .selected_text(current.key())
-        .width(220.0)
-        .show_ui(ui, |ui| {
-            if let Some(s) = session {
-                let mut keys: Vec<(String, ChannelId)> = s
-                    .channels
-                    .iter()
-                    .map(|c| (c.id.key(), c.id.clone()))
-                    .collect();
-                keys.sort();
-                for (k, id) in keys {
-                    if ui.selectable_label(*current == id, k).clicked() {
-                        *current = id;
-                        changed = true;
-                    }
-                }
-            }
-        });
-    combo.response.labelled_by(l.id);
-    changed
-}
-
 pub(crate) fn show_error(ui: &mut Ui, slot: Slot, e: &str) {
     ui.colored_label(Color32::LIGHT_RED, format!("{}: {e}", slot.name()));
 }
@@ -893,7 +1122,12 @@ pub(crate) fn show_error(ui: &mut Ui, slot: Slot, e: &str) {
 /// Heatmap item for a grid; `max` = 0 picks a robust automatic colour maximum.
 /// Cells at or below zero are transparent. `min_y_for_scale` excludes the
 /// near-DC rows (stick motion) from the automatic scale so noise stays visible.
-fn grid_heatmap(name: &str, g: &Grid2D, max: f64, min_y_for_scale: f64) -> Option<Heatmap> {
+pub(crate) fn grid_heatmap(
+    name: &str,
+    g: &Grid2D,
+    max: f64,
+    min_y_for_scale: f64,
+) -> Option<Heatmap> {
     if g.x.len() < 2 || g.y.len() < 2 {
         return None;
     }
@@ -919,7 +1153,7 @@ fn grid_heatmap(name: &str, g: &Grid2D, max: f64, min_y_for_scale: f64) -> Optio
                 (dy * g.y.len() as f64) as f32,
             )
             .range(0.0, max)
-            .custom_mapping(Box::new(move |v| crate::colormap::viridis(v / max)))
+            .custom_mapping(Box::new(move |v| crate::colormap::heat(v / max)))
             .show_labels(false)
             .name(name),
     )
@@ -927,40 +1161,8 @@ fn grid_heatmap(name: &str, g: &Grid2D, max: f64, min_y_for_scale: f64) -> Optio
 
 // ---------------------------------------------------------------------------
 
-/// Channel toggles for the log viewer (slot A's channel list, filtered).
-fn viewer_channel_picker(app: &mut App, ui: &mut Ui, session: Option<&FlightSession>) {
-    ui.horizontal_wrapped(|ui| {
-        ui.label(tr("Channels:"));
-        let filter = &mut app.viewer.channel_filter;
-        let l = ui.label(tr("filter"));
-        ui.add(
-            egui::TextEdit::singleline(filter)
-                .hint_text(tr("filter…"))
-                .desired_width(120.0),
-        )
-        .labelled_by(l.id);
-        let Some(s) = session else { return };
-        let mut keys: Vec<ChannelId> = s.channels.iter().map(|c| c.id.clone()).collect();
-        keys.sort_by_key(ChannelId::key);
-        for id in keys {
-            let k = id.key();
-            if !filter.is_empty() && !k.contains(filter.as_str()) {
-                continue;
-            }
-            let mut on = app.tools.viewer_channels.contains(&id);
-            if ui.toggle_value(&mut on, k).changed() {
-                if on {
-                    app.tools.viewer_channels.push(id);
-                } else {
-                    app.tools.viewer_channels.retain(|c| *c != id);
-                }
-            }
-        }
-    });
-}
-
 /// Moves one slot's epoch boundary to the cursor time `t`.
-fn set_epoch_from_cursor(app: &mut App, slot: Slot, t: f64, start: bool) {
+pub(crate) fn set_epoch_from_cursor(app: &mut App, slot: Slot, t: f64, start: bool) {
     let Some(l) = app.loaded_mut(slot) else {
         return;
     };
@@ -982,33 +1184,6 @@ fn set_epoch_from_cursor(app: &mut App, slot: Slot, t: f64, start: bool) {
     });
 }
 
-/// Cursor read-out and the "epoch from cursor" buttons.
-fn viewer_cursor_controls(app: &mut App, ui: &mut Ui) {
-    ui.horizontal(|ui| {
-        let Some(t) = app.viewer.cursor_s else {
-            ui.label(
-                RichText::new(tr(
-                    "Click or tap the plot to place the cursor, then set the epoch from it.",
-                ))
-                .color(MUTED),
-            );
-            return;
-        };
-        ui.label(format!("cursor: {t:.3} s"));
-        for slot in app.loaded_slots() {
-            if ui
-                .button(format!("{} start = cursor", slot.name()))
-                .clicked()
-            {
-                set_epoch_from_cursor(app, slot, t, true);
-            }
-            if ui.button(format!("{} end = cursor", slot.name())).clicked() {
-                set_epoch_from_cursor(app, slot, t, false);
-            }
-        }
-    });
-}
-
 /// Scale factor and symbol for showing a channel in the preferred display units
 /// (angular rates and accelerations; everything else is shown as logged).
 pub fn display_unit(unit: &Unit, prefs: &Prefs) -> (f64, String) {
@@ -1025,426 +1200,8 @@ pub fn display_unit(unit: &Unit, prefs: &Prefs) -> (f64, String) {
     }
 }
 
-/// Draws one slot's selected channels (decimated to the plot width) and its epoch lines.
-fn viewer_plot_slot(
-    pu: &mut egui_plot::PlotUi<'_>,
-    app: &App,
-    slot: Slot,
-    channels: &[ChannelId],
-    n_lines: f32,
-    px: usize,
-) {
-    let Some(l) = app.loaded(slot) else { return };
-    let Some(s) = l.current() else { return };
-    let t0 = s.timebase.time_us.first().copied().unwrap_or(0);
-    let xs: Vec<f64> = s
-        .timebase
-        .time_us
-        .iter()
-        .map(|t| (t - t0) as f64 / 1.0e6)
-        .collect();
-    for (ci, id) in channels.iter().enumerate() {
-        let Some(c) = s.channel(id) else { continue };
-        let (scale, symbol) = display_unit(&c.unit, &app.prefs);
-        let mut pts = decimate(&xs, c.data.values(), |i| c.data.is_valid(i), px * 2);
-        if scale != 1.0 {
-            for p in &mut pts {
-                p[1] *= scale;
-            }
-        }
-        let hue = (ci as f32 / n_lines + f32::from(slot.0) * 0.37) % 1.0;
-        let color: Color32 = egui::ecolor::Hsva::new(hue, 0.7, 0.95, 1.0).into();
-        pu.line(
-            Line::new(
-                format!("{} {} ({symbol})", slot.name(), id.key()),
-                PlotPoints::from(pts),
-            )
-            .color(color)
-            .width(1.2),
-        );
-    }
-}
-
-pub fn log_viewer(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
-    ui.separator();
-    let session_a: Option<Arc<FlightSession>> = app
-        .first_loaded()
-        .and_then(|s| app.loaded(s))
-        .and_then(|l| l.current().cloned());
-    // many channels in touch mode would wrap over the whole panel: cap the
-    // picker and let it scroll, the plot keeps its height
-    egui::ScrollArea::vertical()
-        .id_salt("viewer_channels")
-        .max_height(if app.touch_mode { 150.0 } else { 180.0 })
-        .show(ui, |ui| {
-            viewer_channel_picker(app, ui, session_a.as_deref())
-        });
-    viewer_cursor_controls(app, ui);
-    let touch = app.touch_mode;
-    let channels = app.tools.viewer_channels.clone();
-    let mut cursor = app.viewer.cursor_s;
-    let plot_h = ui.available_height() - 4.0;
-    let visible = app.visible_slots();
-    let n_lines = channels.len().max(1) as f32 * visible.len().max(1) as f32;
-    // a drag that starts on an epoch bound moves the bound, not the plot
-    let prev_hover = app.viewer.hover_handle;
-    let handle_interaction = prev_hover.is_some() || app.viewer.drag_handle.is_some();
-    let mut hovered = None;
-    let mut drag_to: Option<(Slot, bool, f64)> = None;
-    let mut drag_started = false;
-    let mut drag_stopped = false;
-    let mut frame = None;
-    let mut x_bounds = None;
-    let mut y_bounds = None;
-    let plot = Plot::new("log_viewer")
-        .legend(Legend::default())
-        .x_axis_label("time (s)")
-        .height(plot_h)
-        .allow_boxed_zoom(!touch)
-        .allow_drag(!handle_interaction)
-        .show(ui, |pu| {
-            let px = pu.response().rect.width().max(100.0) as usize;
-            for slot in &visible {
-                viewer_plot_slot(pu, app, *slot, &channels, n_lines, px);
-            }
-            hovered = draw_epochs(pu, app, grab_radius(touch));
-            if let Some(t) = cursor {
-                pu.vline(VLine::new("cursor", t).color(ACCENT).width(1.5));
-            }
-            let resp = pu.response();
-            drag_started = resp.drag_started();
-            drag_stopped = resp.drag_stopped();
-            // hover_pos() is unreliable mid-drag; interact_pointer_pos() follows the drag
-            if let Some(handle) = app.viewer.drag_handle
-                && resp.dragged()
-                && let Some(p) = resp.interact_pointer_pos()
-            {
-                let t = pu.transform().value_from_position(p).x;
-                drag_to = Some((handle.0, handle.1, t));
-            }
-            // a click, or a long press on a touch screen, places the cursor;
-            // hover_pos() is gone once egui counts the press as a drag, so the
-            // long press reads the interact position instead
-            if resp.clicked()
-                && app.viewer.drag_handle.is_none()
-                && let Some(p) = pu.pointer_coordinate()
-            {
-                cursor = Some(p.x);
-            }
-            if resp.long_touched()
-                && app.viewer.drag_handle.is_none()
-                && let Some(p) = resp.interact_pointer_pos()
-            {
-                cursor = Some(pu.transform().value_from_position(p).x);
-            }
-            // in touch mode a finger held still for a moment places the cursor too
-            // (not every backend reports long touches)
-            if touch && app.viewer.drag_handle.is_none() {
-                let now = pu.ctx().input(|i| i.time);
-                let down = resp.is_pointer_button_down_on();
-                match (app.viewer.press, resp.interact_pointer_pos()) {
-                    (None, Some(p)) if down => app.viewer.press = Some((now, p)),
-                    (Some((t0, p0)), Some(p)) if down => {
-                        if p.distance(p0) > LONG_PRESS_SLOP_PX {
-                            app.viewer.press = None; // it is a pan
-                        } else if now - t0 >= LONG_PRESS_S {
-                            cursor = Some(pu.transform().value_from_position(p0).x);
-                            app.viewer.press = None;
-                        }
-                    }
-                    _ => app.viewer.press = None,
-                }
-            }
-            let b = pu.plot_bounds();
-            x_bounds = Some((b.min()[0], b.max()[0]));
-            y_bounds = Some((b.min()[1], b.max()[1]));
-            frame = Some(*pu.transform().frame());
-        });
-    shade_epochs(ui, app, &plot.transform);
-    app.viewer.cursor_s = cursor;
-    app.viewer.hover_handle = hovered;
-    app.viewer.plot_frame = frame;
-    app.viewer.x_bounds = x_bounds;
-    app.viewer.y_bounds = y_bounds;
-    // the drag is recognised a few pixels after the press: use the handle hovered at the press
-    if drag_started && let Some(h) = prev_hover.or(hovered) {
-        app.viewer.drag_handle = Some(h);
-    }
-    if let Some((slot, start, t)) = drag_to {
-        set_epoch_bound(app, slot, start, t);
-    }
-    if drag_stopped {
-        app.viewer.drag_handle = None;
-    }
-}
-
-pub fn step(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
-    ui.separator();
-    ui.horizontal_wrapped(|ui| {
-        axis_selector(ui, &mut app.tools.axis);
-        app.tools.step.axis = app.tools.axis;
-        ui.separator();
-        let l = ui.label(tr("window"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.step.window_s)
-                .speed(0.1)
-                .range(0.5..=10.0)
-                .suffix(" s"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("cutoff"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.step.cutoff_hz)
-                .speed(1.0)
-                .range(5.0..=200.0)
-                .suffix(" Hz"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("min input"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.step.min_input)
-                .speed(5.0)
-                .range(0.0..=1000.0)
-                .suffix(" °/s"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("high input"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.step.high_input)
-                .speed(10.0)
-                .range(50.0..=2000.0)
-                .suffix(" °/s"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("smooth"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.step.smooth_ms)
-                .speed(1.0)
-                .range(0.0..=60.0)
-                .suffix(" ms"),
-        )
-        .labelled_by(l.id);
-        ui.checkbox(&mut app.tools.step.y_offset, tr("Y-offset"))
-            .on_hover_text(tr(
-                "normalise every window on its settled tail before averaging",
-            ));
-    });
-    let params = app.tools.step.clone();
-    let targets = app.tools.recommend.targets;
-    // every axis of every visible slot: the table judges all three, the plot
-    // draws the active one
-    let mut rows: Vec<(Axis, SlotResult)> = Vec::new();
-    for slot in app.visible_slots() {
-        for axis in Axis::ALL {
-            let p = StepParams {
-                axis,
-                ..params.clone()
-            };
-            rows.push((axis, (slot, app.result(slot, Kind::Step(p)))));
-        }
-    }
-    app.step_view.rows.clear();
-    let mut switch_to: Option<Axis> = None;
-    egui::Grid::new("step-verdicts")
-        .striped(true)
-        .show(ui, |ui| {
-            ui.label("");
-            for h in STEP_COLUMNS {
-                ui.label(RichText::new(tr(h)).strong());
-            }
-            ui.end_row();
-            for (axis, (slot, result)) in &rows {
-                let active = *axis == app.tools.axis;
-                let name = format!("{} {}", slot.name(), axis.name());
-                if ui
-                    .selectable_label(
-                        active,
-                        RichText::new(name).color(slot_color(*slot)).strong(),
-                    )
-                    .on_hover_text(tr("click: show this axis on the plot"))
-                    .clicked()
-                {
-                    switch_to = Some(*axis);
-                }
-                match result {
-                    Some(Ok(o)) => {
-                        if let Output::Step(st) = o.as_ref() {
-                            let v = verdicts(&st.metrics, st.windows_used, &targets);
-                            for vd in &v {
-                                ui.label(
-                                    RichText::new(format!("{} {}", vd.value, vd.level.marker()))
-                                        .color(verdict_color(vd.level)),
-                                )
-                                .on_hover_text(&vd.note);
-                            }
-                            app.step_view.rows.push((*slot, *axis, v));
-                        }
-                    }
-                    Some(Err(e)) => {
-                        ui.label(
-                            RichText::new(format!("{}: {e}", slot.name()))
-                                .color(Color32::LIGHT_RED),
-                        );
-                    }
-                    None => {
-                        ui.spinner();
-                    }
-                }
-                ui.end_row();
-            }
-        });
-    if let Some(axis) = switch_to {
-        app.tools.axis = axis;
-        app.tools.step.axis = axis;
-    }
-    let axis = app.tools.axis;
-    // the Advice line: a PID proposal on this axis, when the recommender has one
-    app.step_view.advice = None;
-    if let Some(slot) = app.visible_slots().first().copied() {
-        let rp = app.tools.recommend.clone();
-        if let Some(Ok(o)) = app.result(slot, Kind::Recommend(rp))
-            && let Output::Recommend(r) = o.as_ref()
-        {
-            let prefix = format!("pid.{}.", axis.name());
-            if let Some(p) = r.proposals.iter().find(|p| p.path.starts_with(&prefix)) {
-                let term = p.path.rsplit('.').next().unwrap_or("").to_uppercase();
-                app.step_view.advice = Some(format!(
-                    "{}: {} {} {} {} -> {} ({})",
-                    tr("Advice"),
-                    slot.name(),
-                    axis.name(),
-                    term,
-                    p.from.as_deref().unwrap_or("?"),
-                    p.to,
-                    p.rationale
-                ));
-            }
-        }
-    }
-    if let Some(line) = app.step_view.advice.clone() {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new(line).color(ACCENT));
-            if ui.button(tr("Go to Advice")).clicked() {
-                app.tab = crate::app::Tab::Advice;
-            }
-        });
-    }
-    let outputs: Vec<(Slot, Arc<Output>)> = rows
-        .into_iter()
-        .filter(|(a, _)| *a == axis)
-        .filter_map(|(_, (s, r))| match r {
-            Some(Ok(o)) => Some((s, o)),
-            _ => None,
-        })
-        .collect();
-    // the target band: 1 ± tol from the settling target to the end of the response
-    let end_ms = params.response_s * 1000.0;
-    let band = (
-        targets.settling_ms_max.min(end_ms),
-        1.0 - targets.final_tol,
-        1.0 + targets.final_tol,
-    );
-    app.step_view.band = Some(band);
-    let warn_line = 1.0 + targets.overshoot_warn_pct / 100.0;
-    let fail_line = 1.0 + targets.overshoot_fail_pct / 100.0;
-    let h = ui.available_height();
-    Plot::new("step")
-        .legend(Legend::default())
-        .x_axis_label("time (ms)")
-        .y_axis_label("response")
-        .height(h)
-        .include_y(0.0)
-        .include_y(1.5)
-        .show(ui, |pu| {
-            pu.polygon(
-                egui_plot::Polygon::new(
-                    tr("target band"),
-                    PlotPoints::from(vec![
-                        [band.0, band.1],
-                        [end_ms, band.1],
-                        [end_ms, band.2],
-                        [band.0, band.2],
-                    ]),
-                )
-                .fill_color(Color32::from_rgba_unmultiplied(0, 158, 115, 30))
-                .stroke(egui::Stroke::NONE),
-            );
-            pu.hline(
-                HLine::new("1.0", 1.0)
-                    .color(MUTED)
-                    .style(LineStyle::dashed_dense()),
-            );
-            pu.hline(
-                HLine::new(
-                    format!(
-                        "{} {:.0} %",
-                        tr("overshoot warn"),
-                        targets.overshoot_warn_pct
-                    ),
-                    warn_line,
-                )
-                .color(verdict_color(VerdictLevel::Warn))
-                .style(LineStyle::dashed_loose()),
-            );
-            pu.hline(
-                HLine::new(
-                    format!(
-                        "{} {:.0} %",
-                        tr("overshoot fail"),
-                        targets.overshoot_fail_pct
-                    ),
-                    fail_line,
-                )
-                .color(verdict_color(VerdictLevel::Fail))
-                .style(LineStyle::dashed_loose()),
-            );
-            for (slot, o) in &outputs {
-                let Output::Step(s) = o.as_ref() else {
-                    continue;
-                };
-                if Some(*slot) == outputs.first().map(|(s, _)| *s)
-                    && let Some(hm) = grid_heatmap("A responses", &s.histogram, 0.0, f64::MIN)
-                {
-                    pu.heatmap(hm);
-                }
-                let pts = |v: &[f64]| {
-                    PlotPoints::from(
-                        s.time_ms
-                            .iter()
-                            .zip(v)
-                            .map(|(t, y)| [*t, *y])
-                            .collect::<Vec<_>>(),
-                    )
-                };
-                pu.line(
-                    Line::new(format!("{} mean", slot.name()), pts(&s.mean))
-                        .color(slot_color(*slot))
-                        .width(2.5),
-                );
-                if let Some(l) = &s.low {
-                    pu.line(
-                        Line::new(format!("{} low input", slot.name()), pts(l))
-                            .color(slot_color(*slot))
-                            .width(1.0)
-                            .style(LineStyle::dotted_dense()),
-                    );
-                }
-                if let Some(hi) = &s.high {
-                    pu.line(
-                        Line::new(format!("{} high input", slot.name()), pts(hi))
-                            .color(slot_color(*slot))
-                            .width(1.0)
-                            .style(LineStyle::dashed_dense()),
-                    );
-                }
-            }
-        });
-}
-
 /// Columns of the Step tab verdict table, in `verdicts()` order.
-const STEP_COLUMNS: [&str; 7] = [
+pub(crate) const STEP_COLUMNS: [&str; 7] = [
     "windows",
     "rise",
     "delay",
@@ -1466,186 +1223,17 @@ pub struct StepViewState {
 }
 
 /// Colour of a verdict level (Okabe–Ito green / yellow / vermilion, grey).
-fn verdict_color(level: VerdictLevel) -> Color32 {
+pub(crate) fn verdict_color(level: VerdictLevel) -> Color32 {
     match level {
         VerdictLevel::Ok => Color32::from_rgb(0, 158, 115),
-        VerdictLevel::Warn => Color32::from_rgb(240, 228, 66),
+        VerdictLevel::Warn => crate::theme::warn(),
         VerdictLevel::Fail => Color32::from_rgb(213, 94, 0),
         VerdictLevel::Unknown => MUTED,
     }
 }
 
-pub fn spectrum(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
-    ui.separator();
-    let session_a = app
-        .first_loaded()
-        .and_then(|s| app.loaded(s))
-        .and_then(|l| l.current().cloned());
-    ui.horizontal_wrapped(|ui| {
-        channel_picker(
-            ui,
-            "psd_channel",
-            session_a.as_deref(),
-            &mut app.tools.spectrum_channel,
-        );
-        if axis_selector(ui, &mut app.tools.axis) {
-            app.tools.spectrum_channel = ChannelId::Gyro {
-                axis: app.tools.axis,
-                stage: GyroStage::Filtered,
-            };
-        }
-        let l = ui.label(tr("segment"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.psd.segment_s)
-                .speed(0.01)
-                .range(0.02..=2.0)
-                .suffix(" s"),
-        )
-        .labelled_by(l.id);
-        ui.label(tr("max"));
-        let mut max = app.tools.psd.max_hz.unwrap_or(0.0);
-        if ui
-            .add(
-                egui::DragValue::new(&mut max)
-                    .speed(10.0)
-                    .range(0.0..=8000.0)
-                    .suffix(" Hz"),
-            )
-            .changed()
-        {
-            app.tools.psd.max_hz = if max > 0.0 { Some(max) } else { None };
-        }
-        ui.checkbox(&mut app.tools.psd_db, "dB");
-        ui.separator();
-        let l = ui.label(tr("peaks"));
-        ui.add(egui::DragValue::new(&mut app.spectrum.auto_peaks).range(0..=10))
-            .labelled_by(l.id);
-        let l = ui.label(tr("prominence"));
-        ui.add(
-            egui::DragValue::new(&mut app.spectrum.min_prominence_db)
-                .speed(0.5)
-                .range(0.0..=60.0)
-                .suffix(" dB"),
-        )
-        .labelled_by(l.id);
-        if !app.spectrum.markers.is_empty() && ui.button(tr("Clear markers")).clicked() {
-            app.spectrum.markers.clear();
-        }
-    });
-    app.tools.psd.channel = app.tools.spectrum_channel.clone();
-    let params = app.tools.psd.clone();
-    let mut outputs: Vec<(Slot, Arc<Output>)> = Vec::new();
-    for slot in app.visible_slots() {
-        match app.result(slot, Kind::Psd(params.clone())) {
-            Some(Ok(o)) => outputs.push((slot, o)),
-            Some(Err(e)) => show_error(ui, slot, &e),
-            None => {}
-        }
-    }
-    let db = app.tools.psd_db;
-    // automatic peaks per trace (prominence is always judged in dB)
-    let peaks: Vec<(Slot, Vec<Peak>)> = outputs
-        .iter()
-        .filter_map(|(slot, o)| match o.as_ref() {
-            Output::Psd(p) => Some((
-                *slot,
-                p.peaks(app.spectrum.auto_peaks, app.spectrum.min_prominence_db),
-            )),
-            _ => None,
-        })
-        .collect();
-    if let Some(txt) = marker_readout(&app.spectrum.markers, &peaks) {
-        ui.label(RichText::new(txt).monospace());
-    }
-    let markers = app.spectrum.markers.clone();
-    let mut clicked_at: Option<f64> = None;
-    let mut frame = None;
-    let mut x_bounds = None;
-    let h = ui.available_height();
-    Plot::new("psd")
-        .legend(Legend::default())
-        .x_axis_label("frequency (Hz)")
-        .y_axis_label(if db { "dB" } else { "power / Hz" })
-        .height(h)
-        .show(ui, |pu| {
-            for (slot, o) in &outputs {
-                let Output::Psd(p) = o.as_ref() else { continue };
-                let ys = if db { &p.power_db } else { &p.power };
-                let pts: Vec<[f64; 2]> = p.freq.iter().zip(ys).map(|(f, y)| [*f, *y]).collect();
-                pu.line(
-                    Line::new(
-                        format!(
-                            "{} {} ({}², {} seg)",
-                            slot.name(),
-                            p.channel.key(),
-                            p.unit,
-                            p.segments
-                        ),
-                        PlotPoints::from(pts),
-                    )
-                    .color(slot_color(*slot))
-                    .width(1.5),
-                );
-                let Some((_, pk)) = peaks.iter().find(|(s, _)| s == slot) else {
-                    continue;
-                };
-                for peak in pk {
-                    let y = ys.get(peak.index).copied().unwrap_or(peak.y);
-                    pu.vline(
-                        VLine::new(format!("{} peak {}", slot.name(), hz(peak.x)), peak.x)
-                            .color(slot_color(*slot).gamma_multiply(0.6))
-                            .style(LineStyle::dashed_loose())
-                            .width(1.0),
-                    );
-                    pu.text(
-                        Text::new(
-                            format!("{} peak label {}", slot.name(), hz(peak.x)),
-                            PlotPoint::new(peak.x, y),
-                            format!("{} {:+.1} dB", hz(peak.x), peak.y),
-                        )
-                        .color(slot_color(*slot))
-                        .anchor(egui::Align2::LEFT_BOTTOM),
-                    );
-                }
-            }
-            for (i, m) in markers.iter().enumerate() {
-                pu.vline(
-                    VLine::new(format!("marker {}", i + 1), *m)
-                        .color(ACCENT)
-                        .width(1.5),
-                );
-            }
-            let resp = pu.response();
-            if resp.clicked()
-                && let Some(p) = pu.pointer_coordinate()
-            {
-                clicked_at = Some(p.x);
-            }
-            let b = pu.plot_bounds();
-            x_bounds = Some((b.min()[0], b.max()[0]));
-            frame = Some(*pu.transform().frame());
-        });
-    app.spectrum.peaks = peaks;
-    app.spectrum.plot_frame = frame;
-    app.spectrum.x_bounds = x_bounds;
-    if let Some(x) = clicked_at
-        && x >= 0.0
-    {
-        // snap to the nearest bin of the first trace so the read-out shows a real value
-        let snapped = outputs
-            .iter()
-            .find_map(|(_, o)| match o.as_ref() {
-                Output::Psd(p) => nearest_bin(&p.freq, x).map(|i| p.freq[i]),
-                _ => None,
-            })
-            .unwrap_or(x);
-        app.spectrum.markers.push(snapped);
-    }
-}
-
 /// Manual spectrum markers as horizontal lines on a frequency-axis heatmap.
-fn marker_hlines(pu: &mut egui_plot::PlotUi<'_>, markers: &[f64]) {
+pub(crate) fn marker_hlines(pu: &mut egui_plot::PlotUi<'_>, markers: &[f64]) {
     for (i, m) in markers.iter().enumerate() {
         pu.hline(
             HLine::new(format!("marker {}", i + 1), *m)
@@ -1656,110 +1244,24 @@ fn marker_hlines(pu: &mut egui_plot::PlotUi<'_>, markers: &[f64]) {
     }
 }
 
-/// Text line listing manual markers (with the delta of the last two) and the top peak per slot.
-fn marker_readout(markers: &[f64], peaks: &[(Slot, Vec<Peak>)]) -> Option<String> {
-    let mut parts = Vec::new();
-    if !markers.is_empty() {
-        let list: Vec<String> = markers.iter().map(|m| hz(*m)).collect();
-        let delta = if let [.., a, b] = markers {
-            format!("  Δ {}", hz((b - a).abs()))
-        } else {
-            String::new()
-        };
-        parts.push(format!("markers: {}{delta}", list.join(", ")));
-    }
-    for (slot, pk) in peaks {
-        if let Some(top) = pk.first() {
-            parts.push(format!(
-                "{} top peak {} ({:+.1} dB, prominence {:.1} dB)",
-                slot.name(),
-                hz(top.x),
-                top.y,
-                top.prominence
-            ));
-        }
-    }
-    (!parts.is_empty()).then(|| parts.join("   ·   "))
-}
-
-pub(crate) fn heatmap_controls(app: &mut App, ui: &mut Ui) {
-    let session_a = app
-        .first_loaded()
-        .and_then(|s| app.loaded(s))
-        .and_then(|l| l.current().cloned());
-    ui.horizontal_wrapped(|ui| {
-        channel_picker(
-            ui,
-            "hm_channel",
-            session_a.as_deref(),
-            &mut app.tools.heatmap_channel,
-        );
-        if axis_selector(ui, &mut app.tools.axis) {
-            app.tools.heatmap_channel = ChannelId::Gyro {
-                axis: app.tools.axis,
-                stage: GyroStage::Filtered,
-            };
-        }
-        let l = ui.label(tr("colour max (0 = auto)"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.heatmap_max)
-                .speed(0.5)
-                .range(0.0..=10000.0),
-        )
-        .labelled_by(l.id);
-        let several = app.visible_slots().len() > 1;
-        ui.add_enabled(
-            several,
-            egui::Checkbox::new(&mut app.tools.heatmap_link, tr("link scales")),
-        )
-        .on_hover_text(tr(
-            "one colour scale for every log (the largest automatic maximum), so the same colour means the same value",
-        ));
-    });
-}
-
 /// Width taken by the colour scale beside a heatmap.
 pub(crate) const BAR_W: f32 = 56.0;
 
 /// The colour maximum a grid is drawn with: `max` when set, else the robust
 /// automatic maximum over the rows at or above `min_y`.
 pub(crate) fn effective_max(g: &Grid2D, max: f64, min_y: f64) -> f64 {
-    openpid_analysis::surface::colour_max(
-        g,
-        &openpid_analysis::surface::SurfaceOptions {
-            max,
-            min_y_for_scale: min_y,
-            ..openpid_analysis::surface::SurfaceOptions::default()
-        },
-    )
+    openpid_analysis::render::colour_max(g, max, min_y)
 }
 
-/// Colour maximum per slot for one tab: each grid's own, or, with "link
-/// scales", the largest of them for all; recorded in `app.colour_scales`.
-pub(crate) fn linked_scales(
-    app: &mut App,
-    grids: &[(Slot, &Grid2D)],
-    min_y: f64,
-) -> HashMap<Slot, f64> {
-    let max = app.tools.heatmap_max;
-    let mut per: Vec<(Slot, f64)> = grids
-        .iter()
-        .map(|(slot, g)| (*slot, effective_max(g, max, min_y)))
-        .collect();
-    if app.tools.heatmap_link && per.len() > 1 {
-        let shared = per.iter().map(|(_, m)| *m).fold(0.0_f64, f64::max);
-        for (_, m) in &mut per {
-            *m = shared;
-        }
-    }
-    app.colour_scales.clone_from(&per);
-    per.into_iter().collect()
+/// A vertical colour scale: the colour map from 0 (bottom) to `max` (top)
+/// with five ticks (docs/design/colour-scale, R1).
+pub(crate) fn colour_bar(ui: &mut Ui, max: f64, height: f32) -> egui::Response {
+    colour_bar_range(ui, 0.0, max, height)
 }
 
-/// A vertical colour scale: the viridis gradient from 0 (bottom) to `max`
-/// (top) with five ticks and the unit (docs/design/colour-scale, R1).
-pub(crate) fn colour_bar(ui: &mut Ui, max: f64, unit: &str, height: f32) -> egui::Response {
-    use openpid_analysis::render::VIRIDIS;
+/// [`colour_bar`] from `lo` to `hi` (a dB range, for one).
+pub(crate) fn colour_bar_range(ui: &mut Ui, lo: f64, max: f64, height: f32) -> egui::Response {
+    let stops = crate::colormap::heatmap().stops();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(BAR_W, height), egui::Sense::hover());
     let painter = ui.painter_at(rect);
     let bar = egui::Rect::from_min_size(
@@ -1767,8 +1269,8 @@ pub(crate) fn colour_bar(ui: &mut Ui, max: f64, unit: &str, height: f32) -> egui
         egui::vec2(14.0, (height - 28.0).max(10.0)),
     );
     let mut mesh = egui::Mesh::default();
-    let n = VIRIDIS.len();
-    for (i, c) in VIRIDIS.iter().enumerate() {
+    let n = stops.len();
+    for (i, c) in stops.iter().enumerate() {
         let t = i as f32 / (n - 1) as f32;
         let y = bar.max.y - t * bar.height();
         let colour = Color32::from_rgb(c[0], c[1], c[2]);
@@ -1790,9 +1292,9 @@ pub(crate) fn colour_bar(ui: &mut Ui, max: f64, unit: &str, height: f32) -> egui
     let font = egui::FontId::proportional(10.0);
     let colour = ui.visuals().text_color();
     let fmt = |v: f64| {
-        if v >= 100.0 {
+        if v.abs() >= 100.0 || (lo < 0.0 && v.abs() >= 10.0) {
             format!("{v:.0}")
-        } else if v >= 10.0 {
+        } else if v.abs() >= 10.0 || lo < 0.0 {
             format!("{v:.1}")
         } else {
             format!("{v:.2}")
@@ -1808,60 +1310,58 @@ pub(crate) fn colour_bar(ui: &mut Ui, max: f64, unit: &str, height: f32) -> egui
         painter.text(
             egui::pos2(bar.max.x + 5.0, y),
             egui::Align2::LEFT_CENTER,
-            fmt(max * f64::from(f)),
+            fmt(lo + (max - lo) * f64::from(f)),
             font.clone(),
             colour,
         );
     }
-    painter.text(
-        egui::pos2(bar.min.x, bar.max.y + 4.0),
-        egui::Align2::LEFT_TOP,
-        unit,
-        font,
-        colour,
-    );
+    // no unit under the bar (the owner, 2026-11-10): the amplitude of
+    // broadband noise depends on the segment length and the logging, so a
+    // "deg/s" there read as an exact rate it is not; the numbers compare maps
     resp.widget_info(|| {
         egui::WidgetInfo::labeled(
             egui::Role::Label,
             true,
-            format!("colour scale 0 to {} {unit}", fmt(max)),
+            if lo == 0.0 {
+                format!("colour scale 0 to {}", fmt(max))
+            } else {
+                format!("colour scale {} to {}", fmt(lo), fmt(max))
+            },
         )
     });
     resp
 }
 
 /// The grid cell under the plot pointer: `(slot, x, y, value)`.
-fn heatmap_hover(
+pub(crate) fn heatmap_hover(
     pu: &egui_plot::PlotUi<'_>,
     slot: Slot,
     g: &Grid2D,
 ) -> Option<(Slot, f64, f64, f64)> {
     let c = pu.pointer_coordinate()?;
-    let z = openpid_analysis::surface::value_at(g, c.x, c.y)?;
+    let z = openpid_analysis::render::value_at(g, c.x, c.y)?;
     Some((slot, c.x, c.y, z))
 }
 
 /// Read-out of the hovered cell under a heatmap (`x` in percent or seconds).
-fn hover_label(ui: &mut Ui, hover: Option<(Slot, f64, f64, f64)>, unit: &str, x_is_time: bool) {
+pub(crate) fn hover_label(ui: &mut Ui, hover: Option<(Slot, f64, f64, f64)>, x_is_time: bool) {
+    // the value without a unit, as the colour bar
     let text = match hover {
-        Some((_, x, y, z)) if x_is_time => format!("{x:.2} s, {y:.0} Hz: {z:.3} {unit}"),
-        Some((_, x, y, z)) => format!("{x:.0} %, {y:.0} Hz: {z:.3} {unit}"),
+        Some((_, x, y, z)) if x_is_time => format!("{x:.2} s, {y:.0} Hz: {z:.3}"),
+        Some((_, x, y, z)) => format!("{x:.0} %, {y:.0} Hz: {z:.3}"),
         None => tr("hover the map for a value").to_string(),
     };
     ui.label(RichText::new(text).color(MUTED));
 }
 
-/// Height of the segments-per-bin bar under the freq × throttle heatmap.
-const COUNT_BAR_HEIGHT: f32 = 56.0;
-
 /// Textures kept before the cache is emptied (one per result and colour scale).
-const MAX_HEATMAP_TEXTURES: usize = 32;
+const MAX_HEATMAP_TEXTURES: usize = 96;
 
 /// A heatmap grid as a texture, rasterised once per result and colour scale
 /// and redrawn as one image instead of a cell mesh every frame. `owner` is
 /// the result the grid belongs to (its address keys the texture while it is
 /// cached). Returns the image item positioned over the grid.
-fn grid_image(
+pub(crate) fn grid_image(
     app: &mut App,
     ctx: &egui::Context,
     owner: &Arc<Output>,
@@ -1877,17 +1377,21 @@ fn grid_image(
     (Arc::as_ptr(owner) as usize).hash(&mut hasher);
     max.to_bits().hash(&mut hasher);
     min_y_for_scale.to_bits().hash(&mut hasher);
+    let cmap = crate::colormap::heatmap();
+    cmap.hash(&mut hasher);
     let key = hasher.finish();
     if !app.heatmap_textures.contains_key(&key) {
         if app.heatmap_textures.len() >= MAX_HEATMAP_TEXTURES {
             app.heatmap_textures.clear();
         }
-        let (w, h, rgba) = openpid_analysis::render::grid_rgba(g, max, min_y_for_scale);
+        let (w, h, rgba) = openpid_analysis::render::grid_rgba_with(g, max, min_y_for_scale, cmap);
         let image = egui::ColorImage::from_rgba_unmultiplied([w, h], &rgba);
         let handle = ctx.load_texture(
             format!("heatmap-{key:x}"),
             image,
-            egui::TextureOptions::NEAREST,
+            // interpolated between cells, as the reference tool draws its
+            // maps: blocks of a few throttle bins read as structure
+            egui::TextureOptions::LINEAR,
         );
         app.heatmap_textures.insert(key, handle);
     }
@@ -1908,17 +1412,19 @@ fn grid_image(
 }
 
 /// How long a finger must rest on the log viewer to place the cursor, seconds.
-const LONG_PRESS_S: f64 = 0.6;
+pub(crate) const LONG_PRESS_S: f64 = 0.6;
 /// Movement that turns a resting finger into a pan, logical pixels.
-const LONG_PRESS_SLOP_PX: f32 = 8.0;
+pub(crate) const LONG_PRESS_SLOP_PX: f32 = 8.0;
 
 /// A slot's analysis result: `None` while it is still computing.
 pub(crate) type SlotResult = (Slot, Option<Result<Arc<Output>, String>>);
 
 /// What of the RPM / notch overlay is drawn on the freq × throttle heatmap.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct OverlayState {
-    /// Draw the motor harmonics at all.
+    /// Draw the motor harmonics at all; off by default, as the reference
+    /// tool's Freq × throttle: the maps show the data alone (the owner,
+    /// 2026-11-10).
     pub show: bool,
     /// Per motor (index order); a motor past the end is shown.
     pub motors: Vec<bool>,
@@ -1926,87 +1432,20 @@ pub struct OverlayState {
     pub harmonics: u32,
     /// Draw the static notches, the dynamic-notch band and the RPM filter minimum.
     pub notches: bool,
+    /// One coloured line per motor and harmonic; off: one thin line per
+    /// harmonic at the mean of the motors (docs/design/throttle-tab, the
+    /// owner's comparison with the reference tool's video).
+    pub per_motor: bool,
 }
 
-impl Default for OverlayState {
-    fn default() -> Self {
-        OverlayState {
-            show: true,
-            motors: Vec::new(),
-            harmonics: 0,
-            notches: true,
-        }
-    }
-}
-
+/// Colour of motor `m`: the chosen plot colours in order, as the Log viewer
+/// draws the motors.
 pub(crate) fn motor_color(m: usize) -> Color32 {
-    let hue = (m as f32 * 0.23 + 0.08) % 1.0;
-    egui::ecolor::Hsva::new(hue, 0.85, 1.0, 1.0).into()
-}
-
-/// RPM overlay controls (shown once the motor count of a result is known);
-/// shared by the freq × throttle heatmap and the 3D surface.
-pub(crate) fn overlay_controls(app: &mut App, ui: &mut Ui, results: &[SlotResult]) {
-    let motors = results
-        .iter()
-        .filter_map(|(_, r)| match r {
-            Some(Ok(o)) => match o.as_ref() {
-                Output::Throttle(t) => t.overlay.as_ref().map(|ov| ov.motors.len()),
-                _ => None,
-            },
-            _ => None,
-        })
-        .max();
-    if let Some(n) = motors {
-        let ov = &mut app.overlay;
-        ov.motors.resize(n, true);
-        ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut ov.show, tr("RPM overlay"));
-            for (m, on) in ov.motors.iter_mut().enumerate() {
-                ui.checkbox(on, format!("M{}", m + 1));
-            }
-            let l = ui.label(tr("harmonics"));
-            ui.add(egui::DragValue::new(&mut ov.harmonics).range(0..=8))
-                .labelled_by(l.id)
-                .on_hover_text(tr("0 = as many as the RPM filter removes"));
-            ui.checkbox(&mut ov.notches, tr("notches"));
-        });
-    }
-}
-
-/// Harmonic frequencies to draw for `o` under `ov`: `(motor, harmonic, per-x Hz)`
-/// with `None` where the bin has no motor speed or the harmonic is above `y_max`.
-pub(crate) fn overlay_harmonics(
-    o: &RpmOverlay,
-    y_max: f64,
-    ov: &OverlayState,
-) -> Vec<(usize, u32, Vec<Option<f64>>)> {
-    if !ov.show {
-        return Vec::new();
-    }
-    let harmonics = if ov.harmonics == 0 {
-        o.harmonics
-    } else {
-        ov.harmonics
-    };
-    let mut out = Vec::new();
-    for (m, bins) in o.motors.iter().enumerate() {
-        if !ov.motors.get(m).copied().unwrap_or(true) {
-            continue;
-        }
-        for k in 1..=harmonics {
-            let f: Vec<Option<f64>> = bins
-                .iter()
-                .map(|rpm| rpm.map(|r| r / 60.0 * f64::from(k)).filter(|f| *f <= y_max))
-                .collect();
-            out.push((m, k, f));
-        }
-    }
-    out
+    crate::colormap::line(m)
 }
 
 /// The motor harmonics and notch bands of `o` over a heatmap whose frequency axis ends at `y_max`.
-fn draw_rpm_overlay(
+pub(crate) fn draw_rpm_overlay(
     pu: &mut egui_plot::PlotUi<'_>,
     o: &RpmOverlay,
     x: &[f64],
@@ -2014,112 +1453,188 @@ fn draw_rpm_overlay(
     ov: &OverlayState,
 ) {
     if ov.show {
-        let harmonics = if ov.harmonics == 0 {
-            o.harmonics
-        } else {
-            ov.harmonics
-        };
-        for (m, bins) in o.motors.iter().enumerate() {
-            if !ov.motors.get(m).copied().unwrap_or(true) {
-                continue;
-            }
-            for k in 1..=harmonics {
-                // one line per run of consecutive bins with a motor speed
-                let mut run: Vec<[f64; 2]> = Vec::new();
-                let mut runs: Vec<Vec<[f64; 2]>> = Vec::new();
-                for (xi, rpm) in x.iter().zip(bins) {
-                    match rpm.map(|r| r / 60.0 * f64::from(k)).filter(|f| *f <= y_max) {
-                        Some(f) => run.push([*xi, f]),
-                        None if !run.is_empty() => runs.push(std::mem::take(&mut run)),
-                        None => {}
-                    }
-                }
-                if !run.is_empty() {
-                    runs.push(run);
-                }
-                for pts in runs {
-                    let mut line = Line::new(format!("M{} ×{k}", m + 1), PlotPoints::from(pts))
-                        .color(motor_color(m))
-                        .width(if k == 1 { 1.8 } else { 1.0 });
-                    if k > 1 {
-                        line = line.style(LineStyle::dashed_dense());
-                    }
-                    pu.line(line);
-                }
-            }
-        }
+        draw_harmonics(pu, o, x, y_max, ov);
     }
     if ov.notches {
-        let (x0, x1) = (
-            x.first().copied().unwrap_or(0.0),
-            x.last().copied().unwrap_or(100.0),
-        );
-        let band =
-            |pu: &mut egui_plot::PlotUi<'_>, name: String, lo: f64, hi: f64, colour: Color32| {
-                let (lo, hi) = (lo.max(0.0), hi.min(y_max));
-                if hi <= lo {
-                    return;
-                }
-                pu.polygon(
-                    egui_plot::Polygon::new(
-                        name,
-                        PlotPoints::from(vec![[x0, lo], [x1, lo], [x1, hi], [x0, hi]]),
-                    )
-                    .fill_color(colour)
-                    .stroke(egui::Stroke::NONE),
-                );
-            };
-        for (i, (centre, cutoff)) in o.notches.iter().enumerate() {
-            let half = (centre - cutoff).abs();
-            band(
-                pu,
-                format!("notch {} band", i + 1),
-                centre - half,
-                centre + half,
-                Color32::from_rgba_unmultiplied(255, 255, 255, 40),
-            );
-            pu.hline(
-                HLine::new(format!("notch {} {}", i + 1, hz(*centre)), *centre)
-                    .color(Color32::WHITE)
-                    .style(LineStyle::dashed_loose())
-                    .width(1.0),
-            );
+        draw_notches(pu, o, x, y_max);
+    }
+}
+
+/// Runs of consecutive throttle bins where harmonic `k` of a motor is known
+/// and below `y_max`: one line each.
+fn harmonic_runs(x: &[f64], bins: &[Option<f64>], k: u32, y_max: f64) -> Vec<Vec<[f64; 2]>> {
+    let mut runs: Vec<Vec<[f64; 2]>> = Vec::new();
+    let mut run: Vec<[f64; 2]> = Vec::new();
+    for (xi, rpm) in x.iter().zip(bins) {
+        match rpm.map(|r| r / 60.0 * f64::from(k)).filter(|f| *f <= y_max) {
+            Some(f) => run.push([*xi, f]),
+            None if !run.is_empty() => runs.push(std::mem::take(&mut run)),
+            None => {}
         }
-        if let Some((lo, hi)) = o.dyn_notch_hz {
-            // an outline, not a fill: the band spans most of the useful range
-            // and a tint over it would wash out the heatmap
-            band(
-                pu,
-                "dyn notch band".into(),
-                lo,
-                hi,
-                ACCENT.gamma_multiply(0.04),
-            );
-            for (name, f) in [("dyn notch min", lo), ("dyn notch max", hi)] {
-                if f < y_max {
-                    pu.hline(
-                        HLine::new(format!("{name} {}", hz(f)), f)
-                            .color(ACCENT)
-                            .style(LineStyle::dashed_loose())
-                            .width(1.0),
-                    );
+    }
+    if !run.is_empty() {
+        runs.push(run);
+    }
+    runs
+}
+
+/// Every shown motor's harmonic lines: the fundamental solid, the rest dashed.
+fn draw_harmonics(
+    pu: &mut egui_plot::PlotUi<'_>,
+    o: &RpmOverlay,
+    x: &[f64],
+    y_max: f64,
+    ov: &OverlayState,
+) {
+    let harmonics = if ov.harmonics == 0 {
+        o.harmonics
+    } else {
+        ov.harmonics
+    };
+    if !ov.per_motor {
+        draw_mean_harmonics(pu, o, x, y_max, harmonics);
+        return;
+    }
+    for (m, bins) in o.motors.iter().enumerate() {
+        if !ov.motors.get(m).copied().unwrap_or(true) {
+            continue;
+        }
+        for k in 1..=harmonics {
+            for pts in harmonic_runs(x, bins, k, y_max) {
+                let mut line = Line::new(format!("M{} ×{k}", m + 1), PlotPoints::from(pts))
+                    .color(motor_color(m))
+                    .width(if k == 1 { 1.8 } else { 1.0 });
+                if k > 1 {
+                    line = line.style(LineStyle::dashed_dense());
                 }
+                pu.line(line);
             }
-        }
-        if let Some(min) = o.rpm_min_hz {
-            pu.hline(
-                HLine::new(format!("RPM filter min {}", hz(min)), min)
-                    .color(MUTED)
-                    .style(LineStyle::dotted_dense())
-                    .width(1.0),
-            );
         }
     }
 }
 
-/// Grey columns over the throttle bins with fewer than `min_segments`
+/// The mean speed of the motors per throttle bin (bins where no motor has a
+/// speed are `None`).
+pub(crate) fn mean_motor_rpm(o: &RpmOverlay) -> Vec<Option<f64>> {
+    let n = o.motors.iter().map(Vec::len).max().unwrap_or(0);
+    (0..n)
+        .map(|i| {
+            let v: Vec<f64> = o
+                .motors
+                .iter()
+                .filter_map(|m| m.get(i).copied().flatten())
+                .collect();
+            (!v.is_empty()).then(|| v.iter().sum::<f64>() / v.len() as f64)
+        })
+        .collect()
+}
+
+/// One thin line per harmonic at the mean motor speed: the fundamental
+/// solid, the others dashed, in the plot's text colour so it reads on any
+/// colour map without hiding the noise under it.
+fn draw_mean_harmonics(
+    pu: &mut egui_plot::PlotUi<'_>,
+    o: &RpmOverlay,
+    x: &[f64],
+    y_max: f64,
+    harmonics: u32,
+) {
+    let mean = mean_motor_rpm(o);
+    let colour = if crate::theme::is_dark() {
+        Color32::from_white_alpha(170)
+    } else {
+        Color32::from_black_alpha(170)
+    };
+    for k in 1..=harmonics {
+        for pts in harmonic_runs(x, &mean, k, y_max) {
+            let mut line = Line::new(format!("motors ×{k}"), PlotPoints::from(pts))
+                .color(colour)
+                .width(1.0);
+            if k > 1 {
+                line = line.style(LineStyle::dashed_loose());
+            }
+            pu.line(line);
+        }
+    }
+}
+
+/// A filled horizontal band from `lo` to `hi` across the throttle range.
+fn notch_band(
+    pu: &mut egui_plot::PlotUi<'_>,
+    (x0, x1): (f64, f64),
+    name: String,
+    (lo, hi): (f64, f64),
+    colour: Color32,
+) {
+    if hi <= lo {
+        return;
+    }
+    pu.polygon(
+        egui_plot::Polygon::new(
+            name,
+            PlotPoints::from(vec![[x0, lo], [x1, lo], [x1, hi], [x0, hi]]),
+        )
+        .fill_color(colour)
+        .stroke(egui::Stroke::NONE),
+    );
+}
+
+/// The static notches, the dynamic-notch band and the RPM filter minimum.
+fn draw_notches(pu: &mut egui_plot::PlotUi<'_>, o: &RpmOverlay, x: &[f64], y_max: f64) {
+    let span = (
+        x.first().copied().unwrap_or(0.0),
+        x.last().copied().unwrap_or(100.0),
+    );
+    for (i, (centre, cutoff)) in o.notches.iter().enumerate() {
+        let half = (centre - cutoff).abs();
+        notch_band(
+            pu,
+            span,
+            format!("notch {} band", i + 1),
+            ((centre - half).max(0.0), (centre + half).min(y_max)),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 40),
+        );
+        pu.hline(
+            HLine::new(format!("notch {} {}", i + 1, hz(*centre)), *centre)
+                .color(Color32::WHITE)
+                .style(LineStyle::dashed_loose())
+                .width(1.0),
+        );
+    }
+    if let Some((lo, hi)) = o.dyn_notch_hz {
+        // an outline, not a fill: the band spans most of the useful range
+        // and a tint over it would wash out the heatmap
+        notch_band(
+            pu,
+            span,
+            "dyn notch band".into(),
+            (lo.max(0.0), hi.min(y_max)),
+            ACCENT.gamma_multiply(0.04),
+        );
+        for (name, f) in [("dyn notch min", lo), ("dyn notch max", hi)] {
+            if f < y_max {
+                pu.hline(
+                    HLine::new(format!("{name} {}", hz(f)), f)
+                        .color(ACCENT)
+                        .style(LineStyle::dashed_loose())
+                        .width(1.0),
+                );
+            }
+        }
+    }
+    if let Some(min) = o.rpm_min_hz {
+        pu.hline(
+            HLine::new(format!("RPM filter min {}", hz(min)), min)
+                .color(MUTED)
+                .style(LineStyle::dotted_dense())
+                .width(1.0),
+        );
+    }
+}
+
+/// Dimmed columns over the throttle bins with fewer than `min_segments`
 /// segments, so an unsampled bin does not read as a quiet one.
-fn sparse_bins(
+pub(crate) fn sparse_bins(
     g: &Grid2D,
     counts: &[usize],
     min_segments: usize,
@@ -2130,7 +1645,10 @@ fn sparse_bins(
     let dx = g.x[1] - g.x[0];
     let dy = g.y[1] - g.y[0];
     let (y0, y1) = (g.y[0] - dy / 2.0, g.y[g.y.len() - 1] + dy / 2.0);
-    let grey = Color32::from_rgba_unmultiplied(128, 128, 128, 170);
+    // dimmed towards black, as Blackbox Explorer dims what is outside its
+    // in/out marks (rgba(0, 0, 0, 0.8)): a light grey block read as a
+    // feature of the map rather than as missing data
+    let grey = Color32::from_black_alpha(205);
     g.x.iter()
         .zip(counts)
         .filter(|(_, c)| **c < min_segments)
@@ -2146,1852 +1664,232 @@ fn sparse_bins(
         .collect()
 }
 
-/// Thin bar chart of the segment count per throttle bin, x-linked to the heatmap.
-fn segment_count_bar(
-    ui: &mut Ui,
-    slot: Slot,
-    link: egui::Id,
-    g: &Grid2D,
-    counts: &[usize],
-    min_segments: usize,
-    width: f32,
-) {
-    let dx = if g.x.len() >= 2 { g.x[1] - g.x[0] } else { 1.0 };
-    let bars: Vec<Bar> =
-        g.x.iter()
-            .zip(counts)
-            .map(|(&x, &c)| {
-                Bar::new(x, c as f64).width(dx).fill(if c < min_segments {
-                    Color32::GRAY
-                } else {
-                    slot_color(slot)
-                })
-            })
-            .collect();
-    Plot::new(("thr-count", slot.name()))
-        .x_axis_label("throttle (%)")
-        .y_axis_label("segments")
-        .link_axis(link, [true, false])
-        .width(width)
-        .height(COUNT_BAR_HEIGHT)
-        .include_y(0.0)
-        .allow_zoom([true, false])
-        .allow_drag([true, false])
-        .show(ui, |pu| {
-            pu.bar_chart(
-                BarChart::new("segments per bin", bars).element_formatter(Box::new(|b, _| {
-                    format!("throttle {:.0} %: {} segments", b.argument, b.value)
-                })),
-            );
-        });
-}
-
-pub fn throttle_heatmap(app: &mut App, ui: &mut Ui) {
-    let markers = app.spectrum.markers.clone();
-    slot_headers(app, ui);
-    ui.separator();
-    heatmap_controls(app, ui);
-    ui.horizontal_wrapped(|ui| {
-        let l = ui.label(tr("segment"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.throttle.segment_s)
-                .speed(0.01)
-                .range(0.05..=1.0)
-                .suffix(" s"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("throttle window ±"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.throttle.half_window)
-                .speed(0.5)
-                .range(0.0..=25.0)
-                .suffix(" %"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("max"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.throttle.max_hz)
-                .speed(10.0)
-                .range(50.0..=8000.0)
-                .suffix(" Hz"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("min segments"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.min_segments)
-                .speed(1.0)
-                .range(1..=1000),
-        )
-        .on_hover_text(tr(
-            "throttle bins with fewer segments are greyed out: they are unsampled, not quiet",
-        ))
-        .labelled_by(l.id);
-    });
-    app.tools.throttle.channel = app.tools.heatmap_channel.clone();
-    let params = app.tools.throttle.clone();
-    let max = app.tools.heatmap_max;
-    let min_segments = app.tools.min_segments;
-    let slots: Vec<Slot> = app.visible_slots();
-    let results: Vec<SlotResult> = slots
-        .iter()
-        .map(|slot| (*slot, app.result(*slot, Kind::Throttle(params.clone()))))
-        .collect();
-    overlay_controls(app, ui, &results);
-    let overlay = app.overlay.clone();
-    let grids: Vec<(Slot, &Grid2D)> = results
-        .iter()
-        .filter_map(|(s, r)| match r {
-            Some(Ok(o)) => match o.as_ref() {
-                Output::Throttle(t) => Some((*s, &t.grid)),
-                _ => None,
-            },
-            _ => None,
-        })
-        .collect();
-    let scales = linked_scales(app, &grids, 20.0);
-    app.heatmap_hover = None;
-    let w = panel_width(ui, slots.len());
-    let h = ui.available_height();
-    egui::ScrollArea::horizontal()
-        .id_salt("thr-panels")
-        .show(ui, |ui| {
-    ui.horizontal(|ui| {
-        for (slot, result) in results {
-            ui.vertical(|ui| {
-                ui.set_width(w - 8.0);
-                match result {
-                    Some(Ok(o)) => {
-                        if let Output::Throttle(t) = o.as_ref() {
-                            ui.label(
-                                RichText::new(format!(
-                                    "{}: {} ({}), {} segments",
-                                    slot.name(),
-                                    t.channel.key(),
-                                    t.unit,
-                                    t.segments
-                                ))
-                                .color(slot_color(slot)),
-                            );
-                            let link = ui.scope_id().with(("thr-link", slot.name()));
-                            let y_max = t.grid.y.last().copied().unwrap_or(0.0);
-                            let scale = scales.get(&slot).copied().unwrap_or(max);
-                            let image = grid_image(app, ui.ctx(), &o, &t.grid, scale, 20.0);
-                            let plot_h = h - 24.0 - COUNT_BAR_HEIGHT - 48.0;
-                            let plot_w = ui.available_width() - BAR_W;
-                            let mut hover = None;
-                            let mut frame = None;
-                            ui.horizontal(|ui| {
-                                Plot::new(("thr", slot.name()))
-                                    .legend(Legend::default())
-                                    .y_axis_label("frequency (Hz)")
-                                    .link_axis(link, [true, false])
-                                    .width(plot_w)
-                                    .height(plot_h)
-                                    .show(ui, |pu| {
-                                        if let Some(img) = image {
-                                            pu.image(img);
-                                        }
-                                        for poly in sparse_bins(&t.grid, &t.counts, min_segments) {
-                                            pu.polygon(poly);
-                                        }
-                                        if let Some(o) = &t.overlay {
-                                            draw_rpm_overlay(pu, o, &t.grid.x, y_max, &overlay);
-                                        }
-                                        marker_hlines(pu, &markers);
-                                        hover = heatmap_hover(pu, slot, &t.grid);
-                                        frame = Some(*pu.transform().frame());
-                                    });
-                                colour_bar(ui, scale, &t.unit, plot_h);
-                            });
-                            if hover.is_some() {
-                                app.heatmap_hover = hover;
-                            }
-                            if let Some(f) = frame {
-                                app.heatmap_frames.insert(slot, f);
-                            }
-                            segment_count_bar(ui, slot, link, &t.grid, &t.counts, min_segments, plot_w);
-                            let below = t.counts.iter().filter(|&&c| c < min_segments).count();
-                            ui.horizontal_wrapped(|ui| {
-                                ui.label(
-                                    RichText::new(if below > 0 {
-                                        format!(
-                                            "{below} of {} throttle bins have fewer than {min_segments} segments (greyed)",
-                                            t.counts.len()
-                                        )
-                                    } else {
-                                        format!(
-                                            "every throttle bin has at least {min_segments} segments"
-                                        )
-                                    })
-                                    .color(MUTED),
-                                );
-                                ui.separator();
-                                hover_label(ui, hover, &t.unit, false);
-                            });
-                        }
-                    }
-                    Some(Err(e)) => show_error(ui, slot, &e),
-                    None => {
-                        ui.spinner();
-                    }
-                }
-            });
-        }
-    });
-        });
-}
-
-pub fn time_heatmap(app: &mut App, ui: &mut Ui) {
-    let markers = app.spectrum.markers.clone();
-    slot_headers(app, ui);
-    ui.separator();
-    heatmap_controls(app, ui);
-    ui.horizontal_wrapped(|ui| {
-        let l = ui.label(tr("segment"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.stft.segment_s)
-                .speed(0.01)
-                .range(0.02..=1.0)
-                .suffix(" s"),
-        )
-        .labelled_by(l.id);
-        let mut max = app.tools.stft.max_hz.unwrap_or(0.0);
-        ui.label(tr("max"));
-        if ui
-            .add(
-                egui::DragValue::new(&mut max)
-                    .speed(10.0)
-                    .range(0.0..=8000.0)
-                    .suffix(" Hz"),
-            )
-            .changed()
-        {
-            app.tools.stft.max_hz = if max > 0.0 { Some(max) } else { None };
-        }
-    });
-    app.tools.stft.channel = app.tools.heatmap_channel.clone();
-    let params = app.tools.stft.clone();
-    let max = app.tools.heatmap_max;
-    let touch = app.touch_mode;
-    let slots: Vec<Slot> = app.visible_slots();
-    let results: Vec<SlotResult> = slots
-        .iter()
-        .map(|slot| (*slot, app.result(*slot, Kind::Stft(params.clone()))))
-        .collect();
-    // the player runs over slot A's columns (B follows the same time)
-    let range = results.iter().find_map(|(_, r)| match r {
-        Some(Ok(o)) => match o.as_ref() {
-            Output::Stft(t) if t.grid.x.len() > 1 => {
-                Some((t.grid.x[0], t.grid.x[t.grid.x.len() - 1]))
-            }
-            _ => None,
-        },
-        _ => None,
-    });
-    let columns: Vec<f64> = results
-        .iter()
-        .find_map(|(_, r)| match r {
-            Some(Ok(o)) => match o.as_ref() {
-                Output::Stft(t) => Some(t.grid.x.clone()),
-                _ => None,
-            },
-            _ => None,
-        })
-        .unwrap_or_default();
-    let mut pos = player_controls(app, ui, range, &columns);
-    let grids: Vec<(Slot, &Grid2D)> = results
-        .iter()
-        .filter_map(|(s, r)| match r {
-            Some(Ok(o)) => match o.as_ref() {
-                Output::Stft(t) => Some((*s, &t.grid)),
-                _ => None,
-            },
-            _ => None,
-        })
-        .collect();
-    let scales = linked_scales(app, &grids, 20.0);
-    app.heatmap_hover = None;
-    // two panels share the height; more scroll at a readable minimum
-    let h = (ui.available_height() / slots.len().max(1) as f32).max(260.0);
-    let mut clicked_at: Option<f64> = None;
-    egui::ScrollArea::vertical()
-        .id_salt("stft-panels")
-        .show(ui, |ui| {
-            for (i, (slot, result)) in results.into_iter().enumerate() {
-                match result {
-                    Some(Ok(o)) => {
-                        if let Output::Stft(t) = o.as_ref() {
-                            ui.label(
-                                RichText::new(format!(
-                                    "{}: {} ({})",
-                                    slot.name(),
-                                    t.channel.key(),
-                                    t.unit
-                                ))
-                                .color(slot_color(slot)),
-                            );
-                            let scale = scales.get(&slot).copied().unwrap_or(max);
-                            let image = grid_image(app, ui.ctx(), &o, &t.grid, scale, 20.0);
-                            let column = pos.and_then(|p| nearest_column(&t.grid.x, p));
-                            let spectrum_h = ((h - 24.0) * 0.3).max(60.0);
-                            let plot_h = h - 24.0 - spectrum_h - 20.0;
-                            let plot_w = ui.available_width() - BAR_W;
-                            let mut frame = None;
-                            let mut x_bounds = None;
-                            let mut hover = None;
-                            ui.horizontal(|ui| {
-                                Plot::new(("stft", slot.name()))
-                                    .x_axis_label("time (s)")
-                                    .y_axis_label("frequency (Hz)")
-                                    .width(plot_w)
-                                    .height(plot_h)
-                                    .allow_drag(!touch)
-                                    .show(ui, |pu| {
-                                        if let Some(img) = image {
-                                            pu.image(img);
-                                        }
-                                        marker_hlines(pu, &markers);
-                                        if let Some(p) = pos {
-                                            pu.vline(
-                                                VLine::new("position", p).color(ACCENT).width(1.5),
-                                            );
-                                        }
-                                        // click (or, on touch, drag) scrubs
-                                        // (`interact_pointer_pos`: the hover position is gone during a drag)
-                                        let r = pu.response();
-                                        if (r.clicked() || (touch && r.dragged()))
-                                            && let Some(p) = r.interact_pointer_pos()
-                                        {
-                                            clicked_at =
-                                                Some(pu.transform().value_from_position(p).x);
-                                        }
-                                        let b = pu.plot_bounds();
-                                        x_bounds = Some((b.min()[0], b.max()[0]));
-                                        frame = Some(*pu.transform().frame());
-                                        hover = heatmap_hover(pu, slot, &t.grid);
-                                    });
-                                colour_bar(ui, scale, &t.unit, plot_h);
-                            });
-                            if hover.is_some() {
-                                app.heatmap_hover = hover;
-                            }
-                            if let Some(f) = frame {
-                                app.heatmap_frames.insert(slot, f);
-                            }
-                            hover_label(ui, hover, &t.unit, true);
-                            if i == 0 {
-                                app.player.plot_frame = frame;
-                                app.player.x_bounds = x_bounds;
-                                app.player.column = column;
-                            }
-                            column_spectrum(ui, slot, t, column, max, spectrum_h);
-                        }
-                    }
-                    Some(Err(e)) => show_error(ui, slot, &e),
-                    None => {
-                        ui.spinner();
-                    }
-                }
-            }
-        });
-    if let Some(t) = clicked_at
-        && let Some((x0, x1)) = range
-    {
-        pos = Some(t.clamp(x0, x1));
-    }
-    if pos != app.player.pos_s {
-        app.player.pos_s = pos;
-        app.player.synced_cursor = pos;
-        app.viewer.cursor_s = pos;
-    }
-}
-
-/// Play / pause, stepping, speed and the scrub slider; returns the position
-/// after this frame's input and playback.
-fn player_controls(
-    app: &mut App,
-    ui: &mut Ui,
-    range: Option<(f64, f64)>,
-    columns: &[f64],
-) -> Option<f64> {
-    let Some((x0, x1)) = range else {
-        app.player.playing = false;
-        return None;
-    };
-    // the log-viewer cursor moved elsewhere: follow it
-    if app.viewer.cursor_s != app.player.synced_cursor
-        && let Some(c) = app.viewer.cursor_s
-    {
-        app.player.pos_s = Some(c.clamp(x0, x1));
-        app.player.synced_cursor = app.viewer.cursor_s;
-    }
-    let mut pos = app.player.pos_s.unwrap_or(x0).clamp(x0, x1);
-    let now = ui.input(|i| i.time);
-    let step = |pos: f64, dir: i64| -> f64 {
-        nearest_column(columns, pos)
-            .and_then(|c| columns.get((c as i64 + dir).max(0) as usize))
-            .copied()
-            .unwrap_or(pos)
-    };
-    let ctx = ui.ctx().clone();
-    match app.player.request.take() {
-        Some(PlayerRequest::ToStart) => pos = x0,
-        Some(PlayerRequest::StepBack) => pos = step(pos, -1),
-        Some(PlayerRequest::StepForward) => pos = step(pos, 1),
-        None => {}
-    }
-    ui.horizontal_wrapped(|ui| {
-        let p = &mut app.player;
-        if ui
-            .button(if p.playing { tr("Pause") } else { tr("Play") })
-            .on_hover_text(shortcuts::keys_of(&ctx, Action::PlayPause))
-            .clicked()
-        {
-            p.playing = !p.playing;
-            p.last_frame_time = None;
-        }
-        if ui
-            .button(tr("To start"))
-            .on_hover_text(shortcuts::keys_of(&ctx, Action::ToStart))
-            .clicked()
-        {
-            pos = x0;
-        }
-        if ui
-            .button(tr("< step"))
-            .on_hover_text(shortcuts::keys_of(&ctx, Action::StepBack))
-            .clicked()
-        {
-            pos = step(pos, -1);
-        }
-        if ui
-            .button(tr("step >"))
-            .on_hover_text(shortcuts::keys_of(&ctx, Action::StepForward))
-            .clicked()
-        {
-            pos = step(pos, 1);
-        }
-        let l = ui.label(tr("speed"));
-        ui.add(
-            egui::DragValue::new(&mut p.speed)
-                .speed(0.1)
-                .range(0.1..=16.0)
-                .suffix("×"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("position"));
-        ui.add(
-            egui::Slider::new(&mut pos, x0..=x1)
-                .suffix(" s")
-                .fixed_decimals(2),
-        )
-        .labelled_by(l.id);
-        if let Some(c) = nearest_column(columns, pos) {
-            ui.label(RichText::new(format!("column {} of {}", c + 1, columns.len())).color(MUTED));
-        }
-    });
-    if app.player.playing {
-        if let Some(last) = app.player.last_frame_time {
-            pos += (now - last).max(0.0) * app.player.speed;
-            if pos > x1 {
-                pos = x0; // loop
-            }
-        }
-        app.player.last_frame_time = Some(now);
-        ui.ctx().request_repaint();
-    }
-    Some(pos)
-}
-
-/// The spectrum of one STFT column as a line: amplitude over frequency.
-fn column_spectrum(
-    ui: &mut Ui,
-    slot: Slot,
-    t: &openpid_analysis::StftOutput,
-    column: Option<usize>,
-    max: f64,
-    height: f32,
-) {
-    let nx = t.grid.x.len();
-    let y_max = if max > 0.0 {
-        max
-    } else {
-        openpid_analysis::render::robust_max(&t.grid.z)
-    };
-    let points: Vec<[f64; 2]> = column
-        .map(|c| {
-            t.grid
-                .y
-                .iter()
-                .enumerate()
-                .map(|(iy, f)| [*f, t.grid.z[iy * nx + c]])
-                .collect()
-        })
-        .unwrap_or_default();
-    let title = match column {
-        Some(c) => format!("{} spectrum at {:.2} s", slot.name(), t.grid.x[c]),
-        None => format!("{} spectrum", slot.name()),
-    };
-    ui.label(RichText::new(title.clone()).color(MUTED));
-    Plot::new(("stft-column", slot.name()))
-        .x_axis_label("frequency (Hz)")
-        .y_axis_label(t.unit.clone())
-        .height(height)
-        .include_y(0.0)
-        .include_y(y_max)
-        .allow_drag(false)
-        .allow_zoom(false)
-        .allow_scroll(false)
-        .show(ui, |pu| {
-            pu.line(Line::new(title, PlotPoints::from(points)).color(slot_color(slot)));
-        });
-}
-
-pub fn diagnostics(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
-    ui.separator();
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        for slot in app.loaded_slots() {
-            let Some(l) = app.loaded(slot) else { continue };
-            let Some(s) = l.current() else { continue };
-            ui.heading(format!("Slot {} — {}", slot.name(), s.firmware.revision));
-            if let Some(f) = l.fitness() {
-                fitness_card(ui, slot, f);
-            }
-            egui::Grid::new(("diag", slot.name()))
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.label(tr("profile"));
-                    ui.label(&s.profile_id);
-                    ui.end_row();
-                    ui.label(tr("samples"));
-                    ui.label(format!(
-                        "{} over {:.2} s, median dt {} µs, {} gaps",
-                        s.len(),
-                        s.timebase.duration_s(),
-                        s.timebase.median_dt_us,
-                        s.timebase.gaps.len()
-                    ));
-                    ui.end_row();
-                    ui.label(tr("frames"));
-                    ui.label(
-                        s.diagnostics
-                            .frames
-                            .iter()
-                            .map(|(k, v)| format!("{k}:{}", v.valid))
-                            .collect::<Vec<_>>()
-                            .join("  "),
-                    );
-                    ui.end_row();
-                    ui.label(tr("corrupt / desync / skipped bytes"));
-                    ui.label(format!(
-                        "{} / {} / {}",
-                        s.diagnostics.corrupt_frames,
-                        s.diagnostics.desync_frames,
-                        s.diagnostics.skipped_bytes
-                    ));
-                    ui.end_row();
-                    if let Some(pid) = &s.settings.pid {
-                        ui.label("PID roll / pitch / yaw");
-                        ui.label(format!(
-                            "{}/{}/{}  {}/{}/{}  {}/{}/{}",
-                            pid.roll.p,
-                            pid.roll.i,
-                            pid.roll.d,
-                            pid.pitch.p,
-                            pid.pitch.i,
-                            pid.pitch.d,
-                            pid.yaw.p,
-                            pid.yaw.i,
-                            pid.yaw.d
-                        ));
-                        ui.end_row();
-                    }
-                    if !s.diagnostics.unmapped_fields.is_empty() {
-                        ui.label(tr("unmapped fields"));
-                        ui.label(s.diagnostics.unmapped_fields.join(", "));
-                        ui.end_row();
-                    }
-                    for n in &s.diagnostics.notes {
-                        ui.label(tr("note"));
-                        ui.label(n);
-                        ui.end_row();
-                    }
-                });
-            ui.collapsing(format!("All {} headers", s.raw_headers.len()), |ui| {
-                egui::Grid::new(("headers", slot.name()))
-                    .striped(true)
-                    .show(ui, |ui| {
-                        for (k, v) in &s.raw_headers {
-                            ui.label(k);
-                            ui.label(v);
-                            ui.end_row();
-                        }
-                    });
-            });
-            ui.separator();
-        }
-    });
-}
-/// Slider state for the PID sliders tab.
-#[derive(Debug, Default)]
-pub struct SliderState {
-    /// Slot the sliders were loaded from, with its session index.
-    pub loaded_for: Option<(Slot, usize)>,
-    /// Current slider positions keyed by firmware parameter name.
-    pub values: openpid_core::SliderValues,
-}
-
-/// One row per slider: label, slider widget and the logged value.
-fn slider_grid(app: &mut App, ui: &mut Ui, defs: &[openpid_core::SliderDef]) {
-    let touch = app.touch_mode;
-    egui::Grid::new("sliders")
-        .num_columns(3)
-        .spacing([16.0, if touch { 14.0 } else { 6.0 }])
-        .show(ui, |ui| {
-            for d in defs {
-                let v = app
-                    .slider_state
-                    .values
-                    .entry(d.key.clone())
-                    .or_insert(d.value);
-                let l = ui.label(&d.label);
-                let step = if d.max - d.min <= 2.0 { 1.0 } else { 5.0 };
-                let mut slider = egui::Slider::new(v, d.min..=d.max)
-                    .step_by(step)
-                    .fixed_decimals(0);
-                if touch {
-                    slider = slider.trailing_fill(true);
-                }
-                ui.add_sized([360.0, if touch { 36.0 } else { 20.0 }], slider)
-                    .labelled_by(l.id);
-                let changed = (*v - d.value).abs() > f64::EPSILON;
-                ui.label(
-                    RichText::new(format!(
-                        "log {}{}",
-                        d.value,
-                        if changed { "  ⟵ changed" } else { "" }
-                    ))
-                    .color(if changed { ACCENT } else { MUTED }),
-                );
-                ui.end_row();
-            }
-        });
-}
-
-/// `P I D F` plus D-min/D-max as one monospace line.
-fn format_gains(g: &PidGains) -> String {
-    format!(
-        "P {:>3}  I {:>3}  D {:>3}  F {:>4}{}",
-        g.p,
-        g.i,
-        g.d,
-        g.f.map_or("-".into(), |v| v.to_string()),
-        g.d_min
-            .map(|v| format!("  Dmin {v}"))
-            .or_else(|| g.d_max.map(|v| format!("  Dmax {v}")))
-            .unwrap_or_default()
-    )
-}
-
-/// Computed vs. logged gains per axis.
-fn slider_gain_table(
-    ui: &mut Ui,
-    result: &openpid_core::SliderResult,
-    logged: Option<PerAxis<PidGains>>,
-) {
-    egui::Grid::new("slider_gains")
-        .num_columns(3)
-        .striped(true)
-        .spacing([24.0, 4.0])
-        .show(ui, |ui| {
-            ui.label(RichText::new(tr("axis")).strong());
-            ui.label(RichText::new(tr("from sliders")).strong());
-            ui.label(RichText::new(tr("logged")).strong());
-            ui.end_row();
-            for (name, now, was) in [
-                ("roll", result.pid.roll, logged.map(|l| l.roll)),
-                ("pitch", result.pid.pitch, logged.map(|l| l.pitch)),
-                ("yaw", result.pid.yaw, logged.map(|l| l.yaw)),
-            ] {
-                ui.label(name);
-                let differs = was.is_some_and(|w| (w.p, w.i, w.d) != (now.p, now.i, now.d));
-                ui.label(
-                    RichText::new(format_gains(&now))
-                        .monospace()
-                        .color(if differs { ACCENT } else { slot_color(Slot::A) }),
-                );
-                ui.label(
-                    RichText::new(was.map_or("-".into(), |w| format_gains(&w)))
-                        .monospace()
-                        .color(MUTED),
-                );
-                ui.end_row();
-            }
-        });
-}
-
-/// Filter cut-offs from the sliders as one summary line (empty when no filter slider applies).
-fn filter_summary(result: &openpid_core::SliderResult) -> String {
-    let mut filters = Vec::new();
-    if let Some((lo, hi)) = result.gyro_lpf1_hz {
-        filters.push(format!("gyro lpf1 {lo}–{hi} Hz"));
-    }
-    if let Some(v) = result.gyro_lpf2_hz {
-        filters.push(format!("gyro lpf2 {v} Hz"));
-    }
-    if let Some((lo, hi)) = result.dterm_lpf1_hz {
-        filters.push(format!("dterm lpf1 {lo}–{hi} Hz"));
-    }
-    if let Some(v) = result.dterm_lpf2_hz {
-        filters.push(format!("dterm lpf2 {v} Hz"));
-    }
-    filters.join("   ·   ")
-}
-
-pub fn sliders(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
-    ui.separator();
-    let first = app.first_loaded().unwrap_or(Slot::A);
-    let Some((session_idx, session)) = app
-        .loaded(first)
-        .and_then(|l| l.current().cloned().map(|s| (l.session, s)))
-    else {
-        ui.label(
-            RichText::new(tr(
-                "Load a Betaflight 4.3+ log into slot A to use the PID sliders.",
-            ))
-            .color(MUTED),
-        );
-        return;
-    };
-    let Some(model) = openpid_fmt_blackbox::slider_model_for(&session) else {
-        ui.label(
-            RichText::new(format!(
-                "{}: no simplified-tuning headers in this log.",
-                session.firmware.revision
-            ))
-            .color(MUTED),
-        );
-        return;
-    };
-    let defs = model.sliders();
-    if app.slider_state.loaded_for != Some((first, session_idx)) {
-        app.slider_state.loaded_for = Some((first, session_idx));
-        app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.value)).collect();
-    }
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(model.id()).strong());
-        ui.label(&session.firmware.revision);
-        if ui.button(tr("Reset to log")).clicked() {
-            app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.value)).collect();
-        }
-        if ui.button(tr("Firmware defaults")).clicked() {
-            app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.default)).collect();
-        }
-    });
-    slider_grid(app, ui, &defs);
-    let result = model.compute(&app.slider_state.values);
-    ui.separator();
-    slider_gain_table(ui, &result, model.logged());
-    let filters = filter_summary(&result);
-    if !filters.is_empty() {
-        ui.label(filters);
-    }
-    ui.separator();
-    ui.label(tr("Betaflight CLI to apply (select all, copy):"));
-    let mut cli = result.cli.join("\n");
-    ui.add(
-        egui::TextEdit::multiline(&mut cli)
-            .code_editor()
-            .desired_rows(6)
-            .desired_width(f32::INFINITY)
-            .interactive(true),
-    );
-}
-
 // ---------------------------------------------------------------------------
 
-/// Advice tab: the recommender's proposals with their evidence, and the
-/// Betaflight CLI commands that apply them.
-pub fn advice(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
-    ui.separator();
-    ui.horizontal_wrapped(|ui| {
-        let l = ui.label(tr("overshoot limit"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.recommend.targets.overshoot_warn_pct)
-                .speed(1.0)
-                .range(1.0..=100.0)
-                .suffix(" %"),
-        )
-        .labelled_by(l.id)
-        .on_hover_text(tr(
-            "the same target as on the Step tab (Settings → Targets)",
-        ));
-        let l = ui.label(tr("D step"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.recommend.d_step_pct)
-                .speed(1.0)
-                .range(1.0..=50.0)
-                .suffix(" %"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("peak prominence"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.recommend.peak_min_prominence_db)
-                .speed(0.5)
-                .range(1.0..=40.0)
-                .suffix(" dB"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("LPF headroom"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.recommend.lpf_headroom_db)
-                .speed(0.5)
-                .range(1.0..=40.0)
-                .suffix(" dB"),
-        )
-        .labelled_by(l.id);
-    });
-    ui.label(
-        RichText::new(tr(
-            "Rules are hints with their evidence, not an autotune: apply one change, fly, compare the new log.",
-        ))
-        .color(MUTED),
-    );
-    let params = app.tools.recommend.clone();
-    let slots: Vec<Slot> = app.visible_slots();
-    let results: Vec<SlotResult> = slots
-        .iter()
-        .map(|slot| (*slot, app.result(*slot, Kind::Recommend(params.clone()))))
-        .collect();
-    let w = panel_width(ui, slots.len());
-    let mut cli_anchor: Option<egui::Rect> = None;
-    egui::ScrollArea::both()
-        .id_salt("advice-panels")
-        .show(ui, |ui| {
-            ui.horizontal_top(|ui| {
-                for (slot, result) in results {
-                    ui.vertical(|ui| {
-                        ui.set_width(w - 8.0);
-                        match result {
-                            Some(Ok(o)) => {
-                                if let Output::Recommend(r) = o.as_ref()
-                                    && let Some(rect) = advice_slot(app, ui, slot, r)
-                                {
-                                    cli_anchor = Some(rect);
-                                }
-                            }
-                            Some(Err(e)) => show_error(ui, slot, &e),
-                            None => {
-                                ui.spinner();
-                            }
-                        }
-                    });
-                }
-            });
-        });
-    if let Some(rect) = cli_anchor {
-        app.anchors.insert("advice-cli", rect);
-    }
-}
-
-fn advice_slot(
-    app: &App,
-    ui: &mut Ui,
-    slot: Slot,
-    r: &openpid_analysis::RecommendOutput,
-) -> Option<egui::Rect> {
-    use openpid_core::Exporter as _;
-    let mut cli_rect: Option<egui::Rect> = None;
-    ui.label(
-        RichText::new(format!("{} {}", tr("Slot"), slot.name()))
-            .color(slot_color(slot))
-            .strong(),
-    );
-    {
-        let ui = &mut *ui;
-        {
-            ui.heading(tr("Proposals"));
-            if r.proposals.is_empty() {
-                ui.label(
-                    RichText::new(tr("nothing to change: every rule is satisfied")).color(MUTED),
-                );
-            } else {
-                egui::Grid::new(("proposals", slot.name()))
-                    .striped(true)
-                    .show(ui, |ui| {
-                        for p in &r.proposals {
-                            ui.label(RichText::new(&p.path).strong());
-                            ui.label(format!("{} -> {}", p.from.as_deref().unwrap_or("?"), p.to));
-                            ui.label(format!("{:.0} %", p.confidence * 100.0));
-                            ui.label(&p.rationale);
-                            ui.end_row();
-                        }
-                    });
-            }
-            ui.add_space(6.0);
-            ui.heading(tr("Evidence"));
-            egui::Grid::new(("findings", slot.name()))
-                .striped(true)
-                .show(ui, |ui| {
-                    for f in &r.findings {
-                        ui.label(if f.proposed { "*" } else { "-" });
-                        ui.label(
-                            RichText::new(format!(
-                                "{}{}",
-                                f.rule,
-                                f.axis.map_or(String::new(), |a| format!(" {}", a.name()))
-                            ))
-                            .color(MUTED),
-                        );
-                        ui.label(&f.text);
-                        ui.end_row();
-                    }
-                });
-            if !r.proposals.is_empty()
-                && let Some(session) = app.loaded(slot).and_then(Loaded::current)
-            {
-                ui.add_space(6.0);
-                let l = ui.label(tr("Betaflight CLI to apply (select all, copy):"));
-                let mut cli =
-                    match openpid_fmt_blackbox::BetaflightCli.export(session, &r.proposals) {
-                        Ok(text) => text,
-                        Err(e) => format!("# {e}"),
-                    };
-                let edit = ui.add(
-                    egui::TextEdit::multiline(&mut cli)
-                        .code_editor()
-                        .desired_rows(6)
-                        .desired_width(f32::INFINITY)
-                        .interactive(true),
-                );
-                cli_rect = Some(edit.rect);
-                edit.labelled_by(l.id);
-            }
-        }
-    }
-    cli_rect
+/// The caption of a box of commands: "Betaflight CLI: commands to apply
+/// (select all, copy)".
+pub(crate) fn apply_label(target: &str) -> String {
+    format!("{target}: {}", tr("commands to apply (select all, copy)"))
 }
 
 // ---------------------------------------------------------------------------
 
 /// The start screen: shown instead of a tab while nothing is loaded
-/// (docs/design/onboarding-tour): open a log, the sample log, the tour,
-/// recent files, the user guide.
+/// (docs/design/onboarding-tour, styled per docs/design/app-shell): a card
+/// with the drop zone and "Open log…", the sample log, the tour, recent
+/// files and the user guide.
 pub fn start_screen(app: &mut App, ui: &mut Ui) {
-    const CARD_W: f32 = 520.0;
+    const CARD_W: f32 = 560.0;
     let touch = app.touch_mode;
     let avail = ui.available_rect_before_wrap();
-    let x = avail.center().x - CARD_W / 2.0;
-    let y = (avail.top() + avail.height() * 0.18).max(avail.top() + 8.0);
-    let card = egui::Rect::from_min_size(
+    let w = CARD_W.min(avail.width());
+    let x = avail.center().x - w / 2.0;
+    let y = (avail.top() + avail.height() * 0.10).max(avail.top() + 8.0);
+    let area = egui::Rect::from_min_size(
         egui::pos2(x.max(avail.left()), y),
-        egui::vec2(
-            CARD_W.min(avail.width()),
-            avail.height() - (y - avail.top()),
-        ),
+        egui::vec2(w, avail.bottom() - y),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
-            .max_rect(card)
+            .max_rect(area)
             .layout(egui::Layout::top_down(egui::Align::Center)),
     );
     let ui = &mut child;
-    ui.heading(RichText::new("OpenPID").size(32.0).strong());
+    let mut job = egui::text::LayoutJob::default();
+    let font = egui::FontId::proportional(34.0);
+    job.append(
+        "Open",
+        0.0,
+        egui::TextFormat::simple(font.clone(), ui.visuals().strong_text_color()),
+    );
+    job.append("PID", 0.0, egui::TextFormat::simple(font, ACCENT));
+    ui.label(job);
     ui.label(
         RichText::new(tr(
             "Blackbox analysis for tuning: noise, filters, step response, advice.",
         ))
         .color(MUTED),
     );
-    ui.add_space(16.0);
-    ui.label(tr("Drop a log here, or"));
-    ui.add_space(6.0);
-    let size = if touch {
-        egui::vec2(220.0, 44.0)
-    } else {
-        egui::vec2(200.0, 30.0)
-    };
-    ui.horizontal(|ui| {
-        ui.add_space((ui.available_width() - 2.0 * size.x - 8.0).max(0.0) / 2.0);
-        if ui
-            .add(egui::Button::new(format!("{}…", tr("Open log"))).min_size(size))
-            .on_hover_text(shortcuts::keys_of(ui.ctx(), Action::OpenLog))
-            .clicked()
-            && let Some(slot) = app.free_slot()
-        {
-            app.dialog = Some(crate::app::Dialog::OpenLog(slot));
-        }
-        if ui
-            .add(egui::Button::new(tr("Open sample log")).min_size(size))
-            .on_hover_text(tr("a synthetic 30 s flight: no file needed"))
-            .clicked()
-        {
-            app.open_sample();
-        }
-    });
-    ui.add_space(4.0);
-    if ui
-        .add(egui::Button::new(tr("Start the tour")).min_size(size))
-        .on_hover_text(tr("seven steps through the tuning loop, on the sample log"))
-        .clicked()
-    {
-        app.start_tour();
-    }
-    if !app.prefs.recent.is_empty() {
-        ui.add_space(16.0);
-        ui.label(RichText::new(tr("Recent files")).strong());
-        let recent = app.prefs.recent.clone();
-        for r in &recent {
-            let name = r
-                .path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            if ui
-                .add(
-                    egui::Button::new(format!("{name}   {}", r.opened))
-                        .min_size(egui::vec2(CARD_W - 40.0, if touch { 44.0 } else { 24.0 })),
-                )
-                .on_hover_text(r.path.display().to_string())
-                .clicked()
-                && let Some(slot) = app.free_slot()
-            {
-                app.open(slot, r.path.clone());
+    ui.add_space(18.0);
+    crate::theme::card(ui)
+        .inner_margin(egui::Margin::same(16))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            drop_zone(app, ui, touch);
+            ui.add_space(12.0);
+            let size = if touch {
+                egui::vec2(200.0, 40.0)
+            } else {
+                egui::vec2(180.0, 28.0)
+            };
+            ui.horizontal(|ui| {
+                ui.add_space((ui.available_width() - 2.0 * size.x - 8.0).max(0.0) / 2.0);
+                if ui
+                    .add(egui::Button::new(tr("Open sample log")).min_size(size))
+                    .on_hover_text(tr("a synthetic 30 s flight: no file needed"))
+                    .clicked()
+                {
+                    app.open_sample();
+                }
+                if ui
+                    .add(egui::Button::new(tr("Start the tour")).min_size(size))
+                    .on_hover_text(tr("seven steps through the tuning loop, on the sample log"))
+                    .clicked()
+                {
+                    app.start_tour();
+                }
+            });
+            if !app.prefs.recent.is_empty() {
+                ui.add_space(14.0);
+                ui.separator();
+                ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.label(RichText::new(tr("Recent files")).strong());
+                    let recent = app.prefs.recent.clone();
+                    for r in &recent {
+                        recent_row(app, ui, r, touch);
+                    }
+                });
             }
-        }
-    }
-    ui.add_space(16.0);
+        });
+    ui.add_space(12.0);
     ui.hyperlink_to(
         tr("User guide"),
         "https://github.com/Rufics/OpenPID/blob/master/docs/USER-GUIDE.md",
     );
 }
 
-/// Settings tab: theme, touch mode and display units, saved on every change.
-pub fn settings(app: &mut App, ui: &mut Ui) {
-    egui::ScrollArea::vertical()
-        .id_salt("settings")
-        .show(ui, |ui| settings_body(app, ui));
-}
-
-fn settings_body(app: &mut App, ui: &mut Ui) {
-    let mut changed = false;
-    ui.heading(tr("Appearance"));
-    ui.horizontal(|ui| {
-        ui.label(tr("Theme"));
-        changed |= ui
-            .radio_value(&mut app.prefs.theme, Theme::Dark, tr("Dark"))
-            .changed();
-        changed |= ui
-            .radio_value(&mut app.prefs.theme, Theme::Light, tr("Light"))
-            .changed();
-    });
-    ui.horizontal(|ui| {
-        ui.label(tr("Language"));
-        for lang in Lang::ALL {
-            changed |= ui
-                .radio_value(&mut app.prefs.lang, lang, lang.native_name())
-                .changed();
-        }
-    });
-    if ui
-        .checkbox(
-            &mut app.prefs.touch_mode,
-            tr("Touch mode (larger controls, touch gestures)"),
-        )
-        .changed()
-    {
-        app.touch_mode = app.prefs.touch_mode;
-        changed = true;
+/// The dashed drop zone with the primary "Open log…" button in it; it
+/// lights up in the accent while a file is dragged over the window.
+fn drop_zone(app: &mut App, ui: &mut Ui, touch: bool) {
+    let h = if touch { 170.0 } else { 150.0 };
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::hover());
+    let dropping = ui.ctx().input(|i| !i.raw.hovered_files.is_empty());
+    if dropping {
+        ui.painter()
+            .rect_filled(rect, crate::theme::CARD_RADIUS, ACCENT.gamma_multiply(0.10));
     }
-    ui.add_space(8.0);
-    ui.heading(tr("Units"));
-    ui.horizontal(|ui| {
-        ui.label(tr("Angular rate"));
-        changed |= ui
-            .radio_value(&mut app.prefs.rate_unit, RateUnit::DegPerS, "deg/s")
-            .changed();
-        changed |= ui
-            .radio_value(&mut app.prefs.rate_unit, RateUnit::RadPerS, "rad/s")
-            .changed();
-    });
-    ui.horizontal(|ui| {
-        ui.label(tr("Acceleration"));
-        changed |= ui
-            .radio_value(&mut app.prefs.acc_unit, AccUnit::G, "g")
-            .changed();
-        changed |= ui
-            .radio_value(&mut app.prefs.acc_unit, AccUnit::MPerS2, "m/s²")
-            .changed();
-    });
-    ui.label(
-        RichText::new(tr(
-            "Units apply to the log viewer traces; analyses stay in deg/s.",
-        ))
-        .color(MUTED),
+    crate::theme::dashed_outline(ui, rect);
+    let mut inner = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink(16.0))
+            .layout(egui::Layout::top_down(egui::Align::Center)),
     );
-    ui.add_space(8.0);
-    let mut targets_changed = false;
-    egui::CollapsingHeader::new(tr("Targets"))
-        .default_open(false)
-        .show(ui, |ui| {
-            ui.label(
-                RichText::new(tr(
-                    "Thresholds behind the step-response verdicts and the Advice overshoot rule.",
-                ))
-                .color(MUTED),
-            );
-            ui.horizontal_wrapped(|ui| {
-                ui.label(tr("Preset"));
-                let current = TargetPreset::matching(&app.tools.recommend.targets);
-                for p in TargetPreset::ALL {
-                    if ui
-                        .selectable_label(current == Some(p), tr(p.name()))
-                        .clicked()
-                    {
-                        app.tools.recommend.targets = p.targets();
-                        targets_changed = true;
-                    }
-                }
-                if current.is_none() {
-                    ui.label(RichText::new(tr("Custom")).color(MUTED));
-                }
-            });
-            egui::Grid::new("targets").show(ui, |ui| {
-                let t = &mut app.tools.recommend.targets;
-                let mut field = |ui: &mut Ui,
-                                 label: &'static str,
-                                 v: &mut f64,
-                                 speed: f64,
-                                 range: std::ops::RangeInclusive<f64>,
-                                 suffix: &str| {
-                    let l = ui.label(tr(label));
-                    let r = ui
-                        .add(
-                            egui::DragValue::new(v)
-                                .speed(speed)
-                                .range(range)
-                                .suffix(suffix),
-                        )
-                        .labelled_by(l.id);
-                    targets_changed |= r.changed();
-                    ui.end_row();
-                };
-                field(
-                    ui,
-                    "overshoot warn",
-                    &mut t.overshoot_warn_pct,
-                    1.0,
-                    1.0..=100.0,
-                    " %",
-                );
-                field(
-                    ui,
-                    "overshoot fail",
-                    &mut t.overshoot_fail_pct,
-                    1.0,
-                    1.0..=200.0,
-                    " %",
-                );
-                field(ui, "rise max", &mut t.rise_ms_max, 1.0, 5.0..=300.0, " ms");
-                field(
-                    ui,
-                    "settling max",
-                    &mut t.settling_ms_max,
-                    1.0,
-                    10.0..=500.0,
-                    " ms",
-                );
-                field(
-                    ui,
-                    "final tolerance",
-                    &mut t.final_tol,
-                    0.01,
-                    0.01..=0.5,
-                    "",
-                );
-                let mut windows = |ui: &mut Ui, label: &'static str, v: &mut usize| {
-                    let l = ui.label(tr(label));
-                    let r = ui
-                        .add(egui::DragValue::new(v).speed(1.0).range(1..=100))
-                        .labelled_by(l.id);
-                    targets_changed |= r.changed();
-                    ui.end_row();
-                };
-                windows(ui, "min windows ok", &mut t.min_windows_ok);
-                windows(ui, "min windows weak", &mut t.min_windows_weak);
-            });
-        });
-    if targets_changed {
-        app.prefs.targets = app.tools.recommend.targets;
-        changed = true;
-    }
-    ui.add_space(8.0);
-    if ui.button(tr("Reset to defaults")).clicked() {
-        app.prefs = Prefs::default();
-        app.touch_mode = app.prefs.touch_mode;
-        app.tools.recommend.targets = app.prefs.targets;
-        changed = true;
-    }
-    ui.add_space(8.0);
-    match &app.prefs_path {
-        Some(p) => ui.label(RichText::new(format!("Saved in {}", p.display())).color(MUTED)),
-        None => ui.label(
-            RichText::new(tr(
-                "No configuration directory: settings last until the app closes.",
-            ))
-            .color(MUTED),
-        ),
-    };
-    ui.add_space(8.0);
-    ui.horizontal_wrapped(|ui| {
-        changed |= ui
-            .checkbox(
-                &mut app.prefs.show_tour,
-                tr("Show the tour on the first opened log"),
-            )
-            .changed();
-        if ui.button(tr("Reset first-run state")).clicked() {
-            app.prefs.tour_done = false;
-            changed = true;
-        }
-        if ui.button(tr("Show tour")).clicked() {
-            app.start_tour();
-        }
+    let ui = &mut inner;
+    ui.add_space(6.0);
+    paint_tray(ui, if dropping { ACCENT } else { MUTED });
+    ui.add_space(6.0);
+    ui.label(
+        RichText::new(tr("Drop a log here, or"))
+            .size(15.0)
+            .color(if dropping {
+                ACCENT
+            } else {
+                ui.visuals().text_color()
+            }),
+    );
+    ui.add_space(6.0);
+    let open = egui::Button::new(
+        RichText::new(format!("{}…", tr("Open log")))
+            .strong()
+            .color(Color32::WHITE),
+    )
+    .fill(ACCENT)
+    .min_size(if touch {
+        egui::vec2(200.0, 40.0)
+    } else {
+        egui::vec2(180.0, 30.0)
     });
-    if changed {
-        app.save_prefs();
-    }
-}
-
-// ---------------------------------------------------------------------------
-
-/// Low-pass topology names for the what-if editor.
-const LOWPASS_KINDS: [(LowpassKind, &str); 4] = [
-    (LowpassKind::Pt1, "PT1"),
-    (LowpassKind::Biquad, "biquad"),
-    (LowpassKind::Pt2, "PT2"),
-    (LowpassKind::Pt3, "PT3"),
-];
-
-fn kind_name(k: &LowpassKind) -> String {
-    LOWPASS_KINDS
-        .iter()
-        .find(|(kind, _)| kind == k)
-        .map_or_else(|| format!("{k:?}"), |(_, n)| (*n).to_string())
-}
-
-/// A what-if number: shows the log's value until the user edits it, then the
-/// override (label turns accent-coloured).
-#[allow(clippy::too_many_arguments, reason = "one widget, seven knobs")]
-fn whatif_value(
-    ui: &mut Ui,
-    label: &str,
-    value: &mut Option<f64>,
-    log_value: f64,
-    speed: f64,
-    range: std::ops::RangeInclusive<f64>,
-    suffix: &str,
-    integer: bool,
-) {
-    let colour = if value.is_some() { ACCENT } else { MUTED };
-    let l = ui.label(RichText::new(label).color(colour));
-    let mut v = value.unwrap_or(log_value);
-    let mut w = egui::DragValue::new(&mut v)
-        .speed(speed)
-        .range(range)
-        .suffix(suffix);
-    if integer {
-        w = w.max_decimals(0);
-    }
     if ui
-        .add(w)
-        .labelled_by(l.id)
-        .on_hover_text(format!("log: {log_value}"))
-        .changed()
+        .add(open)
+        .on_hover_text(shortcuts::keys_of(ui.ctx(), Action::OpenLog))
+        .clicked()
+        && let Some(slot) = app.free_slot()
     {
-        *value = Some(if integer { v.round() } else { v });
+        app.dialog = Some(crate::app::Dialog::OpenLog(slot));
     }
-}
-
-/// A what-if low-pass topology.
-fn whatif_kind(
-    ui: &mut Ui,
-    id: &str,
-    value: &mut Option<LowpassKind>,
-    log_kind: Option<&LowpassKind>,
-) {
-    let current: Option<LowpassKind> = value.clone().or_else(|| log_kind.cloned());
-    let l = ui.label(tr("type"));
-    let combo = egui::ComboBox::from_id_salt(id)
-        .selected_text(current.as_ref().map_or_else(|| "—".to_string(), kind_name))
-        .width(80.0)
-        .show_ui(ui, |ui| {
-            for (kind, name) in &LOWPASS_KINDS {
-                if ui
-                    .selectable_label(current.as_ref() == Some(kind), *name)
-                    .clicked()
-                {
-                    *value = Some(kind.clone());
-                }
-            }
-        });
-    combo.response.labelled_by(l.id);
-}
-
-/// Topology, static cutoff and dynamic range of a low-pass as flown (zeros when absent).
-fn lowpass_seed(l: Option<&LowpassModel>) -> (Option<LowpassKind>, f64, f64, f64) {
-    match l {
-        Some(l) => (
-            Some(l.kind.clone()),
-            l.cutoff_hz,
-            l.dynamic.as_ref().map_or(0.0, |d| d.min_hz),
-            l.dynamic.as_ref().map_or(0.0, |d| d.max_hz),
-        ),
-        None => (None, 0.0, 0.0, 0.0),
-    }
-}
-
-/// The what-if editor, seeded with the chain as flown (`seed`) when a result exists.
-fn whatif_editor(ui: &mut Ui, o: &mut FilterOverrides, seed: Option<&ChainModel>) {
-    let (k1, hz1, dmin, dmax) = lowpass_seed(seed.and_then(|m| m.lowpass1.as_ref()));
-    let (k2, hz2, _, _) = lowpass_seed(seed.and_then(|m| m.lowpass2.as_ref()));
-    let (k1, k2) = (k1.as_ref(), k2.as_ref());
-    let rpm = seed.and_then(|m| m.rpm_notch.as_ref());
-    let dn = seed.and_then(|m| m.dyn_notch.as_ref());
-    let notch = seed.and_then(|m| m.notches.first());
-    ui.horizontal_wrapped(|ui| {
-        ui.label("LPF1");
-        whatif_kind(ui, "fsim_lpf1_kind", &mut o.lpf1_type, k1);
-        whatif_value(
-            ui,
-            "cutoff",
-            &mut o.lpf1_hz,
-            hz1,
-            5.0,
-            0.0..=1000.0,
-            " Hz",
-            false,
-        );
-        let mut dyn_min = o.lpf1_dyn_hz.map(|d| d.0);
-        let mut dyn_max = o.lpf1_dyn_hz.map(|d| d.1);
-        whatif_value(
-            ui,
-            "dyn min",
-            &mut dyn_min,
-            dmin,
-            5.0,
-            0.0..=1000.0,
-            " Hz",
-            false,
-        );
-        whatif_value(
-            ui,
-            "dyn max",
-            &mut dyn_max,
-            dmax,
-            5.0,
-            0.0..=1000.0,
-            " Hz",
-            false,
-        );
-        if dyn_min.is_some() || dyn_max.is_some() {
-            o.lpf1_dyn_hz = Some((dyn_min.unwrap_or(dmin), dyn_max.unwrap_or(dmax)));
-        }
-        ui.separator();
-        ui.label("LPF2");
-        whatif_kind(ui, "fsim_lpf2_kind", &mut o.lpf2_type, k2);
-        whatif_value(
-            ui,
-            "cutoff",
-            &mut o.lpf2_hz,
-            hz2,
-            5.0,
-            0.0..=1000.0,
-            " Hz",
-            false,
-        );
-    });
-    ui.horizontal_wrapped(|ui| {
-        ui.label("RPM notch");
-        let mut harmonics = o.rpm_harmonics.map(f64::from);
-        whatif_value(
-            ui,
-            "harmonics",
-            &mut harmonics,
-            rpm.map_or(0.0, |r| f64::from(r.harmonics)),
-            1.0,
-            0.0..=10.0,
-            "",
-            true,
-        );
-        o.rpm_harmonics = harmonics.map(|h| h as u32);
-        whatif_value(
-            ui,
-            "Q",
-            &mut o.rpm_q,
-            rpm.map_or(5.0, |r| r.q),
-            0.1,
-            0.1..=20.0,
-            "",
-            false,
-        );
-        whatif_value(
-            ui,
-            "min",
-            &mut o.rpm_min_hz,
-            rpm.map_or(100.0, |r| r.min_hz),
-            5.0,
-            0.0..=500.0,
-            " Hz",
-            false,
-        );
-        ui.separator();
-        ui.label("Dyn notch");
-        let mut count = o.dyn_count.map(f64::from);
-        whatif_value(
-            ui,
-            "count",
-            &mut count,
-            dn.map_or(0.0, |d| f64::from(d.count)),
-            1.0,
-            0.0..=8.0,
-            "",
-            true,
-        );
-        o.dyn_count = count.map(|c| c as u32);
-        whatif_value(
-            ui,
-            "Q",
-            &mut o.dyn_q,
-            dn.map_or(3.0, |d| d.q),
-            0.1,
-            0.1..=20.0,
-            "",
-            false,
-        );
-        whatif_value(
-            ui,
-            "min",
-            &mut o.dyn_min_hz,
-            dn.map_or(150.0, |d| d.min_hz),
-            5.0,
-            0.0..=1000.0,
-            " Hz",
-            false,
-        );
-        whatif_value(
-            ui,
-            "max",
-            &mut o.dyn_max_hz,
-            dn.map_or(600.0, |d| d.max_hz),
-            5.0,
-            0.0..=1000.0,
-            " Hz",
-            false,
-        );
-        ui.separator();
-        ui.label("Notch");
-        whatif_value(
-            ui,
-            "centre",
-            &mut o.notch_hz,
-            notch.map_or(0.0, |n| n.center_hz),
-            5.0,
-            0.0..=1000.0,
-            " Hz",
-            false,
-        );
-        whatif_value(
-            ui,
-            "cutoff",
-            &mut o.notch_cutoff_hz,
-            notch.map_or(0.0, |n| n.cutoff_hz),
-            5.0,
-            0.0..=1000.0,
-            " Hz",
-            false,
-        );
-    });
-}
-
-/// Filter Sim: the unfiltered gyro through the modelled chain, validated
-/// against the logged filtered gyro, and through the what-if chain.
-pub fn filter_sim(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
-    ui.separator();
-    ui.horizontal_wrapped(|ui| {
-        axis_selector(ui, &mut app.tools.axis);
-        app.tools.filter_sim.axis = app.tools.axis;
-        ui.separator();
-        let l = ui.label(tr("segment"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.filter_sim.segment_s)
-                .speed(0.01)
-                .range(0.02..=2.0)
-                .suffix(" s"),
-        )
-        .labelled_by(l.id);
-        ui.label(tr("max"));
-        let mut max = app.tools.filter_sim.max_hz.unwrap_or(0.0);
-        if ui
-            .add(
-                egui::DragValue::new(&mut max)
-                    .speed(10.0)
-                    .range(0.0..=8000.0)
-                    .suffix(" Hz"),
-            )
-            .changed()
-        {
-            app.tools.filter_sim.max_hz = if max > 0.0 { Some(max) } else { None };
-        }
-        if !app.tools.filter_sim.overrides.is_empty() && ui.button(tr("Reset to log")).clicked() {
-            app.tools.filter_sim.overrides = FilterOverrides::default();
-        }
-    });
-    let axis = app.tools.axis;
-    let params = app.tools.filter_sim.clone();
-    let mut outputs: Vec<(Slot, Arc<Output>)> = Vec::new();
-    for slot in app.visible_slots() {
-        let has_raw = app.loaded(slot).and_then(Loaded::current).is_some_and(|s| {
-            s.channel(&ChannelId::Gyro {
-                axis,
-                stage: GyroStage::Raw,
-            })
-            .is_some()
-        });
-        if app.loaded(slot).is_some() && !has_raw {
-            ui.label(
-                RichText::new(format!(
-                    "{}: no unfiltered gyro in this log; {}",
-                    slot.name(),
-                    raw_gyro_fix(app, slot)
-                ))
-                .color(MUTED),
-            );
-            continue;
-        }
-        if !has_raw {
-            continue;
-        }
-        match app.result(slot, Kind::FilterSim(params.clone())) {
-            Some(Ok(o)) => outputs.push((slot, o)),
-            Some(Err(e)) => show_error(ui, slot, &e),
-            None => {
-                ui.spinner();
-            }
-        }
-    }
-    let seed: Option<ChainModel> = outputs.iter().find_map(|(_, o)| match o.as_ref() {
-        Output::FilterSim(f) => Some(f.model.clone()),
-        _ => None,
-    });
-    whatif_editor(ui, &mut app.tools.filter_sim.overrides, seed.as_ref());
-    for (slot, o) in &outputs {
-        let Output::FilterSim(f) = o.as_ref() else {
-            continue;
-        };
-        ui.label(
-            RichText::new(format!("{}: {}", slot.name(), f.description.join(" · ")))
-                .color(slot_color(*slot)),
-        );
-        let fit = match &f.fit {
-            Some(fit) => format!(
-                "fit: residual {:.0} % of the filtered RMS (unfiltered {:.0} %), delay {:+.1} ms",
-                fit.residual_rel * 100.0,
-                fit.unfiltered_rel * 100.0,
-                fit.delay_ms
-            ),
-            None => "no gyro.filtered in the log to validate against".to_string(),
-        };
-        ui.label(
-            RichText::new(format!(
-                "{}: {fit}; throttle {}, {} motor(s) with rpm",
-                slot.name(),
-                if f.throttle_driven {
-                    "drives LPF1"
-                } else {
-                    "not logged"
-                },
-                f.motors
-            ))
+    ui.add_space(4.0);
+    ui.label(
+        RichText::new(".bbl  ·  .bfl  ·  .txt  —  Betaflight, INAV, EmuFlight, Rotorflight")
+            .size(11.5)
             .color(MUTED),
-        );
+    );
+}
+
+/// A tray with an arrow into it: the drop zone's icon.
+fn paint_tray(ui: &mut Ui, colour: Color32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(36.0, 28.0), egui::Sense::hover());
+    let p = ui.painter();
+    let s = egui::Stroke::new(1.8, colour);
+    let (l, r, t, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
+    p.add(egui::Shape::line(
+        vec![
+            egui::pos2(l + 2.0, b - 10.0),
+            egui::pos2(l + 2.0, b - 1.0),
+            egui::pos2(r - 2.0, b - 1.0),
+            egui::pos2(r - 2.0, b - 10.0),
+        ],
+        s,
+    ));
+    let cx = rect.center().x;
+    p.line_segment([egui::pos2(cx, t + 1.0), egui::pos2(cx, b - 7.0)], s);
+    p.add(egui::Shape::line(
+        vec![
+            egui::pos2(cx - 6.0, b - 13.0),
+            egui::pos2(cx, b - 7.0),
+            egui::pos2(cx + 6.0, b - 13.0),
+        ],
+        s,
+    ));
+}
+
+/// One recent file: the name, its folder in muted text and when it was
+/// opened; a click opens it.
+fn recent_row(app: &mut App, ui: &mut Ui, r: &crate::prefs::RecentFile, touch: bool) {
+    let name = r
+        .path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let h = if touch { 44.0 } else { 28.0 };
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::click());
+    resp.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::Role::Button, true, format!("{name}   {}", r.opened))
+    });
+    let v = ui.visuals();
+    if resp.hovered() {
+        ui.painter()
+            .rect_filled(rect, 6.0, v.widgets.hovered.weak_bg_fill);
     }
-    let h = ui.available_height();
-    let whatif = !params.overrides.is_empty();
-    Plot::new("fsim-psd")
-        .legend(Legend::default())
-        .x_axis_label("frequency (Hz)")
-        .y_axis_label("dB")
-        .height(h * 0.55)
-        .show(ui, |pu| {
-            for (slot, o) in &outputs {
-                let Output::FilterSim(f) = o.as_ref() else {
-                    continue;
-                };
-                let line = |name: String, ys: &[f64]| {
-                    let pts: Vec<[f64; 2]> = f.freq.iter().zip(ys).map(|(x, y)| [*x, *y]).collect();
-                    Line::new(name, PlotPoints::from(pts))
-                };
-                pu.line(
-                    line(format!("{} raw", slot.name()), &f.psd_raw_db)
-                        .color(slot_color(*slot).gamma_multiply(0.45))
-                        .width(1.0),
-                );
-                if let Some(l) = &f.psd_logged_db {
-                    pu.line(
-                        line(format!("{} logged filtered", slot.name()), l)
-                            .color(slot_color(*slot))
-                            .width(1.5),
-                    );
-                }
-                if whatif {
-                    pu.line(
-                        line(format!("{} sim as flown", slot.name()), &f.psd_as_flown_db)
-                            .color(slot_color(*slot))
-                            .style(LineStyle::dashed_loose())
-                            .width(1.0),
-                    );
-                }
-                pu.line(
-                    line(
-                        format!(
-                            "{} sim{}",
-                            slot.name(),
-                            if whatif { " what-if" } else { "" }
-                        ),
-                        &f.psd_sim_db,
-                    )
-                    .color(sim_color(*slot))
-                    .width(1.5),
-                );
-            }
-        });
-    let px = ui.available_width() as usize;
-    Plot::new("fsim-time")
-        .legend(Legend::default())
-        .x_axis_label("time (s)")
-        .y_axis_label("deg/s")
-        .height(h * 0.45 - 8.0)
-        .show(ui, |pu| {
-            for (slot, o) in &outputs {
-                let Output::FilterSim(f) = o.as_ref() else {
-                    continue;
-                };
-                let series: Vec<(String, &[f64], Color32, f32)> = [
-                    Some((
-                        format!("{} raw", slot.name()),
-                        f.raw.as_slice(),
-                        slot_color(*slot).gamma_multiply(0.45),
-                        1.0,
-                    )),
-                    f.logged.as_deref().map(|l| {
-                        (
-                            format!("{} logged filtered", slot.name()),
-                            l,
-                            slot_color(*slot),
-                            1.2,
-                        )
-                    }),
-                    Some((
-                        format!("{} sim", slot.name()),
-                        f.sim.as_slice(),
-                        sim_color(*slot),
-                        1.2,
-                    )),
-                ]
-                .into_iter()
-                .flatten()
-                .collect();
-                for (name, ys, colour, width) in series {
-                    let pts = decimate(&f.time_s, ys, |_| true, px.max(100) * 2);
-                    pu.line(
-                        Line::new(name, PlotPoints::from(pts))
-                            .color(colour)
-                            .width(width),
-                    );
-                }
-            }
-        });
+    let p = ui.painter();
+    let cy = rect.center().y;
+    p.text(
+        egui::pos2(rect.left() + 8.0, cy),
+        egui::Align2::LEFT_CENTER,
+        &name,
+        egui::FontId::proportional(13.5),
+        v.strong_text_color(),
+    );
+    p.text(
+        egui::pos2(rect.right() - 8.0, cy),
+        egui::Align2::RIGHT_CENTER,
+        &r.opened,
+        egui::FontId::proportional(12.0),
+        MUTED,
+    );
+    if resp.on_hover_text(r.path.display().to_string()).clicked()
+        && let Some(slot) = app.free_slot()
+    {
+        app.open(slot, r.path.clone());
+    }
 }
 
 // ---------------------------------------------------------------------------
-
-/// Motor noise: a table of every motor's harmonic amplitudes on the gyro and
-/// the spectrum with the harmonics marked per motor.
-pub fn motor_noise(app: &mut App, ui: &mut Ui) {
-    slot_headers(app, ui);
-    ui.separator();
-    ui.horizontal_wrapped(|ui| {
-        if axis_selector(ui, &mut app.tools.axis) {
-            app.tools.motor_noise.channel = ChannelId::Gyro {
-                axis: app.tools.axis,
-                stage: GyroStage::Raw,
-            };
-        }
-        ui.separator();
-        let l = ui.label(tr("segment"));
-        ui.add(
-            egui::DragValue::new(&mut app.tools.motor_noise.segment_s)
-                .speed(0.01)
-                .range(0.05..=2.0)
-                .suffix(" s"),
-        )
-        .labelled_by(l.id);
-        let l = ui.label(tr("harmonics"));
-        ui.add(egui::DragValue::new(&mut app.tools.motor_noise.harmonics).range(1..=8))
-            .labelled_by(l.id);
-    });
-    let axis = app.tools.axis;
-    let params = app.tools.motor_noise.clone();
-    let mut outputs: Vec<(Slot, Arc<Output>)> = Vec::new();
-    for slot in app.visible_slots() {
-        let has_raw = app.loaded(slot).and_then(Loaded::current).is_some_and(|s| {
-            s.channel(&ChannelId::Gyro {
-                axis,
-                stage: GyroStage::Raw,
-            })
-            .is_some()
-        });
-        if app.loaded(slot).is_some() && !has_raw {
-            ui.label(
-                RichText::new(format!(
-                    "{}: no unfiltered gyro in this log (the filtered one has the motor peaks removed); {}",
-                    slot.name(),
-                    raw_gyro_fix(app, slot)
-                ))
-                .color(MUTED),
-            );
-            continue;
-        }
-        if !has_raw {
-            continue;
-        }
-        match app.result(slot, Kind::MotorNoise(params.clone())) {
-            Some(Ok(o)) => outputs.push((slot, o)),
-            Some(Err(e)) => show_error(ui, slot, &e),
-            None => {
-                ui.spinner();
-            }
-        }
-    }
-    let w = panel_width(ui, outputs.len());
-    egui::ScrollArea::horizontal()
-        .id_salt("motor-panels")
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                for (slot, o) in &outputs {
-                    let Output::MotorNoise(m) = o.as_ref() else {
-                        continue;
-                    };
-                    ui.vertical(|ui| {
-                        ui.set_width(w - 8.0);
-                        ui.label(
-                            RichText::new(format!(
-                                "{}: {} ({}), rpm {}, {} frames{}",
-                                slot.name(),
-                                m.channel.key(),
-                                m.unit,
-                                m.rpm_source,
-                                m.frames,
-                                m.loudest
-                                    .filter(|_| m.motors.len() > 1)
-                                    .map_or(String::new(), |i| format!(", loudest M{}", i + 1))
-                            ))
-                            .color(slot_color(*slot)),
-                        );
-                        egui::Grid::new(("motor-noise", slot.name()))
-                            .striped(true)
-                            .show(ui, |ui| {
-                                ui.label(RichText::new(tr("motor")).strong());
-                                ui.label(RichText::new(tr("rpm")).strong());
-                                for k in 1..=params.harmonics {
-                                    ui.label(RichText::new(format!("×{k} amp (ratio)")).strong());
-                                }
-                                ui.label(RichText::new(tr("total")).strong());
-                                ui.end_row();
-                                for motor in &m.motors {
-                                    let loud = m.loudest == Some(motor.idx) && m.motors.len() > 1;
-                                    let colour = if loud {
-                                        ACCENT
-                                    } else {
-                                        motor_color(usize::from(motor.idx))
-                                    };
-                                    ui.label(
-                                        RichText::new(format!("M{}", motor.idx + 1)).color(colour),
-                                    );
-                                    ui.label(format!("{:.0}", motor.mean_rpm));
-                                    for h in &motor.harmonics {
-                                        let text = format!("{:.2} ({:.2})", h.amplitude, h.ratio);
-                                        ui.label(if h.ratio > 1.3 {
-                                            RichText::new(text).color(ACCENT)
-                                        } else {
-                                            RichText::new(text)
-                                        });
-                                    }
-                                    ui.label(format!("{:.2}", motor.total));
-                                    ui.end_row();
-                                }
-                            });
-                    });
-                }
-            });
-            let h = ui.available_height();
-            Plot::new("motor-noise-psd")
-                .legend(Legend::default())
-                .x_axis_label("frequency (Hz)")
-                .y_axis_label("dB")
-                .height(h)
-                .show(ui, |pu| {
-                    for (slot, o) in &outputs {
-                        let Output::MotorNoise(m) = o.as_ref() else {
-                            continue;
-                        };
-                        let pts: Vec<[f64; 2]> = m
-                            .freq
-                            .iter()
-                            .zip(&m.psd_db)
-                            .map(|(f, y)| [*f, *y])
-                            .collect();
-                        pu.line(
-                            Line::new(
-                                format!("{} {}", slot.name(), m.channel.key()),
-                                PlotPoints::from(pts),
-                            )
-                            .color(slot_color(*slot))
-                            .width(1.2),
-                        );
-                        for motor in &m.motors {
-                            for hn in &motor.harmonics {
-                                if hn.mean_hz <= 0.0 {
-                                    continue;
-                                }
-                                let mut line = VLine::new(
-                                    format!("{} M{} ×{}", slot.name(), motor.idx + 1, hn.k),
-                                    hn.mean_hz,
-                                )
-                                .color(motor_color(usize::from(motor.idx)))
-                                .width(if hn.k == 1 { 1.5 } else { 1.0 });
-                                if hn.k > 1 {
-                                    line = line.style(LineStyle::dashed_dense());
-                                }
-                                pu.vline(line);
-                            }
-                        }
-                    }
-                });
-        });
-}
 
 #[cfg(test)]
 mod tests {
-    use super::{decimate, filter_summary, format_gains};
-    use openpid_core::SliderResult;
-    use openpid_core::settings::{PerAxis, PidGains};
+    use super::decimate;
 
     #[test]
     fn decimation_keeps_extremes() {
@@ -4005,43 +1903,5 @@ mod tests {
         assert!(d.windows(2).all(|w| w[1][0] >= w[0][0]), "x monotonic");
         let small = decimate(&xs[..10], &ys[..10], |i| i != 3, 100);
         assert_eq!(small.len(), 9);
-    }
-
-    #[test]
-    fn gain_and_filter_formatting() {
-        let g = PidGains {
-            p: 45.0,
-            i: 80.0,
-            d: 40.0,
-            f: Some(120.0),
-            d_min: Some(30.0),
-            d_max: None,
-        };
-        assert_eq!(format_gains(&g), "P  45  I  80  D  40  F  120  Dmin 30");
-        let g2 = PidGains {
-            f: None,
-            d_min: None,
-            d_max: Some(46.0),
-            ..g
-        };
-        assert!(format_gains(&g2).ends_with("F    -  Dmax 46"));
-        let r = SliderResult {
-            pid: PerAxis::default(),
-            gyro_lpf1_hz: Some((250.0, 500.0)),
-            gyro_lpf2_hz: None,
-            dterm_lpf1_hz: None,
-            dterm_lpf2_hz: Some(150.0),
-            cli: Vec::new(),
-        };
-        assert_eq!(
-            filter_summary(&r),
-            "gyro lpf1 250–500 Hz   ·   dterm lpf2 150 Hz"
-        );
-        let none = SliderResult {
-            gyro_lpf1_hz: None,
-            dterm_lpf2_hz: None,
-            ..r
-        };
-        assert!(filter_summary(&none).is_empty());
     }
 }

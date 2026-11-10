@@ -2,8 +2,10 @@
 //! field names are mapped with Betaflight 4 conventions.
 
 use super::common::{self, Scales};
+use crate::cli::BetaflightCli;
 use openpid_core::{
-    FieldMapping, FirmwareInfo, FirmwareProfile, FlightSession, RawHeaders, Settings,
+    FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor, FlightSession, RawHeaders,
+    Settings,
 };
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -23,11 +25,48 @@ impl FirmwareProfile for Generic {
         common::map_field(field, &Scales::betaflight(fw, h))
     }
 
-    fn settings(&self, _fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
-        common::settings(h)
+    fn settings(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
+        common::settings(fw, h)
     }
 
     fn derive(&self, session: &mut FlightSession) {
         common::derive(session);
+    }
+
+    fn flight_modes(&self, _fw: &FirmwareInfo, word: i64) -> Vec<openpid_core::FlightMode> {
+        // an unknown firmware's other boxes are not known: the boxes every
+        // Cleanflight fork starts with, the other bits stay numbered
+        openpid_core::modes::modes_from_mask(word, &common::BOXES_COMMON)
+    }
+
+    fn exporter(
+        &self,
+        fw: &FirmwareInfo,
+        h: &RawHeaders,
+    ) -> Option<Box<dyn openpid_core::Exporter>> {
+        // a log that does not name its firmware (a CSV export, an unknown
+        // fork) is taken for Betaflight; a named other firmware has its own
+        // setting names, which this profile does not know
+        matches!(fw.vendor, FirmwareVendor::Unknown(_))
+            .then(|| Box::new(BetaflightCli::for_log(fw, h)) as Box<dyn openpid_core::Exporter>)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_log_that_names_no_firmware_is_taken_for_betaflight() {
+        let h = RawHeaders::default();
+        let unknown = FirmwareInfo::unknown();
+        let exporter = Generic.exporter(&unknown, &h).expect("an exporter");
+        assert_eq!(exporter.label(), "Betaflight CLI");
+        let named = FirmwareInfo {
+            vendor: FirmwareVendor::Baseflight,
+            ..FirmwareInfo::unknown()
+        };
+        assert!(Generic.exporter(&named, &h).is_none());
+        assert!(Generic.slider_model(&unknown, &h).is_none());
     }
 }

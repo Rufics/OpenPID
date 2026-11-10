@@ -17,7 +17,6 @@ pub fn output_json(o: &Output) -> Result<String, String> {
         Output::Throttle(t) => serde_json::to_string_pretty(t),
         Output::Stft(s) => serde_json::to_string_pretty(s),
         Output::FilterSim(f) => serde_json::to_string_pretty(f.as_ref()),
-        Output::MotorNoise(m) => serde_json::to_string_pretty(m),
         Output::Recommend(r) => serde_json::to_string_pretty(r),
     }
     .map_err(|e| e.to_string())
@@ -61,12 +60,11 @@ impl App {
         Some(match self.tab {
             Tab::Step => Kind::Step(self.tools.step.clone()),
             Tab::Spectrum => Kind::Psd(self.tools.psd.clone()),
-            Tab::ThrottleHeatmap | Tab::Surface => Kind::Throttle(self.tools.throttle.clone()),
+            Tab::ThrottleHeatmap => Kind::Throttle(self.tools.throttle.clone()),
             Tab::TimeHeatmap => Kind::Stft(self.tools.stft.clone()),
             Tab::FilterSim => Kind::FilterSim(self.tools.filter_sim.clone()),
-            Tab::MotorNoise => Kind::MotorNoise(self.tools.motor_noise.clone()),
             Tab::Advice => Kind::Recommend(self.tools.recommend.clone()),
-            Tab::LogViewer | Tab::Sliders | Tab::Diagnostics | Tab::Settings => return None,
+            Tab::LogViewer | Tab::Sliders | Tab::Setup | Tab::Settings => return None,
         })
     }
 

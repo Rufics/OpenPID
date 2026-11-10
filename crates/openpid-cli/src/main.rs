@@ -41,17 +41,21 @@ COMMANDS:
              recommend       rule-based tuning proposals with their evidence (overshoot →
                              more D, an uncovered spectrum peak → a notch, headroom above
                              the gyro LPF → a higher cutoff); --cli prints them as
-                             Betaflight CLI `set …` commands instead of JSON
+                             commands of the log's firmware (Betaflight CLI `set …`)
+                             instead of JSON
              Channel keys look like gyro.filtered.roll, gyro.raw.pitch, pid.d.roll,
              motor.0, debug.2 (see `openpid info`). Default: gyro.filtered.<axis>.
 
-    sliders  Betaflight PID sliders (simplified tuning): show the slider values the
-             log flew with and the gains they produce; --set moves sliders and prints
-             the resulting gains plus the CLI commands to apply them.
+    sliders  PID sliders: the slider values the log flew with and the gains they
+             produce; --set moves sliders and prints the resulting gains. A Betaflight
+             4.3+ log has the firmware's simplified tuning and gets the CLI commands to
+             apply it; any other log with PID gains has ratio sliders over those gains
+             (master_multiplier, pd_ratio, pi_ratio, roll_pitch_ratio, yaw_ratio).
 
     diff     Headers (settings) that differ between two logs, A → B. --cli prints the
-             Betaflight CLI `set …` commands that turn A's settings into B's (per-axis
-             and min/max headers expanded, structural headers as comments), then `save`.
+             commands of B's firmware (Betaflight CLI `set …`) that turn A's settings
+             into B's (per-axis and min/max headers expanded, structural headers as
+             comments), then `save`.
 
     gen      Write a synthetic session with known ground truth (stick steps or a
              chirp, a first-order plant with delay, motor harmonics tied to the
@@ -72,7 +76,7 @@ OPTIONS:
     --axis AXIS   roll, pitch or yaw
     --json        Machine-readable output
     --session-b M diff: session index in the second file (default: --session)
-    --cli         diff / run recommend: Betaflight CLI commands instead of the table / JSON
+    --cli         diff / run recommend: the firmware's commands instead of the table / JSON
     --example     gen: print the default spec instead of generating
     --raw         Skip firmware-profile scaling and derived channels
     --out <path>  Write to a file instead of stdout
@@ -266,17 +270,14 @@ fn cmd_info(args: &Args) -> Result<(), String> {
         );
         println!("  events   : {}", sum.events);
         if let Some(pid) = &s.settings.pid {
+            let axis = |g: &openpid_core::settings::PidGains| {
+                [g.p, g.i, g.d].map(|v| s.settings.gain_text(v)).join("/")
+            };
             println!(
-                "  pid      : roll {}/{}/{}  pitch {}/{}/{}  yaw {}/{}/{}",
-                pid.roll.p,
-                pid.roll.i,
-                pid.roll.d,
-                pid.pitch.p,
-                pid.pitch.i,
-                pid.pitch.d,
-                pid.yaw.p,
-                pid.yaw.i,
-                pid.yaw.d
+                "  pid      : roll {}  pitch {}  yaw {}",
+                axis(&pid.roll),
+                axis(&pid.pitch),
+                axis(&pid.yaw)
             );
         }
         if let Some(lp) = &s.settings.gyro_filters.lowpass1 {
@@ -618,7 +619,6 @@ fn cmd_run(args: &Args) -> Result<(), String> {
                 .run(&ctx, &openpid_analysis::RecommendParams::default())
                 .map_err(|e| e.to_string())?;
             if args.cli {
-                use openpid_core::Exporter as _;
                 use std::fmt::Write as _;
                 let mut text = String::from("# evidence\n");
                 for f in &out.findings {
@@ -633,11 +633,10 @@ fn cmd_run(args: &Args) -> Result<(), String> {
                 if out.proposals.is_empty() {
                     text.push_str("# nothing to change: every rule is satisfied\n");
                 }
-                text.push_str(
-                    &openpid_fmt_blackbox::BetaflightCli
-                        .export(s, &out.proposals)
-                        .map_err(|e| e.to_string())?,
-                );
+                let exporter = registry()
+                    .exporter(s)
+                    .ok_or_else(|| format!("no command export for {}", s.firmware.revision))?;
+                text.push_str(&exporter.export(&out.proposals).map_err(|e| e.to_string())?);
                 Ok(text)
             } else {
                 serde_json::to_string_pretty(&out)
@@ -723,10 +722,11 @@ fn cmd_diff(args: &Args) -> Result<(), String> {
         return Ok(());
     }
     if args.cli {
-        print!(
-            "{}",
-            openpid_fmt_blackbox::BetaflightCli::diff_commands(&diff)
-        );
+        // the commands are for the craft of log B: its values are the target
+        let exporter = registry()
+            .exporter(&sess_b)
+            .ok_or_else(|| format!("no command export for {}", sess_b.firmware.revision))?;
+        print!("{}", exporter.diff(&diff));
         return Ok(());
     }
     println!(
@@ -779,9 +779,9 @@ fn cmd_sliders(args: &Args) -> Result<(), String> {
         .iter()
         .find(|s| s.index == session)
         .ok_or_else(|| format!("no session {session}"))?;
-    let model = openpid_fmt_blackbox::slider_model_for(s).ok_or_else(|| {
+    let model = registry().slider_model(s).ok_or_else(|| {
         format!(
-            "{} has no slider model (firmware {} without simplified tuning headers)",
+            "{} has no slider model ({} logged no PID gains)",
             path.display(),
             s.firmware.revision
         )
@@ -816,16 +816,18 @@ fn cmd_sliders(args: &Args) -> Result<(), String> {
             d.key, now, d.value, d.default
         );
     }
+    // gains as the firmware writes them (integers on Betaflight, fractions on ArduPilot)
+    let text = |v: f64| s.settings.gain_text(v);
     let fmt = |g: &openpid_core::settings::PidGains| {
         format!(
             "P {:>3} I {:>3} D {:>3} F {:>4}{}",
-            g.p,
-            g.i,
-            g.d,
-            g.f.map_or("-".into(), |v| v.to_string()),
+            text(g.p),
+            text(g.i),
+            text(g.d),
+            g.f.map_or("-".into(), text),
             g.d_min
-                .map(|v| format!(" Dmin {v}"))
-                .or_else(|| g.d_max.map(|v| format!(" Dmax {v}")))
+                .map(|v| format!(" Dmin {}", text(v)))
+                .or_else(|| g.d_max.map(|v| format!(" Dmax {}", text(v))))
                 .unwrap_or_default()
         )
     };
@@ -851,9 +853,16 @@ fn cmd_sliders(args: &Args) -> Result<(), String> {
     if let Some(v) = result.dterm_lpf2_hz {
         println!("dterm lpf2 {v} Hz");
     }
-    println!("CLI:");
-    for c in &result.cli {
-        println!("  {c}");
+    if result.cli.is_empty() {
+        println!(
+            "no commands: these sliders scale the logged gains; type the result into the \
+             firmware's configurator"
+        );
+    } else {
+        println!("CLI:");
+        for c in &result.cli {
+            println!("  {c}");
+        }
     }
     Ok(())
 }

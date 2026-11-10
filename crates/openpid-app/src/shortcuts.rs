@@ -12,6 +12,7 @@
 use crate::app::{App, Tab};
 use crate::i18n::tr;
 use eframe::egui::{self, Key, KeyboardShortcut, Modifiers};
+use openpid_core::Axis;
 
 /// What a shortcut does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +41,10 @@ pub enum Action {
     /// Every slot analyses its whole log.
     EpochWhole,
     TouchMode,
+    /// Open or collapse the control panel of the analysis tabs.
+    TogglePanel,
+    /// Show one axis at full height on the axis-row tabs; again: all three.
+    FocusAxis(Axis),
 }
 
 impl Action {
@@ -68,6 +73,8 @@ impl Action {
             Action::ToStart => format!("{}: {}", tr("Player"), tr("To start")),
             Action::EpochWhole => format!("{}: {}", tr("epoch"), tr("whole log, every slot")),
             Action::TouchMode => tr("Touch mode").into(),
+            Action::TogglePanel => tr("Control panel").into(),
+            Action::FocusAxis(a) => format!("{}: {} / {}", tr("Axes"), a.name(), tr("all")),
         }
     }
 
@@ -108,8 +115,6 @@ pub const TABLE: &[Binding] = &[
     b(Modifiers::NONE, Key::Num8, Action::Tab(7)),
     b(Modifiers::NONE, Key::Num9, Action::Tab(8)),
     b(Modifiers::NONE, Key::Num0, Action::Tab(9)),
-    b(Modifiers::NONE, Key::Minus, Action::Tab(10)),
-    b(Modifiers::NONE, Key::Equals, Action::Tab(11)),
     b(CMD_SHIFT, Key::Tab, Action::PrevTab),
     b(Modifiers::COMMAND, Key::Tab, Action::NextTab),
     b(CMD_SHIFT, Key::O, Action::OpenLogNext),
@@ -122,12 +127,16 @@ pub const TABLE: &[Binding] = &[
     b(Modifiers::COMMAND, Key::Slash, Action::Help),
     b(Modifiers::NONE, Key::F1, Action::Help),
     b(Modifiers::NONE, Key::Escape, Action::Cancel),
+    b(Modifiers::COMMAND, Key::Period, Action::TogglePanel),
     b(Modifiers::NONE, Key::Space, Action::PlayPause),
     b(Modifiers::NONE, Key::Comma, Action::StepBack),
     b(Modifiers::NONE, Key::Period, Action::StepForward),
     b(Modifiers::NONE, Key::Home, Action::ToStart),
     b(Modifiers::SHIFT, Key::A, Action::EpochWhole),
     b(Modifiers::COMMAND, Key::T, Action::TouchMode),
+    b(Modifiers::NONE, Key::R, Action::FocusAxis(Axis::Roll)),
+    b(Modifiers::NONE, Key::P, Action::FocusAxis(Axis::Pitch)),
+    b(Modifiers::NONE, Key::Y, Action::FocusAxis(Axis::Yaw)),
 ];
 
 /// A binding without Cmd/Ctrl/Alt: it must not steal keys from text fields.
@@ -257,6 +266,14 @@ impl App {
                 }
             }
             Action::TouchMode => self.touch_mode = !self.touch_mode,
+            Action::TogglePanel => {
+                self.prefs.panel_open = !self.prefs.panel_open;
+                self.save_prefs();
+            }
+            Action::FocusAxis(a) => {
+                let next = (self.tools.axis_focus != Some(a)).then_some(a);
+                crate::axis_layout::focus_axis(self, next);
+            }
         }
     }
 
@@ -337,7 +354,7 @@ mod tests {
             ("Ctrl", "Ctrl+Shift")
         };
         assert_eq!(keys_of(&ctx, Action::Help), format!("? / {cmd}+/ / F1"));
-        assert_eq!(keys_of(&ctx, Action::Tab(10)), "-");
+        assert_eq!(keys_of(&ctx, Action::Tab(9)), "0");
         assert_eq!(keys_of(&ctx, Action::PrevTab), format!("{cmd_shift}+Tab"));
         assert_eq!(keys_of(&ctx, Action::EpochWhole), "Shift+A");
         assert!(hint(&ctx, "Open log…", Action::OpenLog).contains("O)"));

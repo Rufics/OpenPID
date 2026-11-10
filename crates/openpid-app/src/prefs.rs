@@ -15,11 +15,24 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Theme {
-    /// Dark (default, like `PIDtoolbox`).
+    /// Dark (default).
     #[default]
     Dark,
     /// Light.
     Light,
+}
+
+/// The colours of the plots.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlotColours {
+    /// As Blackbox Explorer (owner's choice, 2026-11-09): its 12-colour line
+    /// palette and the black → red → white heatmap ramp.
+    #[default]
+    Explorer,
+    /// Okabe–Ito lines and the viridis heatmap, readable with colour-vision
+    /// deficiencies.
+    ColourBlindSafe,
 }
 
 /// Unit for angular rates in the log viewer.
@@ -86,6 +99,11 @@ pub struct Prefs {
     pub show_tour: bool,
     /// Recently opened logs, newest first (at most `MAX_RECENT`).
     pub recent: Vec<RecentFile>,
+    /// The right-hand control panel of the analysis tabs is open
+    /// (docs/design/axis-layout, R4).
+    pub panel_open: bool,
+    /// The colours of the plots (Settings → Appearance).
+    pub plot_colours: PlotColours,
 }
 
 impl Default for Prefs {
@@ -100,6 +118,8 @@ impl Default for Prefs {
             tour_done: false,
             show_tour: true,
             recent: Vec::new(),
+            panel_open: true,
+            plot_colours: PlotColours::default(),
         }
     }
 }
@@ -202,10 +222,7 @@ impl Prefs {
 
     /// egui visuals for the theme.
     pub fn visuals(&self) -> eframe::egui::Visuals {
-        match self.theme {
-            Theme::Dark => eframe::egui::Visuals::dark(),
-            Theme::Light => eframe::egui::Visuals::light(),
-        }
+        crate::theme::visuals(self.theme == Theme::Dark)
     }
 }
 
@@ -235,6 +252,8 @@ mod tests {
                 path: PathBuf::from("/logs/a.bbl"),
                 opened: "2026-11-06".into(),
             }],
+            panel_open: false,
+            plot_colours: PlotColours::ColourBlindSafe,
         };
         p.save(&path).unwrap();
         assert_eq!(Prefs::load(&path), p);

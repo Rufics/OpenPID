@@ -94,6 +94,7 @@ fn session(seconds: f64, input: fn(usize) -> Vec<f64>) -> FlightSession {
         channels,
         events: Vec::new(),
         aux: Vec::new(),
+        flight_modes: Vec::new(),
         diagnostics: Diagnostics::default(),
     }
 }

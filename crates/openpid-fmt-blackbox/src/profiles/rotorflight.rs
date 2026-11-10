@@ -29,6 +29,110 @@ fn custom(name: &str, unit: Unit, scale: f64) -> Option<FieldMapping> {
     ))
 }
 
+/// Mode boxes of Rotorflight 4.2, in bit order.
+const BOXES_RF_4_2: [&str; 31] = [
+    "ARM",
+    "ANGLE",
+    "HORIZON",
+    "PASSTHRU",
+    "FAILSAFE",
+    "RESCUE",
+    "GPSRESCUE",
+    "CAMSTAB",
+    "BEEPER",
+    "LEDLOW",
+    "CALIB",
+    "OSD",
+    "TELEMETRY",
+    "SERVO1",
+    "SERVO2",
+    "SERVO3",
+    "BLACKBOX",
+    "BLACKBOXERASE",
+    "CAMERA1",
+    "CAMERA2",
+    "CAMERA3",
+    "PREARM",
+    "BEEPGPSCOUNT",
+    "VTXPITMODE",
+    "PARALYZE",
+    "USER1",
+    "USER2",
+    "USER3",
+    "USER4",
+    "ACROTRAINER",
+    "VTXCONTROLDISABLE",
+];
+
+/// Mode boxes of Rotorflight 4.3 to 4.5.
+const BOXES_RF_4_3: [&str; 29] = [
+    "ARM",
+    "ANGLE",
+    "HORIZON",
+    "TRAINER",
+    "ALTHOLD",
+    "RESCUE",
+    "GPSRESCUE",
+    "FAILSAFE",
+    "PREARM",
+    "PARALYZE",
+    "BEEPERON",
+    "BEEPERMUTE",
+    "LEDLOW",
+    "CALIB",
+    "OSD",
+    "TELEMETRY",
+    "BEEPGPSCOUNT",
+    "BLACKBOX",
+    "BLACKBOXERASE",
+    "CAMERA1",
+    "CAMERA2",
+    "CAMERA3",
+    "VTXPITMODE",
+    "VTXCONTROLDISABLE",
+    "STICKCOMMANDDISABLE",
+    "USER1",
+    "USER2",
+    "USER3",
+    "USER4",
+];
+
+/// Mode boxes of Rotorflight 4.6 on: the governor boxes before the user ones.
+const BOXES_RF_4_6: [&str; 32] = [
+    "ARM",
+    "ANGLE",
+    "HORIZON",
+    "TRAINER",
+    "ALTHOLD",
+    "RESCUE",
+    "GPSRESCUE",
+    "FAILSAFE",
+    "PREARM",
+    "PARALYZE",
+    "BEEPERON",
+    "BEEPERMUTE",
+    "LEDLOW",
+    "CALIB",
+    "OSD",
+    "TELEMETRY",
+    "BEEPGPSCOUNT",
+    "BLACKBOX",
+    "BLACKBOXERASE",
+    "CAMERA1",
+    "CAMERA2",
+    "CAMERA3",
+    "VTXPITMODE",
+    "VTXCONTROLDISABLE",
+    "STICKCOMMANDDISABLE",
+    "GOVFALLBACK",
+    "GOVSUSPEND",
+    "GOVBYPASS",
+    "USER1",
+    "USER2",
+    "USER3",
+    "USER4",
+];
+
 impl FirmwareProfile for Rotorflight {
     fn id(&self) -> &'static str {
         "rotorflight"
@@ -80,8 +184,8 @@ impl FirmwareProfile for Rotorflight {
         }
     }
 
-    fn settings(&self, _fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
-        let mut s = common::settings(h);
+    fn settings(&self, fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
+        let mut s = common::settings(fw, h);
         for key in [
             "gyro_rpm_filter_bank_motor_index",
             "gyro_rpm_filter_bank_gear_ratio",
@@ -118,6 +222,20 @@ impl FirmwareProfile for Rotorflight {
             });
         }
         common::derive(session);
+        common::derive_collective_stick(session);
+    }
+
+    fn flight_modes(&self, fw: &FirmwareInfo, word: i64) -> Vec<openpid_core::FlightMode> {
+        let names: &[&str] = if fw.is_at_least(4, 6) {
+            &BOXES_RF_4_6
+        } else if fw.is_at_least(4, 3) {
+            &BOXES_RF_4_3
+        } else if fw.is_at_least(4, 2) {
+            &BOXES_RF_4_2
+        } else {
+            &common::BOXES_COMMON
+        };
+        openpid_core::modes::modes_from_mask(word, names)
     }
 }
 

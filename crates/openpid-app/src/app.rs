@@ -3,13 +3,12 @@
 use crate::i18n::tr;
 use crate::prefs::{Prefs, Theme};
 use crate::shortcuts::{self, Action};
-use crate::surface;
 use crate::views;
 use crate::worker::{Done, Job, JobKey, Kind, Output, Slot, Worker};
 use eframe::egui;
 use openpid_analysis::{
-    Epoch, FilterSimParams, Fitness, MotorNoiseParams, Project, ProjectSlot, PsdParams,
-    RecommendParams, StepParams, StftParams, ThrottleHeatmapParams,
+    Epoch, FilterSimParams, Fitness, Project, ProjectSlot, PsdParams, RecommendParams, StepParams,
+    StftParams, ThrottleHeatmapParams,
 };
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use std::collections::HashMap;
@@ -23,30 +22,27 @@ pub enum Tab {
     Spectrum,
     ThrottleHeatmap,
     TimeHeatmap,
-    /// Freq × throttle × amplitude as an orbiting 3D surface.
-    Surface,
     FilterSim,
-    MotorNoise,
     /// Rule-based proposals with their evidence.
     Advice,
     Sliders,
-    Diagnostics,
+    /// Setup info: the log check, the decoder's counts, the setup and the
+    /// headers of every log side by side.
+    Setup,
     Settings,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 12] = [
+    pub const ALL: [Tab; 10] = [
         Tab::LogViewer,
         Tab::Step,
         Tab::Spectrum,
         Tab::ThrottleHeatmap,
         Tab::TimeHeatmap,
-        Tab::Surface,
         Tab::FilterSim,
-        Tab::MotorNoise,
         Tab::Advice,
         Tab::Sliders,
-        Tab::Diagnostics,
+        Tab::Setup,
         Tab::Settings,
     ];
 
@@ -70,12 +66,11 @@ impl Tab {
             "spectrum" => Tab::Spectrum,
             "throttle" => Tab::ThrottleHeatmap,
             "time" => Tab::TimeHeatmap,
-            "surface" => Tab::Surface,
             "filter" => Tab::FilterSim,
-            "motors" => Tab::MotorNoise,
             "advice" => Tab::Advice,
             "sliders" => Tab::Sliders,
-            "diagnostics" => Tab::Diagnostics,
+            // "diagnostics": the tab's name in projects saved before 2026-11
+            "setup" | "diagnostics" => Tab::Setup,
             "settings" => Tab::Settings,
             _ => return None,
         })
@@ -89,13 +84,21 @@ impl Tab {
             Tab::Spectrum => "spectrum",
             Tab::ThrottleHeatmap => "throttle",
             Tab::TimeHeatmap => "time",
-            Tab::Surface => "surface",
             Tab::FilterSim => "filter",
-            Tab::MotorNoise => "motors",
             Tab::Advice => "advice",
             Tab::Sliders => "sliders",
-            Tab::Diagnostics => "diagnostics",
+            Tab::Setup => "setup",
             Tab::Settings => "settings",
+        }
+    }
+
+    /// The tab's label in the top bar: the title, shortened where it is
+    /// long so the bar stays one line (docs/design/app-shell).
+    pub fn bar_title(self) -> &'static str {
+        match self {
+            Tab::LogViewer => tr("Log"),
+            Tab::Sliders => tr("Sliders"),
+            t => t.title(),
         }
     }
 
@@ -106,12 +109,10 @@ impl Tab {
             Tab::Spectrum => tr("Spectrum"),
             Tab::ThrottleHeatmap => tr("Freq × throttle"),
             Tab::TimeHeatmap => tr("Freq × time"),
-            Tab::Surface => tr("Surface 3D"),
             Tab::FilterSim => tr("Filter Sim"),
-            Tab::MotorNoise => tr("Motor noise"),
             Tab::Advice => tr("Advice"),
             Tab::Sliders => tr("PID sliders"),
-            Tab::Diagnostics => tr("Diagnostics"),
+            Tab::Setup => tr("Setup info"),
             Tab::Settings => tr("Settings"),
         }
     }
@@ -200,8 +201,6 @@ pub struct Tools {
     pub stft: StftParams,
     /// Filter Sim axis, spectra and what-if overrides.
     pub filter_sim: FilterSimParams,
-    /// Motor noise table parameters.
-    pub motor_noise: MotorNoiseParams,
     /// Advice tab thresholds.
     pub recommend: RecommendParams,
     pub spectrum_channel: ChannelId,
@@ -212,7 +211,25 @@ pub struct Tools {
     pub heatmap_link: bool,
     /// Throttle bins with fewer segments than this are greyed out on the freq × throttle heatmap.
     pub min_segments: usize,
+    /// Log viewer: channels shown besides the quantities ("Other channels").
     pub viewer_channels: Vec<ChannelId>,
+    /// Log viewer display options (docs/design/log-tab).
+    pub log_display: crate::log_tab::LogDisplay,
+    /// The one axis the axis-row tabs show at full height; `None` = all
+    /// three (docs/design/axis-focus).
+    pub axis_focus: Option<Axis>,
+    /// Step tab display options (docs/design/axis-layout).
+    pub step_display: crate::axis_layout::StepDisplay,
+    /// Spectrum tab display options (docs/design/spectrum-tab).
+    pub spectrum_display: crate::spectrum_tab::SpectrumDisplay,
+    /// Freq × throttle display options (docs/design/throttle-tab).
+    pub throttle_display: crate::throttle_tab::ThrottleDisplay,
+    /// Freq × time display options (docs/design/time-tab).
+    pub time_display: crate::time_tab::TimeDisplay,
+    /// Advice display options (docs/design/advice-tab).
+    pub advice_display: crate::advice_tab::AdviceDisplay,
+    /// Setup info display options (docs/design/setup-tab).
+    pub setup_display: crate::setup_tab::SetupDisplay,
 }
 
 impl Default for Tools {
@@ -228,7 +245,6 @@ impl Default for Tools {
             throttle: ThrottleHeatmapParams::default(),
             stft: StftParams::default(),
             filter_sim: FilterSimParams::default(),
-            motor_noise: MotorNoiseParams::default(),
             recommend: RecommendParams::default(),
             spectrum_channel: gyro.clone(),
             heatmap_channel: gyro.clone(),
@@ -236,11 +252,15 @@ impl Default for Tools {
             heatmap_max: 0.0,
             heatmap_link: true,
             min_segments: 3,
-            viewer_channels: vec![
-                gyro,
-                ChannelId::Setpoint { axis: Axis::Roll },
-                ChannelId::Throttle,
-            ],
+            viewer_channels: Vec::new(),
+            log_display: crate::log_tab::LogDisplay::default(),
+            axis_focus: None,
+            step_display: crate::axis_layout::StepDisplay::default(),
+            spectrum_display: crate::spectrum_tab::SpectrumDisplay::default(),
+            throttle_display: crate::throttle_tab::ThrottleDisplay::default(),
+            time_display: crate::time_tab::TimeDisplay::default(),
+            advice_display: crate::advice_tab::AdviceDisplay::default(),
+            setup_display: crate::setup_tab::SetupDisplay::default(),
         }
     }
 }
@@ -249,6 +269,9 @@ pub struct App {
     pub worker: Worker,
     /// Open logs in slot-bar order (docs/design/multi-slot, R2).
     pub slots: Vec<SlotEntry>,
+    /// The log the timeline dock shows (docs/design/app-shell, R4); the
+    /// last one opened unless a chip was clicked since.
+    pub dock: Option<Slot>,
     pub cache: HashMap<JobKey, Cached>,
     /// Heatmap grids rasterised once per result and colour scale (DESIGN §7.2),
     /// keyed by the result's address and the scale.
@@ -257,8 +280,10 @@ pub struct App {
     pub colour_scales: Vec<(Slot, f64)>,
     /// Heatmap cell under the pointer last frame: slot, x, y, value.
     pub heatmap_hover: Option<(Slot, f64, f64, f64)>,
-    /// Screen rectangle of every heatmap plot last frame.
-    pub heatmap_frames: HashMap<Slot, egui::Rect>,
+    /// Freq × throttle view state (the throttle range last applied).
+    pub throttle_view: crate::throttle_tab::ThrottleView,
+    /// Freq × time view state.
+    pub time_view: crate::time_tab::TimeView,
     pub tab: Tab,
     pub tools: Tools,
     pub touch_mode: bool,
@@ -266,11 +291,11 @@ pub struct App {
     pub status: String,
     pub viewer: views::ViewerState,
     pub spectrum: views::SpectrumState,
-    pub slider_state: views::SliderState,
+    pub slider_state: crate::sliders_tab::SliderState,
+    /// The Setup info table as drawn.
+    pub setup_state: crate::setup_tab::SetupState,
     /// RPM / notch overlay on the freq × throttle heatmap.
     pub overlay: views::OverlayState,
-    /// Camera and hover state of the 3D surface tab.
-    pub surface: surface::SurfaceState,
     /// Playback state of the freq × time tab.
     pub player: views::PlayerState,
     /// Timeline strips under the slot rows: drag state, rectangles, envelopes.
@@ -283,6 +308,8 @@ pub struct App {
     pub auto_tour: bool,
     /// Rectangles of the widgets the tour points at, registered every frame.
     pub anchors: HashMap<&'static str, egui::Rect>,
+    /// The plots of the current frame by name (`probe.rs`).
+    pub probes: crate::probe::Probes,
     /// Persisted preferences (Settings tab).
     pub prefs: Prefs,
     /// Where `prefs` are saved; `None` = no config directory, keep them for the session.
@@ -357,11 +384,13 @@ impl App {
         let mut app = App {
             worker,
             slots: vec![SlotEntry::empty(Slot::A), SlotEntry::empty(Slot::B)],
+            dock: None,
             cache: HashMap::new(),
             heatmap_textures: HashMap::new(),
             colour_scales: Vec::new(),
             heatmap_hover: None,
-            heatmap_frames: HashMap::new(),
+            throttle_view: crate::throttle_tab::ThrottleView::default(),
+            time_view: crate::time_tab::TimeView::default(),
             tab: tab.unwrap_or(Tab::LogViewer),
             tools,
             touch_mode: prefs.touch_mode,
@@ -369,15 +398,16 @@ impl App {
             status: "Open a blackbox log (Open log…, Open sample log, or drop it here)".into(),
             viewer: views::ViewerState::default(),
             spectrum: views::SpectrumState::default(),
-            slider_state: views::SliderState::default(),
+            slider_state: crate::sliders_tab::SliderState::default(),
+            setup_state: crate::setup_tab::SetupState::default(),
             overlay: views::OverlayState::default(),
-            surface: surface::SurfaceState::default(),
             player: views::PlayerState::default(),
             strip: views::StripState::default(),
             step_view: views::StepViewState::default(),
             tour: crate::tour::Tour::default(),
             auto_tour: true,
             anchors: HashMap::new(),
+            probes: crate::probe::Probes::default(),
             prefs,
             prefs_path,
             theme_applied: None,
@@ -420,9 +450,12 @@ impl App {
     }
 
     fn apply_theme(&mut self, ctx: &egui::Context) {
+        crate::theme::set_dark(self.prefs.theme == Theme::Dark);
+        crate::colormap::set_scheme(self.prefs.plot_colours);
         if self.theme_applied != Some(self.prefs.theme) {
             self.theme_applied = Some(self.prefs.theme);
             ctx.set_visuals(self.prefs.visuals());
+            ctx.all_styles_mut(crate::theme::style);
         }
     }
 
@@ -432,6 +465,17 @@ impl App {
         self.set_state(slot, SlotState::Loading(path.clone()));
         self.cache.retain(|k, _| k.slot != slot);
         self.worker.submit(Job::Load { slot, path });
+        self.dock = Some(slot);
+    }
+
+    /// The slot the timeline dock shows: the chosen one while it holds a
+    /// log (or is loading one), else the first that does.
+    pub fn dock_slot(&self) -> Option<Slot> {
+        let used = |e: &&SlotEntry| !matches!(e.state, SlotState::Empty);
+        self.dock
+            .and_then(|d| self.slots.iter().filter(used).find(|e| e.id == d))
+            .or_else(|| self.slots.iter().find(used))
+            .map(|e| e.id)
     }
 
     // ---------------------------------------------------------------- slot bar
@@ -667,7 +711,6 @@ impl App {
             throttle: t.throttle.clone(),
             stft: t.stft.clone(),
             filter_sim: t.filter_sim.clone(),
-            motor_noise: t.motor_noise.clone(),
             recommend: t.recommend.clone(),
             spectrum_channel: t.spectrum_channel.clone(),
             heatmap_channel: t.heatmap_channel.clone(),
@@ -698,7 +741,6 @@ impl App {
             throttle: p.throttle.clone(),
             stft: p.stft.clone(),
             filter_sim: p.filter_sim.clone(),
-            motor_noise: p.motor_noise.clone(),
             recommend: p.recommend.clone(),
             spectrum_channel: p.spectrum_channel.clone(),
             heatmap_channel: p.heatmap_channel.clone(),
@@ -707,6 +749,15 @@ impl App {
             heatmap_link: p.heatmap_link,
             min_segments: p.min_segments,
             viewer_channels: p.viewer_channels.clone(),
+            // display options are the viewer's, not the project's
+            log_display: self.tools.log_display.clone(),
+            axis_focus: self.tools.axis_focus,
+            step_display: self.tools.step_display.clone(),
+            spectrum_display: self.tools.spectrum_display.clone(),
+            throttle_display: self.tools.throttle_display.clone(),
+            time_display: self.tools.time_display.clone(),
+            advice_display: self.tools.advice_display.clone(),
+            setup_display: self.tools.setup_display.clone(),
         };
         self.tab = Tab::from_name(&p.tab).unwrap_or(Tab::LogViewer);
         self.touch_mode = p.touch_mode;
@@ -887,40 +938,122 @@ impl App {
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        egui::Panel::top("top").show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.heading("OpenPID");
-                ui.separator();
+        // docs/design/app-shell (R4): word mark, the log chips, the tabs as
+        // one pill group, the menu; one line whatever the number of logs
+        egui::Panel::top("top")
+            .frame(
+                egui::Frame::side_top_panel(ui.style())
+                    .inner_margin(egui::Margin::symmetric(12, 8)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    crate::theme::word_mark(ui);
+                    ui.add_space(10.0);
+                    if !self.start_screen_wanted() {
+                        views::log_chips(self, ui);
+                        ui.add_space(10.0);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        self.main_menu(ui);
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            egui::ScrollArea::horizontal()
+                                .id_salt("tabs")
+                                .scroll_bar_visibility(
+                                    egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                                )
+                                .show(ui, |ui| self.tab_group(ui, &ctx));
+                        });
+                    });
+                });
+            });
+    }
+
+    /// The tabs as one pill group; the active one carries an accent
+    /// underline. Each tab is read out by its full title.
+    fn tab_group(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let dark = ui.visuals().dark_mode;
+        egui::Frame::new()
+            .fill(crate::theme::background(dark))
+            .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+            .corner_radius(egui::CornerRadius::same(8))
+            .inner_margin(egui::Margin::same(3))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    ui.spacing_mut().button_padding = egui::vec2(7.0, 3.0);
+                    ui.style_mut().override_font_id = Some(egui::FontId::proportional(13.0));
+                    for (i, tab) in Tab::ALL.into_iter().enumerate() {
+                        let selected = self.tab == tab;
+                        let r = ui.add(egui::Button::selectable(selected, tab.bar_title()));
+                        r.widget_info(|| {
+                            egui::WidgetInfo::selected(
+                                egui::Role::Button,
+                                true,
+                                selected,
+                                tab.title(),
+                            )
+                        });
+                        let hover = if tab.bar_title() == tab.title() {
+                            shortcuts::keys_of(ctx, Action::Tab(i))
+                        } else {
+                            format!(
+                                "{}  {}",
+                                tab.title(),
+                                shortcuts::keys_of(ctx, Action::Tab(i))
+                            )
+                        };
+                        let r = r.on_hover_text(hover);
+                        if r.clicked() {
+                            self.tab = tab;
+                        }
+                        if selected {
+                            let y = r.rect.bottom() - 1.0;
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(r.rect.left() + 6.0, y),
+                                    egui::pos2(r.rect.right() - 6.0, y),
+                                ],
+                                egui::Stroke::new(2.0, crate::theme::ACCENT),
+                            );
+                        }
+                        if let Some(id) = tab.anchor() {
+                            self.anchors.insert(id, r.rect);
+                        }
+                    }
+                });
+            });
+    }
+
+    /// The "⋯" menu: opening a log, Project, Export, Help and touch mode.
+    fn main_menu(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let r = egui::containers::menu::MenuButton::new(egui::RichText::new("···").strong()).ui(
+            ui,
+            |ui| {
                 if ui
-                    .button(format!("{}…", tr("Open log")))
-                    .on_hover_text(shortcuts::hint(
+                    .button(shortcuts::hint(
                         &ctx,
-                        tr("into the first empty slot, or a new one"),
+                        &format!("{}…", tr("Open log")),
                         Action::OpenLog,
                     ))
                     .clicked()
-                    && let Some(slot) = self.free_slot()
                 {
-                    self.dialog = Some(Dialog::OpenLog(slot));
-                }
-                ui.separator();
-                for (i, tab) in Tab::ALL.into_iter().enumerate() {
-                    let r = ui
-                        .selectable_value(&mut self.tab, tab, tab.title())
-                        .on_hover_text(shortcuts::keys_of(&ctx, Action::Tab(i)));
-                    if let Some(id) = tab.anchor() {
-                        self.anchors.insert(id, r.rect);
+                    ui.close();
+                    if let Some(slot) = self.free_slot() {
+                        self.dialog = Some(Dialog::OpenLog(slot));
                     }
                 }
-                ui.separator();
-                ui.checkbox(&mut self.touch_mode, tr("Touch mode"))
-                    .on_hover_text(shortcuts::keys_of(&ctx, Action::TouchMode));
                 ui.separator();
                 self.project_menu(ui);
                 self.export_menu(ui);
                 self.help_menu(ui);
-            });
-        });
+                ui.separator();
+                ui.checkbox(&mut self.touch_mode, tr("Touch mode"))
+                    .on_hover_text(shortcuts::keys_of(&ctx, Action::TouchMode));
+            },
+        );
+        r.0.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tr("Menu")));
+        r.0.on_hover_text(tr("Menu"));
     }
 
     /// "Help" menu: the shortcuts window.
@@ -1082,6 +1215,7 @@ impl App {
     /// One frame of the whole UI: input handling, worker results, panels and the active tab.
     pub fn frame(&mut self, ui: &mut egui::Ui) {
         crate::i18n::set(self.prefs.lang);
+        self.probes.clear();
         let ctx = ui.ctx().clone();
         if !self.touch_mode && ctx.input(egui::InputState::any_touches) {
             self.touch_mode = true;
@@ -1095,24 +1229,39 @@ impl App {
         self.tour_tab();
         self.top_bar(ui);
         self.status_bar(ui);
+        if self.tab != Tab::Settings && !self.start_screen_wanted() {
+            egui::Panel::bottom("timeline-dock")
+                .resizable(false)
+                .exact_size(views::DOCK_H)
+                .frame(
+                    egui::Frame::side_top_panel(ui.style())
+                        .inner_margin(egui::Margin::symmetric(12, 6)),
+                )
+                .show(ui, |ui| views::timeline_dock(self, ui));
+        }
         if let Some(msg) = self.export_message.lock().ok().and_then(|mut m| m.take()) {
             self.status = msg;
         }
-        let central = egui::CentralPanel::default().show(ui, |ui| match self.tab {
-            _ if self.start_screen_wanted() => views::start_screen(self, ui),
-            Tab::LogViewer => views::log_viewer(self, ui),
-            Tab::Step => views::step(self, ui),
-            Tab::Spectrum => views::spectrum(self, ui),
-            Tab::ThrottleHeatmap => views::throttle_heatmap(self, ui),
-            Tab::TimeHeatmap => views::time_heatmap(self, ui),
-            Tab::Surface => surface::surface(self, ui),
-            Tab::FilterSim => views::filter_sim(self, ui),
-            Tab::MotorNoise => views::motor_noise(self, ui),
-            Tab::Advice => views::advice(self, ui),
-            Tab::Sliders => views::sliders(self, ui),
-            Tab::Diagnostics => views::diagnostics(self, ui),
-            Tab::Settings => views::settings(self, ui),
-        });
+        let dark = ui.visuals().dark_mode;
+        let central = egui::CentralPanel::default()
+            .frame(
+                egui::Frame::central_panel(ui.style())
+                    .fill(crate::theme::background(dark))
+                    .inner_margin(egui::Margin::same(10)),
+            )
+            .show(ui, |ui| match self.tab {
+                _ if self.start_screen_wanted() => views::start_screen(self, ui),
+                Tab::LogViewer => crate::log_tab::log_viewer(self, ui),
+                Tab::Step => crate::axis_layout::step(self, ui),
+                Tab::Spectrum => crate::spectrum_tab::spectrum(self, ui),
+                Tab::ThrottleHeatmap => crate::throttle_tab::throttle(self, ui),
+                Tab::TimeHeatmap => crate::time_tab::time(self, ui),
+                Tab::FilterSim => crate::filter_tab::filter_sim(self, ui),
+                Tab::Advice => crate::advice_tab::advice(self, ui),
+                Tab::Sliders => crate::sliders_tab::sliders(self, ui),
+                Tab::Setup => crate::setup_tab::setup(self, ui),
+                Tab::Settings => crate::settings_tab::settings(self, ui),
+            });
         self.central_rect = central.response.rect;
         self.help_window(&ctx);
         self.tour_overlay(&ctx);

@@ -132,6 +132,41 @@ impl BatteryField {
     }
 }
 
+/// A stick of the transmitter, as the pilot moved it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(missing_docs, reason = "variant names are self-explanatory")]
+pub enum StickAxis {
+    Roll,
+    Pitch,
+    Yaw,
+    Throttle,
+}
+
+impl StickAxis {
+    /// The four sticks: roll, pitch, yaw, throttle.
+    pub const ALL: [StickAxis; 4] = [
+        StickAxis::Roll,
+        StickAxis::Pitch,
+        StickAxis::Yaw,
+        StickAxis::Throttle,
+    ];
+
+    /// Lower-case name used in channel keys.
+    pub fn name(self) -> &'static str {
+        match self {
+            StickAxis::Roll => "roll",
+            StickAxis::Pitch => "pitch",
+            StickAxis::Yaw => "yaw",
+            StickAxis::Throttle => "throttle",
+        }
+    }
+
+    fn parse(s: &str) -> Option<StickAxis> {
+        StickAxis::ALL.into_iter().find(|a| a.name() == s)
+    }
+}
+
 /// Semantic identity of a data channel, independent of the logging firmware.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -168,6 +203,14 @@ pub enum ChannelId {
     RcCommand {
         /// Channel index: 0 roll, 1 pitch, 2 yaw, 3 throttle, 4+ aux.
         ch: u8,
+    },
+    /// A stick as the pilot moved it, in percent of full deflection, the
+    /// same for every firmware (the format crates map what the log has):
+    /// roll and yaw −100 (left) … 100 (right), pitch −100 (back) … 100
+    /// (forward), throttle 0 … 100 (the collective on a helicopter).
+    Stick {
+        /// Which stick.
+        axis: StickAxis,
     },
     /// Throttle in percent (0..100), derived from the best available source.
     Throttle,
@@ -215,6 +258,7 @@ impl ChannelId {
             ChannelId::PidTerm { axis, term } => format!("pid.{}.{}", term.name(), axis.name()),
             ChannelId::PidError { axis } => format!("pid_error.{}", axis.name()),
             ChannelId::RcCommand { ch } => format!("rc.{ch}"),
+            ChannelId::Stick { axis } => format!("stick.{}", axis.name()),
             ChannelId::Throttle => "throttle".into(),
             ChannelId::Motor { idx } => format!("motor.{idx}"),
             ChannelId::Erpm { idx } => format!("erpm.{idx}"),
@@ -250,6 +294,9 @@ impl ChannelId {
                     stage,
                 })
             }
+            ["stick", axis] => Some(ChannelId::Stick {
+                axis: StickAxis::parse(axis)?,
+            }),
             ["setpoint", axis] => Some(ChannelId::Setpoint {
                 axis: Axis::parse(axis)?,
             }),
@@ -319,6 +366,9 @@ mod tests {
             },
             ChannelId::PidError { axis: Axis::Roll },
             ChannelId::RcCommand { ch: 3 },
+            ChannelId::Stick {
+                axis: StickAxis::Throttle,
+            },
             ChannelId::Throttle,
             ChannelId::Motor { idx: 7 },
             ChannelId::Erpm { idx: 1 },

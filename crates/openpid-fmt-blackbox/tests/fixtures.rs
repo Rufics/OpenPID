@@ -243,3 +243,236 @@ fn no_discontinuity_at_intra_frame_boundaries() {
         }
     }
 }
+
+#[test]
+fn flight_modes_are_decoded_per_firmware() {
+    use openpid_core::FlightMode::{self, Angle, Arm, PosHold};
+    let format = BlackboxFormat::new();
+    let modes = |name: &str| -> Vec<Vec<FlightMode>> {
+        let path = common::all_logs()
+            .into_iter()
+            .find(|p| p.file_name().is_some_and(|n| n == name))
+            .unwrap();
+        let log = format
+            .open(&std::fs::read(path).unwrap(), &OpenOptions::default())
+            .unwrap();
+        log.sessions[0]
+            .flight_modes
+            .iter()
+            .map(|c| c.modes.clone())
+            .collect()
+    };
+    // Betaflight 2025.12: armed in ANGLE, then POSHOLD (bit 9), then disarmed
+    assert_eq!(
+        modes("betaflight-2025.12.2-btfl_027.bbl"),
+        [vec![Arm, Angle], vec![Arm, PosHold], vec![PosHold]]
+    );
+    // INAV numbers its boxes its own way
+    assert_eq!(modes("inav-9.0.1-truncated.TXT")[0], [Arm, Angle]);
+    // Rotorflight 4.3 has a list of its own too
+    assert_eq!(
+        modes("rotorflight-4.3.0-LOG246.TXT")[0],
+        [Arm, FlightMode::Other("BLACKBOX".into())]
+    );
+    // EmuFlight's boxes are not named anywhere: ARM, the others numbered
+    assert_eq!(
+        modes("emuflight-3.7.0-truncated.BFL")[0],
+        [Arm, FlightMode::Other("bit 21".into())]
+    );
+}
+
+#[test]
+fn sticks_are_mapped_per_firmware() {
+    use openpid_core::StickAxis;
+    let format = BlackboxFormat::new();
+    let open = |name: &str| {
+        let path = common::all_logs()
+            .into_iter()
+            .find(|p| p.file_name().is_some_and(|n| n == name))
+            .unwrap();
+        format
+            .open(&std::fs::read(path).unwrap(), &OpenOptions::default())
+            .unwrap()
+            .sessions
+            .remove(0)
+    };
+    let stick = |s: &openpid_core::FlightSession, axis: StickAxis, i: usize| {
+        s.channel(&ChannelId::Stick { axis }).unwrap().data.values()[i]
+    };
+    let rc = |s: &openpid_core::FlightSession, ch: u8, i: usize| {
+        s.channel(&ChannelId::RcCommand { ch })
+            .unwrap()
+            .data
+            .values()[i]
+    };
+    // Betaflight: ±500 is full deflection; rcCommand yaw is stored inverted
+    // (its Blackbox Explorer negates it to draw the stick)
+    let s = open("betaflight-2025.12.2-btfl_027.bbl");
+    let yaw = s.channel(&ChannelId::RcCommand { ch: 2 }).unwrap();
+    let i = (0..s.len())
+        .max_by(|a, b| {
+            yaw.data.values()[*a]
+                .abs()
+                .total_cmp(&yaw.data.values()[*b].abs())
+        })
+        .unwrap();
+    assert!(rc(&s, 2, i).abs() > 100.0, "a yaw input in this flight");
+    assert!((stick(&s, StickAxis::Yaw, i) + rc(&s, 2, i) / 5.0).abs() < 1e-9);
+    assert!((stick(&s, StickAxis::Roll, i) - rc(&s, 0, i) / 5.0).abs() < 1e-9);
+    assert!((stick(&s, StickAxis::Pitch, i) - rc(&s, 1, i) / 5.0).abs() < 1e-9);
+    assert!((stick(&s, StickAxis::Throttle, i) - (rc(&s, 3, i) - 1000.0) / 10.0).abs() < 1e-9);
+    let st = s.sticks_at(s.time_s(i).unwrap()).unwrap();
+    assert!((st.yaw - stick(&s, StickAxis::Yaw, i) / 100.0).abs() < 1e-9);
+    // Rotorflight: the vertical stick is the collective, rcCommand[3] ±500
+    let s = open("rotorflight-4.3.0-LOG246.TXT");
+    let i = s.len() / 2;
+    assert!((stick(&s, StickAxis::Throttle, i) - (rc(&s, 3, i) + 500.0) / 10.0).abs() < 1e-9);
+    // INAV logs rcCommand as Betaflight does
+    let s = open("inav-9.0.1-truncated.TXT");
+    assert!(s.sticks_at(0.0).is_some());
+}
+
+/// The exporter and the slider model of a log come from its firmware
+/// profile, found through the format registry: Betaflight has both; the
+/// other firmwares of the family have their own setting names and get no
+/// exporter, and the ratio sliders in place of sliders of their own.
+#[test]
+fn exporter_and_sliders_come_from_the_logs_profile() {
+    let mut registry = openpid_core::FormatRegistry::new();
+    registry.register(Box::new(BlackboxFormat::new()));
+    let first = |name: &str| {
+        let data = std::fs::read(common::logs_dir().join(name)).unwrap();
+        let log = registry
+            .open(&data, Some(name), &OpenOptions::default())
+            .unwrap();
+        log.sessions.into_iter().find(|s| !s.is_empty()).unwrap()
+    };
+    let new = first("betaflight-4.5.1-two-sessions.bbl");
+    assert_eq!(registry.profile_for(&new).unwrap().id(), "betaflight");
+    let exporter = registry.exporter(&new).unwrap();
+    assert_eq!(
+        (exporter.id(), exporter.label()),
+        ("betaflight-cli", "Betaflight CLI")
+    );
+    let lpf = openpid_core::Proposal {
+        path: "gyro_filters.lpf1.cutoff_hz".into(),
+        from: None,
+        to: "300".into(),
+        rationale: String::new(),
+        confidence: 1.0,
+    };
+    let text = exporter.export(std::slice::from_ref(&lpf)).unwrap();
+    assert!(text.contains("set gyro_lpf1_static_hz = 300\n"), "{text}");
+    assert_eq!(
+        registry.slider_model(&new).unwrap().cli_name(),
+        "Betaflight CLI"
+    );
+    // before 4.3 the same setting had another name, and there were no sliders
+    let old = first("betaflight-4.2.0.BFL");
+    let text = registry.exporter(&old).unwrap().export(&[lpf]).unwrap();
+    assert!(text.contains("set gyro_lowpass_hz = 300\n"), "{text}");
+    // no firmware sliders there: the ratio sliders over its gains instead
+    assert_eq!(registry.slider_model(&old).unwrap().id(), "ratio-sliders");
+    for name in [
+        "inav-9.0.1-truncated.TXT",
+        "rotorflight-4.3.0-LOG246.TXT",
+        "emuflight-3.7.0-truncated.BFL",
+    ] {
+        let s = first(name);
+        assert!(registry.profile_for(&s).is_some(), "{name}");
+        assert!(registry.exporter(&s).is_none(), "{name}");
+        // none of them has sliders of its own; with gains they get the ratio sliders
+        let own = registry.profile_for(&s).unwrap().slider_model(
+            &s.firmware,
+            &openpid_core::RawHeaders(s.raw_headers.clone()),
+        );
+        assert!(own.is_none(), "{name}");
+        assert_eq!(
+            registry.slider_model(&s).map(|m| m.id()),
+            s.settings.pid.map(|_| "ratio-sliders"),
+            "{name}"
+        );
+    }
+}
+
+/// The board, the log date and the tuning settings in words (#140): every
+/// Betaflight 4.x log has them from its own headers; the other firmwares of
+/// the family, whose headers reuse the names with other meanings, get the
+/// board and the date only.
+#[test]
+fn settings_in_words_come_from_the_betaflight_profile_only() {
+    let first = |name: &str| {
+        let data = std::fs::read(common::logs_dir().join(name)).unwrap();
+        let log = BlackboxFormat::new()
+            .open(&data, &OpenOptions::default())
+            .unwrap();
+        log.sessions.into_iter().find(|s| !s.is_empty()).unwrap()
+    };
+    let detail = |s: &openpid_core::FlightSession, label: &str| {
+        s.settings
+            .details
+            .iter()
+            .find(|d| d.label == label)
+            .map(|d| d.value.clone())
+    };
+    let old = first("betaflight-4.2.0.BFL");
+    assert_eq!(old.settings.board.as_deref(), Some("HBRO KAKUTEF7"));
+    assert_eq!(
+        old.settings.log_start.as_deref(),
+        Some("2022-02-02T15:04:53.139+00:00")
+    );
+    assert_eq!(
+        detail(&old, "Rates").as_deref(),
+        Some(
+            "Betaflight: RC rate 1.00 / 1.00 / 1.00, super rate 0.62 / 0.62 / 0.65, expo 0.30 / 0.30 / 0.20"
+        )
+    );
+    assert_eq!(
+        detail(&old, "Anti-gravity").as_deref(),
+        Some("gain 10.0, smooth, threshold 250")
+    );
+    assert_eq!(detail(&old, "Simplified tuning"), None, "4.3 and later");
+    let new = first("betaflight-2025.12.2-btfl_027.bbl");
+    assert_eq!(new.settings.board.as_deref(), Some("SLGD SOLOGOODF722"));
+    assert_eq!(
+        detail(&new, "Motor idle").as_deref(),
+        Some("6.5 %, dynamic idle off"),
+        "motor_idle replaced dshot_idle_value"
+    );
+    assert!(
+        detail(&new, "Simplified tuning")
+            .unwrap()
+            .contains("D max 100"),
+        "simplified_d_max_gain, renamed from simplified_dmax_gain"
+    );
+    // a flight controller without a clock logs the year 0000: no date
+    let no_clock = first("betaflight-4.5.1-two-sessions.bbl");
+    assert_eq!(no_clock.settings.log_start, None);
+    for name in [
+        "inav-9.0.1-truncated.TXT",
+        "inav-3.0.1-truncated.TXT",
+        "rotorflight-4.3.0-LOG246.TXT",
+        "emuflight-3.7.0-truncated.BFL",
+    ] {
+        let s = first(name);
+        assert!(
+            s.settings.details.is_empty(),
+            "{name}: {:?}",
+            s.settings.details
+        );
+    }
+    assert_eq!(
+        first("rotorflight-4.3.0-LOG246.TXT")
+            .settings
+            .board
+            .as_deref(),
+        Some("AIRB NOX")
+    );
+    assert_eq!(
+        first("inav-9.0.1-truncated.TXT")
+            .settings
+            .log_start
+            .as_deref(),
+        Some("2026-02-20T09:16:22.352+00:00")
+    );
+}

@@ -35,7 +35,7 @@ fn rms(v: &[f64]) -> f64 {
 fn betaflight_2025_12_simulated_gyro_matches_the_logged_filtered_gyro() {
     let s = open("betaflight-2025.12.2-btfl_027.bbl");
     let fs = s.timebase.sample_rate_hz();
-    let model = ChainModel::from_settings(&s.settings, s.firmware.version, ChainKind::Gyro, fs);
+    let model = ChainModel::from_settings(&s.settings, ChainKind::Gyro, fs);
     let lines = model.describe();
     assert!(
         lines
@@ -130,7 +130,7 @@ fn betaflight_2025_12_simulated_gyro_matches_the_logged_filtered_gyro() {
 fn betaflight_4_5_0_model_builds_from_the_headers() {
     let s = open("betaflight-4.5.0-gps-rescue.bbl");
     let fs = s.timebase.sample_rate_hz();
-    let model = ChainModel::from_settings(&s.settings, s.firmware.version, ChainKind::Gyro, fs);
+    let model = ChainModel::from_settings(&s.settings, ChainKind::Gyro, fs);
     let lines = model.describe();
     // gyro_lpf1_static_hz 0 and dyn 0,500: no first low-pass
     assert!(model.lowpass1.is_none(), "{lines:?}");
@@ -147,7 +147,7 @@ fn betaflight_4_5_0_model_builds_from_the_headers() {
     let r = model.rpm_notch.as_ref().unwrap();
     assert_eq!(r.weights, vec![1.0, 0.25, 1.0]);
     assert_eq!(r.fade_range_hz, 50.0);
-    let dterm = ChainModel::from_settings(&s.settings, s.firmware.version, ChainKind::Dterm, fs);
+    let dterm = ChainModel::from_settings(&s.settings, ChainKind::Dterm, fs);
     let d = dterm.lowpass1.as_ref().unwrap().dynamic.as_ref().unwrap();
     assert_eq!((d.min_hz, d.max_hz), (93.0, 187.0));
     assert!((d.expo - 0.7).abs() < 1e-12);

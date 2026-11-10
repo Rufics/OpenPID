@@ -146,9 +146,12 @@ fn decode_csv_input() {
 fn run_analyses() {
     let l = log("betaflight-4.2.0.BFL");
     let f = l.to_str().unwrap();
+    // 4.2.0 has only gentle stick inputs, below the default step threshold
+    let sharp = log("betaflight-2025.12.2-btfl_027.bbl");
+    let sharp = sharp.to_str().unwrap();
     for (args, key) in [
         (
-            vec!["run", "step", f, "--axis", "pitch", "--epoch", "2..12"],
+            vec!["run", "step", sharp, "--axis", "roll", "--epoch", "5..20"],
             "metrics",
         ),
         (vec!["run", "psd", f, "--channel", "pid.d.roll"], "power_db"),
@@ -173,19 +176,24 @@ fn run_analyses() {
     let (ok, _, err) = run(&["run", "psd", f, "--channel", "debug.7"]);
     assert!(!ok && err.contains("missing channel"));
     // automatic windows: the trim and the most active 20 s
-    let (ok, out, err) = run(&["run", "step", f, "--epoch", "auto", "--json"]);
+    let (ok, out, err) = run(&[
+        "run", "step", sharp, "--epoch", "auto", "--axis", "yaw", "--json",
+    ]);
     assert!(ok, "{err}");
-    assert!(err.contains("epoch 1.80..16.02 s"), "{err}");
-    assert!(out.contains("windows_used"));
+    assert!(err.contains("epoch 1.43..38.60 s"), "{err}");
+    assert!(out.contains("windows_used") && out.contains("windows_rejected"));
     let v: serde_json::Value = serde_json::from_str(&out).expect("json");
     let verdicts = v["verdicts"].as_array().expect("verdicts in the step JSON");
     assert_eq!(verdicts.len(), 7);
     assert!(
         verdicts
             .iter()
-            .any(|x| x["metric"] == "overshoot" && x["level"] == "Fail"),
+            .any(|x| x["metric"] == "overshoot" && x["level"] == "Warn"),
         "{verdicts:?}"
     );
+    // gentle stick inputs: not enough data at the default threshold
+    let (ok, _, err) = run(&["run", "step", f, "--epoch", "auto"]);
+    assert!(!ok && err.contains("above 80 deg/s"), "{err}");
     let (ok, _, err) = run(&["run", "step", f, "--epoch", "active"]);
     assert!(!ok && err.contains("shorter than 20 s"), "{err}");
     let short = log("betaflight-4.5.1-two-sessions.bbl");
@@ -207,10 +215,32 @@ fn run_analyses() {
 
 #[test]
 fn sliders_command() {
-    // the committed 4.2 fixtures predate simplified tuning: a clear error
+    // the 4.2 fixtures predate simplified tuning: ratio sliders over the logged gains
     let l = log("betaflight-4.2.0.BFL");
-    let (ok, _, err) = run(&["sliders", l.to_str().unwrap()]);
-    assert!(!ok && err.contains("no slider model"), "{err}");
+    let (ok, out, err) = run(&["sliders", l.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    assert!(out.starts_with("ratio-sliders (Betaflight 4.2.0"), "{out}");
+    assert!(out.contains("roll   P  77 I 119 D  83") && out.contains("no commands"));
+    let (ok, out, _) = run(&[
+        "sliders",
+        l.to_str().unwrap(),
+        "--set",
+        "master_multiplier=110,pd_ratio=120",
+    ]);
+    // P 77 × 1.1, I 119 × 1.1, D 83 × 1.2 × 1.1, in Betaflight's whole numbers
+    assert!(ok && out.contains("roll   P  85 I 131 D 110"), "{out}");
+    // an ArduPilot log: the same sliders, gains at its 0.0001 step
+    let a = log("ardupilot-copter-3.3-dronekit.bin");
+    let (ok, out, _) = run(&[
+        "sliders",
+        a.to_str().unwrap(),
+        "--set",
+        "master_multiplier=120",
+    ]);
+    assert!(
+        ok && out.contains("roll   P 0.1546 I 0.1546 D 0.0086"),
+        "{out}"
+    );
     let (ok, _, err) = run(&["sliders"]);
     assert!(!ok && err.contains("needs a file"));
     let (ok, _, err) = run(&["sliders", l.to_str().unwrap(), "--set", "nonsense"]);
@@ -363,7 +393,7 @@ fn run_takes_the_log_and_parameters_from_a_project() {
     std::fs::write(
         &project,
         format!(
-            r#"{{"version":1,"slots":[{{"path":"{}","session":0,"epoch":{{"start_s":2.0,"end_s":8.0}}}}],"axis":"pitch","step":{{"cutoff_hz":40.0,"window_s":1.5}}}}"#,
+            r#"{{"version":1,"slots":[{{"path":"{}","session":0,"epoch":{{"start_s":2.0,"end_s":8.0}}}}],"axis":"pitch","step":{{"cutoff_hz":40.0,"window_s":1.5,"min_input":20.0}}}}"#,
             log.to_str().unwrap().replace('\\', "/")
         ),
     )
@@ -374,8 +404,17 @@ fn run_takes_the_log_and_parameters_from_a_project() {
     assert_eq!(v["axis"], "pitch", "axis from the project");
     assert_eq!(v["time_ms"].as_array().unwrap().len(), 500);
     // the epoch came from the project: fewer windows than the whole log
-    let (ok, whole, _) = run(&["run", "step", log.to_str().unwrap(), "--axis", "pitch"]);
-    assert!(ok);
+    let whole_project = temp("whole.openpid.json");
+    std::fs::write(
+        &whole_project,
+        format!(
+            r#"{{"version":1,"slots":[{{"path":"{}","session":0}}],"axis":"pitch","step":{{"min_input":20.0}}}}"#,
+            log.to_str().unwrap().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    let (ok, whole, err) = run(&["run", "step", "--project", whole_project.to_str().unwrap()]);
+    assert!(ok, "{err}");
     let w: serde_json::Value = serde_json::from_str(&whole).unwrap();
     assert!(v["windows_total"].as_u64().unwrap() < w["windows_total"].as_u64().unwrap());
     // flags override the project
@@ -486,6 +525,20 @@ fn diff_command_lists_changed_headers_and_cli_commands() {
         "9",
     ]);
     assert!(!ok && err.contains("no session 9"));
+    // the commands are those of the log's firmware: none is made up for a
+    // firmware whose profile has no exporter
+    let ardu = log("ardupilot-copter-3.3-dronekit.bin");
+    let (ok, out, err) = run(&[
+        "diff",
+        ardu.to_str().unwrap(),
+        ardu.to_str().unwrap(),
+        "--cli",
+    ]);
+    assert!(!ok && out.is_empty(), "{out}");
+    assert!(err.contains("no command export for APM:Copter"), "{err}");
+    let inav = log("inav-9.0.1-truncated.TXT");
+    let (ok, _, err) = run(&["run", "recommend", inav.to_str().unwrap(), "--cli"]);
+    assert!(!ok && err.contains("no command export for INAV"), "{err}");
 }
 
 #[test]

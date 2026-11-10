@@ -11,7 +11,8 @@ use openpid_dsp::spectrum::{WelchParams, welch};
 use openpid_dsp::xcorr::lag_of_max;
 use openpid_dsp::{Fft, Window};
 use openpid_sim::{
-    ChainKind, ChainModel, Drive, DynLowpass, DynNotchModel, Filter, LowpassModel, RpmNotchModel,
+    ChainKind, ChainModel, Complex, Drive, DynLowpass, DynNotchModel, Filter, LowpassModel,
+    OperatingPoint, PartGroup, RpmNotchModel, track_peaks,
 };
 use serde::{Deserialize, Serialize};
 
@@ -327,6 +328,144 @@ pub struct FilterFit {
     pub delay_ms: f64,
 }
 
+/// Frequency response of one part of a chain (or of the whole chain).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PartResponse {
+    /// What the part is ("LPF1 PT1 330 Hz", "total").
+    pub label: String,
+    /// Low-pass or notch; `None` for the whole chain.
+    pub group: Option<PartGroup>,
+    /// Magnitude at [`ChainResponse::freq`], dB.
+    pub magnitude_db: Vec<f64>,
+    /// Phase (unwrapped), degrees.
+    pub phase_deg: Vec<f64>,
+    /// Phase delay `−phase / (2π f)`, ms: how late a sine of that frequency
+    /// comes out.
+    pub delay_ms: Vec<f64>,
+}
+
+/// A chain's frequency response, part by part, at the flight's typical
+/// operating point: the mean throttle, the mean speed of each motor and the
+/// median centre of each dynamic notch over the epoch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChainResponse {
+    /// Frequency axis, Hz.
+    pub freq: Vec<f64>,
+    /// The parts in signal order.
+    pub parts: Vec<PartResponse>,
+    /// The whole chain.
+    pub total: PartResponse,
+    /// Mean throttle, 0..=1, when logged.
+    pub throttle: Option<f64>,
+    /// Mean frequency of each motor, Hz.
+    pub motor_hz: Vec<f64>,
+    /// Median centre of each dynamic notch, Hz.
+    pub dyn_hz: Vec<f64>,
+    /// Phase delay of the whole chain at 100 Hz, ms.
+    pub delay_100hz_ms: f64,
+}
+
+/// Points of the response plots.
+const RESPONSE_POINTS: usize = 400;
+
+/// Magnitude, unwrapped phase and phase delay of `h` at `freq`.
+fn part_response(
+    label: String,
+    group: Option<PartGroup>,
+    freq: &[f64],
+    h: impl Fn(f64) -> Complex<f64>,
+) -> PartResponse {
+    let mut magnitude_db = Vec::with_capacity(freq.len());
+    let mut phase_deg = Vec::with_capacity(freq.len());
+    let mut delay_ms = Vec::with_capacity(freq.len());
+    let mut prev: Option<f64> = None;
+    for f in freq {
+        let v = h(*f);
+        magnitude_db.push(20.0 * v.norm().max(1e-9).log10());
+        let mut phi = v.arg();
+        if let Some(p) = prev {
+            phi +=
+                (2.0 * std::f64::consts::PI) * ((p - phi) / (2.0 * std::f64::consts::PI)).round();
+        }
+        prev = Some(phi);
+        phase_deg.push(phi.to_degrees());
+        delay_ms.push(-phi / (2.0 * std::f64::consts::PI * f) * 1000.0);
+    }
+    PartResponse {
+        label,
+        group,
+        magnitude_db,
+        phase_deg,
+        delay_ms,
+    }
+}
+
+/// The response of `model` at `op` on `freq`, part by part.
+fn chain_response(model: &ChainModel, op: &OperatingPoint, freq: &[f64]) -> ChainResponse {
+    let parts_at = model.parts_at(op);
+    let parts: Vec<PartResponse> = parts_at
+        .iter()
+        .map(|p| part_response(p.label.clone(), Some(p.group), freq, |f| p.response(f)))
+        .collect();
+    let all = |f: f64| {
+        parts_at
+            .iter()
+            .fold(Complex::new(1.0, 0.0), |h, p| h * p.response(f))
+    };
+    let total = part_response("total".into(), None, freq, all);
+    let at100 = part_response(String::new(), None, &[100.0_f64.min(model.fs * 0.45)], all);
+    ChainResponse {
+        freq: freq.to_vec(),
+        parts,
+        total,
+        throttle: op.throttle,
+        motor_hz: op.motor_hz.clone(),
+        dyn_hz: op.dyn_hz.clone(),
+        delay_100hz_ms: at100.delay_ms[0],
+    }
+}
+
+/// Median of `v` (0 when empty).
+fn median(mut v: Vec<f64>) -> f64 {
+    if v.is_empty() {
+        return 0.0;
+    }
+    v.sort_by(f64::total_cmp);
+    v[v.len() / 2]
+}
+
+/// The flight's typical operating point for the response of `model`.
+fn operating_point(
+    model: &ChainModel,
+    x: &[f64],
+    throttle: Option<&[f64]>,
+    rpm: &[Vec<f64>],
+) -> OperatingPoint {
+    let mean = |v: &[f64]| (!v.is_empty()).then(|| v.iter().sum::<f64>() / v.len() as f64);
+    let motor_hz = rpm
+        .iter()
+        .filter_map(|r| {
+            let spinning: Vec<f64> = r.iter().filter(|v| **v > 0.0).map(|v| v / 60.0).collect();
+            mean(&spinning)
+        })
+        .collect();
+    let dyn_hz = match &model.dyn_notch {
+        Some(d) if d.count > 0 => {
+            let tracked = track_peaks(x, model.fs, d.min_hz, d.max_hz, d.count as usize);
+            (0..d.count as usize)
+                .map(|k| median(tracked.iter().filter_map(|c| c.get(k).copied()).collect()))
+                .filter(|f| *f > 0.0)
+                .collect()
+        }
+        _ => Vec::new(),
+    };
+    OperatingPoint {
+        throttle: throttle.and_then(mean),
+        motor_hz,
+        dyn_hz,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Result of [`FilterSimAnalysis`].
 pub struct FilterSimOutput {
@@ -356,6 +495,11 @@ pub struct FilterSimOutput {
     pub psd_as_flown_db: Vec<f64>,
     /// Magnitude of the what-if chain's static part at `freq`, dB.
     pub response_db: Vec<f64>,
+    /// The what-if chain's response, part by part, at the flight's typical
+    /// operating point.
+    pub response: ChainResponse,
+    /// The chain as flown, whole, when there are overrides.
+    pub response_as_flown: Option<PartResponse>,
     /// The chain as flown.
     pub model: ChainModel,
     /// The chain with the overrides.
@@ -450,12 +594,7 @@ impl Analysis for FilterSimAnalysis {
         let rpm: Vec<Vec<f64>> = (0..16u8)
             .map_while(|idx| optional(ctx, &ChannelId::MotorRpm { idx }, None).map(|r| r.filled()))
             .collect();
-        let model = ChainModel::from_settings(
-            &ctx.session.settings,
-            ctx.session.firmware.version,
-            ChainKind::Gyro,
-            fs,
-        );
+        let model = ChainModel::from_settings(&ctx.session.settings, ChainKind::Gyro, fs);
         let mut whatif = model.clone();
         p.overrides.apply(&mut whatif);
         let drive = Drive {
@@ -505,6 +644,18 @@ impl Analysis for FilterSimAnalysis {
         };
         let static_chain = whatif.static_chain();
         let response_db: Vec<f64> = freq.iter().map(|f| static_chain.gain_db(*f)).collect();
+        let top = p.max_hz.unwrap_or(fs / 2.0).min(fs / 2.0);
+        let rfreq: Vec<f64> = (1..=RESPONSE_POINTS)
+            .map(|i| top * i as f64 / RESPONSE_POINTS as f64)
+            .collect();
+        let op = operating_point(&whatif, &x, throttle.as_deref(), &rpm);
+        let response = chain_response(&whatif, &op, &rfreq);
+        let response_as_flown = (!p.overrides.is_empty()).then(|| {
+            let op = operating_point(&model, &x, throttle.as_deref(), &rpm);
+            let mut r = chain_response(&model, &op, &rfreq).total;
+            r.label = "total as flown".into();
+            r
+        });
 
         let fit = logged.as_ref().map(|l| {
             let from = (fs as usize).min(x.len() / 4);
@@ -542,6 +693,8 @@ impl Analysis for FilterSimAnalysis {
             psd_sim_db,
             psd_as_flown_db,
             response_db,
+            response,
+            response_as_flown,
             description: whatif.describe(),
             model,
             whatif,
@@ -564,12 +717,13 @@ mod tests {
             cutoff_hz: 250.0,
             dyn_min_hz: Some(250.0),
             dyn_max_hz: Some(500.0),
+            dyn_expo: 0.0,
         });
         s.gyro_filters.notches.push(Notch {
             center_hz: 200.0,
             cutoff_hz: 150.0,
         });
-        ChainModel::from_settings(&s, None, ChainKind::Gyro, 1000.0)
+        ChainModel::from_settings(&s, ChainKind::Gyro, 1000.0)
     }
 
     #[test]
@@ -680,6 +834,36 @@ mod tests {
         assert_ne!(hash(&a), hash(&c));
         assert_eq!(FilterSimAnalysis.id(), "filter-sim");
         assert_eq!(FilterSimAnalysis.requires().len(), 1);
+    }
+
+    #[test]
+    fn chain_response_has_delay_and_notch_depth() {
+        let m = model();
+        let op = OperatingPoint {
+            throttle: Some(0.0),
+            ..OperatingPoint::default()
+        };
+        let freq: Vec<f64> = (1..=500).map(f64::from).collect();
+        let r = chain_response(&m, &op, &freq);
+        let labels: Vec<&str> = r.parts.iter().map(|p| p.label.as_str()).collect();
+        assert_eq!(labels, ["Notch 200 Hz", "LPF1 PT1 250 Hz"]);
+        assert_eq!(r.total.group, None);
+        // the notch removes its centre; the low-pass passes DC
+        assert!(r.parts[0].magnitude_db[199] < -40.0);
+        assert!(r.parts[1].magnitude_db[0].abs() < 0.01);
+        // a PT1 delays every frequency, less and less as it rises
+        let lp = &r.parts[1].delay_ms;
+        assert!(lp[0] > 0.5 && lp[0] < 0.7, "{}", lp[0]);
+        assert!(lp[400] < lp[0]);
+        // a notch delays below its centre and leads above it
+        let n = &r.parts[0].delay_ms;
+        assert!(n[180] > 0.0 && n[220] < 0.0, "{} {}", n[180], n[220]);
+        // the whole chain: the sum of the parts' phases
+        let sum = r.parts[0].phase_deg[99] + r.parts[1].phase_deg[99];
+        assert!((r.total.phase_deg[99] - sum).abs() < 1e-6);
+        assert!((r.delay_100hz_ms - r.total.delay_ms[99]).abs() < 1e-9);
+        assert_eq!(median(vec![]), 0.0);
+        assert_eq!(median(vec![3.0, 1.0, 2.0]), 2.0);
     }
 
     #[test]

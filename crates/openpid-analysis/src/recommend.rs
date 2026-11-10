@@ -89,8 +89,30 @@ pub struct Finding {
     pub axis: Option<Axis>,
     /// The evidence in words.
     pub text: String,
+    /// What the rule concluded.
+    pub status: FindingStatus,
+}
+
+impl Finding {
     /// Whether a proposal came out of it.
-    pub proposed: bool,
+    pub fn proposed(&self) -> bool {
+        self.status == FindingStatus::Proposed
+    }
+}
+
+/// What a rule concluded from what it saw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FindingStatus {
+    /// The rule is satisfied: nothing to change.
+    Fine,
+    /// The rule could not judge: no data for it, or it does not apply.
+    NotJudged,
+    /// Something is off, but the rule has no setting to propose; the text
+    /// says what to look at.
+    Attention,
+    /// A proposal came out of it.
+    Proposed,
 }
 
 /// Result of [`Recommend`].
@@ -142,13 +164,13 @@ impl Recommend {
         rule: &str,
         axis: Option<Axis>,
         text: String,
-        proposed: bool,
+        status: FindingStatus,
     ) {
         out.findings.push(Finding {
             rule: rule.to_string(),
             axis,
             text,
-            proposed,
+            status,
         });
     }
 
@@ -183,13 +205,19 @@ impl Recommend {
                     RULE,
                     Some(axis),
                     format!("no step response: {e}"),
-                    false,
+                    FindingStatus::NotJudged,
                 );
                 return;
             }
         };
         let Some(overshoot) = step.metrics.overshoot_pct else {
-            Self::finding(out, RULE, Some(axis), "no overshoot measured".into(), false);
+            Self::finding(
+                out,
+                RULE,
+                Some(axis),
+                "no overshoot measured".into(),
+                FindingStatus::NotJudged,
+            );
             return;
         };
         if step.windows_used < 5 {
@@ -198,7 +226,7 @@ impl Recommend {
                 RULE,
                 Some(axis),
                 format!("only {} step windows: too few to judge", step.windows_used),
-                false,
+                FindingStatus::NotJudged,
             );
             return;
         }
@@ -211,7 +239,7 @@ impl Recommend {
                     "overshoot {overshoot:.0} % within the {:.0} % limit",
                     p.targets.overshoot_warn_pct
                 ),
-                false,
+                FindingStatus::Fine,
             );
             return;
         }
@@ -223,7 +251,7 @@ impl Recommend {
                 format!(
                     "overshoot {overshoot:.0} % is implausible: the deconvolution is unreliable on this epoch (little or jerky stick input)"
                 ),
-                false,
+                FindingStatus::NotJudged,
             );
             return;
         }
@@ -258,7 +286,7 @@ impl Recommend {
                     "overshoot {overshoot:.0} % but the D-term is noisy ({n:+.0} dB at 150–400 Hz vs 5–30 Hz, limit {:+.0} dB): lower the D-term filter before raising D",
                     p.dterm_noise_max_db
                 ),
-                false,
+                FindingStatus::Attention,
             );
             return;
         }
@@ -268,7 +296,7 @@ impl Recommend {
                 RULE,
                 Some(axis),
                 format!("overshoot {overshoot:.0} % but the log has no PID gains to change"),
-                false,
+                FindingStatus::Attention,
             );
             return;
         };
@@ -286,11 +314,15 @@ impl Recommend {
                     "overshoot {overshoot:.0} % but {} flies without D: damping comes from P/I and feedforward, not judged here",
                     axis.name()
                 ),
-                false,
+                FindingStatus::NotJudged,
             );
             return;
         }
-        let to = (d * (1.0 + p.d_step_pct / 100.0)).round();
+        let settings = &ctx.session.settings;
+        // at the firmware's gain step, and never a change of nothing
+        let to = settings
+            .round_gain(d * (1.0 + p.d_step_pct / 100.0))
+            .max(settings.round_gain(d + settings.gain_step()));
         let noise = noise_db.map_or(String::new(), |n| format!(", D-term noise {n:+.0} dB"));
         Self::finding(
             out,
@@ -300,14 +332,14 @@ impl Recommend {
                 "overshoot {overshoot:.0} % (limit {:.0} %){noise}",
                 p.targets.overshoot_warn_pct
             ),
-            true,
+            FindingStatus::Proposed,
         );
         Self::push(
             out,
             Proposal {
                 path: format!("pid.{}.d", axis.name()),
-                from: Some(format!("{d:.0}")),
-                to: format!("{to:.0}"),
+                from: Some(settings.gain_text(d)),
+                to: settings.gain_text(to),
                 rationale: format!(
                     "{} overshoots {overshoot:.0} % (limit {:.0} %){noise}: more D damps it",
                     axis.name(),
@@ -346,7 +378,7 @@ impl Recommend {
                     "no peak of {:.0} dB prominence above {:.0} Hz",
                     p.peak_min_prominence_db, p.peak_min_hz
                 ),
-                false,
+                FindingStatus::Fine,
             );
             return;
         };
@@ -365,7 +397,7 @@ impl Recommend {
                     "peak at {f:.0} Hz sits in the static notch at {:.0} Hz",
                     n.center_hz
                 ),
-                false,
+                FindingStatus::Fine,
             );
             return;
         }
@@ -381,7 +413,7 @@ impl Recommend {
                     "peak at {f:.0} Hz is inside the dynamic notch range {:.0}–{:.0} Hz",
                     d.min_hz, d.max_hz
                 ),
-                false,
+                FindingStatus::Fine,
             );
             return;
         }
@@ -393,10 +425,10 @@ impl Recommend {
                 RULE,
                 Some(axis),
                 format!(
-                    "peak at {f:.0} Hz is above the RPM filter minimum ({:.0} Hz): likely a motor harmonic it tracks — see Motor noise",
+                    "peak at {f:.0} Hz is above the RPM filter minimum ({:.0} Hz): likely a motor harmonic it tracks: see the RPM overlay on Freq × throttle",
                     r.min_hz
                 ),
-                false,
+                FindingStatus::Fine,
             );
             return;
         }
@@ -406,7 +438,13 @@ impl Recommend {
             axis.name(),
             peak.prominence
         );
-        Self::finding(out, RULE, Some(axis), evidence.clone(), true);
+        Self::finding(
+            out,
+            RULE,
+            Some(axis),
+            evidence.clone(),
+            FindingStatus::Proposed,
+        );
         if let Some(d) = &filters.dyn_notch {
             if f < d.min_hz {
                 Self::push(
@@ -465,7 +503,13 @@ impl Recommend {
     ) {
         const RULE: &str = "gyro-lpf";
         let Some(lp) = &ctx.session.settings.gyro_filters.lowpass1 else {
-            Self::finding(out, RULE, None, "no gyro LPF1 in the log".into(), false);
+            Self::finding(
+                out,
+                RULE,
+                None,
+                "no gyro LPF1 in the log".into(),
+                FindingStatus::NotJudged,
+            );
             return;
         };
         if lp.dyn_min_hz.is_some() {
@@ -474,13 +518,19 @@ impl Recommend {
                 RULE,
                 None,
                 "the gyro LPF1 is dynamic (throttle-driven): not judged".into(),
-                false,
+                FindingStatus::NotJudged,
             );
             return;
         }
         let c = lp.cutoff_hz;
         if c <= 0.0 {
-            Self::finding(out, RULE, None, "the gyro LPF1 is off".into(), false);
+            Self::finding(
+                out,
+                RULE,
+                None,
+                "the gyro LPF1 is off".into(),
+                FindingStatus::NotJudged,
+            );
             return;
         }
         // the loudest low band (signal) against the loudest band above the
@@ -495,7 +545,7 @@ impl Recommend {
                     RULE,
                     Some(*axis),
                     format!("cutoff {c:.0} Hz too close to Nyquist to judge"),
-                    false,
+                    FindingStatus::NotJudged,
                 );
                 return;
             }
@@ -527,7 +577,7 @@ impl Recommend {
                     axis.name(),
                     p.lpf_headroom_db
                 ),
-                false,
+                FindingStatus::Fine,
             );
             return;
         }
@@ -540,7 +590,13 @@ impl Recommend {
             delay(c),
             delay(to)
         );
-        Self::finding(out, RULE, Some(axis), evidence.clone(), true);
+        Self::finding(
+            out,
+            RULE,
+            Some(axis),
+            evidence.clone(),
+            FindingStatus::Proposed,
+        );
         Self::push(
             out,
             Proposal {
@@ -611,7 +667,7 @@ impl Analysis for Recommend {
                     "peak",
                     Some(axis),
                     format!("no spectrum: {e}"),
-                    false,
+                    FindingStatus::NotJudged,
                 ),
             }
         }
@@ -700,11 +756,37 @@ mod tests {
         let roll = d.iter().find(|p| p.path == "pid.roll.d").unwrap();
         assert_eq!(roll.from.as_deref(), Some("30"));
         assert_eq!(roll.to, "33");
+        // fractional gains (ArduPilot) keep their precision instead of rounding to 0
+        let fine = run(&spec, |s| {
+            let mut g = gains();
+            g.roll.d = 0.0036;
+            s.settings.pid = Some(g);
+            s.settings.pid_step = Some(0.0001);
+        });
+        let roll = fine
+            .proposals
+            .iter()
+            .find(|p| p.path == "pid.roll.d")
+            .unwrap();
+        assert_eq!(roll.from.as_deref(), Some("0.0036"));
+        assert_eq!(roll.to, "0.004");
+        // a gain too small for 10 % to move it still moves by one step
+        let small = run(&spec, |s| {
+            let mut g = gains();
+            g.roll.d = 3.0;
+            s.settings.pid = Some(g);
+        });
+        let roll = small
+            .proposals
+            .iter()
+            .find(|p| p.path == "pid.roll.d")
+            .unwrap();
+        assert_eq!((roll.from.as_deref(), roll.to.as_str()), (Some("3"), "4"));
         assert!(roll.rationale.contains("overshoots") && roll.confidence >= 0.3);
         assert!(
             out.findings
                 .iter()
-                .any(|f| f.rule == "overshoot" && f.proposed)
+                .any(|f| f.rule == "overshoot" && f.proposed())
         );
         // a first-order plant: no overshoot, no proposal
         let calm = run(&base(), |s| s.settings.pid = Some(gains()));
@@ -870,6 +952,9 @@ mod tests {
                 harmonics: 3,
                 q: 500.0,
                 min_hz: 100.0,
+                fade_range_hz: 0.0,
+                weights: Vec::new(),
+                lpf_hz: 0.0,
             });
         });
         assert!(

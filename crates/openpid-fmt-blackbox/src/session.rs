@@ -2,9 +2,11 @@
 
 use crate::headers::{HeaderError, Headers};
 use crate::parser::{EventData, Frame, MainKind, ParseStats, Parser};
+use openpid_core::modes::{ModeChange, push_change};
 use openpid_core::session::{AuxRow, AuxTable, Diagnostics, Event, EventKind};
 use openpid_core::{
-    Channel, ChannelId, ChannelSet, FlightSession, Origin, ProfileRegistry, Series, Timebase, Unit,
+    Channel, ChannelId, ChannelSet, FirmwareInfo, FirmwareProfile, FlightSession, Origin,
+    ProfileRegistry, Series, Timebase, Unit,
 };
 
 /// Raw decode result of one log: integer columns exactly as logged.
@@ -229,6 +231,7 @@ pub fn build_session(
     aux.extend(log.gps.iter().cloned());
     aux.extend(log.gps_home.iter().cloned());
 
+    let flight_modes = profile.map_or_else(Vec::new, |p| mode_changes(p, &firmware, &log.slow));
     let mut session = FlightSession {
         index,
         offset_bytes,
@@ -239,6 +242,7 @@ pub fn build_session(
         timebase,
         channels,
         events: log.events.clone(),
+        flight_modes,
         aux,
         diagnostics,
     };
@@ -246,4 +250,27 @@ pub fn build_session(
         p.derive(&mut session);
     }
     session
+}
+
+/// The mode changes of the slow frames' `flightModeFlags`, each word turned
+/// into modes by the firmware profile; empty when the log has no such field.
+fn mode_changes(
+    profile: &dyn FirmwareProfile,
+    firmware: &FirmwareInfo,
+    slow: &AuxTable,
+) -> Vec<ModeChange> {
+    let Some(col) = slow.columns.iter().position(|c| c == "flightModeFlags") else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for row in &slow.rows {
+        if let Some(word) = row.values.get(col) {
+            push_change(
+                &mut out,
+                row.sample_index,
+                profile.flight_modes(firmware, *word),
+            );
+        }
+    }
+    out
 }

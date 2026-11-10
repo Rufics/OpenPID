@@ -19,12 +19,13 @@ written in Rust, MIT licensed.
   (rise, delay, overshoot, settling, final value) judged against Freestyle,
   Racing or Cinematic targets, and a target band on the plot.
 - **Noise**: Welch spectra with automatic peak markers, frequency × throttle
-  and frequency × time heatmaps, a 3D surface, a player that steps through the
+  and frequency × time heatmaps, a player that steps through the
   spectrum over time, and an RPM overlay of the motor harmonics.
 - **Filters**: Filter Sim runs the unfiltered gyro through the modelled filter
   chain (lowpass, dynamic notch, RPM filter) so you can try new settings
-  without flying; Motor noise lists every motor's harmonics on the gyro; the
-  motor speed is estimated from the noise when eRPM is not logged.
+  without flying; from the command line, `run motor-noise` lists every
+  motor's harmonics on the gyro, and the motor speed is estimated from the
+  noise when eRPM is not logged.
 - **Advice**: tuning rules with explicit evidence (overshoot → more D, an
   uncovered peak → a notch, headroom above the gyro LPF → a higher cutoff),
   each proposal with its rationale and confidence, exported as Betaflight CLI
@@ -77,8 +78,8 @@ the test suite (`git lfs install && git lfs pull`).
 
 **GUI.** Start `openpid-gui`, drop a log into the window (or use *Open sample
 log* for a synthetic flight), and take the seven-step tour. Tabs: Log viewer,
-Step response, Spectrum, Freq × throttle, Freq × time, Surface 3D, Filter
-Sim, Motor noise, Advice, PID sliders, Diagnostics, Settings. Every control is
+Step response, Spectrum, Freq × throttle, Freq × time, Filter Sim, Advice,
+PID sliders, Setup info, Settings. Every control is
 described in the [user guide](docs/USER-GUIDE.md).
 
 ```sh
@@ -107,15 +108,13 @@ openpid decode flight.bbl --session 1 --out log1.csv      # raw CSV like blackbo
 ## Screenshots
 
 <details>
-<summary>Log viewer, heatmaps, 3D surface, Filter Sim, Motor noise, Advice, sliders</summary>
+<summary>Log viewer, heatmaps, Filter Sim, Advice, sliders</summary>
 
 ![Log viewer](docs/screenshots/log.png)
 ![Several logs at once](docs/screenshots/slots-step.png)
 ![Freq × throttle](docs/screenshots/throttle.png)
 ![Freq × time](docs/screenshots/time.png)
-![Surface 3D](docs/screenshots/surface.png)
 ![Filter Sim](docs/screenshots/filter.png)
-![Motor noise](docs/screenshots/motors.png)
 ![Advice](docs/screenshots/advice.png)
 ![PID sliders](docs/screenshots/sliders.png)
 ![Start screen](docs/screenshots/start.png)

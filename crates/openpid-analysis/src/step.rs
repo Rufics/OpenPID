@@ -22,21 +22,28 @@ use serde::{Deserialize, Serialize};
 pub struct StepParams {
     /// Axis to analyse.
     pub axis: Axis,
-    /// Window length in seconds (PTB: 2 s).
+    /// Window length in seconds (2 s).
     pub window_s: f64,
     /// Number of sub-windows per window (hop = window / superpos; PID-Analyzer: 16).
     pub superpos: usize,
     /// Deconvolution cut-off (Hz).
     pub cutoff_hz: f64,
-    /// Windows whose peak setpoint is below this (deg/s) are ignored (PTB: 20).
+    /// Windows whose peak setpoint is below this (deg/s) are ignored. 80
+    /// matches the window counts and curves of the reference tool on the
+    /// committed fixtures (#33, `docs/DESIGN.md` §6.2); gentle stick
+    /// movements give a deconvolution dominated by noise.
     pub min_input: f64,
+    /// A window whose response settles (mean of the last quarter) outside
+    /// this range is dropped as a failed deconvolution: a gyro that ends at
+    /// half or one and a half times the setpoint is not a step response.
+    pub settle_range: (f64, f64),
     /// Boundary between the "low" and "high" input groups (deg/s; PID-Analyzer: 500).
     pub high_input: f64,
     /// Length of the response in seconds (0.5).
     pub response_s: f64,
     /// Centred moving-average width in milliseconds applied to the mean (0 = none).
     pub smooth_ms: f64,
-    /// Y-offset correction (PTB): normalise every window's response on its
+    /// Y-offset correction: normalise every window's response on its
     /// settled tail (mean of the last quarter) before averaging, so a gain
     /// mismatch between setpoint and gyro does not shift the curves off 1.
     pub y_offset: bool,
@@ -53,7 +60,8 @@ impl Default for StepParams {
             window_s: 2.0,
             superpos: 16,
             cutoff_hz: 25.0,
-            min_input: 20.0,
+            min_input: 80.0,
+            settle_range: (0.5, 1.5),
             high_input: 500.0,
             response_s: 0.5,
             smooth_ms: 0.0,
@@ -125,16 +133,71 @@ pub struct StepOutput {
     pub metrics: StepMetrics,
     /// Windows examined.
     pub windows_total: usize,
-    /// Windows with enough stick input to be used.
+    /// Windows with enough stick input that went into the mean.
     pub windows_used: usize,
+    /// Windows with enough stick input dropped because their response did not
+    /// settle within `settle_range`.
+    #[serde(default)]
+    pub windows_rejected: usize,
     /// 2-D histogram of the individual responses: x = time (ms), y = amplitude, z = weight.
     pub histogram: Grid2D,
+    /// Spread of the peak and of the time to 50 % over the used windows.
+    #[serde(default)]
+    pub spread: StepSpread,
+}
+
+/// Mean and standard deviation over the used windows of each window's own
+/// peak and time to 50 % (the error bars of the Peak / Latency plots,
+/// docs/design/axis-layout).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct StepSpread {
+    /// Mean of the windows' peaks.
+    pub peak_mean: f64,
+    /// Standard deviation of the windows' peaks.
+    pub peak_sd: f64,
+    /// Mean time to 50 % of the windows that reach it, milliseconds.
+    pub half_ms_mean: f64,
+    /// Standard deviation of that time, milliseconds.
+    pub half_ms_sd: f64,
+}
+
+/// Mean and (population) standard deviation; `(0, 0)` for no values.
+fn mean_sd(v: &[f64]) -> (f64, f64) {
+    if v.is_empty() {
+        return (0.0, 0.0);
+    }
+    let n = v.len() as f64;
+    let m = v.iter().sum::<f64>() / n;
+    let var = v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / n;
+    (m, var.sqrt())
+}
+
+/// [`StepSpread`] of the window responses sampled at `fs`.
+fn spread(rows: &[(f64, Vec<f64>)], fs: f64) -> StepSpread {
+    let peaks: Vec<f64> = rows
+        .iter()
+        .map(|(_, r)| r.iter().copied().fold(f64::MIN, f64::max))
+        .collect();
+    let halves: Vec<f64> = rows
+        .iter()
+        .filter_map(|(_, r)| r.iter().position(|v| *v >= 0.5))
+        .map(|i| i as f64 * 1000.0 / fs)
+        .collect();
+    let (peak_mean, peak_sd) = mean_sd(&peaks);
+    let (half_ms_mean, half_ms_sd) = mean_sd(&halves);
+    StepSpread {
+        peak_mean,
+        peak_sd,
+        half_ms_mean,
+        half_ms_sd,
+    }
 }
 
 /// How many step windows `axis` would contribute with `p`: `(used, total)`.
-/// The same selection as [`StepAnalysis::run`] (peak input at or above
+/// The same input selection as [`StepAnalysis::run`] (peak input at or above
 /// `min_input`, at least 95 % valid samples) without the deconvolution, so
-/// a fitness check can judge the stick activity cheaply.
+/// a fitness check can judge the stick activity cheaply; the settle check
+/// of `run` can still drop some of these.
 pub fn count_windows(
     ctx: &AnalysisCtx<'_>,
     axis: Axis,
@@ -202,6 +265,22 @@ fn weighted_mean(rows: &[(f64, Vec<f64>)], len: usize) -> Option<Vec<f64>> {
 }
 
 /// Mean of the settled tail (last quarter) of a step response.
+/// `step` when it settles within `p.settle_range` (Y-offset applied when
+/// asked), `None` for a failed deconvolution.
+fn settled(mut step: Vec<f64>, p: &StepParams) -> Option<Vec<f64>> {
+    let tail = tail_mean(&step);
+    if !(p.settle_range.0..=p.settle_range.1).contains(&tail) {
+        return None;
+    }
+    // a response that never settles (only with a wide settle_range) stays as it is
+    if p.y_offset && tail.abs() > 0.2 {
+        for v in &mut step {
+            *v /= tail;
+        }
+    }
+    Some(step)
+}
+
 fn tail_mean(step: &[f64]) -> f64 {
     let n = step.len();
     let tail = &step[n - n / 4..];
@@ -284,9 +363,12 @@ impl Analysis for StepAnalysis {
             || p.response_s <= 0.0
             || p.response_s >= p.window_s
             || p.hist_bins < 2
+            || p.settle_range.0.is_nan()
+            || p.settle_range.0 >= p.settle_range.1
         {
             return Err(AnalysisError::InvalidParams(
-                "window_s > response_s > 0, superpos >= 1, hist_bins >= 2".into(),
+                "window_s > response_s > 0, superpos >= 1, hist_bins >= 2, settle_range lo < hi"
+                    .into(),
             ));
         }
         let sp = prepare(
@@ -322,6 +404,7 @@ impl Analysis for StepAnalysis {
         };
         let mut rows: Vec<(f64, Vec<f64>)> = Vec::new(); // (peak input, response)
         let mut total = 0usize;
+        let mut rejected = 0usize;
         let mut start = 0;
         while start + win <= input.len() {
             total += 1;
@@ -339,25 +422,26 @@ impl Analysis for StepAnalysis {
             if peak >= p.min_input && valid_in * 20 >= win * 19 && valid_out * 20 >= win * 19 {
                 let h = impulse_response(&fft, seg_in, seg_out, fs, resp_len, &dp)
                     .map_err(|e| AnalysisError::InvalidParams(e.to_string()))?;
-                let mut step = step_from_impulse(&h);
-                if p.y_offset {
-                    let tail = tail_mean(&step);
-                    // a window whose response never settles stays as it is
-                    if tail.abs() > 0.2 {
-                        for v in &mut step {
-                            *v /= tail;
-                        }
-                    }
+                match settled(step_from_impulse(&h), p) {
+                    Some(step) => rows.push((peak, step)),
+                    None => rejected += 1,
                 }
-                rows.push((peak, step));
             }
             start += hop;
         }
         if rows.is_empty() {
-            return Err(AnalysisError::NotEnoughData(format!(
-                "none of {total} windows had stick input above {} deg/s",
-                p.min_input
-            )));
+            return Err(AnalysisError::NotEnoughData(if rejected > 0 {
+                format!(
+                    "{rejected} of {total} windows had stick input above {} deg/s, but none \
+                     settled between {} and {}",
+                    p.min_input, p.settle_range.0, p.settle_range.1
+                )
+            } else {
+                format!(
+                    "none of {total} windows had stick input above {} deg/s",
+                    p.min_input
+                )
+            }));
         }
         let smooth = |v: Vec<f64>| {
             if p.smooth_ms > 0.0 {
@@ -415,6 +499,8 @@ impl Analysis for StepAnalysis {
             metrics,
             windows_total: total,
             windows_used: rows.len(),
+            windows_rejected: rejected,
+            spread: spread(&rows, fs),
             histogram,
         })
     }

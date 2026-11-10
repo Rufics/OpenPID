@@ -32,14 +32,14 @@ The mapping to the PIDtoolbox / Pro feature table and the phase plan.
 | 2D spectral analyzer (PSD) | ✓ | ✓ | 1 | Welch |
 | Freq × throttle heatmap | ✓ | ✓ | 1 | §6.4 |
 | Freq × time heatmap (STFT) | ✓ | ✓ | 1 | §6.5 |
-| PID slider tool | ✓ | ✓ | 1 | Betaflight-specific, through `FirmwareProfile` |
+| PID slider tool | ✓ | ✓ | 1 | The firmware's own sliders through its profile (Betaflight simplified tuning), else ratio sliders over the logged gains (`RatioSliders`), as the reference tool's slider tool; every log's position on one track per slider |
 | Multi-firmware support | ✓ | ✓ | 0→2 | Betaflight/EmuFlight/Rotorflight: phase 0; ArduPilot done (ADR-0010, `docs/ARDUPILOT.md`), then INAV: phase 2; KISS/Fettec/QuickSilver when samples exist (decision Q2) |
 | RPM / dyn-notch overlay 2D | — | ✓ | 2 | Needs eRPM (DShot telemetry) and the pole count |
-| RPM / dyn-notch overlay 3D | — | ✓ | 2 | A 3D freq × throttle × amp surface |
+| 3D surface of freq × throttle | — | — | — | Built as a tab, then removed on 2026-11-10 at the owner's decision: the reference tool's tutorial shows no 3D view, and the row had been listed as a Pro feature without a source |
 | RPM estimator | — | ✓ | 2 | Motor speed from the noise peaks when there is no telemetry |
 | Filter sim | — | ✓ | 2 | `gyroUnfilt` through a model of the firmware filters |
 | Test signal generator | — | ✓ | 2 | Synthetic signals to check filters and algorithms |
-| Motor / prop noise tool | — | ✓ | 2 | Spectra per motor, harmonics |
+| Motor / prop noise | — | — | 2 | Our own, command line only (`openpid run motor-noise`). It was listed as a Pro feature by mistake; the reference tool has no such screen, and the tab was removed on 2026-11-10 |
 | Dynamic spectrum player | — | ✓ | 2 | Animated playback of the STFT over time |
 | Recommendations / autotune | — | — | 3 | Our own extension: `Recommend` (rules with evidence), the Advice tab, export to the Betaflight CLI |
 | Export (CSV/JSON/PNG, CLI diff) | partly | partly | 1 | CSV/JSON/PNG from the GUI and CLI; `openpid diff` and `--cli` are phase 3 |
@@ -133,9 +133,33 @@ pub struct FlightSession {
     pub timebase: Timebase,            // nominal step, actual step, jitter, gaps
     pub channels: ChannelSet,          // every data series
     pub events: Vec<Event>,            // E frames: arm/disarm, inflight adjust, logging resume, …
+    pub flight_modes: Vec<ModeChange>, // flight modes over time, decoded per firmware
     pub diagnostics: Diagnostics,      // corrupt frames, resyncs, unknown fields
 }
 ```
+
+**The session is the only thing consumers read** (ADR-0015). The core owns
+the model and every lookup on it (`sample_at`, `flight_modes_at`,
+`mode_changes`, `sticks_at`); a format crate is a reader (bytes to raw
+records), a firmware profile (the only place that knows a firmware: fields,
+scales, settings, derived channels, mode words) and a session builder; the
+analysis, the simulator and the app never branch on the firmware.
+
+**Flight modes** are one set of values for every firmware (`FlightMode`: Arm,
+Angle, Horizon, AirMode, AltHold, PosHold, ReturnHome, GpsRescue, Failsafe, …,
+`Other(name)` for the rest). The profile turns the firmware's mode word into
+them (`FirmwareProfile::flight_modes`): the mode-box mask of
+`flightModeFlags` by box list and version (Betaflight, Cleanflight, INAV,
+Rotorflight; EmuFlight and unknown firmware: ARM, ANGLE, HORIZON, the other
+bits numbered), the `ArduPilot` mode number by vehicle (arming from its `EV`
+messages); the CSV reader takes the `flightModeFlags` names.
+
+**Sticks** are the channels `stick.roll`, `stick.pitch`, `stick.yaw` (−100 …
+100 %: right, forward, right positive) and `stick.throttle` (0 … 100 %; the
+collective on a helicopter), derived by the profile: `rcCommand` on the
+Cleanflight family (±500 full deflection, yaw stored inverted), `RCIN` by
+`RCMAP_*` and `RCn_MIN / MAX / TRIM / REVERSED` on `ArduPilot` (pitch
+negated).
 
 A **channel** is one series with one unit:
 
@@ -174,7 +198,7 @@ Blackbox does not guarantee a uniform step: there is jitter, dropped frames, `I`
 - The **actual** timestamps (`time` in µs, i64) of every frame are kept.
 - `Timebase` holds the nominal step (from `looptime × pid_process_denom × P-interval`), the median actual step, the maximum jitter and the list of gaps.
 - For the spectral analyses the series is **resampled** onto a uniform grid (linear interpolation within the tolerance; gaps longer than `gap_tolerance` are marked invalid and excluded from the segments). This happens once in `analysis::Prepared` and is cached.
-- All of it is visible to the user in the "Log diagnostics" panel.
+- All of it is visible to the user on the Setup info tab ("Decoder": samples, sample step, gaps).
 
 ### 4.3 Settings
 
@@ -182,7 +206,8 @@ A typed structure with optional fields (`Option<T>`), filled in by the `Firmware
 
 ```rust
 pub struct Settings {
-    pub pid: PerAxis<PidGains>,          // P, I, D, D_min/D_max, F
+    pub pid: PerAxis<PidGains>,          // P, I, D, D_min/D_max, F in the firmware's numbers
+    pub pid_step: Option<f64>,           // their smallest step: 1 on Betaflight, 0.0001 on ArduPilot
     pub gyro_filters: FilterChain,       // lowpass1/2 (type, cutoff, dyn min/max), notch, dyn-notch, rpm-notch
     pub dterm_filters: FilterChain,
     pub rates: RatesProfile,
@@ -212,6 +237,7 @@ pub trait FirmwareProfile: Send + Sync {
     fn derive(&self, session: &mut FlightSession);      // throttle %, pid error, gyro stage, …
     fn filter_model(&self, s: &Settings) -> Option<FilterChainModel>; // for Filter Sim
     fn slider_model(&self) -> Option<Box<dyn SliderModel>>;          // for the PID slider tool
+    fn exporter(&self) -> Option<Box<dyn Exporter>>;                 // proposals / a diff as the firmware's commands
 }
 
 /// A computation over a session. A pure function of (data, parameters).
@@ -229,10 +255,13 @@ pub trait Recommender: Send + Sync {
     fn recommend(&self, s: &FlightSession, results: &ResultStore) -> Vec<Proposal>;
 }
 
-/// Export to an external form (a firmware CLI diff, CSV, JSON, PNG).
+/// Proposals and setting diffs as text for the firmware of one log; created
+/// by that log's `FirmwareProfile`, so it knows the version's setting names.
 pub trait Exporter: Send + Sync {
-    fn id(&self) -> &'static str;
-    fn export(&self, what: &Exportable, w: &mut dyn Write) -> Result<(), ExportError>;
+    fn id(&self) -> &'static str;                       // "betaflight-cli"
+    fn label(&self) -> &'static str;                    // "Betaflight CLI", shown to the user
+    fn export(&self, proposals: &[Proposal]) -> Result<String, ExportError>;
+    fn diff(&self, diff: &[HeaderDiff]) -> String;
 }
 ```
 
@@ -286,11 +315,23 @@ The method is **Wiener deconvolution** from the input (setpoint) to the output (
 1. The epoch (the user's time range) is cut into windows of length `L` (default 2 s) with a hop of `L/superpos` (superpos = 16 → 125 ms).
 2. Every window: `x = setpoint·w`, `y = gyro·w` (Hann), zero-padded to a smooth length.
 3. `H = Y·conj(X) / (|X|² + λ(f))`, where `λ(f)` is the regularisation: `reg_low` (0.1) below `cutoff` (default 25 Hz), `reg_high` (1e8) above, with a raised-cosine transition of ±20 % on a log scale between them. Both signals are multiplied by Hann before the FFT: without it the unobserved tail of the response beyond the record understates the gain (≈ 10 % for a 4 s record and τ = 20 ms, checked on a synthetic model). The FFT length is a 5-smooth number ≥ 1.5·len so the circular convolution does not wrap. The impulse response is `h = IFFT(H)`, the step response `s = cumsum(h)` over the first 500 ms.
-4. Window selection: `max|setpoint| ≥ threshold` (default 20 °/s, with separate "low/high input" as in PID-Analyzer at 500 °/s), windows with gaps or corruption excluded.
+4. Window selection: `max|setpoint| ≥ threshold` (default **80 °/s**, with separate "low/high input" as in PID-Analyzer at 500 °/s), windows with gaps or corruption excluded, and windows whose response **does not settle** between 0.5 and 1.5 (mean of the last quarter, `settle_range`) dropped as failed deconvolutions; the output counts them (`windows_rejected`). Both values are calibrated against PIDtoolbox Pro v0.9 (#33, table below). The earlier 20 °/s took every gentle stick movement, and a few windows whose deconvolution failed pulled the weighted mean: on `btfl_027` the pitch curve ended at 1.26 and the yaw curve, with the automatic trim, at 2.7.
 5. Aggregation: a weighted mean (weight = input amplitude) **and** a 2D histogram (time × amplitude) to show the spread; optional Y-offset correction (normalising on the settled tail value) and smoothing (PTB "smoothing 1/20/40/60").
 6. Metrics: rise time (10–90 %), overshoot %, settling time (±5 %), delay (the first crossing of 50 % of the mean curve) and **latency**: the lag of the cross-correlation peak of setpoint ↔ gyro on the raw signals of the epoch (`openpid_dsp::xcorr::lag_of_max`, searched up to 100 ms, parabolic peak refinement). For a white input this is the transport delay of the axis; with smooth stick input the peak also catches part of the plant's own lag (on real logs 10–17 ms against a 50 % delay of 18–22 ms), so the value is read next to delay. A "whitened" variant through first differences was rejected: on real logs the gyro noise dominates the derivative (r ≈ 0.1) and the peak jumps between 4 and 37 ms depending on the smoothing. Both values are shown side by side: delay depends on the filters and PIDs, latency is the transport delay of the axis. Y-offset: every window is normalised on the mean of the last quarter of its response when that is > 0.2 (otherwise the window is left as is).
 
-Parameters (`StepParams`): `window_s, superpos, cutoff_hz, min_input, high_input, resp_len_s, y_offset, smoothing, axis`.
+Parameters (`StepParams`): `window_s, superpos, cutoff_hz, min_input, settle_range, high_input, resp_len_s, y_offset, smoothing, axis`.
+
+**Calibration against PIDtoolbox Pro v0.9** (#33; the owner's screenshots of the same logs; PTB leaves out the first and the last second of the log, so the comparison uses that epoch; `step_response_matches_the_reference_tool` in `crates/openpid-analysis/tests/real_logs.rs` keeps it). PTB's selection rule itself is not public: the only public PTB code (2019, GPLv3) still uses the old "end of manoeuvre" heuristic and no deconvolution, so the rule was matched on the results, not read.
+
+| Log, axis | PTB windows / peak / latency | OpenPID windows / peak / 50 % |
+|---|---|---|
+| `betaflight-2025.12.2-btfl_027`, roll | 78 / 1.15 / 22 ms | 65 / 1.14 / 22 ms |
+| `btfl_027`, pitch | 13 / 1.12 / 22.5 ms | 14 / 1.14 / 21 ms |
+| `btfl_027`, yaw | 30 / 1.18 / 12.3 ms | 27 / 1.24 / 12 ms |
+| `betaflight-4.5.1-two-sessions` (21 s session), roll / pitch | insufficient data | not enough data |
+| same, yaw | 32 / 0.87 / 11.7 ms | 27 / 0.88 / 12 ms |
+
+PTB's "SR Latency" is the time the mean response takes to reach 50 % (our *delay*); PTB's other latency option, "SP-Gyro Delay" ("Xcorr Latency" in v0.8), most likely corresponds to our cross-correlation *latency*. With the old defaults (20 °/s, no settle check) the same logs gave 172/133/32 windows and peaks of 1.26/1.35/1.24 on `btfl_027`. A log with only gentle stick inputs (`betaflight-4.2.0.BFL`: 48 windows above 20 °/s, none above 80) now gives "not enough data", as PTB does; the threshold is a step-tab control for such logs.
 
 ### 6.3 2D spectral analyzer (PSD)
 
@@ -313,13 +354,44 @@ An STFT with `nfft`, hop, Hann → `Grid2D { x: time, y: freq, z: amp/dB }`. It 
 ### 6.6 Filters and overlays (phase 2)
 
 - `openpid-sim` (ADR-0012): PT1/PT2/PT3, biquad LPF/notch (Betaflight/RBJ formulas) as state machines `update(x)` with an analytic `response(f)`, assembled into a `Chain`. All in `f64`, with tests of the frequency response against the analytic formulas and of the consistency of `update` ↔ `response`.
-- `ChainModel::from_settings` builds the gyro or D-term chain from `Settings` (plus the raw headers for expo, fade, weights) and runs the signal under a `Drive` (throttle, motor rpm, dynamic-notch centres): lpf1 with a throttle-dependent cutoff `min + (max−min)·(t(1−t)·expo + t)` recomputed every 5 ms in 1 % throttle steps; an RPM notch on the harmonics `k·rpm/60` with a smoothed frequency, a fade-in above `min_hz`, harmonic weights and skipping of harmonics above 0.48·fs; a dynamic notch that tracks the strongest STFT peaks (≈ 100 ms, 16 ms hop, PT1 4 Hz) in the `min..max` band. The order: RPM → static notches → lpf1 → lpf2 → dynamic notch. Limits of the model: it runs at the log rate, not the gyro rate (at 1 kHz only the band up to 500 Hz remains, higher RPM harmonics are not modelled), the dynamic-notch tracker approximates the firmware's SDFT, the expo-0 curve for < 4.2 is linear. On the Betaflight 2025.12 fixture (`gyroUnfilt` in the log) the residual `gyro.sim − gyro.filtered` is 5–13 % RMS against 27–75 % without filters (a test in the crate).
+- `ChainModel::from_settings` builds the gyro or D-term chain from the typed `Settings` alone (the firmware profile fills the dynamic low-pass curve, the RPM-notch fade, weights and smoothing and the dynamic-notch count, with the version's defaults; ADR-0015) and runs the signal under a `Drive` (throttle, motor rpm, dynamic-notch centres): lpf1 with a throttle-dependent cutoff `min + (max−min)·(t(1−t)·expo + t)` recomputed every 5 ms in 1 % throttle steps; an RPM notch on the harmonics `k·rpm/60` with a smoothed frequency, a fade-in above `min_hz`, harmonic weights and skipping of harmonics above 0.48·fs; a dynamic notch that tracks the strongest STFT peaks (≈ 100 ms, 16 ms hop, PT1 4 Hz) in the `min..max` band. The order: RPM → static notches → lpf1 → lpf2 → dynamic notch. Limits of the model: it runs at the log rate, not the gyro rate (at 1 kHz only the band up to 500 Hz remains, higher RPM harmonics are not modelled), the dynamic-notch tracker approximates the firmware's SDFT, the expo-0 curve for < 4.2 is linear. On the Betaflight 2025.12 fixture (`gyroUnfilt` in the log) the residual `gyro.sim − gyro.filtered` is 5–13 % RMS against 27–75 % without filters (a test in the crate).
 - **Filter Sim** (`FilterSimAnalysis`, the Filter Sim tab, `openpid run filter-sim --set …`): `gyro.raw → ChainModel(settings) → gyro.sim`, compared with the log's `gyro.filtered` (validation metrics: residual in % RMS, delay by cross-correlation) and with a "what-if" chain (`FilterOverrides`: LPF1/LPF2 cutoffs and types, the dynamic range, RPM and dynamic notches, a static notch; 0 switches a stage off). Outputs: both series over time, PSD raw/logged/sim/as-flown, a description of the stages. It needs the unfiltered gyro in the log (`gyroUnfilt`, `debug_mode GYRO_SCALED`, the ArduPilot batch sampler).
-- **RPM / dyn-notch overlay** (`RpmOverlay` in the freq × throttle output): from `motor_rpm.*` (eRPM and `motor_poles`), the median rpm of every motor per throttle bin (the same segments and window as the spectra); the GUI draws the harmonics `k·rpm/60` (toggles per motor, number of harmonics, by default as many as the RPM filter removes), the static notch bands, the dynamic-notch band and the RPM-filter minimum; the CLI JSON always has `overlay` when rpm exists. Checked on the 4.5.1 fixture: the fundamental line sits on the ridge of the unfiltered-gyro spectrum in 93 % of the bins. 3D is the same grid as a surface (#26).
+- **RPM / dyn-notch overlay** (`RpmOverlay` in the freq × throttle output): from `motor_rpm.*` (eRPM and `motor_poles`), the median rpm of every motor per throttle bin (the same segments and window as the spectra); the GUI draws the harmonics `k·rpm/60` (toggles per motor, number of harmonics, by default as many as the RPM filter removes), the static notch bands, the dynamic-notch band and the RPM-filter minimum; the CLI JSON always has `overlay` when rpm exists. Checked on the 4.5.1 fixture: the fundamental line sits on the ridge of the unfiltered-gyro spectrum in 93 % of the bins.
 - **RPM estimator** (`RpmEstimator`, `openpid run rpm`): without eRPM, the candidates are the strongest STFT peaks of the unfiltered gyro in the `rpm_min..rpm_max` band (as the 1st…3rd harmonic), dynamic programming picks a path continuous in time (penalties for a relative jump and for a higher harmonic), the confidence is the peak's excess over the band median. With four motors at similar speed the estimate follows their mean: a median error of 2.9 % on the 4.5.1 fixture and 2.0 % on 2025.12 (against the logged eRPM, reported as `median_error`). `gyro.filtered` is unusable: the RPM filter has already removed the peaks.
-- **Motor noise** (`MotorNoiseAnalysis`, the Motor noise tab, `openpid run motor-noise`): per motor, the gyro amplitude at its harmonics `k·rpm/60` in every STFT frame (averaged), the ratio to the mean over the motors, the sum; the speeds come from eRPM or the RPM estimator (then one row for all motors). A "bent prop" shows as a row with a ratio > 1 and the loudest motor highlighted; checked on the generator's synthetic data with one motor amplified 2.5×.
+- **Motor noise** (`MotorNoiseAnalysis`, `openpid run motor-noise`; no tab): per motor, the gyro amplitude at its harmonics `k·rpm/60` in every STFT frame (averaged), the ratio to the mean over the motors, the sum; the speeds come from eRPM or the RPM estimator (then one row for all motors). A "bent prop" shows as a row with a ratio > 1 and the loudest motor highlighted; checked on the generator's synthetic data with one motor amplified 2.5×.
 
-### 6.7 Cache and incrementality
+### 6.7 Defaults against the reference tool (#33)
+
+What the reference tool shows by default, from the owner's PIDtoolbox Pro v0.9 screenshots (#33) and its v0.8 tutorial video, against what OpenPID does and why. "Not recorded" means neither source shows the value; nothing is guessed, and no code of the reference tool was read.
+
+| Screen | Setting | Reference tool | OpenPID default | Why |
+|---|---|---|---|---|
+| Step | Window selection | rule not public; on `btfl_027` 78 / 13 / 30 windows (roll / pitch / yaw) | stick input ≥ 80 °/s and a response that settles between 0.5 and 1.5: 65 / 14 / 27 windows | matched on the results (§6.2); 20 °/s gave 172 / 133 / 32 and curves that ended off 1 |
+| Step | Part of the log analysed | leaves out the first and the last second | the automatic trim of take-off and landing ("Auto"), or the whole log ("All") | the trim follows the throttle and the motor rpm, so a long idle before take-off is left out too; the calibration of §6.2 used the reference tool's epoch |
+| Step | Latency shown | "SR Latency": the time to 50 % of the mean response; "SP-Gyro Delay" as the other option | the same two, "SR latency" first | same quantity, same name |
+| Step | Raw responses | "Raw", off | "Raw" (the response histogram), off | the mean is what is read; the spread is one click away |
+| Step | Y axis | not recorded | 0 … 1.5, fixed ("Y max") | a fixed axis makes two logs comparable by eye |
+| Step | Smoothing | several levels; the default is not recorded | off (0 ms); low / medium / high = 10 / 20 / 40 ms | smoothing hides a little of the overshoot the verdicts measure, so it is opt-in |
+| Step | Y correction | a control exists; the default is not recorded | off | it rescales every window to end at 1, which would hide a response that really settles off 1 |
+| Spectrum | Layout | roll, pitch, yaw, each with a "Sub 100Hz" panel | the same: three rows × (full range, below 100 Hz) | the low range is where propwash and frame resonances are |
+| Spectrum | Unfiltered gyro | gyro solid, gyro prefilt dotted | the same, on | the effect of the filters is on screen without a second plot |
+| Spectrum | Smoothing | medium | medium (a moving average over 8 Hz of the power) | same |
+| Spectrum | Window | Hann | Hann; 0.25 s segments, 1 s for the column below 100 Hz | the longer segment gives 1 Hz bins where 4 Hz bins leave 25 points |
+| Spectrum | Level | its own dB scale | (°/s)²/Hz in dB, the range automatic | the absolute levels of the two tools differ, so a copied Y range would cut our curves |
+| Freq × throttle | Columns | gyro prefilt beside gyro (its preset 1) | the same, per log | before and after the filters side by side |
+| Freq × throttle | Throttle axis | 0–100 % | 0–100 %; "Zoom to the flown range" as an option | a zoomed axis stretched 25 bins into blocks |
+| Freq × throttle | Lines over the maps | none from the data; fixed 20 / 60 Hz guides in its "<100Hz" view | none; "RPM overlay" and "Notches" as options | the owner: a line from the data reads as part of the map |
+| Freq × throttle | Colour map | MATLAB "hot" (black, red, yellow, white) | Blackbox Explorer's black, red, white; a colour-blind safe option | the owner's choice (docs/design/plot-colours) |
+| Freq × throttle | Colour limit | not recorded | automatic, one scale per log | two logs of different noise each keep their contrast |
+| Freq × time | Layout and channel | roll, pitch, yaw spectrograms of the unfiltered gyro, in dB | the same; the spectrum at the position and the throttle are added | what the noise did when, without leaving the tab |
+| Freq × time | Colour range | Z min −30, Z max 10 dB | automatic (the 30th and 99.5th percentile of the dB values above 20 Hz); Z min / Z max can be fixed | the dB levels differ, as on Spectrum |
+| Log viewer | Rows | roll, pitch, yaw at ± 500 °/s, throttle and motors in a row of their own | the same; "Y scale ±" in the panel | same |
+| Log viewer | Quantities shown | Gyro, Set point, Motors, Throttle | the same | same |
+| Log viewer | Sticks | two boxes beside the plots | a card on the throttle / motors row, with the flight modes | the owner's choice (docs/design/log-sticks) |
+| Log viewer | Flight-mode changes | a dashed line through the panels, the names under the throttle row | the same, as an option that is off | the owner: off by default |
+| Sliders | Slider tool | start gains and five ratios (P:D, P:I, roll:pitch, yaw, master) | the firmware's own sliders when the log has them, else the same five ratios over the logged gains | Betaflight's sliders give commands to paste; the ratios keep every other firmware from a dead end |
+
+### 6.8 Cache and incrementality
 
 `ResultStore` caches an `Output` by the key `(session_id, epoch, analysis_id, hash(params))`. Heavy computations run on a worker thread (`std::thread` plus a channel; `rayon` only if measurements show the need); the GUI receives progress and never blocks.
 
@@ -350,7 +422,7 @@ Views (each a struct implementing trait View { fn ui(&mut self, ctx, state) })
 ├─ HeatmapTime    — freq × time, player (phase 2)
 ├─ SliderTool     — PID slider ↔ gains
 ├─ FilterSim      — (phase 2)
-├─ Diagnostics    — headers, frame statistics, gaps
+├─ SetupInfo      — log check, frame statistics, setup and headers of every log side by side
 └─ Settings
 ```
 
@@ -391,6 +463,8 @@ The CLI uses the same registries as the GUI and is the basis of the golden tests
 - A `Recommender` receives a `FlightSession` plus the analysis results and returns `Vec<Proposal>` (`{ path: "pid.roll.d", from, to, rationale, confidence }`).
 - `Exporter("betaflight-cli")` turns `Proposal`s into `set …` commands / a diff.
 - Implemented (v1.0): `openpid-core::recommend` (`Proposal`, `Exporter`, `diff_headers`), `openpid-analysis::recommend::Recommend` with three rules and explicit evidence (overshoot → D, an uncovered peak → notch, headroom above the gyro LPF → cutoff), `openpid-fmt-blackbox::BetaflightCli`, `openpid diff` and `openpid run recommend --cli`.
+- `FormatRegistry::slider_model` falls back to `openpid_core::RatioSliders` (firmware-agnostic: master, P:D, P:I, roll:pitch and yaw ratios over the logged gains, rounded to the firmware's gain step, no commands) when the profile has no slider model, so a log with PID gains always has sliders.
+- The exporter and the slider model of a log are asked from its firmware profile through the format registry (`FormatRegistry::exporter(&session)`, `slider_model(&session)`; ADR-0015): the app and the CLI name no firmware. Betaflight (and a log that does not name its firmware) has the CLI exporter; INAV, Rotorflight, `EmuFlight` and `ArduPilot` have none yet, so the Advice tab shows their proposals without commands and `--cli` reports that there is no export.
 - Later: a `Device` trait (MSP over serial) to read and write settings and to download logs from the FC. The decision is ADR-0014: no device access in v1.0; later a separate `openpid-msp` crate behind the `device` feature on `serial2` (pure Rust), writes only with confirmation and a read-back.
 
 None of these parts needs a change in `core`: all of them are new implementations of existing traits.
@@ -433,7 +507,7 @@ Dev only: `proptest`, `criterion`, `insta` (snapshots); `cargo-fuzz` with `libfu
 |-------|---------|-----------|
 | 0 — Foundation ✅ | workspace, the `core` model and traits, `fmt-blackbox` (BF/Emu/RF), `fmt-csv`, `cli info/decode`, conformance and robustness tests, CI | Conformance with the independent `blackbox-log` decoder on every test log; since 2026-11-09 also whole-log conformance with Blackbox Explorer (#137) |
 | 1 — PTB (free) parity ✅ | the `dsp` basis, step, PSD, heatmaps, a GUI with 7 tabs, A/B, touch, the PID slider tool (Betaflight simplified tuning, checked on 4.5 and 2025.12 logs). Audit 2026-11-05, moved to the backlog (milestone v0.4 unless stated otherwise): projects (#31), PNG/CSV export (#32), PTB default comparison (#33), touch gestures §7.2 (#35), theme / localisation (#34), the Settings tab and saved Prefs (#53), frequency markers in the spectrum (#51), dragging the epoch bounds on the plot (#52), the segment counter on the heatmap (#54), Y-offset / latency in the step response (#50), deconvolution property tests (#55, v0.3), `blackbox_decode` CSV fixtures from phase 0 (#49, v0.2; replaced by the Blackbox Explorer reference, #137) | The user reproduces the whole usual PTB workflow in OpenPID |
-| 2 — Pro parity ✅ | filters / sim (ADR-0012), notch / RPM overlay 2D and the 3D surface, the RPM estimator, the generator (`openpid gen`), motor noise, the spectrum player, benchmarks (#36), fuzzing (ADR-0013), touch gestures, UA/EN localisation, the user guide; the ArduPilot (ADR-0010) and INAV formats done, KISS/Fettec/QuickSilver wait for sample logs (#18) | Every row of the §2 table is "yes" (except the formats without samples) |
+| 2 — Pro parity ✅ | filters / sim (ADR-0012), notch / RPM overlay 2D (a 3D surface tab was built and removed on 2026-11-10, §2), the RPM estimator, the generator (`openpid gen`), motor noise (in the CLI; its tab was removed on 2026-11-10), the spectrum player, benchmarks (#36), fuzzing (ADR-0013), touch gestures, UA/EN localisation, the user guide; the ArduPilot (ADR-0010) and INAV formats done, KISS/Fettec/QuickSilver wait for sample logs (#18) | Every row of the §2 table is "yes" (except the formats without samples) |
 | 3 — Extensions ✅ | a `Recommender` with three rules and evidence, the Advice tab, `openpid run recommend --cli`, `openpid diff`, the Betaflight CLI exporter; MSP postponed (ADR-0014) | The first recommendation a user really applies: the `set …` text from the Advice tab |
 
 ---

@@ -7,15 +7,20 @@
 //! the filter settings (`gyro_lowpass_hz` → `gyro_lpf1_static_hz`), which the
 //! headers reveal. A path that is already a setting name passes through.
 
-use openpid_core::{ExportError, Exporter, FirmwareVendor, FlightSession, HeaderDiff, Proposal};
+use openpid_core::{ExportError, Exporter, FirmwareInfo, HeaderDiff, Proposal, RawHeaders};
 use std::fmt::Write as _;
 
 /// Identifier of the exporter.
 pub const TARGET: &str = "betaflight-cli";
 
-/// `set …` lines for Betaflight.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct BetaflightCli;
+/// `set …` lines for the Betaflight that wrote one log.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BetaflightCli {
+    /// The firmware revision, for the heading of the text.
+    revision: String,
+    /// Whether the firmware uses the 4.3+ setting names.
+    new_names: bool,
+}
 
 /// Canonical path → (setting name since 4.3, setting name before 4.3).
 const PATHS: &[(&str, &str, &str)] = &[
@@ -138,31 +143,41 @@ const PATHS: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// Whether the log's firmware uses the 4.3+ setting names.
-fn new_names(session: &FlightSession) -> bool {
-    session
-        .raw_headers
-        .iter()
-        .any(|(k, _)| k.starts_with("gyro_lpf1_") || k.starts_with("dterm_lpf1_"))
-}
-
-/// The setting name for a canonical path (or the path itself when it already
-/// is a setting name).
-pub fn setting_name(session: &FlightSession, path: &str) -> Option<String> {
-    let new = new_names(session);
-    if let Some(rest) = path.strip_prefix("pid.") {
-        let (axis, term) = rest.split_once('.')?;
-        if !matches!(axis, "roll" | "pitch" | "yaw")
-            || !matches!(term, "p" | "i" | "d" | "f" | "d_min" | "d_max")
-        {
-            return None;
+impl BetaflightCli {
+    /// The exporter for a log: Betaflight 4.3 renamed the filter settings,
+    /// which the version tells, or the headers when the version is unknown.
+    pub fn for_log(firmware: &FirmwareInfo, headers: &RawHeaders) -> Self {
+        let new_names = if firmware.version.is_some() {
+            firmware.is_at_least(4, 3)
+        } else {
+            headers
+                .0
+                .iter()
+                .any(|(k, _)| k.starts_with("gyro_lpf1_") || k.starts_with("dterm_lpf1_"))
+        };
+        BetaflightCli {
+            revision: firmware.revision.clone(),
+            new_names,
         }
-        return Some(format!("{term}_{axis}"));
     }
-    if let Some((_, n, o)) = PATHS.iter().find(|(p, ..)| *p == path) {
-        return Some((if new { *n } else { *o }).to_string());
+
+    /// The setting name for a canonical path (or the path itself when it
+    /// already is a setting name).
+    pub fn setting_name(&self, path: &str) -> Option<String> {
+        if let Some(rest) = path.strip_prefix("pid.") {
+            let (axis, term) = rest.split_once('.')?;
+            if !matches!(axis, "roll" | "pitch" | "yaw")
+                || !matches!(term, "p" | "i" | "d" | "f" | "d_min" | "d_max")
+            {
+                return None;
+            }
+            return Some(format!("{term}_{axis}"));
+        }
+        if let Some((_, n, o)) = PATHS.iter().find(|(p, ..)| *p == path) {
+            return Some((if self.new_names { *n } else { *o }).to_string());
+        }
+        openpid_core::is_setting_header(path).then(|| path.to_string())
     }
-    openpid_core::is_setting_header(path).then(|| path.to_string())
 }
 
 /// `set …` pairs for one header that changed: Betaflight logs some settings
@@ -215,10 +230,51 @@ pub fn header_settings(key: &str, value: &str) -> Option<Vec<(String, String)>> 
     }
 }
 
-impl BetaflightCli {
-    /// `set …` lines that turn the settings of `a` into those of `b`, from a
-    /// header diff; headers the CLI cannot set become comments.
-    pub fn diff_commands(diff: &[HeaderDiff]) -> String {
+impl Exporter for BetaflightCli {
+    fn id(&self) -> &'static str {
+        TARGET
+    }
+
+    fn label(&self) -> &'static str {
+        "Betaflight CLI"
+    }
+
+    fn command(&self, proposal: &Proposal) -> Result<String, ExportError> {
+        let name = self
+            .setting_name(&proposal.path)
+            .ok_or_else(|| ExportError::UnknownPath {
+                target: TARGET,
+                path: proposal.path.clone(),
+            })?;
+        Ok(format!("set {name} = {}", proposal.to))
+    }
+
+    fn export(&self, proposals: &[Proposal]) -> Result<String, ExportError> {
+        let mut out = format!("# OpenPID proposals for {}\n", self.revision);
+        for p in proposals {
+            let command = self.command(p)?;
+            let from = p
+                .from
+                .as_deref()
+                .map_or(String::new(), |f| format!("{f} → "));
+            let _ = writeln!(
+                out,
+                "# {}: {from}{} — {} (confidence {:.0} %)",
+                p.path,
+                p.to,
+                p.rationale,
+                p.confidence * 100.0
+            );
+            let _ = writeln!(out, "{command}");
+        }
+        if !proposals.is_empty() {
+            out.push_str("save\n");
+        }
+        Ok(out)
+    }
+
+    /// Headers the CLI cannot set become comments.
+    fn diff(&self, diff: &[HeaderDiff]) -> String {
         let mut out = String::new();
         let mut any = false;
         for d in diff {
@@ -258,104 +314,71 @@ impl BetaflightCli {
     }
 }
 
-impl Exporter for BetaflightCli {
-    fn id(&self) -> &'static str {
-        TARGET
-    }
-
-    fn export(
-        &self,
-        session: &FlightSession,
-        proposals: &[Proposal],
-    ) -> Result<String, ExportError> {
-        if !matches!(
-            session.firmware.vendor,
-            FirmwareVendor::Betaflight | FirmwareVendor::Unknown(_)
-        ) {
-            return Err(ExportError::WrongFirmware {
-                target: TARGET,
-                firmware: session.firmware.revision.clone(),
-            });
-        }
-        let mut out = format!("# OpenPID proposals for {}\n", session.firmware.revision);
-        for p in proposals {
-            let name = setting_name(session, &p.path).ok_or_else(|| ExportError::UnknownPath {
-                target: TARGET,
-                path: p.path.clone(),
-            })?;
-            let from = p
-                .from
-                .as_deref()
-                .map_or(String::new(), |f| format!("{f} → "));
-            let _ = writeln!(
-                out,
-                "# {}: {from}{} — {} (confidence {:.0} %)",
-                p.path,
-                p.to,
-                p.rationale,
-                p.confidence * 100.0
-            );
-            let _ = writeln!(out, "set {name} = {}", p.to);
-        }
-        if !proposals.is_empty() {
-            out.push_str("save\n");
-        }
-        Ok(out)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openpid_core::session::{Diagnostics, FirmwareInfo, Timebase};
-    use openpid_core::{ChannelSet, Settings};
+    use openpid_core::{FirmwareVendor, FirmwareVersion};
 
-    fn session(headers: &[(&str, &str)]) -> FlightSession {
-        FlightSession {
-            index: 0,
-            offset_bytes: 0,
-            firmware: FirmwareInfo::unknown(),
-            profile_id: "test".into(),
-            settings: Settings::default(),
-            raw_headers: headers
+    /// The exporter of a log with these headers and no firmware version.
+    fn cli(headers: &[(&str, &str)]) -> BetaflightCli {
+        let headers = RawHeaders(
+            headers
                 .iter()
                 .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
                 .collect(),
-            timebase: Timebase::default(),
-            channels: ChannelSet::new(),
-            events: Vec::new(),
-            aux: Vec::new(),
-            diagnostics: Diagnostics::default(),
-        }
+        );
+        BetaflightCli::for_log(&FirmwareInfo::unknown(), &headers)
+    }
+
+    fn betaflight(major: u32, minor: u32) -> BetaflightCli {
+        let fw = FirmwareInfo {
+            vendor: FirmwareVendor::Betaflight,
+            version: Some(FirmwareVersion::new(major, minor, 0)),
+            ..FirmwareInfo::unknown()
+        };
+        BetaflightCli::for_log(&fw, &RawHeaders::default())
     }
 
     #[test]
     fn paths_map_to_the_firmware_generation() {
-        let new = session(&[("gyro_lpf1_static_hz", "250")]);
-        let old = session(&[("gyro_lowpass_hz", "200")]);
+        let new = cli(&[("gyro_lpf1_static_hz", "250")]);
+        let old = cli(&[("gyro_lowpass_hz", "200")]);
         assert_eq!(
-            setting_name(&new, "gyro_filters.lpf1.cutoff_hz").unwrap(),
+            new.setting_name("gyro_filters.lpf1.cutoff_hz").unwrap(),
             "gyro_lpf1_static_hz"
         );
         assert_eq!(
-            setting_name(&old, "gyro_filters.lpf1.cutoff_hz").unwrap(),
+            old.setting_name("gyro_filters.lpf1.cutoff_hz").unwrap(),
             "gyro_lowpass_hz"
         );
         assert_eq!(
-            setting_name(&old, "dterm_filters.lpf1.dyn_min_hz").unwrap(),
+            old.setting_name("dterm_filters.lpf1.dyn_min_hz").unwrap(),
             "dyn_lpf_dterm_min_hz"
         );
         assert_eq!(
-            setting_name(&new, "gyro_filters.rpm_notch.q").unwrap(),
+            new.setting_name("gyro_filters.rpm_notch.q").unwrap(),
             "rpm_filter_q"
         );
-        assert_eq!(setting_name(&new, "pid.pitch.d").unwrap(), "d_pitch");
-        assert_eq!(setting_name(&new, "pid.yaw.d_max").unwrap(), "d_max_yaw");
-        assert_eq!(setting_name(&new, "dyn_notch_q").unwrap(), "dyn_notch_q");
-        assert!(setting_name(&new, "pid.roll.x").is_none());
-        assert!(setting_name(&new, "pid.left.d").is_none());
-        assert!(setting_name(&new, "Firmware revision").is_none());
-        assert!(setting_name(&new, "motor.poles").is_none());
+        assert_eq!(new.setting_name("pid.pitch.d").unwrap(), "d_pitch");
+        assert_eq!(new.setting_name("pid.yaw.d_max").unwrap(), "d_max_yaw");
+        assert_eq!(new.setting_name("dyn_notch_q").unwrap(), "dyn_notch_q");
+        assert!(new.setting_name("pid.roll.x").is_none());
+        assert!(new.setting_name("pid.left.d").is_none());
+        assert!(new.setting_name("Firmware revision").is_none());
+        assert!(new.setting_name("motor.poles").is_none());
+        // a known version decides, whatever the headers say
+        assert_eq!(
+            betaflight(4, 2)
+                .setting_name("gyro_filters.lpf1.cutoff_hz")
+                .unwrap(),
+            "gyro_lowpass_hz"
+        );
+        assert_eq!(
+            betaflight(2025, 12)
+                .setting_name("gyro_filters.lpf1.cutoff_hz")
+                .unwrap(),
+            "gyro_lpf1_static_hz"
+        );
     }
 
     #[test]
@@ -425,7 +448,7 @@ mod tests {
                 b: Some("2".into()),
             },
         ];
-        let text = BetaflightCli::diff_commands(&diff);
+        let text = cli(&[]).diff(&diff);
         assert_eq!(
             text,
             "# Firmware revision: Betaflight 4.5.1 → Betaflight 4.5.2 (not a CLI setting)\n\
@@ -439,12 +462,12 @@ mod tests {
              set only_b = 2\n\
              save\n"
         );
-        assert_eq!(BetaflightCli::diff_commands(&[]), "");
+        assert_eq!(cli(&[]).diff(&[]), "");
     }
 
     #[test]
     fn exporter_writes_set_lines_and_rejects_unknown_paths() {
-        let s = session(&[("gyro_lpf1_static_hz", "250")]);
+        let s = cli(&[("gyro_lpf1_static_hz", "250")]);
         let proposals = vec![
             Proposal {
                 path: "gyro_filters.lpf1.cutoff_hz".into(),
@@ -461,13 +484,14 @@ mod tests {
                 confidence: 0.5,
             },
         ];
-        let text = BetaflightCli.export(&s, &proposals).unwrap();
+        let text = s.export(&proposals).unwrap();
         assert!(text.starts_with("# OpenPID proposals for "));
         assert!(text.contains("# gyro_filters.lpf1.cutoff_hz: 250 → 300 — phase delay above the noise floor (confidence 75 %)\nset gyro_lpf1_static_hz = 300\n"));
         assert!(text.contains("# pid.roll.d: 34 — overshoot (confidence 50 %)\nset d_roll = 34\n"));
         assert!(text.ends_with("save\n"));
-        assert_eq!(BetaflightCli.id(), "betaflight-cli");
-        assert!(!BetaflightCli.export(&s, &[]).unwrap().contains("save"));
+        assert_eq!(s.id(), "betaflight-cli");
+        assert_eq!(s.label(), "Betaflight CLI");
+        assert!(!s.export(&[]).unwrap().contains("save"));
         let bad = Proposal {
             path: "motor.poles".into(),
             from: None,
@@ -476,17 +500,11 @@ mod tests {
             confidence: 1.0,
         };
         assert_eq!(
-            BetaflightCli.export(&s, &[bad]).unwrap_err(),
+            s.export(&[bad]).unwrap_err(),
             ExportError::UnknownPath {
                 target: "betaflight-cli",
                 path: "motor.poles".into()
             }
         );
-        let mut ardu = s.clone();
-        ardu.firmware.vendor = FirmwareVendor::Inav;
-        assert!(matches!(
-            BetaflightCli.export(&ardu, &proposals),
-            Err(ExportError::WrongFirmware { .. })
-        ));
     }
 }
