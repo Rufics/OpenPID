@@ -34,15 +34,16 @@ const X_LABEL_H: f32 = 18.0;
 pub struct ThrottleDisplay {
     /// The unfiltered counterpart beside the quantity.
     pub prefilt: bool,
-    /// The whole 0–100 % throttle axis instead of the range the logs flew.
-    pub full_range: bool,
+    /// Zoom the throttle axis to the range the logs flew instead of the
+    /// whole 0–100 % (off by default, as the reference tool).
+    pub zoom_flown: bool,
 }
 
 impl Default for ThrottleDisplay {
     fn default() -> Self {
         ThrottleDisplay {
             prefilt: true,
-            full_range: false,
+            zoom_flown: false,
         }
     }
 }
@@ -99,7 +100,7 @@ pub fn throttle(app: &mut App, ui: &mut Ui) {
         });
     }
     scales(app, &mut logs);
-    let range = throttle_range(&logs, app.tools.min_segments, display.full_range);
+    let range = throttle_range(&logs, app.tools.min_segments, !display.zoom_flown);
     let reset = app.throttle_view.x_range != Some(range);
     app.throttle_view.x_range = Some(range);
     app.heatmap_hover = None;
@@ -139,7 +140,7 @@ pub fn throttle(app: &mut App, ui: &mut Ui) {
     });
 }
 
-/// "A: 76 of 101 throttle bins have fewer than 5 segments (greyed)": how
+/// "A: 76 of 101 throttle bins have fewer than 5 segments (dimmed)": how
 /// much of the throttle range a log sampled.
 fn sampled_summary(log: &LogColumn, min_segments: usize) -> Option<String> {
     let t = log
@@ -150,7 +151,7 @@ fn sampled_summary(log: &LogColumn, min_segments: usize) -> Option<String> {
     let below = t.counts.iter().filter(|&&c| c < min_segments).count();
     Some(if below > 0 {
         format!(
-            "{}: {below} of {} throttle bins have fewer than {min_segments} segments (greyed)",
+            "{}: {below} of {} throttle bins have fewer than {min_segments} segments (dimmed)",
             log.slot.name(),
             t.counts.len()
         )
@@ -223,7 +224,7 @@ fn scales(app: &mut App, logs: &mut [LogColumn]) {
 
 /// The throttle range to show: from the first to the last bin with at least
 /// `min_segments` segments in any heatmap, to the edges of those bins (a
-/// wider margin would only add greyed, unsampled bins); 0–100 % when asked
+/// wider margin would only add dimmed, unsampled bins); 0–100 % when asked
 /// for or when nothing is sampled.
 fn throttle_range(logs: &[LogColumn], min_segments: usize, full: bool) -> (f64, f64) {
     if full {
@@ -440,9 +441,9 @@ fn controls(app: &mut App, ui: &mut Ui) {
     panel::section(ui, tr("Range"));
     panel::check(
         ui,
-        &mut app.tools.throttle_display.full_range,
-        tr("Full throttle range"),
-        tr("the whole 0–100 % axis instead of the range the logs flew"),
+        &mut app.tools.throttle_display.zoom_flown,
+        tr("Zoom to the flown range"),
+        tr("the throttle axis from the first to the last sampled bin instead of 0–100 %"),
     );
     panel::section(ui, tr("Analysis"));
     panel::drag(
@@ -477,7 +478,7 @@ fn controls(app: &mut App, ui: &mut Ui) {
     panel::drag_usize(
         ui,
         tr("Min segments"),
-        tr("throttle bins with fewer segments are greyed out: they are unsampled, not quiet"),
+        tr("throttle bins with fewer segments are dimmed: they are unsampled, not quiet"),
         &mut app.tools.min_segments,
         1..=1000,
     );
@@ -505,15 +506,23 @@ fn overlay_rows(app: &mut App, ui: &mut Ui) {
         &mut ov.show,
         tr("RPM overlay"),
         tr(
-            "each motor's speed and its harmonics over the map: noise that follows them is motor noise",
+            "the motors' speed and its harmonics over the map: noise that follows them is motor noise",
         ),
     );
-    ui.horizontal(|ui| {
-        for (m, on) in ov.motors.iter_mut().enumerate() {
-            ui.checkbox(on, format!("M{}", m + 1))
-                .on_hover_text(tr("show this motor's lines"));
-        }
-    });
+    panel::check(
+        ui,
+        &mut ov.per_motor,
+        tr("Per motor"),
+        tr("a coloured line per motor and harmonic instead of one line at the mean of the motors"),
+    );
+    if ov.per_motor {
+        ui.horizontal(|ui| {
+            for (m, on) in ov.motors.iter_mut().enumerate() {
+                ui.checkbox(on, format!("M{}", m + 1))
+                    .on_hover_text(tr("show this motor's lines"));
+            }
+        });
+    }
     let mut harmonics = ov.harmonics as usize;
     panel::drag_usize(
         ui,

@@ -1721,7 +1721,9 @@ pub(crate) fn grid_image(
         let handle = ctx.load_texture(
             format!("heatmap-{key:x}"),
             image,
-            egui::TextureOptions::NEAREST,
+            // interpolated between cells, as the reference tool draws its
+            // maps: blocks of a few throttle bins read as structure
+            egui::TextureOptions::LINEAR,
         );
         app.heatmap_textures.insert(key, handle);
     }
@@ -1760,6 +1762,10 @@ pub struct OverlayState {
     pub harmonics: u32,
     /// Draw the static notches, the dynamic-notch band and the RPM filter minimum.
     pub notches: bool,
+    /// One coloured line per motor and harmonic; off: one thin line per
+    /// harmonic at the mean of the motors (docs/design/throttle-tab, the
+    /// owner's comparison with the reference tool's video).
+    pub per_motor: bool,
 }
 
 impl Default for OverlayState {
@@ -1768,7 +1774,8 @@ impl Default for OverlayState {
             show: true,
             motors: Vec::new(),
             harmonics: 0,
-            notches: true,
+            notches: false,
+            per_motor: false,
         }
     }
 }
@@ -1886,6 +1893,10 @@ fn draw_harmonics(
     } else {
         ov.harmonics
     };
+    if !ov.per_motor {
+        draw_mean_harmonics(pu, o, x, y_max, harmonics);
+        return;
+    }
     for (m, bins) in o.motors.iter().enumerate() {
         if !ov.motors.get(m).copied().unwrap_or(true) {
             continue;
@@ -1900,6 +1911,51 @@ fn draw_harmonics(
                 }
                 pu.line(line);
             }
+        }
+    }
+}
+
+/// The mean speed of the motors per throttle bin (bins where no motor has a
+/// speed are `None`).
+pub(crate) fn mean_motor_rpm(o: &RpmOverlay) -> Vec<Option<f64>> {
+    let n = o.motors.iter().map(Vec::len).max().unwrap_or(0);
+    (0..n)
+        .map(|i| {
+            let v: Vec<f64> = o
+                .motors
+                .iter()
+                .filter_map(|m| m.get(i).copied().flatten())
+                .collect();
+            (!v.is_empty()).then(|| v.iter().sum::<f64>() / v.len() as f64)
+        })
+        .collect()
+}
+
+/// One thin line per harmonic at the mean motor speed: the fundamental
+/// solid, the others dashed, in the plot's text colour so it reads on any
+/// colour map without hiding the noise under it.
+fn draw_mean_harmonics(
+    pu: &mut egui_plot::PlotUi<'_>,
+    o: &RpmOverlay,
+    x: &[f64],
+    y_max: f64,
+    harmonics: u32,
+) {
+    let mean = mean_motor_rpm(o);
+    let colour = if crate::theme::is_dark() {
+        Color32::from_white_alpha(170)
+    } else {
+        Color32::from_black_alpha(170)
+    };
+    for k in 1..=harmonics {
+        for pts in harmonic_runs(x, &mean, k, y_max) {
+            let mut line = Line::new(format!("motors ×{k}"), PlotPoints::from(pts))
+                .color(colour)
+                .width(1.0);
+            if k > 1 {
+                line = line.style(LineStyle::dashed_loose());
+            }
+            pu.line(line);
         }
     }
 }
@@ -1978,7 +2034,7 @@ fn draw_notches(pu: &mut egui_plot::PlotUi<'_>, o: &RpmOverlay, x: &[f64], y_max
     }
 }
 
-/// Grey columns over the throttle bins with fewer than `min_segments`
+/// Dimmed columns over the throttle bins with fewer than `min_segments`
 /// segments, so an unsampled bin does not read as a quiet one.
 pub(crate) fn sparse_bins(
     g: &Grid2D,
@@ -1991,7 +2047,10 @@ pub(crate) fn sparse_bins(
     let dx = g.x[1] - g.x[0];
     let dy = g.y[1] - g.y[0];
     let (y0, y1) = (g.y[0] - dy / 2.0, g.y[g.y.len() - 1] + dy / 2.0);
-    let grey = Color32::from_rgba_unmultiplied(128, 128, 128, 170);
+    // dimmed towards black, as Blackbox Explorer dims what is outside its
+    // in/out marks (rgba(0, 0, 0, 0.8)): a light grey block read as a
+    // feature of the map rather than as missing data
+    let grey = Color32::from_black_alpha(205);
     g.x.iter()
         .zip(counts)
         .filter(|(_, c)| **c < min_segments)

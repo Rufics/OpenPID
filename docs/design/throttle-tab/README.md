@@ -53,7 +53,8 @@ on this log, so the decision adds a throttle range that follows the data.
   above 20 Hz) of its maps, so prefilt and gyro compare; "Link scales" shares
   the largest across logs; a fixed "Colour max" wins. `App::colour_scales`
   records one value per log.
-- **Throttle range**: from the first to the last bin with at least
+- **Throttle range** (since the revision below: 0–100 % by default, this
+  range behind "Zoom to the flown range"): from the first to the last bin with at least
   "Min segments" segments in any visible map, to the edges of those bins (a
   margin would only add greyed, unsampled bins at both edges: the owner saw
   them on a trimmed epoch), applied when it changes and on a double click;
@@ -88,3 +89,29 @@ One log (btfl_027, 10–34 % throttle):
 Two logs (A = btfl_027, B = 4.5.1):
 
 ![Two logs](two-logs.png)
+
+## Revision after the owner's comparison with the reference video (2026-11-10)
+
+The owner compared the tab with the reference tool's tutorial video (its
+Freq × throttle screen, 9:04–11:00) and found the maps and the motor overlay
+"drawn wrong". The overlay data were right: on btfl_027 the prefilt noise peak
+lies within the four motors' fundamentals in every sampled throttle bin
+(140 Hz at 10 %, 180 Hz at 30 %). The drawing was not:
+
+- **Overlay clutter**: 4 motors × 3 harmonics = 12 coloured lines plus the
+  notch lines on each of the six maps hid the noise ridge they are meant to
+  explain. Now one thin line per harmonic at the mean of the motors (the
+  fundamental solid, the others dashed, in the text colour); "Per motor"
+  brings back the coloured line per motor with the M1…Mn toggles; "Notches"
+  is off by default.
+- **Blocky maps**: the cells were drawn without interpolation; the textures
+  are now interpolated (`TextureOptions::LINEAR`), as the video's maps.
+- **Throttle axis**: zooming to the flown range stretched 25 bins into large
+  blocks; the axis is 0–100 % again, as in the video, and "Zoom to the flown
+  range" is an option.
+- **Unsampled bins** are dimmed towards black (as Blackbox Explorer dims what
+  is outside its marks) instead of a light grey block.
+
+The colour map stays Blackbox Explorer's black → red → white
+([plot-colours](../plot-colours/README.md)); the video's tool uses MATLAB's
+"hot" (black → red → yellow → white).

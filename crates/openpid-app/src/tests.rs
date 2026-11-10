@@ -2138,6 +2138,27 @@ fn rpm_overlay_on_the_throttle_heatmap_has_per_motor_toggles() {
     assert!(overlay.dyn_notch_hz.is_some());
     h.step();
     assert!(app(&h).overlay.show);
+    assert!(
+        !app(&h).overlay.per_motor,
+        "one line per harmonic by default"
+    );
+    assert!(!app(&h).overlay.notches, "notches off by default");
+    assert!(
+        h.query_by_label("M2").is_none(),
+        "motor toggles only per motor"
+    );
+    // the default line follows the mean of the motors
+    let mean = crate::views::mean_motor_rpm(&overlay);
+    let i = mean
+        .iter()
+        .position(Option::is_some)
+        .expect("a bin with speeds");
+    let speeds: Vec<f64> = overlay.motors.iter().filter_map(|m| m[i]).collect();
+    let avg = speeds.iter().sum::<f64>() / speeds.len() as f64;
+    assert!((mean[i].unwrap() - avg).abs() < 1e-9);
+    h.get_by_role_and_label(Role::CheckBox, "Per motor").click();
+    h.step();
+    assert!(app(&h).overlay.per_motor);
     assert_eq!(app(&h).overlay.motors, vec![true; 4]);
     h.get_by_role_and_label(Role::CheckBox, "M2").click();
     h.step();
@@ -2148,7 +2169,7 @@ fn rpm_overlay_on_the_throttle_heatmap_has_per_motor_toggles() {
     assert!(!app(&h).overlay.show);
     h.get_by_role_and_label(Role::CheckBox, "Notches").click();
     h.step();
-    assert!(!app(&h).overlay.notches);
+    assert!(app(&h).overlay.notches);
     assert_eq!(
         app(&h).cache.len(),
         6,
@@ -2885,16 +2906,17 @@ fn throttle_tab_stacks_the_axes_with_prefilt_and_zooms_to_the_flown_range() {
         1,
         "prefilt and gyro share a scale"
     );
-    // btfl_027 flew 10–34 % throttle: the axis follows, with a bin of margin
-    let (lo, hi) = app(&h).throttle_view.x_range.expect("range applied");
-    assert!(
-        (8.0..=10.0).contains(&lo) && (34.0..=36.0).contains(&hi),
-        "{lo}..{hi}"
-    );
-    h.get_by_role_and_label(Role::CheckBox, "Full throttle range")
+    // 0–100 % throttle as the reference tool; btfl_027 flew 10–34 %, and
+    // "Zoom to the flown range" ends the axis at the edges of those bins
+    assert_eq!(app(&h).throttle_view.x_range, Some((0.0, 100.0)));
+    h.get_by_role_and_label(Role::CheckBox, "Zoom to the flown range")
         .click();
     h.run_steps(2);
-    assert_eq!(app(&h).throttle_view.x_range, Some((0.0, 100.0)));
+    let (lo, hi) = app(&h).throttle_view.x_range.expect("range applied");
+    assert!(
+        (9.0..=10.0).contains(&lo) && (34.0..=35.0).contains(&hi),
+        "{lo}..{hi}"
+    );
     // prefilt off: the gyro alone
     h.get_by_role_and_label(Role::CheckBox, "Prefilt beside it")
         .click();

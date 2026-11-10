@@ -30,6 +30,11 @@ pub fn set_dark(dark: bool) {
     DARK.with(|d| d.set(dark));
 }
 
+/// Whether this thread draws in the dark theme.
+pub fn is_dark() -> bool {
+    DARK.with(std::cell::Cell::get)
+}
+
 /// The "warning" yellow of verdicts and log checks: Okabe–Ito yellow on the
 /// dark theme, a dark amber that stays readable on the light one.
 pub fn warn() -> Color32 {

@@ -203,6 +203,7 @@ static UA: &[(&str, &str)] = &[
     ("PID sum", "Сума PID"),
     ("Pause", "Пауза"),
     ("Peaks", "Піки"),
+    ("Per motor", "По моторах"),
     ("Play", "Відтворити"),
     ("Player", "Плеєр"),
     ("Plot as PNG…", "Графік як PNG…"),
@@ -293,6 +294,11 @@ static UA: &[(&str, &str)] = &[
         "Your logs live here. Drop another one to compare.",
         "Тут ваші логи. Перетягніть ще один, щоб порівняти.",
     ),
+    ("Zoom to the flown range", "Лише діапазон польоту"),
+    (
+        "a coloured line per motor and harmonic instead of one line at the mean of the motors",
+        "кольорова лінія на кожен мотор і гармоніку замість однієї лінії за середнім моторів",
+    ),
     (
         "a logarithmic frequency axis on the full spectrum",
         "логарифмічна вісь частот на повному спектрі",
@@ -344,10 +350,6 @@ static UA: &[(&str, &str)] = &[
     (
         "drag: orbit · wheel / pinch: zoom · shift-drag, right-drag or two fingers: pan · double-click: reset",
         "перетягування: обертання · коліщатко / щипок: масштаб · shift-, праве або два пальці: зсув · подвійний клік: скинути",
-    ),
-    (
-        "each motor's speed and its harmonics over the map: noise that follows them is motor noise",
-        "оберти кожного мотора та їх гармоніки поверх карти: шум, що йде за ними, — це шум моторів",
     ),
     (
         "each throttle bin averages the segments within this distance of it",
@@ -507,12 +509,20 @@ static UA: &[(&str, &str)] = &[
         "окремі відгуки за середнім, як щільність",
     ),
     (
+        "the motors' speed and its harmonics over the map: noise that follows them is motor noise",
+        "оберти моторів та їх гармоніки поверх карти: шум, що йде за ними, — це шум моторів",
+    ),
+    (
         "the same target as on the Step tab (Settings → Targets)",
         "той самий поріг, що на вкладці Step (Settings → Targets)",
     ),
     (
         "the static notches, the dynamic-notch band and the RPM filter minimum",
         "статичні нотчі, смуга динамічного нотча й мінімум RPM-фільтра",
+    ),
+    (
+        "the throttle axis from the first to the last sampled bin instead of 0–100 %",
+        "вісь газу від першого до останнього біна з даними замість 0–100 %",
     ),
     (
         "the unfiltered gyro beside the filtered one",
@@ -530,14 +540,10 @@ static UA: &[(&str, &str)] = &[
         "the verdict table: every log and axis against the targets",
         "таблиця вердиктів: кожен лог і вісь проти цілей",
     ),
-    (
-        "the whole 0–100 % axis instead of the range the logs flew",
-        "уся вісь 0–100 % замість діапазону, у якому літали логи",
-    ),
     ("throttle (%)", "газ (%)"),
     (
-        "throttle bins with fewer segments are greyed out: they are unsampled, not quiet",
-        "біни газу з меншою кількістю сегментів затемнені: там немає даних, а не тиша",
+        "throttle bins with fewer segments are dimmed: they are unsampled, not quiet",
+        "біни газу з меншою кількістю сегментів затемнено: там немає даних, а не тиша",
     ),
     ("throttle window ±", "вікно газу ±"),
     ("time (ms)", "час (мс)"),

@@ -193,8 +193,8 @@ and the chosen quantity, on one colour scale, so the work of the filters reads
 as a darker map; the colour bar on the right of each log has ticks and the
 unit. The epoch is cut into segments, each gets a spectrum and a mean
 throttle; for every throttle bin the segments within **Throttle window ±** %
-are averaged. The throttle axis starts on the range the logs flew (one bin of
-margin either side); **Full throttle range** shows 0–100 %. All maps move and
+are averaged. The throttle axis is 0–100 %; **Zoom to the flown range**
+narrows it to the bins the logs sampled. All maps move and
 zoom together; a double click resets them. Under the maps: per log how many
 throttle bins have too few segments, and the value under the pointer
 ("23 %, 128 Hz: 0.13 deg/s"). With more than two logs the columns scroll
@@ -208,15 +208,17 @@ The control panel on the right (hover any field for its explanation):
   fixed ceiling; **Link scales** (on by default with several logs) gives every
   log the same ceiling, the largest of the automatic ones, so the same colour
   means the same value. The same on Freq × time and Surface 3D.
-- **RPM overlay** (when the log has eRPM): the harmonic lines `k·rpm/60` of
-  every motor (colours per motor, M1…Mn toggles, **Harmonics** = how many to
-  draw, 0 = as many as the RPM filter removes) and **Notches**: the static
-  notch bands, the dynamic notch band and the RPM filter minimum. The noise
+- **RPM overlay** (when the log has eRPM): one thin line per harmonic
+  `k·rpm/60` at the mean speed of the motors (**Harmonics** = how many to
+  draw, 0 = as many as the RPM filter removes); **Per motor** draws a
+  coloured line per motor instead, with M1…Mn toggles; **Notches** (off by
+  default) adds the static notch bands, the dynamic notch band and the RPM
+  filter minimum. The noise
   ridge should sit on the fundamental line; if it is above or below,
   `motor_poles` or `rpm_min` is set wrong.
 - **Segment**, **Throttle window ±**, **Max frequency**, **Min segments**:
-  throttle bins with fewer segments than the minimum are dimmed: there is no
-  data there, not silence.
+  throttle bins with fewer segments than the minimum are dimmed towards
+  black: there is no data there, not silence.
 
 ### Surface 3D
 
