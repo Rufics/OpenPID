@@ -13,7 +13,6 @@ use openpid_analysis::{
     Epoch, Fitness, FitnessLevel, RpmOverlay, TargetPreset, Verdict, VerdictLevel,
 };
 use openpid_core::analysis::Grid2D;
-use openpid_core::settings::PidGains;
 use openpid_core::units::Unit;
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use openpid_dsp::Peak;
@@ -588,11 +587,20 @@ pub fn decimate(
 }
 
 /// Colour of a fitness level (green / yellow / red, colour-blind safe).
-fn level_color(level: FitnessLevel) -> Color32 {
+pub(crate) fn level_color(level: FitnessLevel) -> Color32 {
     match level {
         FitnessLevel::Ok => Color32::from_rgb(0, 158, 115),
         FitnessLevel::Warn => crate::theme::warn(),
         FitnessLevel::Fail => Color32::from_rgb(213, 94, 0),
+    }
+}
+
+/// The overall level of the log check in words.
+pub(crate) fn overall_text(level: FitnessLevel) -> &'static str {
+    match level {
+        FitnessLevel::Ok => tr("log ok"),
+        FitnessLevel::Warn => tr("log usable"),
+        FitnessLevel::Fail => tr("log unfit"),
     }
 }
 
@@ -605,12 +613,7 @@ fn fitness_badges(ui: &mut Ui, f: &Fitness) {
         .map(|c| format!("{} {}: {}", c.level.marker(), c.title, c.detail))
         .collect::<Vec<_>>()
         .join("\n");
-    let overall = match f.overall {
-        FitnessLevel::Ok => tr("log ok"),
-        FitnessLevel::Warn => tr("log usable"),
-        FitnessLevel::Fail => tr("log unfit"),
-    };
-    pill(ui, overall, f.overall).on_hover_text(summary);
+    pill(ui, overall_text(f.overall), f.overall).on_hover_text(summary);
     for id in ["raw_gyro", "erpm", "sticks"] {
         if let Some(c) = f.check(id) {
             pill(ui, &c.title, c.level).on_hover_text(match &c.fix {
@@ -649,36 +652,6 @@ pub(crate) fn no_raw_gyro(app: &App, ui: &mut Ui, slot: Slot, why: &str) {
         .and_then(|c| c.fix.clone())
         .unwrap_or_else(|| "log the unfiltered gyro".to_string());
     ui.label(RichText::new(format!("{why} {fix}")).color(MUTED));
-}
-
-/// The "Log check" card on Diagnostics: every check with its fix to copy.
-fn fitness_card(ui: &mut Ui, slot: Slot, f: &Fitness) {
-    ui.heading(format!("{} {}", tr("Log check"), f.overall.marker()));
-    egui::Grid::new(("fitness", slot.name()))
-        .striped(true)
-        .show(ui, |ui| {
-            for c in &f.checks {
-                ui.label(RichText::new(c.level.marker()).color(level_color(c.level)));
-                ui.label(RichText::new(&c.title).strong());
-                ui.label(&c.detail);
-                if let Some(fix) = &c.fix {
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(fix).monospace());
-                        if ui
-                            .small_button(tr("Copy"))
-                            .on_hover_text(format!("{} {}", tr("copy"), c.title))
-                            .clicked()
-                        {
-                            ui.ctx().copy_text(fix.clone());
-                        }
-                    });
-                } else {
-                    ui.label("");
-                }
-                ui.end_row();
-            }
-        });
-    ui.add_space(6.0);
 }
 
 /// What the chip buttons of a slot header asked for.
@@ -1688,88 +1661,6 @@ pub(crate) fn sparse_bins(
         .collect()
 }
 
-pub fn diagnostics(app: &mut App, ui: &mut Ui) {
-    ui.separator();
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        for slot in app.loaded_slots() {
-            let Some(l) = app.loaded(slot) else { continue };
-            let Some(s) = l.current() else { continue };
-            ui.heading(format!("Slot {} — {}", slot.name(), s.firmware.revision));
-            if let Some(f) = l.fitness() {
-                fitness_card(ui, slot, f);
-            }
-            egui::Grid::new(("diag", slot.name()))
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.label(tr("profile"));
-                    ui.label(&s.profile_id);
-                    ui.end_row();
-                    ui.label(tr("samples"));
-                    ui.label(format!(
-                        "{} over {:.2} s, median dt {} µs, {} gaps",
-                        s.len(),
-                        s.timebase.duration_s(),
-                        s.timebase.median_dt_us,
-                        s.timebase.gaps.len()
-                    ));
-                    ui.end_row();
-                    ui.label(tr("frames"));
-                    ui.label(
-                        s.diagnostics
-                            .frames
-                            .iter()
-                            .map(|(k, v)| format!("{k}:{}", v.valid))
-                            .collect::<Vec<_>>()
-                            .join("  "),
-                    );
-                    ui.end_row();
-                    ui.label(tr("corrupt / desync / skipped bytes"));
-                    ui.label(format!(
-                        "{} / {} / {}",
-                        s.diagnostics.corrupt_frames,
-                        s.diagnostics.desync_frames,
-                        s.diagnostics.skipped_bytes
-                    ));
-                    ui.end_row();
-                    if let Some(pid) = &s.settings.pid {
-                        ui.label("PID roll / pitch / yaw");
-                        let axis = |g: &PidGains| {
-                            [g.p, g.i, g.d].map(|v| s.settings.gain_text(v)).join("/")
-                        };
-                        ui.label(format!(
-                            "{}  {}  {}",
-                            axis(&pid.roll),
-                            axis(&pid.pitch),
-                            axis(&pid.yaw)
-                        ));
-                        ui.end_row();
-                    }
-                    if !s.diagnostics.unmapped_fields.is_empty() {
-                        ui.label(tr("unmapped fields"));
-                        ui.label(s.diagnostics.unmapped_fields.join(", "));
-                        ui.end_row();
-                    }
-                    for n in &s.diagnostics.notes {
-                        ui.label(tr("note"));
-                        ui.label(n);
-                        ui.end_row();
-                    }
-                });
-            ui.collapsing(format!("All {} headers", s.raw_headers.len()), |ui| {
-                egui::Grid::new(("headers", slot.name()))
-                    .striped(true)
-                    .show(ui, |ui| {
-                        for (k, v) in &s.raw_headers {
-                            ui.label(k);
-                            ui.label(v);
-                            ui.end_row();
-                        }
-                    });
-            });
-            ui.separator();
-        }
-    });
-}
 // ---------------------------------------------------------------------------
 
 /// The caption of a box of commands: "Betaflight CLI: commands to apply

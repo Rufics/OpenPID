@@ -7,6 +7,7 @@
 
 pub mod analysis;
 pub mod channel;
+pub mod describe;
 pub mod format;
 pub mod modes;
 pub mod profile;

@@ -143,7 +143,9 @@ fn tab_names_and_titles() {
         ("filter", Tab::FilterSim),
         ("advice", Tab::Advice),
         ("sliders", Tab::Sliders),
-        ("diagnostics", Tab::Diagnostics),
+        ("setup", Tab::Setup),
+        // the tab's name in projects saved before it became Setup info
+        ("diagnostics", Tab::Setup),
         ("settings", Tab::Settings),
     ] {
         assert_eq!(Tab::from_name(name), Some(tab));

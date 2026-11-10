@@ -17,6 +17,7 @@
 mod analysis_window;
 mod layout;
 mod log_viewer;
+mod setup;
 mod shell;
 mod slots;
 mod spectra;

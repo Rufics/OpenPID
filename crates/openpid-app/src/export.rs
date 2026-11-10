@@ -64,7 +64,7 @@ impl App {
             Tab::TimeHeatmap => Kind::Stft(self.tools.stft.clone()),
             Tab::FilterSim => Kind::FilterSim(self.tools.filter_sim.clone()),
             Tab::Advice => Kind::Recommend(self.tools.recommend.clone()),
-            Tab::LogViewer | Tab::Sliders | Tab::Diagnostics | Tab::Settings => return None,
+            Tab::LogViewer | Tab::Sliders | Tab::Setup | Tab::Settings => return None,
         })
     }
 

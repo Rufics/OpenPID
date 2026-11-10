@@ -1,7 +1,7 @@
 //! `openpid-gui`: desktop front-end. All math lives in `openpid-analysis`;
 //! this crate only loads files, runs analyses on a worker thread and draws.
 //!
-//! Usage: `openpid-gui [--tab log|step|spectrum|throttle|time|surface|filter|motors|advice|sliders|diagnostics|settings] [log …]` (up to 8 logs, one slot each)
+//! Usage: `openpid-gui [--tab log|step|spectrum|throttle|time|filter|advice|sliders|setup|settings] [log …]` (up to 8 logs, one slot each)
 
 mod app;
 mod axis_layout;
@@ -14,6 +14,7 @@ mod log_tab;
 mod panel;
 mod prefs;
 mod probe;
+mod setup_tab;
 mod shortcuts;
 mod sliders_tab;
 mod spectrum_tab;

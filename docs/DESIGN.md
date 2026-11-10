@@ -198,7 +198,7 @@ Blackbox does not guarantee a uniform step: there is jitter, dropped frames, `I`
 - The **actual** timestamps (`time` in µs, i64) of every frame are kept.
 - `Timebase` holds the nominal step (from `looptime × pid_process_denom × P-interval`), the median actual step, the maximum jitter and the list of gaps.
 - For the spectral analyses the series is **resampled** onto a uniform grid (linear interpolation within the tolerance; gaps longer than `gap_tolerance` are marked invalid and excluded from the segments). This happens once in `analysis::Prepared` and is cached.
-- All of it is visible to the user in the "Log diagnostics" panel.
+- All of it is visible to the user on the Setup info tab ("Decoder": samples, sample step, gaps).
 
 ### 4.3 Settings
 
@@ -391,7 +391,7 @@ Views (each a struct implementing trait View { fn ui(&mut self, ctx, state) })
 ├─ HeatmapTime    — freq × time, player (phase 2)
 ├─ SliderTool     — PID slider ↔ gains
 ├─ FilterSim      — (phase 2)
-├─ Diagnostics    — headers, frame statistics, gaps
+├─ SetupInfo      — log check, frame statistics, setup and headers of every log side by side
 └─ Settings
 ```
 

@@ -26,7 +26,9 @@ pub enum Tab {
     /// Rule-based proposals with their evidence.
     Advice,
     Sliders,
-    Diagnostics,
+    /// Setup info: the log check, the decoder's counts, the setup and the
+    /// headers of every log side by side.
+    Setup,
     Settings,
 }
 
@@ -40,7 +42,7 @@ impl Tab {
         Tab::FilterSim,
         Tab::Advice,
         Tab::Sliders,
-        Tab::Diagnostics,
+        Tab::Setup,
         Tab::Settings,
     ];
 
@@ -67,7 +69,8 @@ impl Tab {
             "filter" => Tab::FilterSim,
             "advice" => Tab::Advice,
             "sliders" => Tab::Sliders,
-            "diagnostics" => Tab::Diagnostics,
+            // "diagnostics": the tab's name in projects saved before 2026-11
+            "setup" | "diagnostics" => Tab::Setup,
             "settings" => Tab::Settings,
             _ => return None,
         })
@@ -84,7 +87,7 @@ impl Tab {
             Tab::FilterSim => "filter",
             Tab::Advice => "advice",
             Tab::Sliders => "sliders",
-            Tab::Diagnostics => "diagnostics",
+            Tab::Setup => "setup",
             Tab::Settings => "settings",
         }
     }
@@ -109,7 +112,7 @@ impl Tab {
             Tab::FilterSim => tr("Filter Sim"),
             Tab::Advice => tr("Advice"),
             Tab::Sliders => tr("PID sliders"),
-            Tab::Diagnostics => tr("Diagnostics"),
+            Tab::Setup => tr("Setup info"),
             Tab::Settings => tr("Settings"),
         }
     }
@@ -198,7 +201,6 @@ pub struct Tools {
     pub stft: StftParams,
     /// Filter Sim axis, spectra and what-if overrides.
     pub filter_sim: FilterSimParams,
-    /// Motor noise table parameters.
     /// Advice tab thresholds.
     pub recommend: RecommendParams,
     pub spectrum_channel: ChannelId,
@@ -224,6 +226,8 @@ pub struct Tools {
     pub throttle_display: crate::throttle_tab::ThrottleDisplay,
     /// Freq × time display options (docs/design/time-tab).
     pub time_display: crate::time_tab::TimeDisplay,
+    /// Setup info display options (docs/design/setup-tab).
+    pub setup_display: crate::setup_tab::SetupDisplay,
 }
 
 impl Default for Tools {
@@ -253,6 +257,7 @@ impl Default for Tools {
             spectrum_display: crate::spectrum_tab::SpectrumDisplay::default(),
             throttle_display: crate::throttle_tab::ThrottleDisplay::default(),
             time_display: crate::time_tab::TimeDisplay::default(),
+            setup_display: crate::setup_tab::SetupDisplay::default(),
         }
     }
 }
@@ -284,6 +289,8 @@ pub struct App {
     pub viewer: views::ViewerState,
     pub spectrum: views::SpectrumState,
     pub slider_state: crate::sliders_tab::SliderState,
+    /// The Setup info table as drawn.
+    pub setup_state: crate::setup_tab::SetupState,
     /// RPM / notch overlay on the freq × throttle heatmap.
     pub overlay: views::OverlayState,
     /// Playback state of the freq × time tab.
@@ -389,6 +396,7 @@ impl App {
             viewer: views::ViewerState::default(),
             spectrum: views::SpectrumState::default(),
             slider_state: crate::sliders_tab::SliderState::default(),
+            setup_state: crate::setup_tab::SetupState::default(),
             overlay: views::OverlayState::default(),
             player: views::PlayerState::default(),
             strip: views::StripState::default(),
@@ -745,6 +753,7 @@ impl App {
             spectrum_display: self.tools.spectrum_display.clone(),
             throttle_display: self.tools.throttle_display.clone(),
             time_display: self.tools.time_display.clone(),
+            setup_display: self.tools.setup_display.clone(),
         };
         self.tab = Tab::from_name(&p.tab).unwrap_or(Tab::LogViewer);
         self.touch_mode = p.touch_mode;
@@ -1246,7 +1255,7 @@ impl App {
                 Tab::FilterSim => crate::filter_tab::filter_sim(self, ui),
                 Tab::Advice => views::advice(self, ui),
                 Tab::Sliders => crate::sliders_tab::sliders(self, ui),
-                Tab::Diagnostics => views::diagnostics(self, ui),
+                Tab::Setup => crate::setup_tab::setup(self, ui),
                 Tab::Settings => views::settings(self, ui),
             });
         self.central_rect = central.response.rect;

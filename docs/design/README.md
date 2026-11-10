@@ -99,4 +99,5 @@ Rules shared by every topic of the sprint:
 | One axis at full height on the axis-row tabs (Show, keys R / P / Y) | [axis-focus](axis-focus/README.md) |
 | UI tests by control names and data units, on every screen | [ui-tests](ui-tests/README.md) |
 | Log viewer: the sticks and the flight modes at the pointer or the cursor, on the motors row | [log-sticks](log-sticks/README.md) |
+| Setup info: one table of the log check, the decoder, the setup and the headers, a column per log, differences marked | [setup-tab](setup-tab/README.md) |
 

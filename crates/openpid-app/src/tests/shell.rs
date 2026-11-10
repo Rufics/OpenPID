@@ -35,8 +35,8 @@ fn the_start_screen_replaces_every_tab_until_a_log_is_open() {
 
 #[test]
 fn starts_on_the_requested_tab() {
-    let ui = Ui::open(&[], Tab::Diagnostics);
-    assert_eq!(ui.app().tab, Tab::Diagnostics);
+    let ui = Ui::open(&[], Tab::Setup);
+    assert_eq!(ui.app().tab, Tab::Setup);
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn number_keys_ctrl_tab_and_the_help_window() {
     ui.key_with(Modifiers::COMMAND | Modifiers::SHIFT, Key::Tab);
     assert_eq!(ui.app().tab, Tab::Settings);
     ui.key(Key::Num9);
-    assert_eq!(ui.app().tab, Tab::Diagnostics, "9 is the 9th tab");
+    assert_eq!(ui.app().tab, Tab::Setup, "9 is the 9th tab");
     // the help window: ?, Esc, F1, the Help menu
     assert!(!ui.sees("Keyboard shortcuts"));
     ui.key(Key::Questionmark);

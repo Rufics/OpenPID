@@ -90,8 +90,8 @@ samples and the base coverage of every channel in percent.
 | Harmonic notch | `INS_HNTCH_*`: mode 2/3 (RPM/ESC) → `rpm_notch`; 4 (FFT) → `dyn_notch`; 0/1 (static / by throttle) → a static `notch`; every parameter in `settings.extra` |
 | Motors | `MOT_PWM_MIN/MAX`, `MOT_PWM_TYPE`, `FRAME_CLASS` → count |
 
-Every `PARM` and every `MSG` line is available as a raw header (the Diagnostics
-tab).
+Every `PARM` and every `MSG` line is available as a raw header (the Setup info
+tab, "All headers").
 
 ## Test logs
 

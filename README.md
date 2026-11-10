@@ -79,7 +79,7 @@ the test suite (`git lfs install && git lfs pull`).
 **GUI.** Start `openpid-gui`, drop a log into the window (or use *Open sample
 log* for a synthetic flight), and take the seven-step tour. Tabs: Log viewer,
 Step response, Spectrum, Freq × throttle, Freq × time, Filter Sim, Advice,
-PID sliders, Diagnostics, Settings. Every control is
+PID sliders, Setup info, Settings. Every control is
 described in the [user guide](docs/USER-GUIDE.md).
 
 ```sh
