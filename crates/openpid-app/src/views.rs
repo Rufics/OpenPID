@@ -38,6 +38,10 @@ pub struct ViewerState {
     pub plot_frame: Option<egui::Rect>,
     /// Plot x range (seconds) last frame.
     pub x_bounds: Option<(f64, f64)>,
+    /// The sticks drawn on the Log viewer last frame (at the pointer or the cursor).
+    pub sticks: Option<openpid_analysis::Sticks>,
+    /// Where the stick card was drawn last frame.
+    pub sticks_rect: Option<egui::Rect>,
 }
 
 /// Pixel distance within which an epoch bound can be grabbed.

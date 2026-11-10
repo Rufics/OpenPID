@@ -217,6 +217,8 @@ pub struct LogDisplay {
     pub quantities: Vec<LogQuantity>,
     /// The axis rows span ± this rate (deg/s).
     pub y_scale: f64,
+    /// The stick card on the throttle / motors row (docs/design/log-sticks).
+    pub sticks: bool,
 }
 
 impl Default for LogDisplay {
@@ -230,6 +232,7 @@ impl Default for LogDisplay {
                 LogQuantity::Throttle,
             ],
             y_scale: 500.0,
+            sticks: true,
         }
     }
 }
@@ -364,6 +367,8 @@ fn rows(app: &App, s: &FlightSession) -> Vec<RowSpec> {
 #[derive(Default)]
 struct Interaction {
     cursor: Option<f64>,
+    /// Time under the pointer, when it is over a row.
+    hover: Option<f64>,
     hovered: Option<(Slot, bool)>,
     drag_to: Option<(Slot, bool, f64)>,
     drag_started: bool,
@@ -398,6 +403,9 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
         .collect();
     let last = specs.len() - 1;
     let mut first: Option<PlotTransform> = None;
+    // the sticks sit on the throttle / motors row, else on the last row
+    let sticks_row = specs.iter().position(|r| r.key == "motors").unwrap_or(last);
+    let mut sticks_frame = None;
     for (i, spec) in specs.iter().enumerate() {
         let h = unit_h * spec.weight + if i == last { 20.0 } else { 0.0 };
         let t = row(
@@ -411,6 +419,18 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
             &mut act,
         );
         first.get_or_insert(t);
+        if i == sticks_row {
+            sticks_frame = Some(*t.frame());
+        }
+    }
+    // the sticks under the pointer while it is over the rows, else at the cursor
+    let at = act.hover.or(act.cursor);
+    app.viewer.sticks = at
+        .filter(|_| app.tools.log_display.sticks)
+        .and_then(|t| openpid_analysis::sticks_at(&s, t));
+    app.viewer.sticks_rect = None;
+    if let (Some(st), Some(frame)) = (app.viewer.sticks, sticks_frame) {
+        app.viewer.sticks_rect = Some(draw_sticks(ui, frame, &st));
     }
     if let Some(t) = first {
         let b = t.bounds();
@@ -530,6 +550,11 @@ fn row(
 /// Clicks, long presses and epoch drags on a row.
 fn pointer(app: &mut App, pu: &egui_plot::PlotUi<'_>, touch: bool, act: &mut Interaction) {
     let resp = pu.response();
+    if resp.hovered()
+        && let Some(p) = pu.pointer_coordinate()
+    {
+        act.hover = Some(p.x);
+    }
     act.drag_started |= resp.drag_started();
     act.drag_stopped |= resp.drag_stopped();
     // hover_pos() is unreliable mid-drag; interact_pointer_pos() follows the drag
@@ -575,6 +600,76 @@ fn pointer(app: &mut App, pu: &egui_plot::PlotUi<'_>, touch: bool, act: &mut Int
         (Some((_, p0)), _) if !down && resp.rect.contains(p0) => app.viewer.press = None,
         _ => {}
     }
+}
+
+/// Side of a stick box, points.
+const STICK_BOX: f32 = 54.0;
+
+/// The two sticks (mode 2: throttle and yaw on the left, pitch and roll on
+/// the right) at the right edge of `frame`, as the reference tool shows them
+/// beside its plots; returns the card's rectangle.
+fn draw_sticks(ui: &Ui, frame: egui::Rect, st: &openpid_analysis::Sticks) -> egui::Rect {
+    let painter = ui.painter().with_clip_rect(frame);
+    let gap = 8.0;
+    let label_h = 14.0;
+    let size = egui::vec2(2.0 * STICK_BOX + gap + 12.0, STICK_BOX + label_h + 10.0);
+    let card = egui::Rect::from_min_size(
+        egui::pos2(frame.right() - size.x - 6.0, frame.bottom() - size.y - 4.0),
+        size,
+    );
+    let dark = crate::theme::is_dark();
+    let (bg, line, text) = if dark {
+        (
+            Color32::from_rgba_unmultiplied(20, 22, 27, 215),
+            Color32::from_gray(90),
+            Color32::from_gray(200),
+        )
+    } else {
+        (
+            Color32::from_rgba_unmultiplied(250, 250, 252, 225),
+            Color32::from_gray(150),
+            Color32::from_gray(50),
+        )
+    };
+    painter.rect_filled(card, 6.0, bg);
+    let font = egui::FontId::proportional(11.0);
+    // throttle 0..1 runs bottom to top; the others are −1..1 around the centre
+    let throttle = st.throttle.map_or(0.0, |t| t * 2.0 - 1.0);
+    let boxes = [(st.yaw, throttle, "T / Y"), (st.roll, st.pitch, "P / R")];
+    for (k, (x, y, name)) in boxes.into_iter().enumerate() {
+        let left = card.left() + 6.0 + k as f32 * (STICK_BOX + gap);
+        let r = egui::Rect::from_min_size(
+            egui::pos2(left, card.top() + 5.0),
+            egui::vec2(STICK_BOX, STICK_BOX),
+        );
+        painter.rect_stroke(
+            r,
+            2.0,
+            egui::Stroke::new(1.0, line),
+            egui::StrokeKind::Inside,
+        );
+        let c = r.center();
+        let faint = egui::Stroke::new(1.0, line.gamma_multiply(0.5));
+        painter.line_segment(
+            [egui::pos2(c.x, r.top()), egui::pos2(c.x, r.bottom())],
+            faint,
+        );
+        painter.line_segment(
+            [egui::pos2(r.left(), c.y), egui::pos2(r.right(), c.y)],
+            faint,
+        );
+        let half = STICK_BOX / 2.0 - 4.0;
+        let dot = egui::pos2(c.x + x as f32 * half, c.y - y as f32 * half);
+        painter.circle_filled(dot, 4.5, crate::colormap::ACCENT);
+        painter.text(
+            egui::pos2(c.x, r.bottom() + 2.0),
+            egui::Align2::CENTER_TOP,
+            name,
+            font.clone(),
+            text,
+        );
+    }
+    card
 }
 
 /// The names of the row's lines in their colours, with the value at the
@@ -663,6 +758,14 @@ fn controls(app: &mut App, ui: &mut Ui) {
     }
     other_channels(app, ui, session.as_deref());
     cursor_rows(app, ui);
+    panel::check(
+        ui,
+        &mut app.tools.log_display.sticks,
+        tr("Sticks"),
+        tr(
+            "the sticks at the pointer or the cursor, at the bottom right of the throttle / motors row",
+        ),
+    );
 }
 
 /// "Other channels": any channel of the log, in a row of their own.

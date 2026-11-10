@@ -82,6 +82,11 @@ cargo run --release -p openpid-app                      # or ./target/release/op
   have is greyed. The default is Gyro, Setpoint, Motors and Throttle.
 - **At the top left of each row** the names of its lines in their colours,
   with the values at the cursor once you place it.
+- **The sticks** at the bottom right of the throttle / motors row: the left
+  box throttle (up) and yaw (across), the right box pitch (up) and roll
+  (across), as on a mode-2 transmitter. They follow the pointer while it is
+  over the plots, else the cursor (from the log's RC commands). **Sticks**
+  at the end of the panel hides them.
 - **Other channels** (panel, folded): checkboxes of every channel of the log;
   the **filter** field narrows the list (`gyro`, `pid.d`, `motor`…). Channel
   names are the same for every firmware: `gyro.filtered.roll`,

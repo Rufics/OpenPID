@@ -900,10 +900,17 @@ fn log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor() {
         (lo + 250.0).abs() < 1.0 && (hi - 250.0).abs() < 1.0,
         "{lo} {hi}"
     );
+    // the sticks: none without a cursor or a pointer over the rows
+    assert!(app(&h).viewer.sticks.is_none());
     // a click places the cursor; its time is in the panel
     let frame = app(&h).viewer.plot_frame.unwrap();
     let p = frame.center();
     pointer_move(&mut h, p);
+    // the pointer over a row shows the sticks of that moment, on the last row's right edge
+    let st = app(&h).viewer.sticks.expect("sticks under the pointer");
+    assert!((0.0..=1.0).contains(&st.throttle.unwrap()));
+    let card = app(&h).viewer.sticks_rect.unwrap();
+    assert!(card.right() <= frame.right() + 1.0 && card.top() > frame.bottom());
     pointer_button(&mut h, p, true);
     pointer_button(&mut h, p, false);
     h.step();
@@ -911,6 +918,20 @@ fn log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor() {
     let (x0, x1) = app(&h).viewer.x_bounds.unwrap();
     assert!((t - f64::midpoint(x0, x1)).abs() < 0.01 * (x1 - x0), "{t}");
     assert!(h.query_by_label("Position").is_some());
+    // the pointer leaves the rows: the sticks stay at the cursor
+    pointer_move(&mut h, egui::pos2(2.0, 2.0));
+    let at_cursor =
+        openpid_analysis::sticks_at(app(&h).loaded(Slot::A).unwrap().current().unwrap(), t);
+    assert_eq!(app(&h).viewer.sticks, at_cursor);
+    // and they can be hidden
+    assert!(app(&h).tools.log_display.sticks, "shown by default");
+    // last in the panel, which scrolls on a short window
+    h.get_by_label("Sticks").scroll_to_me();
+    h.run_steps(12);
+    h.get_by_label("Sticks").click();
+    h.run_steps(2);
+    assert!(!app(&h).tools.log_display.sticks);
+    assert!(app(&h).viewer.sticks.is_none() && app(&h).viewer.sticks_rect.is_none());
 }
 
 #[test]

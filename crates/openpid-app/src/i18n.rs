@@ -291,6 +291,7 @@ static UA: &[(&str, &str)] = &[
         "Stick response: overshoot and delay, judged against your targets.",
         "Відгук на стік: перерегулювання і затримка проти ваших цілей.",
     ),
+    ("Sticks", "Стіки"),
     ("Surface 3D", "Поверхня 3D"),
     ("THE FILTER CHAIN", "ЛАНЦЮЖОК ФІЛЬТРІВ"),
     ("Tab", "Вкладка"),
@@ -745,6 +746,10 @@ static UA: &[(&str, &str)] = &[
     (
         "the static notches, the dynamic-notch band and the RPM filter minimum",
         "статичні нотчі, смуга динамічного нотча й мінімум RPM-фільтра",
+    ),
+    (
+        "the sticks at the pointer or the cursor, at the bottom right of the throttle / motors row",
+        "стіки під вказівником або курсором, у правому нижньому куті рядка газу й моторів",
     ),
     (
         "the throttle axis from the first to the last sampled bin instead of 0–100 %",
