@@ -1,5 +1,13 @@
 # Motors tab
 
+> **Outcome (2026-11-10): the tab was removed.** The owner's condition: keep
+> it only if the reference tool has such a tool. Its control panel in the
+> tutorial video offers the spectral analyzer, the step response tool, the
+> PID slider tool, Filter Sim, the test signal and the setup info; no motor
+> noise tool. The row "Motor / prop noise tool: Pro ✓" in DESIGN §2 had been
+> written without a source. The analysis and `openpid run motor-noise` stay.
+> The rest of this note is the record of what was built and removed.
+
 The owner's remark (2026-11-09, #33, PR #143): rework the analysis tabs in the
 axis-row layout ([axis-layout](../axis-layout/README.md)), one tab at a time
 with the owner's approval; five conceptually different designs per change.

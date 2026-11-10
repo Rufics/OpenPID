@@ -209,7 +209,14 @@ impl Settings {
     /// `gain` rounded to the firmware's step.
     pub fn round_gain(&self, gain: f64) -> f64 {
         let step = self.gain_step();
-        (gain / step).round() * step
+        // a decimal step (0.0001) is rounded through its whole inverse, so
+        // the result is the nearest number to the decimal, not 0.1546000…2
+        let inverse = (1.0 / step).round();
+        if step < 1.0 && (inverse * step - 1.0).abs() < 1e-9 {
+            (gain * inverse).round() / inverse
+        } else {
+            (gain / step).round() * step
+        }
     }
 
     /// `gain` as the firmware writes it: at the step's precision, without
@@ -253,6 +260,9 @@ mod tests {
         assert_eq!(fine.gain_text(0.0), "0");
         assert_eq!(fine.gain_text(0.00396), "0.004");
         assert!((fine.round_gain(0.00396) - 0.004).abs() < 1e-12);
+        // exactly the decimal, without binary noise
+        assert_eq!(fine.round_gain(0.1288 * 1.2), 0.1546);
+        assert_eq!(fine.round_gain(0.008 * 1.2), 0.0096);
         // a step that makes no sense reads as 1
         let odd = Settings {
             pid_step: Some(0.0),

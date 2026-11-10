@@ -8,8 +8,8 @@ use crate::views;
 use crate::worker::{Done, Job, JobKey, Kind, Output, Slot, Worker};
 use eframe::egui;
 use openpid_analysis::{
-    Epoch, FilterSimParams, Fitness, MotorNoiseParams, Project, ProjectSlot, PsdParams,
-    RecommendParams, StepParams, StftParams, ThrottleHeatmapParams,
+    Epoch, FilterSimParams, Fitness, Project, ProjectSlot, PsdParams, RecommendParams, StepParams,
+    StftParams, ThrottleHeatmapParams,
 };
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use std::collections::HashMap;
@@ -26,7 +26,6 @@ pub enum Tab {
     /// Freq × throttle × amplitude as an orbiting 3D surface.
     Surface,
     FilterSim,
-    MotorNoise,
     /// Rule-based proposals with their evidence.
     Advice,
     Sliders,
@@ -35,7 +34,7 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub const ALL: [Tab; 12] = [
+    pub const ALL: [Tab; 11] = [
         Tab::LogViewer,
         Tab::Step,
         Tab::Spectrum,
@@ -43,7 +42,6 @@ impl Tab {
         Tab::TimeHeatmap,
         Tab::Surface,
         Tab::FilterSim,
-        Tab::MotorNoise,
         Tab::Advice,
         Tab::Sliders,
         Tab::Diagnostics,
@@ -72,7 +70,6 @@ impl Tab {
             "time" => Tab::TimeHeatmap,
             "surface" => Tab::Surface,
             "filter" => Tab::FilterSim,
-            "motors" => Tab::MotorNoise,
             "advice" => Tab::Advice,
             "sliders" => Tab::Sliders,
             "diagnostics" => Tab::Diagnostics,
@@ -91,7 +88,6 @@ impl Tab {
             Tab::TimeHeatmap => "time",
             Tab::Surface => "surface",
             Tab::FilterSim => "filter",
-            Tab::MotorNoise => "motors",
             Tab::Advice => "advice",
             Tab::Sliders => "sliders",
             Tab::Diagnostics => "diagnostics",
@@ -105,7 +101,6 @@ impl Tab {
         match self {
             Tab::LogViewer => tr("Log"),
             Tab::Surface => tr("3D"),
-            Tab::MotorNoise => tr("Motors"),
             Tab::Sliders => tr("Sliders"),
             t => t.title(),
         }
@@ -120,7 +115,6 @@ impl Tab {
             Tab::TimeHeatmap => tr("Freq × time"),
             Tab::Surface => tr("Surface 3D"),
             Tab::FilterSim => tr("Filter Sim"),
-            Tab::MotorNoise => tr("Motor noise"),
             Tab::Advice => tr("Advice"),
             Tab::Sliders => tr("PID sliders"),
             Tab::Diagnostics => tr("Diagnostics"),
@@ -213,7 +207,6 @@ pub struct Tools {
     /// Filter Sim axis, spectra and what-if overrides.
     pub filter_sim: FilterSimParams,
     /// Motor noise table parameters.
-    pub motor_noise: MotorNoiseParams,
     /// Advice tab thresholds.
     pub recommend: RecommendParams,
     pub spectrum_channel: ChannelId,
@@ -231,8 +224,6 @@ pub struct Tools {
     /// The one axis the axis-row tabs show at full height; `None` = all
     /// three (docs/design/axis-focus).
     pub axis_focus: Option<Axis>,
-    /// Motors tab display options (docs/design/motors-tab).
-    pub motors_display: crate::motors_tab::MotorsDisplay,
     /// Step tab display options (docs/design/axis-layout).
     pub step_display: crate::axis_layout::StepDisplay,
     /// Spectrum tab display options (docs/design/spectrum-tab).
@@ -256,7 +247,6 @@ impl Default for Tools {
             throttle: ThrottleHeatmapParams::default(),
             stft: StftParams::default(),
             filter_sim: FilterSimParams::default(),
-            motor_noise: MotorNoiseParams::default(),
             recommend: RecommendParams::default(),
             spectrum_channel: gyro.clone(),
             heatmap_channel: gyro.clone(),
@@ -267,7 +257,6 @@ impl Default for Tools {
             viewer_channels: Vec::new(),
             log_display: crate::log_tab::LogDisplay::default(),
             axis_focus: None,
-            motors_display: crate::motors_tab::MotorsDisplay::default(),
             step_display: crate::axis_layout::StepDisplay::default(),
             spectrum_display: crate::spectrum_tab::SpectrumDisplay::default(),
             throttle_display: crate::throttle_tab::ThrottleDisplay::default(),
@@ -302,7 +291,7 @@ pub struct App {
     pub status: String,
     pub viewer: views::ViewerState,
     pub spectrum: views::SpectrumState,
-    pub slider_state: views::SliderState,
+    pub slider_state: crate::sliders_tab::SliderState,
     /// RPM / notch overlay on the freq × throttle heatmap.
     pub overlay: views::OverlayState,
     /// Camera and hover state of the 3D surface tab.
@@ -409,7 +398,7 @@ impl App {
             status: "Open a blackbox log (Open log…, Open sample log, or drop it here)".into(),
             viewer: views::ViewerState::default(),
             spectrum: views::SpectrumState::default(),
-            slider_state: views::SliderState::default(),
+            slider_state: crate::sliders_tab::SliderState::default(),
             overlay: views::OverlayState::default(),
             surface: surface::SurfaceState::default(),
             player: views::PlayerState::default(),
@@ -722,7 +711,6 @@ impl App {
             throttle: t.throttle.clone(),
             stft: t.stft.clone(),
             filter_sim: t.filter_sim.clone(),
-            motor_noise: t.motor_noise.clone(),
             recommend: t.recommend.clone(),
             spectrum_channel: t.spectrum_channel.clone(),
             heatmap_channel: t.heatmap_channel.clone(),
@@ -753,7 +741,6 @@ impl App {
             throttle: p.throttle.clone(),
             stft: p.stft.clone(),
             filter_sim: p.filter_sim.clone(),
-            motor_noise: p.motor_noise.clone(),
             recommend: p.recommend.clone(),
             spectrum_channel: p.spectrum_channel.clone(),
             heatmap_channel: p.heatmap_channel.clone(),
@@ -765,7 +752,6 @@ impl App {
             // display options are the viewer's, not the project's
             log_display: self.tools.log_display.clone(),
             axis_focus: self.tools.axis_focus,
-            motors_display: self.tools.motors_display.clone(),
             step_display: self.tools.step_display.clone(),
             spectrum_display: self.tools.spectrum_display.clone(),
             throttle_display: self.tools.throttle_display.clone(),
@@ -1270,9 +1256,8 @@ impl App {
                 Tab::TimeHeatmap => crate::time_tab::time(self, ui),
                 Tab::Surface => surface::surface(self, ui),
                 Tab::FilterSim => crate::filter_tab::filter_sim(self, ui),
-                Tab::MotorNoise => crate::motors_tab::motors(self, ui),
                 Tab::Advice => views::advice(self, ui),
-                Tab::Sliders => views::sliders(self, ui),
+                Tab::Sliders => crate::sliders_tab::sliders(self, ui),
                 Tab::Diagnostics => views::diagnostics(self, ui),
                 Tab::Settings => views::settings(self, ui),
             });

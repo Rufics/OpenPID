@@ -32,14 +32,14 @@ The mapping to the PIDtoolbox / Pro feature table and the phase plan.
 | 2D spectral analyzer (PSD) | ✓ | ✓ | 1 | Welch |
 | Freq × throttle heatmap | ✓ | ✓ | 1 | §6.4 |
 | Freq × time heatmap (STFT) | ✓ | ✓ | 1 | §6.5 |
-| PID slider tool | ✓ | ✓ | 1 | Betaflight-specific, through `FirmwareProfile` |
+| PID slider tool | ✓ | ✓ | 1 | The firmware's own sliders through its profile (Betaflight simplified tuning), else ratio sliders over the logged gains (`RatioSliders`), as the reference tool's slider tool; every log's position on one track per slider |
 | Multi-firmware support | ✓ | ✓ | 0→2 | Betaflight/EmuFlight/Rotorflight: phase 0; ArduPilot done (ADR-0010, `docs/ARDUPILOT.md`), then INAV: phase 2; KISS/Fettec/QuickSilver when samples exist (decision Q2) |
 | RPM / dyn-notch overlay 2D | — | ✓ | 2 | Needs eRPM (DShot telemetry) and the pole count |
 | RPM / dyn-notch overlay 3D | — | ✓ | 2 | A 3D freq × throttle × amp surface |
 | RPM estimator | — | ✓ | 2 | Motor speed from the noise peaks when there is no telemetry |
 | Filter sim | — | ✓ | 2 | `gyroUnfilt` through a model of the firmware filters |
 | Test signal generator | — | ✓ | 2 | Synthetic signals to check filters and algorithms |
-| Motor / prop noise tool | — | ✓ | 2 | Spectra per motor, harmonics |
+| Motor / prop noise | — | — | 2 | Our own, command line only (`openpid run motor-noise`). It was listed as a Pro feature by mistake; the reference tool has no such screen, and the tab was removed on 2026-11-10 |
 | Dynamic spectrum player | — | ✓ | 2 | Animated playback of the STFT over time |
 | Recommendations / autotune | — | — | 3 | Our own extension: `Recommend` (rules with evidence), the Advice tab, export to the Betaflight CLI |
 | Export (CSV/JSON/PNG, CLI diff) | partly | partly | 1 | CSV/JSON/PNG from the GUI and CLI; `openpid diff` and `--cli` are phase 3 |
@@ -365,7 +365,7 @@ An STFT with `nfft`, hop, Hann → `Grid2D { x: time, y: freq, z: amp/dB }`. It 
 - **Filter Sim** (`FilterSimAnalysis`, the Filter Sim tab, `openpid run filter-sim --set …`): `gyro.raw → ChainModel(settings) → gyro.sim`, compared with the log's `gyro.filtered` (validation metrics: residual in % RMS, delay by cross-correlation) and with a "what-if" chain (`FilterOverrides`: LPF1/LPF2 cutoffs and types, the dynamic range, RPM and dynamic notches, a static notch; 0 switches a stage off). Outputs: both series over time, PSD raw/logged/sim/as-flown, a description of the stages. It needs the unfiltered gyro in the log (`gyroUnfilt`, `debug_mode GYRO_SCALED`, the ArduPilot batch sampler).
 - **RPM / dyn-notch overlay** (`RpmOverlay` in the freq × throttle output): from `motor_rpm.*` (eRPM and `motor_poles`), the median rpm of every motor per throttle bin (the same segments and window as the spectra); the GUI draws the harmonics `k·rpm/60` (toggles per motor, number of harmonics, by default as many as the RPM filter removes), the static notch bands, the dynamic-notch band and the RPM-filter minimum; the CLI JSON always has `overlay` when rpm exists. Checked on the 4.5.1 fixture: the fundamental line sits on the ridge of the unfiltered-gyro spectrum in 93 % of the bins. 3D is the same grid as a surface (#26).
 - **RPM estimator** (`RpmEstimator`, `openpid run rpm`): without eRPM, the candidates are the strongest STFT peaks of the unfiltered gyro in the `rpm_min..rpm_max` band (as the 1st…3rd harmonic), dynamic programming picks a path continuous in time (penalties for a relative jump and for a higher harmonic), the confidence is the peak's excess over the band median. With four motors at similar speed the estimate follows their mean: a median error of 2.9 % on the 4.5.1 fixture and 2.0 % on 2025.12 (against the logged eRPM, reported as `median_error`). `gyro.filtered` is unusable: the RPM filter has already removed the peaks.
-- **Motor noise** (`MotorNoiseAnalysis`, the Motor noise tab, `openpid run motor-noise`): per motor, the gyro amplitude at its harmonics `k·rpm/60` in every STFT frame (averaged), the ratio to the mean over the motors, the sum; the speeds come from eRPM or the RPM estimator (then one row for all motors). A "bent prop" shows as a row with a ratio > 1 and the loudest motor highlighted; checked on the generator's synthetic data with one motor amplified 2.5×.
+- **Motor noise** (`MotorNoiseAnalysis`, `openpid run motor-noise`; no tab): per motor, the gyro amplitude at its harmonics `k·rpm/60` in every STFT frame (averaged), the ratio to the mean over the motors, the sum; the speeds come from eRPM or the RPM estimator (then one row for all motors). A "bent prop" shows as a row with a ratio > 1 and the loudest motor highlighted; checked on the generator's synthetic data with one motor amplified 2.5×.
 
 ### 6.7 Cache and incrementality
 
@@ -439,6 +439,7 @@ The CLI uses the same registries as the GUI and is the basis of the golden tests
 - A `Recommender` receives a `FlightSession` plus the analysis results and returns `Vec<Proposal>` (`{ path: "pid.roll.d", from, to, rationale, confidence }`).
 - `Exporter("betaflight-cli")` turns `Proposal`s into `set …` commands / a diff.
 - Implemented (v1.0): `openpid-core::recommend` (`Proposal`, `Exporter`, `diff_headers`), `openpid-analysis::recommend::Recommend` with three rules and explicit evidence (overshoot → D, an uncovered peak → notch, headroom above the gyro LPF → cutoff), `openpid-fmt-blackbox::BetaflightCli`, `openpid diff` and `openpid run recommend --cli`.
+- `FormatRegistry::slider_model` falls back to `openpid_core::RatioSliders` (firmware-agnostic: master, P:D, P:I, roll:pitch and yaw ratios over the logged gains, rounded to the firmware's gain step, no commands) when the profile has no slider model, so a log with PID gains always has sliders.
 - The exporter and the slider model of a log are asked from its firmware profile through the format registry (`FormatRegistry::exporter(&session)`, `slider_model(&session)`; ADR-0015): the app and the CLI name no firmware. Betaflight (and a log that does not name its firmware) has the CLI exporter; INAV, Rotorflight, `EmuFlight` and `ArduPilot` have none yet, so the Advice tab shows their proposals without commands and `--cli` reports that there is no export.
 - Later: a `Device` trait (MSP over serial) to read and write settings and to download logs from the FC. The decision is ADR-0014: no device access in v1.0; later a separate `openpid-msp` crate behind the `device` feature on `serial2` (pure Rust), writes only with confirmation and a read-back.
 

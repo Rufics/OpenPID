@@ -44,8 +44,8 @@ fn number_keys_ctrl_tab_and_the_help_window() {
     let mut ui = Ui::setup().open();
     ui.key(Key::Num2);
     assert_eq!(ui.app().tab, Tab::Step);
-    ui.key(Key::Equals);
-    assert_eq!(ui.app().tab, Tab::Settings, "= is the 12th tab");
+    ui.key(Key::Minus);
+    assert_eq!(ui.app().tab, Tab::Settings, "- is the 11th tab");
     ui.key_with(Modifiers::COMMAND, Key::Tab);
     assert_eq!(
         ui.app().tab,
@@ -55,7 +55,7 @@ fn number_keys_ctrl_tab_and_the_help_window() {
     ui.key_with(Modifiers::COMMAND | Modifiers::SHIFT, Key::Tab);
     assert_eq!(ui.app().tab, Tab::Settings);
     ui.key(Key::Num0);
-    assert_eq!(ui.app().tab, Tab::Sliders, "0 is the 10th tab");
+    assert_eq!(ui.app().tab, Tab::Diagnostics, "0 is the 10th tab");
     // the help window: ?, Esc, F1, the Help menu
     assert!(!ui.sees("Keyboard shortcuts"));
     ui.key(Key::Questionmark);

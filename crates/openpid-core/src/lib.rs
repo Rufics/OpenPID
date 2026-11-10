@@ -31,6 +31,6 @@ pub use session::{
     Timebase,
 };
 pub use settings::Settings;
-pub use sliders::{SliderDef, SliderModel, SliderResult, SliderValues};
+pub use sliders::{RatioSliders, SliderDef, SliderModel, SliderResult, SliderValues};
 pub use sticks::Sticks;
 pub use units::Unit;

@@ -3,7 +3,7 @@
 use crate::profile::{FirmwareProfile, RawHeaders};
 use crate::recommend::Exporter;
 use crate::session::{FlightSession, LogFile};
-use crate::sliders::SliderModel;
+use crate::sliders::{RatioSliders, SliderModel};
 use std::fmt;
 
 /// How confident a format is that it can read a given file.
@@ -139,13 +139,17 @@ impl FormatRegistry {
         self.iter().find_map(|f| f.profile(&session.profile_id))
     }
 
-    /// The slider ("simplified tuning") model of `session`, when its firmware
-    /// has one.
+    /// The slider model of `session`: its firmware's own ("simplified
+    /// tuning") when the profile has one, else ratio sliders over the gains
+    /// the log flew with; `None` for a log without PID gains.
     pub fn slider_model(&self, session: &FlightSession) -> Option<Box<dyn SliderModel>> {
         let headers = RawHeaders(session.raw_headers.clone());
-        self.profile_for(session)?
-            .bind(&session.firmware, &headers)
-            .slider_model()
+        self.profile_for(session)
+            .and_then(|p| p.bind(&session.firmware, &headers).slider_model())
+            .or_else(|| {
+                RatioSliders::from_settings(&session.settings)
+                    .map(|m| Box::new(m) as Box<dyn SliderModel>)
+            })
     }
 
     /// What writes proposals and setting diffs for the firmware of `session`,

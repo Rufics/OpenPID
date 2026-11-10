@@ -333,8 +333,9 @@ fn sticks_are_mapped_per_firmware() {
 }
 
 /// The exporter and the slider model of a log come from its firmware
-/// profile, found through the format registry: Betaflight has both, the
-/// other firmwares of the family have their own setting names and get none.
+/// profile, found through the format registry: Betaflight has both; the
+/// other firmwares of the family have their own setting names and get no
+/// exporter, and the ratio sliders in place of sliders of their own.
 #[test]
 fn exporter_and_sliders_come_from_the_logs_profile() {
     let mut registry = openpid_core::FormatRegistry::new();
@@ -370,7 +371,8 @@ fn exporter_and_sliders_come_from_the_logs_profile() {
     let old = first("betaflight-4.2.0.BFL");
     let text = registry.exporter(&old).unwrap().export(&[lpf]).unwrap();
     assert!(text.contains("set gyro_lowpass_hz = 300\n"), "{text}");
-    assert!(registry.slider_model(&old).is_none());
+    // no firmware sliders there: the ratio sliders over its gains instead
+    assert_eq!(registry.slider_model(&old).unwrap().id(), "ratio-sliders");
     for name in [
         "inav-9.0.1-truncated.TXT",
         "rotorflight-4.3.0-LOG246.TXT",
@@ -379,6 +381,18 @@ fn exporter_and_sliders_come_from_the_logs_profile() {
         let s = first(name);
         assert!(registry.profile_for(&s).is_some(), "{name}");
         assert!(registry.exporter(&s).is_none(), "{name}");
-        assert!(registry.slider_model(&s).is_none(), "{name}");
+        // none of them has sliders of its own; with gains they get the ratio sliders
+        let headers = openpid_core::RawHeaders(s.raw_headers.clone());
+        let own = registry
+            .profile_for(&s)
+            .unwrap()
+            .bind(&s.firmware, &headers)
+            .slider_model();
+        assert!(own.is_none(), "{name}");
+        assert_eq!(
+            registry.slider_model(&s).map(|m| m.id()),
+            s.settings.pid.map(|_| "ratio-sliders"),
+            "{name}"
+        );
     }
 }

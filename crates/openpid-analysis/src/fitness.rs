@@ -200,9 +200,9 @@ pub fn check_session(s: &FlightSession) -> Fitness {
         if has_raw { Level::Ok } else { Level::Fail },
         "raw",
         if has_raw {
-            "unfiltered gyro logged: Filter Sim, Motor noise and the noise rules work".into()
+            "unfiltered gyro logged: Filter Sim and the noise rules work".into()
         } else {
-            "no unfiltered gyro: Filter Sim, Motor noise and the peak rule are unavailable".into()
+            "no unfiltered gyro: Filter Sim and the peak rule are unavailable".into()
         },
         Some(raw_fix),
     ));
@@ -216,7 +216,7 @@ pub fn check_session(s: &FlightSession) -> Fitness {
         if has_rpm { Level::Ok } else { Level::Warn },
         "rpm",
         if has_rpm {
-            "motor rpm logged: the RPM overlay and Motor noise use it".into()
+            "motor rpm logged: the RPM overlay uses it".into()
         } else {
             "no motor rpm: the overlay falls back to the rpm estimate".into()
         },

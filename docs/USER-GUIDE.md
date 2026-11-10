@@ -3,7 +3,7 @@
 OpenPID reads blackbox logs (Betaflight, EmuFlight, Rotorflight, INAV,
 ArduPilot DataFlash, `blackbox_decode` CSV) and shows what PID and filter
 tuning needs: time plots, step response, spectra, frequency × throttle and
-frequency × time heatmaps, a filter simulation, motor noise and the Betaflight
+frequency × time heatmaps, a filter simulation and the Betaflight
 PID sliders. Everything the GUI does has a CLI equivalent (`openpid run …`),
 so a result can be reproduced by a script.
 
@@ -341,25 +341,16 @@ the batch sampler.
 A typical use: remove LPF2 or raise LPF1 and see how much noise reaches the
 PIDs (sim what-if against logged) before touching the firmware.
 
-## 8. Motor noise
+## 8. Motor noise (command line only)
 
-![Motor noise](screenshots/motors.png)
+`openpid run motor-noise <log>` prints, per motor, the gyro amplitude at the
+motor's harmonics and its ratio to the mean of the motors (DESIGN §6.6); a
+bent prop or a worn bearing shows as a motor with a ratio well above 1. The
+speeds come from eRPM; without telemetry the estimate of section 9 is used
+and there is one row for all motors.
 
-A row per axis (roll, pitch, yaw) of the docked log, on the unfiltered gyro:
-
-- **The spectrum** with the motor harmonics marked: ×1 solid, ×2 and ×3
-  dashed, at the mean speed of the motors; **Per motor** (panel) draws one
-  marker per motor and harmonic in the motor's colour instead.
-- **The bars** beside it: each motor's ×1, ×2, ×3 amplitude over the mean of
-  the motors (1 = average, the dashed line). A bent prop, a worn bearing or a
-  loose motor mount shows as a motor that stands out on every axis; hover a
-  bar for its amplitude.
-- **The panel** gives the speed source and frames, the loudest motor and a
-  table of each motor's rpm and ×1 ratio per axis (ratios above 1.3
-  highlighted), and the Harmonics and Segment fields.
-
-The speeds come from eRPM; without telemetry the estimate from the gyro peaks
-(section 9) is used and there is one bar group for all motors.
+There is no tab for it: the reference tool has no such screen, and the owner
+removed the tab on 2026-11-10 (docs/design/motors-tab).
 
 ## 9. Motor speed without eRPM
 
@@ -374,10 +365,32 @@ the RPM filter has already removed the peaks.
 
 ![PID sliders](screenshots/sliders.png)
 
-For Betaflight 4.3+ logs with simplified tuning: the sliders the log flew with
-and the gains they produce. Move the sliders and the new PIDs and ready CLI
-commands (`set …`) appear on the right; **Reset** restores the logged values.
-The same in the terminal: `openpid sliders <log> --set simplified_master_multiplier=110`.
+A track per slider, for the docked log:
+
+- **The dots under a track** are the positions the visible logs flew with,
+  each in its log's colour: two tunes are compared by where their dots sit.
+  Hover a track for the numbers.
+- **The handle** is a what-if for the docked log. Move it (or type the number
+  beside it) and the table "from the sliders" shows the gains it gives, with
+  the changed ones highlighted, next to the gains as logged; the filter
+  cut-offs the filter sliders give are under the tables.
+- **The panel**: the slider model and the firmware, the PID mode (off / RP /
+  RPY) and the D-term filter switch, **Reset to log**, **Firmware defaults**
+  (when they differ from the log), and the list of sliders you changed.
+- **The commands** under the tracks are ready for the firmware's CLI
+  (select all, copy).
+
+Which sliders: a Betaflight 4.3+ log has the firmware's own simplified
+tuning, reproduced exactly. Any other log with PID gains (Betaflight 4.2,
+INAV, Rotorflight, ArduPilot) has **ratio sliders** over the gains it flew
+with: master (everything), P:D (D), P:I (I of roll and pitch), roll:pitch
+(pitch) and yaw. At 100 % the gains are as flown; the result keeps the
+firmware's precision (whole numbers on Betaflight, four decimals on
+ArduPilot). They come without commands: type the gains into the firmware's
+configurator.
+
+The same in the terminal: `openpid sliders <log> --set simplified_master_multiplier=110`,
+or `--set master_multiplier=110,pd_ratio=120` for the ratio sliders.
 
 ## 11. Diagnostics and Settings
 
@@ -391,7 +404,7 @@ The same in the terminal: `openpid sliders <log> --set simplified_master_multipl
   |---|---|---|---|
   | rate — log rate | ≥ 1 kHz (≥ 950 Hz) | 500–950 Hz | < 500 Hz |
   | duration — session length | ≥ 20 s | 5–20 s | < 5 s |
-  | raw — unfiltered gyro | present | — | missing: Filter Sim, Motor noise and the peak rule are unavailable |
+  | raw — unfiltered gyro | present | — | missing: Filter Sim and the peak rule are unavailable |
   | rpm — motor eRPM | present | missing (the overlay uses the rpm estimate) | — |
   | frames — corrupt frames | < 0.5 % | 0.5–5 % | > 5 % |
   | gaps — timebase gaps | 0 | ≤ 3 | > 3 |
@@ -401,8 +414,8 @@ The same in the terminal: `openpid sliders <log> --set simplified_master_multipl
 
   The overall mark is the worst of rate, duration and frames; the rest only
   warn. Next to every fix is a **Copy** button: the command goes to the
-  clipboard, ready for the configurator CLI. The Filter Sim and Motor noise
-  tabs show the same fix when the raw gyro is missing. A log with several
+  clipboard, ready for the configurator CLI. The Filter Sim tab shows the
+  same fix when the raw gyro is missing. A log with several
   sessions is checked per session; the card shows the selected one.
 - **Settings**: theme (dark/light), the **interface language** (English /
   Ukrainian, switched instantly; units and numbers do not change), touch mode
@@ -421,7 +434,7 @@ The same in the terminal: `openpid sliders <log> --set simplified_master_multipl
   **Colour-blind safe** switches to the Okabe–Ito palette and viridis
   heatmaps). Line tabs (Log
   viewer, Step response, Spectrum, Filter Sim) overlay every slot on one plot;
-  panel tabs (the heatmaps, Surface 3D, Motor noise, Advice, Diagnostics) put
+  panel tabs (the heatmaps, Surface 3D, Advice, Diagnostics) put
   the panels side by side: two across the full width, more in a scroll. In the
   dock, for the docked log: the eye (show / hide), solo (this slot only;
   pressing it again shows every slot) and the cross (close; the other letters do
@@ -483,7 +496,7 @@ with a new log.
 | Freq × throttle | `openpid run thr-heatmap <log> [--png out.png]` |
 | Freq × time | `openpid run stft <log> --channel motor.0` |
 | Filter Sim | `openpid run filter-sim <log> --set lpf1_hz=100,lpf1_type=1` |
-| Motor noise | `openpid run motor-noise <log>` |
+| Motor noise (no tab) | `openpid run motor-noise <log>` |
 | Motor speed without eRPM | `openpid run rpm <log>` |
 | PID sliders | `openpid sliders <log> --set …` |
 | Settings diff of two logs | `openpid diff <logA> <logB> [--session N --session-b M] [--cli \| --json]` |

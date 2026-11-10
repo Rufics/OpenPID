@@ -116,7 +116,6 @@ pub const TABLE: &[Binding] = &[
     b(Modifiers::NONE, Key::Num9, Action::Tab(8)),
     b(Modifiers::NONE, Key::Num0, Action::Tab(9)),
     b(Modifiers::NONE, Key::Minus, Action::Tab(10)),
-    b(Modifiers::NONE, Key::Equals, Action::Tab(11)),
     b(CMD_SHIFT, Key::Tab, Action::PrevTab),
     b(Modifiers::COMMAND, Key::Tab, Action::NextTab),
     b(CMD_SHIFT, Key::O, Action::OpenLogNext),

@@ -46,9 +46,11 @@ COMMANDS:
              Channel keys look like gyro.filtered.roll, gyro.raw.pitch, pid.d.roll,
              motor.0, debug.2 (see `openpid info`). Default: gyro.filtered.<axis>.
 
-    sliders  Betaflight PID sliders (simplified tuning): show the slider values the
-             log flew with and the gains they produce; --set moves sliders and prints
-             the resulting gains plus the CLI commands to apply them.
+    sliders  PID sliders: the slider values the log flew with and the gains they
+             produce; --set moves sliders and prints the resulting gains. A Betaflight
+             4.3+ log has the firmware's simplified tuning and gets the CLI commands to
+             apply it; any other log with PID gains has ratio sliders over those gains
+             (master_multiplier, pd_ratio, pi_ratio, roll_pitch_ratio, yaw_ratio).
 
     diff     Headers (settings) that differ between two logs, A → B. --cli prints the
              commands of B's firmware (Betaflight CLI `set …`) that turn A's settings
@@ -779,7 +781,7 @@ fn cmd_sliders(args: &Args) -> Result<(), String> {
         .ok_or_else(|| format!("no session {session}"))?;
     let model = registry().slider_model(s).ok_or_else(|| {
         format!(
-            "{} has no slider model (firmware {} without simplified tuning headers)",
+            "{} has no slider model ({} logged no PID gains)",
             path.display(),
             s.firmware.revision
         )
@@ -814,16 +816,18 @@ fn cmd_sliders(args: &Args) -> Result<(), String> {
             d.key, now, d.value, d.default
         );
     }
+    // gains as the firmware writes them (integers on Betaflight, fractions on ArduPilot)
+    let text = |v: f64| s.settings.gain_text(v);
     let fmt = |g: &openpid_core::settings::PidGains| {
         format!(
             "P {:>3} I {:>3} D {:>3} F {:>4}{}",
-            g.p,
-            g.i,
-            g.d,
-            g.f.map_or("-".into(), |v| v.to_string()),
+            text(g.p),
+            text(g.i),
+            text(g.d),
+            g.f.map_or("-".into(), text),
             g.d_min
-                .map(|v| format!(" Dmin {v}"))
-                .or_else(|| g.d_max.map(|v| format!(" Dmax {v}")))
+                .map(|v| format!(" Dmin {}", text(v)))
+                .or_else(|| g.d_max.map(|v| format!(" Dmax {}", text(v))))
                 .unwrap_or_default()
         )
     };
@@ -849,9 +853,16 @@ fn cmd_sliders(args: &Args) -> Result<(), String> {
     if let Some(v) = result.dterm_lpf2_hz {
         println!("dterm lpf2 {v} Hz");
     }
-    println!("CLI:");
-    for c in &result.cli {
-        println!("  {c}");
+    if result.cli.is_empty() {
+        println!(
+            "no commands: these sliders scale the logged gains; type the result into the \
+             firmware's configurator"
+        );
+    } else {
+        println!("CLI:");
+        for c in &result.cli {
+            println!("  {c}");
+        }
     }
     Ok(())
 }

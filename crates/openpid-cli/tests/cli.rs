@@ -215,10 +215,32 @@ fn run_analyses() {
 
 #[test]
 fn sliders_command() {
-    // the committed 4.2 fixtures predate simplified tuning: a clear error
+    // the 4.2 fixtures predate simplified tuning: ratio sliders over the logged gains
     let l = log("betaflight-4.2.0.BFL");
-    let (ok, _, err) = run(&["sliders", l.to_str().unwrap()]);
-    assert!(!ok && err.contains("no slider model"), "{err}");
+    let (ok, out, err) = run(&["sliders", l.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    assert!(out.starts_with("ratio-sliders (Betaflight 4.2.0"), "{out}");
+    assert!(out.contains("roll   P  77 I 119 D  83") && out.contains("no commands"));
+    let (ok, out, _) = run(&[
+        "sliders",
+        l.to_str().unwrap(),
+        "--set",
+        "master_multiplier=110,pd_ratio=120",
+    ]);
+    // P 77 × 1.1, I 119 × 1.1, D 83 × 1.2 × 1.1, in Betaflight's whole numbers
+    assert!(ok && out.contains("roll   P  85 I 131 D 110"), "{out}");
+    // an ArduPilot log: the same sliders, gains at its 0.0001 step
+    let a = log("ardupilot-copter-3.3-dronekit.bin");
+    let (ok, out, _) = run(&[
+        "sliders",
+        a.to_str().unwrap(),
+        "--set",
+        "master_multiplier=120",
+    ]);
+    assert!(
+        ok && out.contains("roll   P 0.1546 I 0.1546 D 0.0086"),
+        "{out}"
+    );
     let (ok, _, err) = run(&["sliders"]);
     assert!(!ok && err.contains("needs a file"));
     let (ok, _, err) = run(&["sliders", l.to_str().unwrap(), "--set", "nonsense"]);
@@ -517,8 +539,6 @@ fn diff_command_lists_changed_headers_and_cli_commands() {
     let inav = log("inav-9.0.1-truncated.TXT");
     let (ok, _, err) = run(&["run", "recommend", inav.to_str().unwrap(), "--cli"]);
     assert!(!ok && err.contains("no command export for INAV"), "{err}");
-    let (ok, _, err) = run(&["sliders", ardu.to_str().unwrap()]);
-    assert!(!ok && err.contains("no slider model"), "{err}");
 }
 
 #[test]
