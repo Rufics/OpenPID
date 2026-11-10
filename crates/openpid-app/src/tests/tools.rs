@@ -143,19 +143,14 @@ fn advice_is_in_the_firmwares_own_terms() {
 }
 
 #[test]
-fn sliders_tab_edits_resets_and_prints_cli() {
-    let mut ui = Ui::open(&[LOG_4_2], Tab::Sliders);
-    assert!(
-        ui.sees("no simplified-tuning headers"),
-        "4.2 has no sliders"
-    );
-    // a 4.5.0 log: master 75, D 105, pitch 105/105, D-term filter slider 125, gyro slider off
-    ui.app_mut().open(Slot::A, LOG_4_5.into());
-    ui.settle();
+fn sliders_tab_tracks_every_log_and_gives_the_gains_and_commands() {
+    // docs/design/sliders-tab (S3). A 4.5.0 log: master 75, D 105, pitch
+    // 105/105, D-term filter slider 125, gyro slider off
+    let mut ui = Ui::open(&[LOG_4_5], Tab::Sliders);
     let value = |ui: &Ui, key: &str| ui.app().slider_state.values[key];
     assert!(ui.sees("betaflight-simplified-tuning"));
-    assert!(ui.sees("Master multiplier"));
-    assert!(ui.sees("from sliders"));
+    assert!(ui.has("Master multiplier"));
+    assert!(ui.sees("from the sliders"));
     assert!(ui.sees("dterm lpf1 93–187 Hz"));
     assert!(
         !ui.sees("gyro lpf1"),
@@ -167,15 +162,27 @@ fn sliders_tab_edits_resets_and_prints_cli() {
         "sliders start at the logged positions"
     );
     assert_eq!(value(&ui, "simplified_master_multiplier"), 75.0);
-    assert!(!ui.sees("⟵ changed"));
-    assert_eq!(ui.count(Role::Slider), 12);
-    // every slider is named by its label
+    assert!(ui.sees("nothing: the sliders are as flown"));
+    // eight PID and two filter tracks; the mode and the switch are in the panel
+    assert_eq!(ui.count(Role::Slider), 10);
+    // a track is named by its label, and so is the number beside it
     ui.slide("Master multiplier", 150.0);
     assert_eq!(value(&ui, "simplified_master_multiplier"), 150.0);
-    assert!(ui.sees("⟵ changed"));
+    assert!(!ui.sees("nothing: the sliders are as flown"));
+    ui.set("D gain", 90.0);
+    assert_eq!(value(&ui, "simplified_d_gain"), 90.0);
+    ui.choose_exact("PID mode", "RP");
+    assert_eq!(value(&ui, "simplified_pids_mode"), 1.0);
+    ui.check("D-term filter sliders", false);
+    assert_eq!(value(&ui, "simplified_dterm_filter"), 0.0);
+    assert!(
+        !ui.sees("dterm lpf1"),
+        "the D-term sliders no longer set it"
+    );
     ui.click("Reset to log");
     assert_eq!(value(&ui, "simplified_master_multiplier"), 75.0);
     assert_eq!(value(&ui, "simplified_d_gain"), 105.0);
+    assert_eq!(value(&ui, "simplified_pids_mode"), 2.0);
     ui.click("Firmware defaults");
     assert_eq!(value(&ui, "simplified_d_gain"), 100.0);
     assert_eq!(value(&ui, "simplified_master_multiplier"), 100.0);
@@ -185,10 +192,42 @@ fn sliders_tab_edits_resets_and_prints_cli() {
     assert!(cli.contains("set simplified_pids_mode = 2"));
     assert!(cli.contains("simplified_tuning apply"));
     assert!(cli.ends_with("save"));
-    // switching slot A to another file re-seeds the slider state
-    ui.app_mut().open(Slot::A, LOG_TWO.into());
-    ui.settle();
-    assert!(ui.sees("no simplified-tuning headers"));
+
+    // a second log: the newest one is docked and edited, and every log's
+    // as-flown position is marked on the same tracks, the docked log first
+    ui.drop_files(&[LOG_2025]);
+    assert_eq!(ui.app().dock_slot(), Some(Slot::B));
+    assert_eq!(value(&ui, "simplified_master_multiplier"), 100.0);
+    let marks = ui.app().slider_state.marks.clone();
+    let master = &marks
+        .iter()
+        .find(|(key, _)| key == "simplified_master_multiplier")
+        .expect("a track for the master multiplier")
+        .1;
+    assert_eq!(master, &vec![(Slot::B, 100.0), (Slot::A, 75.0)]);
+
+    // a log whose firmware has no sliders of its own: ratio sliders over
+    // the gains it flew with, and no commands
+    let mut ui = Ui::open(&[LOG_4_2], Tab::Sliders);
+    assert!(ui.sees("ratio-sliders"));
+    assert_eq!(ui.count(Role::Slider), 5);
+    assert!(!ui.has("Firmware defaults"), "its defaults are the log");
+    assert!(ui.sees("type the result into its configurator"));
+    assert_eq!(ui.count(Role::MultilineTextInput), 0);
+    // roll P 77, I 119 at a master of 110 %, in Betaflight's whole numbers
+    assert!(!ui.has("85") && !ui.has("131"));
+    ui.slide("Master multiplier", 110.0);
+    assert!(ui.has("85") && ui.has("131"));
+}
+
+/// On an `ArduPilot` log the ratio sliders keep the firmware's fractions.
+#[test]
+fn ratio_sliders_keep_the_firmwares_gain_step() {
+    let mut ui = Ui::open(&[LOG_ARDUCOPTER], Tab::Sliders);
+    assert!(ui.sees("ratio-sliders"));
+    assert!(ui.has("0.1288"), "roll P as flown");
+    ui.slide("Master multiplier", 120.0);
+    assert!(ui.has("0.1546"), "roll P × 1.2 at the 0.0001 step");
 }
 
 #[test]

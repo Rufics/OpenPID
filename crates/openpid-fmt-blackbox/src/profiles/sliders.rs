@@ -83,7 +83,7 @@ pub struct BetaflightSliders {
 const SLIDERS: [(&str, &str, f64, f64, f64, &str); 12] = [
     (
         "simplified_pids_mode",
-        "PID sliders mode (0 off, 1 RP, 2 RPY)",
+        "PID sliders mode",
         2.0,
         0.0,
         2.0,
@@ -141,7 +141,7 @@ const SLIDERS: [(&str, &str, f64, f64, f64, &str); 12] = [
     ),
     (
         "simplified_dterm_filter",
-        "D-term filter sliders on",
+        "D-term filter sliders",
         1.0,
         0.0,
         1.0,
@@ -307,6 +307,11 @@ impl SliderModel for BetaflightSliders {
                 max: *max,
                 default: *default,
                 group: (*group).to_string(),
+                options: match *key {
+                    "simplified_pids_mode" => vec!["off".into(), "RP".into(), "RPY".into()],
+                    "simplified_dterm_filter" => vec!["off".into(), "on".into()],
+                    _ => Vec::new(),
+                },
             })
             .collect()
     }

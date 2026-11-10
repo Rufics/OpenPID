@@ -365,10 +365,32 @@ the RPM filter has already removed the peaks.
 
 ![PID sliders](screenshots/sliders.png)
 
-For Betaflight 4.3+ logs with simplified tuning: the sliders the log flew with
-and the gains they produce. Move the sliders and the new PIDs and ready CLI
-commands (`set …`) appear on the right; **Reset** restores the logged values.
-The same in the terminal: `openpid sliders <log> --set simplified_master_multiplier=110`.
+A track per slider, for the docked log:
+
+- **The dots under a track** are the positions the visible logs flew with,
+  each in its log's colour: two tunes are compared by where their dots sit.
+  Hover a track for the numbers.
+- **The handle** is a what-if for the docked log. Move it (or type the number
+  beside it) and the table "from the sliders" shows the gains it gives, with
+  the changed ones highlighted, next to the gains as logged; the filter
+  cut-offs the filter sliders give are under the tables.
+- **The panel**: the slider model and the firmware, the PID mode (off / RP /
+  RPY) and the D-term filter switch, **Reset to log**, **Firmware defaults**
+  (when they differ from the log), and the list of sliders you changed.
+- **The commands** under the tracks are ready for the firmware's CLI
+  (select all, copy).
+
+Which sliders: a Betaflight 4.3+ log has the firmware's own simplified
+tuning, reproduced exactly. Any other log with PID gains (Betaflight 4.2,
+INAV, Rotorflight, ArduPilot) has **ratio sliders** over the gains it flew
+with: master (everything), P:D (D), P:I (I of roll and pitch), roll:pitch
+(pitch) and yaw. At 100 % the gains are as flown; the result keeps the
+firmware's precision (whole numbers on Betaflight, four decimals on
+ArduPilot). They come without commands: type the gains into the firmware's
+configurator.
+
+The same in the terminal: `openpid sliders <log> --set simplified_master_multiplier=110`,
+or `--set master_multiplier=110,pd_ratio=120` for the ratio sliders.
 
 ## 11. Diagnostics and Settings
 

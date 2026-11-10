@@ -32,7 +32,7 @@ The mapping to the PIDtoolbox / Pro feature table and the phase plan.
 | 2D spectral analyzer (PSD) | ✓ | ✓ | 1 | Welch |
 | Freq × throttle heatmap | ✓ | ✓ | 1 | §6.4 |
 | Freq × time heatmap (STFT) | ✓ | ✓ | 1 | §6.5 |
-| PID slider tool | ✓ | ✓ | 1 | Betaflight-specific, through `FirmwareProfile` |
+| PID slider tool | ✓ | ✓ | 1 | The firmware's own sliders through its profile (Betaflight simplified tuning), else ratio sliders over the logged gains (`RatioSliders`), as the reference tool's slider tool; every log's position on one track per slider |
 | Multi-firmware support | ✓ | ✓ | 0→2 | Betaflight/EmuFlight/Rotorflight: phase 0; ArduPilot done (ADR-0010, `docs/ARDUPILOT.md`), then INAV: phase 2; KISS/Fettec/QuickSilver when samples exist (decision Q2) |
 | RPM / dyn-notch overlay 2D | — | ✓ | 2 | Needs eRPM (DShot telemetry) and the pole count |
 | RPM / dyn-notch overlay 3D | — | ✓ | 2 | A 3D freq × throttle × amp surface |
@@ -432,6 +432,7 @@ The CLI uses the same registries as the GUI and is the basis of the golden tests
 - A `Recommender` receives a `FlightSession` plus the analysis results and returns `Vec<Proposal>` (`{ path: "pid.roll.d", from, to, rationale, confidence }`).
 - `Exporter("betaflight-cli")` turns `Proposal`s into `set …` commands / a diff.
 - Implemented (v1.0): `openpid-core::recommend` (`Proposal`, `Exporter`, `diff_headers`), `openpid-analysis::recommend::Recommend` with three rules and explicit evidence (overshoot → D, an uncovered peak → notch, headroom above the gyro LPF → cutoff), `openpid-fmt-blackbox::BetaflightCli`, `openpid diff` and `openpid run recommend --cli`.
+- `FormatRegistry::slider_model` falls back to `openpid_core::RatioSliders` (firmware-agnostic: master, P:D, P:I, roll:pitch and yaw ratios over the logged gains, rounded to the firmware's gain step, no commands) when the profile has no slider model, so a log with PID gains always has sliders.
 - The exporter and the slider model of a log are asked from its firmware profile through the format registry (`FormatRegistry::exporter(&session)`, `slider_model(&session)`; ADR-0015): the app and the CLI name no firmware. Betaflight (and a log that does not name its firmware) has the CLI exporter; INAV, Rotorflight, `EmuFlight` and `ArduPilot` have none yet, so the Advice tab shows their proposals without commands and `--cli` reports that there is no export.
 - Later: a `Device` trait (MSP over serial) to read and write settings and to download logs from the FC. The decision is ADR-0014: no device access in v1.0; later a separate `openpid-msp` crate behind the `device` feature on `serial2` (pure Rust), writes only with confirmation and a read-back.
 

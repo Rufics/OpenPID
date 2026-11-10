@@ -15,6 +15,7 @@ mod panel;
 mod prefs;
 mod probe;
 mod shortcuts;
+mod sliders_tab;
 mod spectrum_tab;
 mod surface;
 #[cfg(test)]

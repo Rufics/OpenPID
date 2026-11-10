@@ -13,7 +13,7 @@ use openpid_analysis::{
     Epoch, Fitness, FitnessLevel, RpmOverlay, TargetPreset, Verdict, VerdictLevel,
 };
 use openpid_core::analysis::Grid2D;
-use openpid_core::settings::{PerAxis, PidGains};
+use openpid_core::settings::PidGains;
 use openpid_core::units::Unit;
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use openpid_dsp::Peak;
@@ -1938,187 +1938,11 @@ pub fn diagnostics(app: &mut App, ui: &mut Ui) {
         }
     });
 }
-/// Slider state for the PID sliders tab.
-#[derive(Debug, Default)]
-pub struct SliderState {
-    /// Slot the sliders were loaded from, with its session index.
-    pub loaded_for: Option<(Slot, usize)>,
-    /// Current slider positions keyed by firmware parameter name.
-    pub values: openpid_core::SliderValues,
-}
-
-/// One row per slider: label, slider widget and the logged value.
-fn slider_grid(app: &mut App, ui: &mut Ui, defs: &[openpid_core::SliderDef]) {
-    let touch = app.touch_mode;
-    egui::Grid::new("sliders")
-        .num_columns(3)
-        .spacing([16.0, if touch { 14.0 } else { 6.0 }])
-        .show(ui, |ui| {
-            for d in defs {
-                let v = app
-                    .slider_state
-                    .values
-                    .entry(d.key.clone())
-                    .or_insert(d.value);
-                let l = ui.label(&d.label);
-                let step = if d.max - d.min <= 2.0 { 1.0 } else { 5.0 };
-                let mut slider = egui::Slider::new(v, d.min..=d.max)
-                    .step_by(step)
-                    .fixed_decimals(0);
-                if touch {
-                    slider = slider.trailing_fill(true);
-                }
-                ui.add_sized([360.0, if touch { 36.0 } else { 20.0 }], slider)
-                    .labelled_by(l.id);
-                let changed = (*v - d.value).abs() > f64::EPSILON;
-                ui.label(
-                    RichText::new(format!(
-                        "log {}{}",
-                        d.value,
-                        if changed { "  ⟵ changed" } else { "" }
-                    ))
-                    .color(if changed { ACCENT } else { MUTED }),
-                );
-                ui.end_row();
-            }
-        });
-}
-
-/// `P I D F` plus D-min/D-max as one monospace line.
-fn format_gains(g: &PidGains) -> String {
-    format!(
-        "P {:>3}  I {:>3}  D {:>3}  F {:>4}{}",
-        g.p,
-        g.i,
-        g.d,
-        g.f.map_or("-".into(), |v| v.to_string()),
-        g.d_min
-            .map(|v| format!("  Dmin {v}"))
-            .or_else(|| g.d_max.map(|v| format!("  Dmax {v}")))
-            .unwrap_or_default()
-    )
-}
-
-/// Computed vs. logged gains per axis.
-fn slider_gain_table(
-    ui: &mut Ui,
-    result: &openpid_core::SliderResult,
-    logged: Option<PerAxis<PidGains>>,
-) {
-    egui::Grid::new("slider_gains")
-        .num_columns(3)
-        .striped(true)
-        .spacing([24.0, 4.0])
-        .show(ui, |ui| {
-            ui.label(RichText::new(tr("axis")).strong());
-            ui.label(RichText::new(tr("from sliders")).strong());
-            ui.label(RichText::new(tr("logged")).strong());
-            ui.end_row();
-            for (name, now, was) in [
-                ("roll", result.pid.roll, logged.map(|l| l.roll)),
-                ("pitch", result.pid.pitch, logged.map(|l| l.pitch)),
-                ("yaw", result.pid.yaw, logged.map(|l| l.yaw)),
-            ] {
-                ui.label(name);
-                let differs = was.is_some_and(|w| (w.p, w.i, w.d) != (now.p, now.i, now.d));
-                ui.label(
-                    RichText::new(format_gains(&now))
-                        .monospace()
-                        .color(if differs { ACCENT } else { slot_color(Slot::A) }),
-                );
-                ui.label(
-                    RichText::new(was.map_or("-".into(), |w| format_gains(&w)))
-                        .monospace()
-                        .color(MUTED),
-                );
-                ui.end_row();
-            }
-        });
-}
-
-/// Filter cut-offs from the sliders as one summary line (empty when no filter slider applies).
-fn filter_summary(result: &openpid_core::SliderResult) -> String {
-    let mut filters = Vec::new();
-    if let Some((lo, hi)) = result.gyro_lpf1_hz {
-        filters.push(format!("gyro lpf1 {lo}–{hi} Hz"));
-    }
-    if let Some(v) = result.gyro_lpf2_hz {
-        filters.push(format!("gyro lpf2 {v} Hz"));
-    }
-    if let Some((lo, hi)) = result.dterm_lpf1_hz {
-        filters.push(format!("dterm lpf1 {lo}–{hi} Hz"));
-    }
-    if let Some(v) = result.dterm_lpf2_hz {
-        filters.push(format!("dterm lpf2 {v} Hz"));
-    }
-    filters.join("   ·   ")
-}
-
-pub fn sliders(app: &mut App, ui: &mut Ui) {
-    ui.separator();
-    let first = app.first_loaded().unwrap_or(Slot::A);
-    let Some((session_idx, session)) = app
-        .loaded(first)
-        .and_then(|l| l.current().cloned().map(|s| (l.session, s)))
-    else {
-        ui.label(
-            RichText::new(tr(
-                "Load a Betaflight 4.3+ log into slot A to use the PID sliders.",
-            ))
-            .color(MUTED),
-        );
-        return;
-    };
-    let Some(model) = crate::worker::formats().slider_model(&session) else {
-        ui.label(
-            RichText::new(format!(
-                "{}: no simplified-tuning headers in this log.",
-                session.firmware.revision
-            ))
-            .color(MUTED),
-        );
-        return;
-    };
-    let defs = model.sliders();
-    if app.slider_state.loaded_for != Some((first, session_idx)) {
-        app.slider_state.loaded_for = Some((first, session_idx));
-        app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.value)).collect();
-    }
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(model.id()).strong());
-        ui.label(&session.firmware.revision);
-        if ui.button(tr("Reset to log")).clicked() {
-            app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.value)).collect();
-        }
-        if ui.button(tr("Firmware defaults")).clicked() {
-            app.slider_state.values = defs.iter().map(|d| (d.key.clone(), d.default)).collect();
-        }
-    });
-    slider_grid(app, ui, &defs);
-    let result = model.compute(&app.slider_state.values);
-    ui.separator();
-    slider_gain_table(ui, &result, model.logged());
-    let filters = filter_summary(&result);
-    if !filters.is_empty() {
-        ui.label(filters);
-    }
-    ui.separator();
-    ui.label(apply_label(model.cli_name()));
-    let mut cli = result.cli.join("\n");
-    ui.add(
-        egui::TextEdit::multiline(&mut cli)
-            .code_editor()
-            .desired_rows(6)
-            .desired_width(f32::INFINITY)
-            .interactive(true),
-    );
-}
-
 // ---------------------------------------------------------------------------
 
 /// The caption of a box of commands: "Betaflight CLI: commands to apply
 /// (select all, copy)".
-fn apply_label(target: &str) -> String {
+pub(crate) fn apply_label(target: &str) -> String {
     format!("{target}: {}", tr("commands to apply (select all, copy)"))
 }
 
@@ -2734,9 +2558,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
 
 #[cfg(test)]
 mod tests {
-    use super::{decimate, filter_summary, format_gains};
-    use openpid_core::SliderResult;
-    use openpid_core::settings::{PerAxis, PidGains};
+    use super::decimate;
 
     #[test]
     fn decimation_keeps_extremes() {
@@ -2750,43 +2572,5 @@ mod tests {
         assert!(d.windows(2).all(|w| w[1][0] >= w[0][0]), "x monotonic");
         let small = decimate(&xs[..10], &ys[..10], |i| i != 3, 100);
         assert_eq!(small.len(), 9);
-    }
-
-    #[test]
-    fn gain_and_filter_formatting() {
-        let g = PidGains {
-            p: 45.0,
-            i: 80.0,
-            d: 40.0,
-            f: Some(120.0),
-            d_min: Some(30.0),
-            d_max: None,
-        };
-        assert_eq!(format_gains(&g), "P  45  I  80  D  40  F  120  Dmin 30");
-        let g2 = PidGains {
-            f: None,
-            d_min: None,
-            d_max: Some(46.0),
-            ..g
-        };
-        assert!(format_gains(&g2).ends_with("F    -  Dmax 46"));
-        let r = SliderResult {
-            pid: PerAxis::default(),
-            gyro_lpf1_hz: Some((250.0, 500.0)),
-            gyro_lpf2_hz: None,
-            dterm_lpf1_hz: None,
-            dterm_lpf2_hz: Some(150.0),
-            cli: Vec::new(),
-        };
-        assert_eq!(
-            filter_summary(&r),
-            "gyro lpf1 250–500 Hz   ·   dterm lpf2 150 Hz"
-        );
-        let none = SliderResult {
-            gyro_lpf1_hz: None,
-            dterm_lpf2_hz: None,
-            ..r
-        };
-        assert!(filter_summary(&none).is_empty());
     }
 }

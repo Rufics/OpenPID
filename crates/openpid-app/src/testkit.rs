@@ -368,6 +368,16 @@ impl Ui {
         self.click_containing(option);
     }
 
+    /// Picks the option named exactly `option` in the combo box named
+    /// `label` (when one option's name is part of another's: `RP`, `RPY`).
+    pub fn choose_exact(&mut self, label: &str, option: &str) {
+        self.h
+            .get_by_role_and_label(Role::ComboBox, label)
+            .click_accesskit();
+        self.settle();
+        self.click(option);
+    }
+
     /// Starts editing the number field named `label`, as a click on it does.
     pub fn edit(&mut self, label: &str) {
         self.h

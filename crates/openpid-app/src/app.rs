@@ -291,7 +291,7 @@ pub struct App {
     pub status: String,
     pub viewer: views::ViewerState,
     pub spectrum: views::SpectrumState,
-    pub slider_state: views::SliderState,
+    pub slider_state: crate::sliders_tab::SliderState,
     /// RPM / notch overlay on the freq × throttle heatmap.
     pub overlay: views::OverlayState,
     /// Camera and hover state of the 3D surface tab.
@@ -398,7 +398,7 @@ impl App {
             status: "Open a blackbox log (Open log…, Open sample log, or drop it here)".into(),
             viewer: views::ViewerState::default(),
             spectrum: views::SpectrumState::default(),
-            slider_state: views::SliderState::default(),
+            slider_state: crate::sliders_tab::SliderState::default(),
             overlay: views::OverlayState::default(),
             surface: surface::SurfaceState::default(),
             player: views::PlayerState::default(),
@@ -1257,7 +1257,7 @@ impl App {
                 Tab::Surface => surface::surface(self, ui),
                 Tab::FilterSim => crate::filter_tab::filter_sim(self, ui),
                 Tab::Advice => views::advice(self, ui),
-                Tab::Sliders => views::sliders(self, ui),
+                Tab::Sliders => crate::sliders_tab::sliders(self, ui),
                 Tab::Diagnostics => views::diagnostics(self, ui),
                 Tab::Settings => views::settings(self, ui),
             });
