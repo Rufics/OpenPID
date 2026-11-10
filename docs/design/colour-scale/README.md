@@ -26,6 +26,10 @@ Recommendation: **R1 + the hover of R4 + "link scales" of R5**.
 
 R1 with the hover value and the shared scale.
 
+Since 2026-11-10 the heatmaps default to Blackbox Explorer's black → red →
+white ramp; viridis is the "Colour-blind safe" plot colours
+([plot-colours](../plot-colours/README.md)). The bar follows the colour map.
+
 ## Implementation requirements
 
 - `views::colour_bar(ui, max: f64, unit: &str, height: f32) -> Response`: a

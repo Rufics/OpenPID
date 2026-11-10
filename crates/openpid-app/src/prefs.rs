@@ -22,6 +22,19 @@ pub enum Theme {
     Light,
 }
 
+/// The colours of the plots.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlotColours {
+    /// As Blackbox Explorer (owner's choice, 2026-11-09): its 12-colour line
+    /// palette and the black → red → white heatmap ramp.
+    #[default]
+    Explorer,
+    /// Okabe–Ito lines and the viridis heatmap, readable with colour-vision
+    /// deficiencies.
+    ColourBlindSafe,
+}
+
 /// Unit for angular rates in the log viewer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -89,6 +102,8 @@ pub struct Prefs {
     /// The right-hand control panel of the analysis tabs is open
     /// (docs/design/axis-layout, R4).
     pub panel_open: bool,
+    /// The colours of the plots (Settings → Appearance).
+    pub plot_colours: PlotColours,
 }
 
 impl Default for Prefs {
@@ -104,6 +119,7 @@ impl Default for Prefs {
             show_tour: true,
             recent: Vec::new(),
             panel_open: true,
+            plot_colours: PlotColours::default(),
         }
     }
 }
@@ -237,6 +253,7 @@ mod tests {
                 opened: "2026-11-06".into(),
             }],
             panel_open: false,
+            plot_colours: PlotColours::ColourBlindSafe,
         };
         p.save(&path).unwrap();
         assert_eq!(Prefs::load(&path), p);

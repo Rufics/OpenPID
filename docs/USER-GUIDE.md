@@ -346,8 +346,10 @@ The same in the terminal: `openpid sliders <log> --set simplified_master_multipl
 ## 12. Comparing logs, projects, export
 
 - **Several logs** (up to 8): **Open log…**, **+** in the top bar or dropping files
-  into the window opens every log in its own slot A…H with its own colour (the
-  Okabe–Ito palette, readable with colour-vision deficiency). Line tabs (Log
+  into the window opens every log in its own slot A…H with its own colour (Blackbox
+  Explorer's palette by default; Settings → Appearance → **Plot colours** →
+  **Colour-blind safe** switches to the Okabe–Ito palette and viridis
+  heatmaps). Line tabs (Log
   viewer, Step response, Spectrum, Filter Sim) overlay every slot on one plot;
   panel tabs (the heatmaps, Surface 3D, Motor noise, Advice, Diagnostics) put
   the panels side by side: two across the full width, more in a scroll. In the

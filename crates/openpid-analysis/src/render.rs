@@ -1,6 +1,7 @@
-//! Rasterising results for files: a viridis-like palette, a heatmap grid to
-//! RGBA pixels, and a minimal PNG writer (stored deflate, no dependency) that
-//! the CLI's `--png` and the GUI's "Export PNG" share.
+//! Rasterising results for files: the heatmap colour maps (viridis and the
+//! Blackbox Explorer ramp), a heatmap grid to RGBA pixels, and a minimal PNG
+//! writer (stored deflate, no dependency) that the CLI's `--png` and the
+//! GUI's "Export PNG" share.
 
 use openpid_core::analysis::Grid2D;
 
@@ -30,6 +31,52 @@ pub fn viridis(t: f64) -> [u8; 4] {
     [mix(a[0], b[0]), mix(a[1], b[1]), mix(a[2], b[2]), 255]
 }
 
+/// The colour maps a heatmap can be drawn with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Colormap {
+    /// Blackbox Explorer's ramp, black → red → white (`hsl(0, 100 %, L)`
+    /// with the lightness L following the value, `graph_spectrum_plot.js`).
+    #[default]
+    Explorer,
+    /// Viridis: perceptually ordered and readable with colour-vision
+    /// deficiencies.
+    Viridis,
+}
+
+impl Colormap {
+    /// RGBA colour for `t` in `0..=1`; `t <= 0` (or NaN) is transparent.
+    pub fn rgba(self, t: f64) -> [u8; 4] {
+        match self {
+            Colormap::Explorer => explorer(t),
+            Colormap::Viridis => viridis(t),
+        }
+    }
+
+    /// Anchor colours from 0 to 1, for a colour bar.
+    pub fn stops(self) -> Vec<[u8; 3]> {
+        match self {
+            Colormap::Explorer => vec![[0, 0, 0], [255, 0, 0], [255, 255, 255]],
+            Colormap::Viridis => VIRIDIS.to_vec(),
+        }
+    }
+}
+
+/// Blackbox Explorer's heatmap colour, `hsl(0, 100 %, t·100 %)`: black at 0,
+/// pure red at 0.5, white at 1; `t <= 0` (or NaN) is transparent.
+pub fn explorer(t: f64) -> [u8; 4] {
+    if t.is_nan() || t <= 0.0 {
+        return [0, 0, 0, 0];
+    }
+    let l = t.min(1.0);
+    let channel = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    if l <= 0.5 {
+        [channel(2.0 * l), 0, 0, 255]
+    } else {
+        let w = channel(2.0 * l - 1.0);
+        [255, w, w, 255]
+    }
+}
+
 /// Robust colour-scale maximum: the 99th percentile of the positive values
 /// (1 when there are none).
 pub fn robust_max(values: &[f64]) -> f64 {
@@ -49,6 +96,16 @@ pub fn robust_max(values: &[f64]) -> f64 {
 /// at the top to the lowest at the bottom; `max` = 0 picks [`robust_max`]
 /// over the rows with `y >= min_y_for_scale`. Returns `(width, height, rgba)`.
 pub fn grid_rgba(g: &Grid2D, max: f64, min_y_for_scale: f64) -> (usize, usize, Vec<u8>) {
+    grid_rgba_with(g, max, min_y_for_scale, Colormap::Viridis)
+}
+
+/// [`grid_rgba`] in a chosen colour map.
+pub fn grid_rgba_with(
+    g: &Grid2D,
+    max: f64,
+    min_y_for_scale: f64,
+    cmap: Colormap,
+) -> (usize, usize, Vec<u8>) {
     let (nx, ny) = (g.x.len(), g.y.len());
     let max = if max > 0.0 {
         max
@@ -64,7 +121,7 @@ pub fn grid_rgba(g: &Grid2D, max: f64, min_y_for_scale: f64) -> (usize, usize, V
     let mut rgba = Vec::with_capacity(nx * ny * 4);
     for iy in (0..ny).rev() {
         for ix in 0..nx {
-            rgba.extend_from_slice(&viridis(g.z[iy * nx + ix] / max));
+            rgba.extend_from_slice(&cmap.rgba(g.z[iy * nx + ix] / max));
         }
     }
     (nx, ny, rgba)
@@ -212,6 +269,14 @@ mod tests {
 
     #[test]
     fn palette_and_grid_rendering() {
+        assert_eq!(explorer(0.0), [0, 0, 0, 0]);
+        assert_eq!(explorer(0.5), [255, 0, 0, 255], "pure red half way");
+        assert_eq!(explorer(0.25), [128, 0, 0, 255]);
+        assert_eq!(explorer(1.0), [255, 255, 255, 255]);
+        assert_eq!(explorer(3.0), [255, 255, 255, 255], "clamped");
+        assert_eq!(Colormap::default().rgba(0.75), [255, 128, 128, 255]);
+        assert_eq!(Colormap::Viridis.rgba(1.0), viridis(1.0));
+        assert_eq!(Colormap::Explorer.stops().len(), 3);
         assert_eq!(viridis(0.0), [0, 0, 0, 0]);
         assert_eq!(viridis(f64::NAN), [0, 0, 0, 0]);
         assert_eq!(viridis(1.0), [253, 231, 37, 255]);

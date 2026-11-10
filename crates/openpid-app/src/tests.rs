@@ -2902,3 +2902,54 @@ fn throttle_tab_stacks_the_axes_with_prefilt_and_zooms_to_the_flown_range() {
     assert!(!has_label_containing(&h, "A prefilt"));
     assert!(has_label_containing(&h, "A Gyro"));
 }
+
+#[test]
+fn plot_colours_follow_the_setting() {
+    use crate::prefs::{PlotColours, Prefs};
+    // docs/design/plot-colours: Blackbox Explorer by default, Okabe–Ito and
+    // viridis as the colour-blind safe choice
+    let dir = std::env::temp_dir().join(format!("openpid-colours-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let prefs = dir.join("prefs.json");
+    let mut h = harness_with_prefs(
+        vec![LOG_4_2.into()],
+        Some(Tab::ThrottleHeatmap),
+        Some(prefs.clone()),
+    );
+    run_until(&mut h, idle);
+    h.run_steps(2);
+    assert_eq!(app(&h).prefs.plot_colours, PlotColours::Explorer);
+    assert_eq!(
+        crate::views::slot_color(Slot::A),
+        crate::colormap::EXPLORER_PALETTE[0],
+        "A in Explorer's red"
+    );
+    assert_eq!(
+        crate::colormap::heatmap(),
+        openpid_analysis::render::Colormap::Explorer
+    );
+    let textures = app(&h).heatmap_textures.len();
+    select_tab(&mut h, Tab::Settings);
+    h.get_by_label("Colour-blind safe").click();
+    h.run_steps(2);
+    assert_eq!(app(&h).prefs.plot_colours, PlotColours::ColourBlindSafe);
+    assert_eq!(
+        crate::views::slot_color(Slot::A),
+        crate::colormap::SLOT_PALETTE[0]
+    );
+    // the heatmaps are rasterised again in viridis
+    select_tab(&mut h, Tab::ThrottleHeatmap);
+    h.run_steps(2);
+    assert!(app(&h).heatmap_textures.len() > textures);
+    assert_eq!(
+        crate::colormap::heatmap(),
+        openpid_analysis::render::Colormap::Viridis
+    );
+    // and the choice is saved
+    assert_eq!(
+        Prefs::load(&prefs).plot_colours,
+        PlotColours::ColourBlindSafe
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

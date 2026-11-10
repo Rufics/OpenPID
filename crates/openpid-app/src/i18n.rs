@@ -90,6 +90,11 @@ static UA: &[(&str, &str)] = &[
         "Betaflight CLI to apply (select all, copy):",
         "Команди Betaflight CLI (виділити все, скопіювати):",
     ),
+    ("Blackbox Explorer", "Blackbox Explorer"),
+    (
+        "Blackbox Explorer's line colours and its black-red-white heatmaps",
+        "кольори ліній Blackbox Explorer і його чорно-червоно-білі теплові карти",
+    ),
     (
         "Blackbox analysis for tuning: noise, filters, step response, advice.",
         "Аналіз blackbox для налаштування: шум, фільтри, step response, поради.",
@@ -113,6 +118,7 @@ static UA: &[(&str, &str)] = &[
     ),
     ("Colour", "Колір"),
     ("Colour max", "Макс. кольору"),
+    ("Colour-blind safe", "Для дальтоніків"),
     ("Control panel", "Панель керування"),
     ("Copy", "Копіювати"),
     ("Count", "Кількість"),
@@ -181,6 +187,10 @@ static UA: &[(&str, &str)] = &[
     ),
     ("Notch", "Notch"),
     ("Notches", "Нотчі"),
+    (
+        "Okabe-Ito line colours and viridis heatmaps, readable with colour-vision deficiencies",
+        "кольори ліній Okabe–Ito і теплові карти viridis, розрізнювані при порушеннях кольорового зору",
+    ),
     ("Open", "Відкрити"),
     ("Open log", "Відкрити лог"),
     ("Open sample log", "Відкрити зразковий лог"),
@@ -196,6 +206,7 @@ static UA: &[(&str, &str)] = &[
     ("Play", "Відтворити"),
     ("Player", "Плеєр"),
     ("Plot as PNG…", "Графік як PNG…"),
+    ("Plot colours", "Кольори графіків"),
     ("Prefilt (dotted)", "До фільтра (пунктир)"),
     ("Prefilt beside it", "До фільтра поруч"),
     ("Preset", "Пресет"),

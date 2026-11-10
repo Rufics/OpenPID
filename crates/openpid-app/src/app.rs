@@ -449,6 +449,7 @@ impl App {
 
     fn apply_theme(&mut self, ctx: &egui::Context) {
         crate::theme::set_dark(self.prefs.theme == Theme::Dark);
+        crate::colormap::set_scheme(self.prefs.plot_colours);
         if self.theme_applied != Some(self.prefs.theme) {
             self.theme_applied = Some(self.prefs.theme);
             ctx.set_visuals(self.prefs.visuals());

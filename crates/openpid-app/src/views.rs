@@ -2,9 +2,9 @@
 //! with `egui_plot`; nothing here computes.
 
 use crate::app::{App, Loaded, SlotState};
-use crate::colormap::{ACCENT, MUTED, SLOT_PALETTE};
+use crate::colormap::{ACCENT, MUTED};
 use crate::i18n::{Lang, tr};
-use crate::prefs::{AccUnit, Prefs, RateUnit, Theme};
+use crate::prefs::{AccUnit, PlotColours, Prefs, RateUnit, Theme};
 use crate::shortcuts::{self, Action};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
@@ -229,7 +229,8 @@ pub(crate) fn nearest_bin(freq: &[f64], x: f64) -> Option<usize> {
 }
 
 pub(crate) fn slot_color(slot: Slot) -> Color32 {
-    SLOT_PALETTE[slot.0 as usize % SLOT_PALETTE.len()]
+    let p = crate::colormap::slot_palette();
+    p[slot.0 as usize % p.len()]
 }
 
 /// Colour of a slot's simulated (what-if) trace on Filter Sim: distinct from
@@ -238,7 +239,10 @@ fn sim_color(slot: Slot) -> Color32 {
     match slot.0 {
         0 => ACCENT,
         1 => Color32::LIGHT_GREEN,
-        n => SLOT_PALETTE[(n as usize + 3) % SLOT_PALETTE.len()],
+        n => {
+            let p = crate::colormap::slot_palette();
+            p[(n as usize + 3) % p.len()]
+        }
     }
 }
 
@@ -1195,7 +1199,7 @@ pub(crate) fn grid_heatmap(
                 (dy * g.y.len() as f64) as f32,
             )
             .range(0.0, max)
-            .custom_mapping(Box::new(move |v| crate::colormap::viridis(v / max)))
+            .custom_mapping(Box::new(move |v| crate::colormap::heat(v / max)))
             .show_labels(false)
             .name(name),
     )
@@ -1328,8 +1332,18 @@ fn viewer_plot_slot(
                 p[1] *= scale;
             }
         }
-        let hue = (ci as f32 / n_lines + f32::from(slot.0) * 0.37) % 1.0;
-        let color: Color32 = egui::ecolor::Hsva::new(hue, 0.7, 0.95, 1.0).into();
+        let color: Color32 = match crate::colormap::scheme() {
+            // as Blackbox Explorer: the palette in channel order, each log
+            // starting further along it
+            PlotColours::Explorer => {
+                let p = &crate::colormap::EXPLORER_PALETTE;
+                p[(ci + usize::from(slot.0) * 3) % p.len()]
+            }
+            PlotColours::ColourBlindSafe => {
+                let hue = (ci as f32 / n_lines + f32::from(slot.0) * 0.37) % 1.0;
+                egui::ecolor::Hsva::new(hue, 0.7, 0.95, 1.0).into()
+            }
+        };
         pu.line(
             Line::new(
                 format!("{} {} ({symbol})", slot.name(), id.key()),
@@ -1575,7 +1589,7 @@ pub(crate) fn linked_scales(
 /// A vertical colour scale: the viridis gradient from 0 (bottom) to `max`
 /// (top) with five ticks and the unit (docs/design/colour-scale, R1).
 pub(crate) fn colour_bar(ui: &mut Ui, max: f64, unit: &str, height: f32) -> egui::Response {
-    use openpid_analysis::render::VIRIDIS;
+    let stops = crate::colormap::heatmap().stops();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(BAR_W, height), egui::Sense::hover());
     let painter = ui.painter_at(rect);
     let bar = egui::Rect::from_min_size(
@@ -1583,8 +1597,8 @@ pub(crate) fn colour_bar(ui: &mut Ui, max: f64, unit: &str, height: f32) -> egui
         egui::vec2(14.0, (height - 28.0).max(10.0)),
     );
     let mut mesh = egui::Mesh::default();
-    let n = VIRIDIS.len();
-    for (i, c) in VIRIDIS.iter().enumerate() {
+    let n = stops.len();
+    for (i, c) in stops.iter().enumerate() {
         let t = i as f32 / (n - 1) as f32;
         let y = bar.max.y - t * bar.height();
         let colour = Color32::from_rgb(c[0], c[1], c[2]);
@@ -1695,12 +1709,14 @@ pub(crate) fn grid_image(
     (Arc::as_ptr(owner) as usize).hash(&mut hasher);
     max.to_bits().hash(&mut hasher);
     min_y_for_scale.to_bits().hash(&mut hasher);
+    let cmap = crate::colormap::heatmap();
+    cmap.hash(&mut hasher);
     let key = hasher.finish();
     if !app.heatmap_textures.contains_key(&key) {
         if app.heatmap_textures.len() >= MAX_HEATMAP_TEXTURES {
             app.heatmap_textures.clear();
         }
-        let (w, h, rgba) = openpid_analysis::render::grid_rgba(g, max, min_y_for_scale);
+        let (w, h, rgba) = openpid_analysis::render::grid_rgba_with(g, max, min_y_for_scale, cmap);
         let image = egui::ColorImage::from_rgba_unmultiplied([w, h], &rgba);
         let handle = ctx.load_texture(
             format!("heatmap-{key:x}"),
@@ -2965,6 +2981,29 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             .changed();
         changed |= ui
             .radio_value(&mut app.prefs.theme, Theme::Light, tr("Light"))
+            .changed();
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("Plot colours"));
+        changed |= ui
+            .radio_value(
+                &mut app.prefs.plot_colours,
+                PlotColours::Explorer,
+                tr("Blackbox Explorer"),
+            )
+            .on_hover_text(tr(
+                "Blackbox Explorer's line colours and its black-red-white heatmaps",
+            ))
+            .changed();
+        changed |= ui
+            .radio_value(
+                &mut app.prefs.plot_colours,
+                PlotColours::ColourBlindSafe,
+                tr("Colour-blind safe"),
+            )
+            .on_hover_text(tr(
+                "Okabe-Ito line colours and viridis heatmaps, readable with colour-vision deficiencies",
+            ))
             .changed();
     });
     ui.horizontal(|ui| {
