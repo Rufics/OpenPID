@@ -5,8 +5,8 @@ use crate::parser::{EventData, Frame, MainKind, ParseStats, Parser};
 use openpid_core::modes::{ModeChange, push_change};
 use openpid_core::session::{AuxRow, AuxTable, Diagnostics, Event, EventKind};
 use openpid_core::{
-    Channel, ChannelId, ChannelSet, FirmwareInfo, FirmwareProfile, FlightSession, Origin,
-    ProfileRegistry, Series, Timebase, Unit,
+    BoundProfile, Channel, ChannelId, ChannelSet, FlightSession, Origin, ProfileRegistry, Series,
+    Timebase, Unit,
 };
 
 /// Raw decode result of one log: integer columns exactly as logged.
@@ -156,16 +156,15 @@ pub fn build_session(
 ) -> FlightSession {
     let h = &log.headers;
     let def = h.main_def();
-    let firmware = h.firmware.clone();
     let profile = if raw {
         None
     } else {
-        profiles.select(&firmware, &h.raw)
+        profiles.select(&h.firmware, &h.raw)
     };
     let profile_id = profile.map_or("raw", |p| p.id()).to_string();
-    let settings = profile
-        .map(|p| p.settings(&firmware, &h.raw))
-        .unwrap_or_default();
+    // the profile of this log: it reads the headers here, once
+    let bound = profile.map(|p| p.bind(&h.firmware, &h.raw));
+    let settings = bound.as_ref().map(|b| b.settings()).unwrap_or_default();
 
     let time_idx = def.index_of("time").unwrap_or(1);
     let nominal_dt = settings
@@ -179,7 +178,7 @@ pub fn build_session(
     let mut channels = ChannelSet::new();
     let mut unmapped = Vec::new();
     for (i, name) in def.names.iter().enumerate() {
-        let mapping = profile.and_then(|p| p.map_field(name, &firmware, &h.raw));
+        let mapping = bound.as_ref().and_then(|b| b.map_field(name));
         let (id, unit, data) = if let Some(m) = mapping {
             let data = Series::from_vec(log.columns[i].iter().map(|v| m.apply(*v)).collect());
             (m.id, m.unit, data)
@@ -231,11 +230,13 @@ pub fn build_session(
     aux.extend(log.gps.iter().cloned());
     aux.extend(log.gps_home.iter().cloned());
 
-    let flight_modes = profile.map_or_else(Vec::new, |p| mode_changes(p, &firmware, &log.slow));
+    let flight_modes = bound
+        .as_ref()
+        .map_or_else(Vec::new, |b| mode_changes(b.as_ref(), &log.slow));
     let mut session = FlightSession {
         index,
         offset_bytes,
-        firmware,
+        firmware: h.firmware.clone(),
         profile_id,
         settings,
         raw_headers: h.raw.0.clone(),
@@ -246,30 +247,22 @@ pub fn build_session(
         aux,
         diagnostics,
     };
-    if let Some(p) = profile {
-        p.derive(&mut session);
+    if let Some(b) = &bound {
+        b.derive(&mut session);
     }
     session
 }
 
 /// The mode changes of the slow frames' `flightModeFlags`, each word turned
 /// into modes by the firmware profile; empty when the log has no such field.
-fn mode_changes(
-    profile: &dyn FirmwareProfile,
-    firmware: &FirmwareInfo,
-    slow: &AuxTable,
-) -> Vec<ModeChange> {
+fn mode_changes(profile: &dyn BoundProfile, slow: &AuxTable) -> Vec<ModeChange> {
     let Some(col) = slow.columns.iter().position(|c| c == "flightModeFlags") else {
         return Vec::new();
     };
     let mut out = Vec::new();
     for row in &slow.rows {
         if let Some(word) = row.values.get(col) {
-            push_change(
-                &mut out,
-                row.sample_index,
-                profile.flight_modes(firmware, *word),
-            );
+            push_change(&mut out, row.sample_index, profile.flight_modes(*word));
         }
     }
     out

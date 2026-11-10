@@ -87,7 +87,8 @@ impl FieldMapping {
     }
 }
 
-/// Knowledge about one firmware family (and its versions).
+/// Knowledge about one firmware family (and its versions): which logs are
+/// its own, and the profile of one of them.
 pub trait FirmwareProfile: Send + Sync {
     /// Stable identifier, e.g. `betaflight`.
     fn id(&self) -> &'static str;
@@ -95,17 +96,26 @@ pub trait FirmwareProfile: Send + Sync {
     /// How well this profile fits the log; `None` when it does not apply.
     fn score(&self, firmware: &FirmwareInfo, headers: &RawHeaders) -> Option<u8>;
 
+    /// The profile of one log. It reads the firmware version and the
+    /// headers here, once, and keeps what it worked out (scales, the names
+    /// of the mode boxes, the vehicle, the RC calibration), so the
+    /// questions about that log take no firmware and no headers again.
+    fn bind<'a>(
+        &self,
+        firmware: &'a FirmwareInfo,
+        headers: &'a RawHeaders,
+    ) -> Box<dyn BoundProfile + 'a>;
+}
+
+/// A [`FirmwareProfile`] bound to one log: how to read that log's fields
+/// and settings, and what can be told to its firmware.
+pub trait BoundProfile {
     /// Map a logged field name onto a channel. `None` leaves it as a raw
     /// `Custom` channel.
-    fn map_field(
-        &self,
-        field: &str,
-        firmware: &FirmwareInfo,
-        headers: &RawHeaders,
-    ) -> Option<FieldMapping>;
+    fn map_field(&self, field: &str) -> Option<FieldMapping>;
 
-    /// Extract typed settings from the headers.
-    fn settings(&self, firmware: &FirmwareInfo, headers: &RawHeaders) -> Settings;
+    /// The typed settings of the log.
+    fn settings(&self) -> Settings;
 
     /// Add derived channels (throttle percent, PID error, the sticks, ...).
     /// Called after all logged channels are in place.
@@ -114,26 +124,18 @@ pub trait FirmwareProfile: Send + Sync {
     /// The flight modes the firmware's logged mode word stands for: the
     /// mode-box mask of the Cleanflight family (`flightModeFlags`), the mode
     /// number of `ArduPilot`. Empty when the profile does not know them.
-    fn flight_modes(&self, _firmware: &FirmwareInfo, _word: i64) -> Vec<FlightMode> {
+    fn flight_modes(&self, _word: i64) -> Vec<FlightMode> {
         Vec::new()
     }
 
     /// Slider ("simplified tuning") model for this log, when the firmware has one.
-    fn slider_model(
-        &self,
-        _firmware: &FirmwareInfo,
-        _headers: &RawHeaders,
-    ) -> Option<Box<dyn SliderModel>> {
+    fn slider_model(&self) -> Option<Box<dyn SliderModel>> {
         None
     }
 
     /// What writes proposals and setting diffs for this log's firmware (its
     /// CLI, a parameter file), when the profile has one.
-    fn exporter(
-        &self,
-        _firmware: &FirmwareInfo,
-        _headers: &RawHeaders,
-    ) -> Option<Box<dyn Exporter>> {
+    fn exporter(&self) -> Option<Box<dyn Exporter>> {
         None
     }
 }

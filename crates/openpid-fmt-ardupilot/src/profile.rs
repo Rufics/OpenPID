@@ -1,17 +1,19 @@
 //! `FirmwareProfile` for `ArduPilot`: maps `MESSAGE.Column` fields to `OpenPID`
 //! channels and reads tuning parameters (`PARM`) into [`Settings`].
 //!
-//! Field names handed to [`FirmwareProfile::map_field`] are `MSG.Col`, e.g.
-//! `IMU.GyrX` or `PIDR.Tar`; the raw headers carry every parameter by name
-//! plus `vehicle` (`Copter`, `Plane`, ...) and `firmware`.
+//! Field names handed to [`BoundProfile::map_field`] are `MSG.Col`, e.g.
+//! `IMU.GyrX` or `PIDR.Tar`; the raw headers are the log's parameters by
+//! name, and the vehicle (`Copter`, `Plane`, ...) comes from the firmware
+//! string. Both are read once, when the profile is bound to a log.
 
 use openpid_core::session::{Channel, Origin};
 use openpid_core::settings::{
     DynNotch, FilterChain, Lowpass, LowpassKind, MotorConfig, Notch, PerAxis, PidGains, RpmNotch,
 };
 use openpid_core::{
-    Axis, BatteryField, ChannelId, FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor,
-    FlightMode, FlightSession, GyroStage, PidTerm, RawHeaders, Settings, StickAxis, Unit,
+    Axis, BatteryField, BoundProfile, ChannelId, FieldMapping, FirmwareInfo, FirmwareProfile,
+    FirmwareVendor, FlightMode, FlightSession, GyroStage, PidTerm, RawHeaders, Settings, StickAxis,
+    Unit,
 };
 
 pub(crate) const RAD_TO_DEG: f64 = 180.0 / std::f64::consts::PI;
@@ -196,12 +198,8 @@ struct RcInput {
 impl RcInput {
     /// The input of `function` (`ROLL`, `PITCH`, `YAW`, `THROTTLE`), on
     /// channel `default` (1-based) unless `RCMAP_<function>` says otherwise.
-    fn of(session: &FlightSession, function: &str, default: u8) -> RcInput {
-        let get = |name: String| {
-            session
-                .header(&name)
-                .and_then(|v| v.trim().parse::<f64>().ok())
-        };
+    fn of(h: &RawHeaders, function: &str, default: u8) -> RcInput {
+        let get = |name: String| h.get_f64(&name);
         let n = get(format!("RCMAP_{function}"))
             .filter(|n| (1.0..=16.0).contains(n))
             .map_or(default, |n| n as u8);
@@ -291,18 +289,36 @@ fn derive_throttle(session: &mut FlightSession, throttle: &RcInput) {
     ));
 }
 
+/// The pilot's four inputs of one log, each with its channel and calibration.
+struct Sticks {
+    roll: RcInput,
+    pitch: RcInput,
+    yaw: RcInput,
+    throttle: RcInput,
+}
+
+impl Sticks {
+    fn of(h: &RawHeaders) -> Sticks {
+        Sticks {
+            roll: RcInput::of(h, "ROLL", 1),
+            pitch: RcInput::of(h, "PITCH", 2),
+            yaw: RcInput::of(h, "YAW", 4),
+            throttle: RcInput::of(h, "THROTTLE", 3),
+        }
+    }
+}
+
 /// The stick channels from `RCIN`, in the canonical convention of
 /// [`ChannelId::Stick`]: each input by its channel map and calibration;
 /// pitch negated, as `ArduPilot` reads a stick pushed forward as a lower
 /// pulse width (checked on the Copter fixture: a stick forward goes with a
 /// negative `ATT.DesPitch`, nose down).
-fn derive_sticks(session: &mut FlightSession, throttle: &RcInput) {
-    for (function, default, axis, sign) in [
-        ("ROLL", 1, StickAxis::Roll, 1.0),
-        ("PITCH", 2, StickAxis::Pitch, -1.0),
-        ("YAW", 4, StickAxis::Yaw, 1.0),
+fn derive_sticks(session: &mut FlightSession, sticks: &Sticks) {
+    for (input, axis, sign) in [
+        (&sticks.roll, StickAxis::Roll, 1.0),
+        (&sticks.pitch, StickAxis::Pitch, -1.0),
+        (&sticks.yaw, StickAxis::Yaw, 1.0),
     ] {
-        let input = RcInput::of(session, function, default);
         if let Some(rc) = session.channels.get(&input.id()) {
             let data = valid_pwm(&rc.data, |pwm| sign * input.centred(pwm) * 100.0 + 0.0);
             session.channels.insert(derived(
@@ -314,6 +330,7 @@ fn derive_sticks(session: &mut FlightSession, throttle: &RcInput) {
             ));
         }
     }
+    let throttle = &sticks.throttle;
     if let Some(rc) = session.channels.get(&throttle.id()) {
         let data = valid_pwm(&rc.data, |pwm| throttle.ranged(pwm) * 100.0);
         session.channels.insert(derived(
@@ -337,23 +354,54 @@ impl FirmwareProfile for ArdupilotProfile {
         (firmware.vendor == FirmwareVendor::Ardupilot).then_some(100)
     }
 
-    fn map_field(
+    fn bind<'a>(
         &self,
-        field: &str,
-        firmware: &FirmwareInfo,
-        headers: &RawHeaders,
-    ) -> Option<FieldMapping> {
+        firmware: &'a FirmwareInfo,
+        headers: &'a RawHeaders,
+    ) -> Box<dyn BoundProfile + 'a> {
         let vehicle = Vehicle::from_firmware(&firmware.revision);
-        let (msg, col) = split(field)?;
-        let rate_scale = match vehicle {
-            Vehicle::Copter => RAD_TO_DEG,
-            Vehicle::Plane | Vehicle::Other => 1.0,
-        };
         // ArduCopter before 3.4 logged RATE in centidegrees per second
         let centi = firmware
             .version
             .is_some_and(|v| v < openpid_core::FirmwareVersion::new(3, 4, 0));
-        let rate_log_scale = if centi { 0.01 } else { 1.0 };
+        Box::new(Bound {
+            h: headers,
+            vehicle,
+            rate_scale: match vehicle {
+                Vehicle::Copter => RAD_TO_DEG,
+                Vehicle::Plane | Vehicle::Other => 1.0,
+            },
+            rate_log_scale: if centi { 0.01 } else { 1.0 },
+            motor: motor_range(headers),
+            sticks: Sticks::of(headers),
+        })
+    }
+}
+
+/// The profile of one `ArduPilot` log: what the firmware string and the
+/// parameters say once, kept for every field and for the derived channels.
+struct Bound<'a> {
+    /// The log's parameters, for the settings.
+    h: &'a RawHeaders,
+    vehicle: Vehicle,
+    /// Degrees per second per unit of the rate controller's own messages.
+    rate_scale: f64,
+    /// Degrees per second per unit of `RATE`.
+    rate_log_scale: f64,
+    /// The pulse widths of 0 % and 100 % motor output.
+    motor: (f64, f64),
+    sticks: Sticks,
+}
+
+impl BoundProfile for Bound<'_> {
+    fn map_field(&self, field: &str) -> Option<FieldMapping> {
+        let Bound {
+            vehicle,
+            rate_scale,
+            rate_log_scale,
+            ..
+        } = *self;
+        let (msg, col) = split(field)?;
         match (msg, col) {
             ("IMU", "TimeUS" | "TimeMS") => None,
             ("IMU", "GyrX" | "GyrY" | "GyrZ") => mapping(
@@ -429,7 +477,7 @@ impl FirmwareProfile for ArdupilotProfile {
                     .parse()
                     .ok()?;
                 if vehicle == Vehicle::Copter {
-                    let (low, high) = motor_range(headers);
+                    let (low, high) = self.motor;
                     Some(FieldMapping {
                         id: ChannelId::Motor {
                             idx: n.checked_sub(1)?,
@@ -497,17 +545,16 @@ impl FirmwareProfile for ArdupilotProfile {
     }
 
     fn derive(&self, session: &mut FlightSession) {
-        let throttle = RcInput::of(session, "THROTTLE", 3);
-        derive_throttle(session, &throttle);
-        derive_sticks(session, &throttle);
+        derive_throttle(session, &self.sticks.throttle);
+        derive_sticks(session, &self.sticks);
     }
 
-    fn flight_modes(&self, firmware: &FirmwareInfo, word: i64) -> Vec<FlightMode> {
-        vec![mode(Vehicle::from_firmware(&firmware.revision), word)]
+    fn flight_modes(&self, word: i64) -> Vec<FlightMode> {
+        vec![mode(self.vehicle, word)]
     }
 
-    fn settings(&self, firmware: &FirmwareInfo, h: &RawHeaders) -> Settings {
-        let vehicle = Vehicle::from_firmware(&firmware.revision);
+    fn settings(&self) -> Settings {
+        let (vehicle, h) = (self.vehicle, self.h);
         let (roll, pitch, yaw) = match vehicle {
             Vehicle::Copter => ("ATC_RAT_RLL", "ATC_RAT_PIT", "ATC_RAT_YAW"),
             Vehicle::Plane => ("RLL_RATE", "PTCH_RATE", "YAW_RATE"),
@@ -735,11 +782,13 @@ mod tests {
         };
         let p = ArdupilotProfile;
         assert_eq!(
-            p.flight_modes(&fw("ArduCopter V4.5.0"), 16),
+            p.bind(&fw("ArduCopter V4.5.0"), &RawHeaders::default())
+                .flight_modes(16),
             [FlightMode::PosHold]
         );
         assert_eq!(
-            p.flight_modes(&fw("ArduPlane V4.3.5"), 11),
+            p.bind(&fw("ArduPlane V4.3.5"), &RawHeaders::default())
+                .flight_modes(11),
             [FlightMode::ReturnHome]
         );
     }
@@ -805,7 +854,7 @@ mod tests {
         ]);
         let fw = firmware("ArduCopter V4.5.0");
         let p = ArdupilotProfile;
-        let g = p.map_field("IMU.GyrY", &fw, &h).unwrap();
+        let g = p.bind(&fw, &h).map_field("IMU.GyrY").unwrap();
         assert_eq!(
             g.id,
             ChannelId::Gyro {
@@ -814,22 +863,22 @@ mod tests {
             }
         );
         assert!((g.scale - 57.295_78).abs() < 1e-4);
-        let sp = p.map_field("RATE.PDes", &fw, &h).unwrap();
+        let sp = p.bind(&fw, &h).map_field("RATE.PDes").unwrap();
         assert_eq!(sp.id, ChannelId::Setpoint { axis: Axis::Pitch });
         assert_eq!(sp.scale, 1.0);
         // the PID target maps to the setpoint too; which one keeps the
         // channel is the session builder's choice (the first field wins)
         assert_eq!(
-            p.map_field("PIDR.Tar", &fw, &h).unwrap().id,
+            p.bind(&fw, &h).map_field("PIDR.Tar").unwrap().id,
             ChannelId::Setpoint { axis: Axis::Roll }
         );
-        let m = p.map_field("RCOU.C3", &fw, &h).unwrap();
+        let m = p.bind(&fw, &h).map_field("RCOU.C3").unwrap();
         assert_eq!(m.id, ChannelId::Motor { idx: 2 });
         assert!((1500.0 + m.offset) * m.scale - 50.0 < 1e-9);
-        assert_eq!(p.map_field("CTUN.ThO", &fw, &h).unwrap().scale, 100.0);
-        assert!(p.map_field("GPS.Lat", &fw, &h).is_none());
-        assert!(p.map_field("IMU.TimeUS", &fw, &h).is_none());
-        let s = p.settings(&fw, &h);
+        assert_eq!(p.bind(&fw, &h).map_field("CTUN.ThO").unwrap().scale, 100.0);
+        assert!(p.bind(&fw, &h).map_field("GPS.Lat").is_none());
+        assert!(p.bind(&fw, &h).map_field("IMU.TimeUS").is_none());
+        let s = p.bind(&fw, &h).settings();
         let pid = s.pid.unwrap();
         assert_eq!(pid.roll.p, 0.135);
         assert_eq!(pid.roll.d, 0.0036);
@@ -857,15 +906,15 @@ mod tests {
         ]);
         let fw = firmware("ArduPlane V4.4.4");
         let p = ArdupilotProfile;
-        let t = p.map_field("PIDP.Tar", &fw, &h).unwrap();
+        let t = p.bind(&fw, &h).map_field("PIDP.Tar").unwrap();
         assert_eq!(t.id, ChannelId::Setpoint { axis: Axis::Pitch });
         assert_eq!(t.scale, 1.0, "plane rate loop is already in deg/s");
         assert_eq!(
-            p.map_field("RCOU.C1", &fw, &h).unwrap().id,
+            p.bind(&fw, &h).map_field("RCOU.C1").unwrap().id,
             ChannelId::Custom("servo.1".into())
         );
-        assert_eq!(p.map_field("CTUN.ThO", &fw, &h).unwrap().scale, 1.0);
-        let s = p.settings(&fw, &h);
+        assert_eq!(p.bind(&fw, &h).map_field("CTUN.ThO").unwrap().scale, 1.0);
+        let s = p.bind(&fw, &h).settings();
         assert_eq!(s.pid.unwrap().pitch.p, 0.48);
         assert_eq!(s.gyro_filters.notches.len(), 1);
         assert_eq!(s.gyro_filters.notches[0].center_hz, 160.0);
@@ -876,14 +925,14 @@ mod tests {
             ("RATE_PIT_P", "0.168"),
             ("RATE_YAW_P", "0.66"),
         ]);
-        let s = p.settings(&fw, &h);
+        let s = p.bind(&fw, &h).settings();
         assert_eq!(s.pid.unwrap().roll.p, 0.1288);
         assert_eq!(
-            p.map_field("CTUN.ThrOut", &fw, &h).unwrap().scale,
+            p.bind(&fw, &h).map_field("CTUN.ThrOut").unwrap().scale,
             0.1,
             "old copter throttle is 0..1000"
         );
-        assert_eq!(p.map_field("CURR.Volt", &fw, &h).unwrap().scale, 0.01);
+        assert_eq!(p.bind(&fw, &h).map_field("CURR.Volt").unwrap().scale, 0.01);
         assert_eq!(
             Vehicle::from_firmware("APM:Copter V3.3-dev"),
             Vehicle::Copter

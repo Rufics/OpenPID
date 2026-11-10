@@ -145,7 +145,7 @@ impl FormatRegistry {
     pub fn slider_model(&self, session: &FlightSession) -> Option<Box<dyn SliderModel>> {
         let headers = RawHeaders(session.raw_headers.clone());
         self.profile_for(session)
-            .and_then(|p| p.slider_model(&session.firmware, &headers))
+            .and_then(|p| p.bind(&session.firmware, &headers).slider_model())
             .or_else(|| {
                 RatioSliders::from_settings(&session.settings)
                     .map(|m| Box::new(m) as Box<dyn SliderModel>)
@@ -157,6 +157,7 @@ impl FormatRegistry {
     pub fn exporter(&self, session: &FlightSession) -> Option<Box<dyn Exporter>> {
         let headers = RawHeaders(session.raw_headers.clone());
         self.profile_for(session)?
-            .exporter(&session.firmware, &headers)
+            .bind(&session.firmware, &headers)
+            .exporter()
     }
 }

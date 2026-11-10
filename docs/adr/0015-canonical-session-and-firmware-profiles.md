@@ -37,11 +37,15 @@ Three layers, each with one job.
    the *firmware profile* (`FirmwareProfile`, the only place that knows a
    firmware and its versions); the *session builder* (assembles the session
    and asks the profile; it holds no firmware tables).
-   The profile contract: `map_field` (logged field to channel, unit, scale),
-   `settings` (headers to typed settings), `derive` (channels computed from
-   the logged ones: throttle, the sticks, PID error, motor rpm),
+   The profile contract has two parts (#144). `FirmwareProfile` is what holds
+   for a firmware family: `id`, `score` (is this log mine), and
+   `bind(firmware, headers)`, which gives the `BoundProfile` of one log.
+   The bound profile reads the firmware version and the headers once and
+   answers for that log without them: `map_field` (logged field to channel,
+   unit, scale), `settings` (typed settings), `derive` (channels computed
+   from the logged ones: throttle, the sticks, PID error, motor rpm),
    `flight_modes` (the firmware's mode word, a box mask or a mode number, to
-   `FlightMode`s), `slider_model`.
+   `FlightMode`s), `slider_model`, `exporter`.
 3. **`openpid-analysis`, `openpid-sim`, the CLI and the app read the
    canonical model only.** They do not branch on the firmware vendor or
    version and do not read raw headers, slow frames or firmware events.
@@ -73,7 +77,7 @@ What a firmware can be told is firmware knowledge too. The app and the CLI
 had called `openpid_fmt_blackbox::BetaflightCli` and `slider_model_for`
 directly, so an INAV or `ArduPilot` log got a box titled "Betaflight CLI to
 apply" and `openpid diff --cli` printed Betaflight commands for any pair of
-logs. `FirmwareProfile::exporter` now stands next to `slider_model`; a
+logs. `BoundProfile::exporter` now stands next to `slider_model`; a
 format answers `LogFormat::profile(id)` and `FormatRegistry::profile_for`,
 `exporter` and `slider_model` find the profile that built a session. The
 exporter is created for one log (it holds the firmware version, hence the
@@ -81,6 +85,18 @@ setting names of that version) and gives its own caption; a profile without
 one means "no ready commands", which the app and the CLI say as it is. The
 consumers name a format crate in one place each: where they fill the
 registry.
+
+The profile had no bound step at first: every method took
+`(firmware, headers)` again. `map_field` rebuilt the scales for each logged
+field, the mode-box table was rebuilt for each slow frame, and `derive`,
+which got no headers, read them back from the session it was filling; that
+is why the `ArduPilot` builder once passed facts to its profile as made-up
+headers. With `bind` a session builder binds once per session; the Blackbox
+profiles keep the scales and the mode-box names (`profiles::common::Log`),
+the `ArduPilot` profile the vehicle, the rate scales, the motor range and
+the four RC inputs with their calibration. Two methods of one log can no
+longer be given different headers. The decoded sessions of every fixture
+are the same to the byte.
 
 ## Consequences
 
@@ -103,3 +119,9 @@ registry.
     `ArduPilot`, where `CTUN.ThrIn` of old Copter logs shares `rc.2` with
     `RCIN.C3`); they are the logged commands, the canonical pilot input is
     `stick.*`.
+
+## History
+
+- 2026-11-10, #144: the profile contract split into `FirmwareProfile`
+  (`id`, `score`, `bind`) and `BoundProfile` (the profile of one log).
+  Before, one trait took `(firmware, headers)` in every method.

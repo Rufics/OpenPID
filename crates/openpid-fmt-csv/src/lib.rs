@@ -182,13 +182,14 @@ impl LogFormat for CsvFormat {
         } else {
             self.profiles.select(&firmware, &headers)
         };
+        let bound = profile.map(|p| p.bind(&firmware, &headers));
         let mut channels = ChannelSet::new();
         let mut unmapped = Vec::new();
         for (i, col) in table.columns.iter().enumerate() {
             let cells = table.rows.iter().map(|r| r[i]);
-            let (id, unit, data) = match (&col.unit, profile) {
-                (None, Some(p)) => {
-                    if let Some(m) = p.map_field(&col.name, &firmware, &headers) {
+            let (id, unit, data) = match (&col.unit, &bound) {
+                (None, Some(b)) => {
+                    if let Some(m) = b.map_field(&col.name) {
                         let data =
                             Series::from_options(cells.map(|v| v.map(|x| m.apply(x as i64))));
                         (m.id, m.unit, data)
@@ -243,7 +244,7 @@ impl LogFormat for CsvFormat {
         let mut session = FlightSession {
             index: 0,
             offset_bytes: 0,
-            firmware,
+            firmware: firmware.clone(),
             profile_id: profile.map_or("raw", |p| p.id()).to_string(),
             settings: Settings::default(),
             raw_headers: Vec::new(),
@@ -254,8 +255,8 @@ impl LogFormat for CsvFormat {
             flight_modes: flight_modes(&table),
             diagnostics,
         };
-        if let Some(p) = profile {
-            p.derive(&mut session);
+        if let Some(b) = &bound {
+            b.derive(&mut session);
         }
         Ok(LogFile {
             source: SourceInfo {

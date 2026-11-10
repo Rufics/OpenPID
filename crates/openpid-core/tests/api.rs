@@ -5,9 +5,9 @@
 use openpid_core::analysis::{AnalysisError, Grid2D};
 use openpid_core::settings::{PerAxis, PidGains};
 use openpid_core::{
-    Axis, ChannelId, Confidence, FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVersion,
-    FormatError, FormatRegistry, LogFile, LogFormat, OpenOptions, ProfileRegistry, RawHeaders,
-    Series, Settings, Timebase, Unit,
+    Axis, BoundProfile, ChannelId, Confidence, FieldMapping, FirmwareInfo, FirmwareProfile,
+    FirmwareVersion, FormatError, FormatRegistry, LogFile, LogFormat, OpenOptions, ProfileRegistry,
+    RawHeaders, Series, Settings, Timebase, Unit,
 };
 
 #[test]
@@ -180,10 +180,20 @@ impl FirmwareProfile for NoProfile {
     fn score(&self, _fw: &FirmwareInfo, h: &RawHeaders) -> Option<u8> {
         h.get("magic").map(|_| 7)
     }
-    fn map_field(&self, _f: &str, _fw: &FirmwareInfo, _h: &RawHeaders) -> Option<FieldMapping> {
-        None
+    fn bind<'a>(&self, _fw: &'a FirmwareInfo, h: &'a RawHeaders) -> Box<dyn BoundProfile + 'a> {
+        Box::new(NoLog(h))
     }
-    fn settings(&self, _fw: &FirmwareInfo, _h: &RawHeaders) -> Settings {
+}
+
+/// The profile of one log: it answers from the headers it was bound to.
+struct NoLog<'a>(&'a RawHeaders);
+
+impl BoundProfile for NoLog<'_> {
+    fn map_field(&self, field: &str) -> Option<FieldMapping> {
+        (self.0.get("field") == Some(field))
+            .then(|| FieldMapping::new(ChannelId::Throttle, Unit::Percent))
+    }
+    fn settings(&self) -> Settings {
         Settings::default()
     }
 }
@@ -199,9 +209,18 @@ fn profile_registry_selects_by_score() {
     let h = RawHeaders(vec![("magic".into(), "1".into())]);
     let p = r.select(&fw, &h).unwrap();
     assert_eq!(p.id(), "none");
-    assert!(p.slider_model(&fw, &h).is_none());
-    assert!(p.exporter(&fw, &h).is_none());
-    assert!(p.map_field("x", &fw, &h).is_none());
+    // bound to a log once, it answers for that log without the headers
+    let h = RawHeaders(vec![
+        ("magic".into(), "1".into()),
+        ("field".into(), "thr".into()),
+    ]);
+    let log = p.bind(&fw, &h);
+    assert!(log.slider_model().is_none());
+    assert!(log.exporter().is_none());
+    assert!(log.map_field("x").is_none());
+    assert_eq!(log.map_field("thr").unwrap().id, ChannelId::Throttle);
+    assert_eq!(log.settings(), Settings::default());
+    assert!(log.flight_modes(1).is_empty());
 }
 
 #[test]

@@ -382,10 +382,12 @@ fn exporter_and_sliders_come_from_the_logs_profile() {
         assert!(registry.profile_for(&s).is_some(), "{name}");
         assert!(registry.exporter(&s).is_none(), "{name}");
         // none of them has sliders of its own; with gains they get the ratio sliders
-        let own = registry.profile_for(&s).unwrap().slider_model(
-            &s.firmware,
-            &openpid_core::RawHeaders(s.raw_headers.clone()),
-        );
+        let headers = openpid_core::RawHeaders(s.raw_headers.clone());
+        let own = registry
+            .profile_for(&s)
+            .unwrap()
+            .bind(&s.firmware, &headers)
+            .slider_model();
         assert!(own.is_none(), "{name}");
         assert_eq!(
             registry.slider_model(&s).map(|m| m.id()),

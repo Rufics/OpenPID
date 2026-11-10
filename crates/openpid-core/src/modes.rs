@@ -3,7 +3,7 @@
 //! Each format crate turns what its log records (Betaflight-family
 //! `flightModeFlags` bits, `ArduPilot` `MODE` and `EV` messages, ...) into
 //! [`ModeChange`]s on the session, through its firmware profile
-//! ([`crate::FirmwareProfile::flight_modes`]); everything after the decoder
+//! ([`crate::BoundProfile::flight_modes`]); everything after the decoder
 //! reads them with [`crate::FlightSession::flight_modes_at`] and
 //! [`crate::FlightSession::mode_changes`], never the firmware's numbering.
 
