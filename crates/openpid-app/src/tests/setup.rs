@@ -236,3 +236,46 @@ fn setup_info_follows_the_session_and_the_firmware() {
     let ui = Ui::open(&[], Tab::Setup);
     assert!(ui.app().setup_state.lines.is_empty());
 }
+
+/// Every committed fixture has its table: the firmware in words, the
+/// decoder's counts, and each of its headers in "All headers" (#140).
+#[test]
+fn setup_info_shows_every_fixture() {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/logs");
+    let mut logs: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|e| Some(e.ok()?.path()))
+        .filter(|p| {
+            let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+            ["bbl", "bfl", "txt", "bin"].contains(&ext.to_lowercase().as_str())
+        })
+        .collect();
+    logs.sort();
+    assert!(logs.len() >= 12, "{logs:?}");
+    for log in logs {
+        let name = log.file_name().unwrap().to_string_lossy().into_owned();
+        let ui = Ui::open(&[log.to_str().unwrap()], Tab::Setup);
+        let session = ui
+            .app()
+            .loaded(Slot::A)
+            .and_then(|l| l.current())
+            .unwrap_or_else(|| panic!("{name}: no session"))
+            .clone();
+        let firmware = row(&ui, Section::Setup, "Firmware").map(|r| r.0);
+        assert_eq!(
+            firmware,
+            Some(vec![Some(session.firmware.revision.as_str())]),
+            "{name}"
+        );
+        assert!(row(&ui, Section::Decoder, "Samples").is_some(), "{name}");
+        let headers = sections(&ui)
+            .into_iter()
+            .find(|(s, _)| *s == Section::Headers)
+            .map_or(0, |(_, n)| n);
+        assert_eq!(
+            headers,
+            session.raw_headers.len(),
+            "{name}: no header is dropped"
+        );
+    }
+}
