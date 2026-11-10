@@ -41,8 +41,7 @@ Five layouts of one tab on the same data (A = 4.5.0, B = 4.5.1):
 
 ## Decision (2026-11-10)
 
-**U3**, by the score. One tab, as the owner asked. Waiting for the owner's
-approval of the result.
+**U3**, by the score. One tab, as the owner asked. Approved by the owner on 2026-11-10 ("Погоджуюсь чотирьох вкладок: PID sliders, Setup info, Advice, Settings").
 
 ## Implementation requirements
 

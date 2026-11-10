@@ -38,7 +38,7 @@ what-if is master 90 and D gain 120, computed by the real model):
 
 ## Decision (2026-11-10)
 
-**S3**, by the score. Waiting for the owner's approval.
+**S3**, by the score. Approved by the owner on 2026-11-10 ("Погоджуюсь чотирьох вкладок: PID sliders, Setup info, Advice, Settings").
 
 ## Implementation requirements
 

@@ -32,7 +32,7 @@ tabs by the same scenario as the others.
 
 ## Decision (2026-11-10)
 
-**G2**, by the score. Waiting for the owner's approval.
+**G2**, by the score. Approved by the owner on 2026-11-10 ("Погоджуюсь чотирьох вкладок: PID sliders, Setup info, Advice, Settings").
 
 ## Implementation requirements
 

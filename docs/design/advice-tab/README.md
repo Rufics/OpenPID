@@ -42,7 +42,7 @@ overshoots 16 %, so D 30 → 33; B = 4.5.1):
 
 ## Decision (2026-11-10)
 
-**A2**, by the score. Waiting for the owner's approval.
+**A2**, by the score. Approved by the owner on 2026-11-10 ("Погоджуюсь чотирьох вкладок: PID sliders, Setup info, Advice, Settings").
 
 ## Implementation requirements
 
