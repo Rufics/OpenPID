@@ -360,7 +360,38 @@ An STFT with `nfft`, hop, Hann → `Grid2D { x: time, y: freq, z: amp/dB }`. It 
 - **RPM estimator** (`RpmEstimator`, `openpid run rpm`): without eRPM, the candidates are the strongest STFT peaks of the unfiltered gyro in the `rpm_min..rpm_max` band (as the 1st…3rd harmonic), dynamic programming picks a path continuous in time (penalties for a relative jump and for a higher harmonic), the confidence is the peak's excess over the band median. With four motors at similar speed the estimate follows their mean: a median error of 2.9 % on the 4.5.1 fixture and 2.0 % on 2025.12 (against the logged eRPM, reported as `median_error`). `gyro.filtered` is unusable: the RPM filter has already removed the peaks.
 - **Motor noise** (`MotorNoiseAnalysis`, `openpid run motor-noise`; no tab): per motor, the gyro amplitude at its harmonics `k·rpm/60` in every STFT frame (averaged), the ratio to the mean over the motors, the sum; the speeds come from eRPM or the RPM estimator (then one row for all motors). A "bent prop" shows as a row with a ratio > 1 and the loudest motor highlighted; checked on the generator's synthetic data with one motor amplified 2.5×.
 
-### 6.7 Cache and incrementality
+### 6.7 Defaults against the reference tool (#33)
+
+What the reference tool shows by default, from the owner's PIDtoolbox Pro v0.9 screenshots (#33) and its v0.8 tutorial video, against what OpenPID does and why. "Not recorded" means neither source shows the value; nothing is guessed, and no code of the reference tool was read.
+
+| Screen | Setting | Reference tool | OpenPID default | Why |
+|---|---|---|---|---|
+| Step | Window selection | rule not public; on `btfl_027` 78 / 13 / 30 windows (roll / pitch / yaw) | stick input ≥ 80 °/s and a response that settles between 0.5 and 1.5: 65 / 14 / 27 windows | matched on the results (§6.2); 20 °/s gave 172 / 133 / 32 and curves that ended off 1 |
+| Step | Part of the log analysed | leaves out the first and the last second | the automatic trim of take-off and landing ("Auto"), or the whole log ("All") | the trim follows the throttle and the motor rpm, so a long idle before take-off is left out too; the calibration of §6.2 used the reference tool's epoch |
+| Step | Latency shown | "SR Latency": the time to 50 % of the mean response; "SP-Gyro Delay" as the other option | the same two, "SR latency" first | same quantity, same name |
+| Step | Raw responses | "Raw", off | "Raw" (the response histogram), off | the mean is what is read; the spread is one click away |
+| Step | Y axis | not recorded | 0 … 1.5, fixed ("Y max") | a fixed axis makes two logs comparable by eye |
+| Step | Smoothing | several levels; the default is not recorded | off (0 ms); low / medium / high = 10 / 20 / 40 ms | smoothing hides a little of the overshoot the verdicts measure, so it is opt-in |
+| Step | Y correction | a control exists; the default is not recorded | off | it rescales every window to end at 1, which would hide a response that really settles off 1 |
+| Spectrum | Layout | roll, pitch, yaw, each with a "Sub 100Hz" panel | the same: three rows × (full range, below 100 Hz) | the low range is where propwash and frame resonances are |
+| Spectrum | Unfiltered gyro | gyro solid, gyro prefilt dotted | the same, on | the effect of the filters is on screen without a second plot |
+| Spectrum | Smoothing | medium | medium (a moving average over 8 Hz of the power) | same |
+| Spectrum | Window | Hann | Hann; 0.25 s segments, 1 s for the column below 100 Hz | the longer segment gives 1 Hz bins where 4 Hz bins leave 25 points |
+| Spectrum | Level | its own dB scale | (°/s)²/Hz in dB, the range automatic | the absolute levels of the two tools differ, so a copied Y range would cut our curves |
+| Freq × throttle | Columns | gyro prefilt beside gyro (its preset 1) | the same, per log | before and after the filters side by side |
+| Freq × throttle | Throttle axis | 0–100 % | 0–100 %; "Zoom to the flown range" as an option | a zoomed axis stretched 25 bins into blocks |
+| Freq × throttle | Lines over the maps | none from the data; fixed 20 / 60 Hz guides in its "<100Hz" view | none; "RPM overlay" and "Notches" as options | the owner: a line from the data reads as part of the map |
+| Freq × throttle | Colour map | MATLAB "hot" (black, red, yellow, white) | Blackbox Explorer's black, red, white; a colour-blind safe option | the owner's choice (docs/design/plot-colours) |
+| Freq × throttle | Colour limit | not recorded | automatic, one scale per log | two logs of different noise each keep their contrast |
+| Freq × time | Layout and channel | roll, pitch, yaw spectrograms of the unfiltered gyro, in dB | the same; the spectrum at the position and the throttle are added | what the noise did when, without leaving the tab |
+| Freq × time | Colour range | Z min −30, Z max 10 dB | automatic (the 30th and 99.5th percentile of the dB values above 20 Hz); Z min / Z max can be fixed | the dB levels differ, as on Spectrum |
+| Log viewer | Rows | roll, pitch, yaw at ± 500 °/s, throttle and motors in a row of their own | the same; "Y scale ±" in the panel | same |
+| Log viewer | Quantities shown | Gyro, Set point, Motors, Throttle | the same | same |
+| Log viewer | Sticks | two boxes beside the plots | a card on the throttle / motors row, with the flight modes | the owner's choice (docs/design/log-sticks) |
+| Log viewer | Flight-mode changes | a dashed line through the panels, the names under the throttle row | the same, as an option that is off | the owner: off by default |
+| Sliders | Slider tool | start gains and five ratios (P:D, P:I, roll:pitch, yaw, master) | the firmware's own sliders when the log has them, else the same five ratios over the logged gains | Betaflight's sliders give commands to paste; the ratios keep every other firmware from a dead end |
+
+### 6.8 Cache and incrementality
 
 `ResultStore` caches an `Output` by the key `(session_id, epoch, analysis_id, hash(params))`. Heavy computations run on a worker thread (`std::thread` plus a channel; `rayon` only if measurements show the need); the GUI receives progress and never blocks.
 
