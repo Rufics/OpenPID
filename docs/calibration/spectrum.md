@@ -388,8 +388,7 @@ eighteen curves of the reference tool in `tests/calibration/spectrum/`.
 
 What is left is not about the reference tool any more. The owner chose
 option A of D-001 on 2026-11-11: OpenPID draws the reference tool's curve
-by default and keeps its density as a second mode; that change is the next
-pull request of #171. The other channels of that window and the "Freq x
+by default and keeps its density as a second mode (pull request #181). The other channels of that window and the "Freq x
 Throttle" and "Freq x Time" screens are areas of their own.
 
 ### Not settled

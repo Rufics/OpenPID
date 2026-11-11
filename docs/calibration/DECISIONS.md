@@ -74,7 +74,7 @@ Taken by the owner on 2026-11-11:
 | Options | **A.** The reference tool's curve by default (one transform, its level, decibel smoothing with its five levels), and OpenPID's density as a second mode. A user sees the same numbers as in the reference tool and its tutorials; narrow lines are hidden unless the mode is switched. **B.** OpenPID's density by default, the reference tool's curve as a second mode. Noise reads 6.8 dB higher than in the reference tool, tones stand out; numbers from tutorials do not carry over unless the mode is switched. **C.** OpenPID's curve only, the offset documented. |
 | Recommendation | A: the epic's aim is that a user who knows the reference tool reads the same numbers. The density stays one switch away because it is the exact quantity, the only one the probes can check to a tenth of a decibel, and the one that shows a steady resonance. The other six probes of round 1 are in and do not change it. They add a caution for either order of the two modes: in the reference tool's curve the height of a peak follows its width, so a fixed resonance is shown weakly and anything that changes during the flight strongly |
 | The owner's decision | **A**, 2026-11-11: the reference tool's curve by default, OpenPID's density as a second mode |
-| Carried out by | to come: a pull request of #171 |
+| Carried out by | #181 |
 
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
