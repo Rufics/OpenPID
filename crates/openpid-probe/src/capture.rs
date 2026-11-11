@@ -21,6 +21,37 @@ const SCRIPT: &str = include_str!("../../../tools/capture/capture.ps1");
 const LOG_VIEWER: &str = "Log Viewer";
 /// Title of its spectrum window.
 const SPECTRUM: &str = "Spectral Analyzer";
+/// Title of its step response window.
+const STEP: &str = "Step Response Tool";
+
+/// The rows of plots of the step response window in a picture the script
+/// saves: top and bottom of the axes of roll, pitch and yaw.
+const STEP_ROWS: [(u32, u32); 3] = [(172, 753), (887, 1468), (1603, 2183)];
+/// Its three columns: the name of the plot, left and right of the axes.
+const STEP_COLUMNS: [(&str, u32, u32); 3] = [
+    ("response", 189, 1700),
+    ("peak", 2192, 2607),
+    ("latency", 2759, 3174),
+];
+/// Controls of the step response window, in a picture the script saves.
+mod step_at {
+    /// The first log of the list; the next ones follow 29.5 pixels apart.
+    pub const LOG: (u32, u32) = (3546, 145);
+    pub const RUN: (u32, u32) = (3469, 792);
+    pub const SMOOTHING_LIST: (u32, u32) = (3469, 1050);
+    /// "off", "low", "medium", "high" of the open smoothing list.
+    pub const SMOOTHING: [(&str, (u32, u32)); 4] = [
+        ("off", (3465, 1089)),
+        ("low", (3465, 1123)),
+        ("medium", (3465, 1157)),
+        ("high", (3465, 1191)),
+    ];
+    pub const LATENCY_LIST: (u32, u32) = (3643, 1050);
+    /// "SR Latency" and "SP-Gyro Delay" of the open latency list.
+    pub const SR_LATENCY: (u32, u32) = (3645, 1089);
+    pub const SP_GYRO: (u32, u32) = (3645, 1123);
+    pub const RAW: (u32, u32) = (3601, 1242);
+}
 
 /// The smoothing levels of the spectrum window with the row of each in the
 /// open list, in the order they are captured: the default (medium) last, so
@@ -231,26 +262,42 @@ fn copied(round: u32, smoothing: &str) -> Vec<(usize, usize)> {
         .collect()
 }
 
+/// The steps that copy one plot of the spectrum window.
+fn copy_plot(steps: &mut Vec<Step>, axis: usize, column: usize, file: String) {
+    let plot = format!("{} {}", AXES[axis % 3], COLUMNS[column % 2]);
+    copy_axes(steps, SPECTRUM, &plot, PLOTS[axis % 3][column % 2], file);
+}
+
 /// The steps that copy one plot as a vector graphic and save the copy:
 /// the pointer over the plot (its toolbar appears), over the export button
 /// (its menu opens), down to the third item, a click, the clipboard.
-fn copy_plot(steps: &mut Vec<Step>, axis: usize, column: usize, file: String) {
-    let (left, top, right, bottom) = PLOTS[axis % 3][column % 2];
-    let plot = format!("{} {}", AXES[axis % 3], COLUMNS[column % 2]);
+/// `axes` is left, top, right, bottom of the plot in a picture of `window`.
+fn copy_axes(
+    steps: &mut Vec<Step>,
+    window: &'static str,
+    plot: &str,
+    axes: (u32, u32, u32, u32),
+    file: String,
+) {
+    let (left, top, right, bottom) = axes;
     let button = (right - EXPORT_BUTTON.0, top - EXPORT_BUTTON.1);
     let item = (button.0, button.1 + COPY_ITEM);
-    steps.push(hover(
+    let over = |name: String, at: (u32, u32), ms: u32| Step {
+        window: Some(window),
+        ..hover(name, at, ms)
+    };
+    steps.push(over(
         format!("{plot} plot"),
         (left.midpoint(right), top.midpoint(bottom)),
         500,
     ));
-    steps.push(hover(format!("{plot} export menu"), button, 700));
-    steps.push(hover(format!("{plot} copy as vector graphic"), item, 400));
+    steps.push(over(format!("{plot} export menu"), button, 700));
+    steps.push(over(format!("{plot} copy as vector graphic"), item, 400));
     steps.push(Step {
         clip: Some(true),
         front: Some(false),
         ..click(
-            SPECTRUM,
+            window,
             "shot",
             &format!("{plot} copy as vector graphic"),
             item,
@@ -265,6 +312,115 @@ fn copy_plot(steps: &mut Vec<Step>, axis: usize, column: usize, file: String) {
         ..Step::default()
     });
     steps.push(pause(200));
+}
+
+/// Name of a picture or of a copied plot of the step response window:
+/// `what` is the setting ("", "raw", "spgyro", "smoothing-low" …) and
+/// `plot` the plot ("" for a picture of the window).
+pub fn step_file(round: u32, probe: &str, what: &str, plot: &str) -> String {
+    let mut name = format!("r{round}-{probe}-step");
+    for part in [what, plot] {
+        if !part.is_empty() {
+            name.push('-');
+            name.push_str(part);
+        }
+    }
+    name
+}
+
+/// Whether the smoothing levels of the step response are captured for a
+/// probe: for the plants at 2 kHz and for the probe with noise, where
+/// smoothing has something to do.
+fn smoothing_captured(probe: &Probe) -> bool {
+    probe.id == "t1-plants-2k" || probe.id.contains("noise")
+}
+
+/// The steps of the step response window for the probes of a round: for
+/// every log its nine plots as they come up, every window's response
+/// ("Raw"), the other latency, and for two logs the smoothing levels.
+fn step_response(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+    let at = |name: &str, position: (u32, u32)| click(STEP, "shot", name, position);
+    let run = |steps: &mut Vec<Step>, picture: Option<String>| {
+        steps.push(Step {
+            mark: Some(true),
+            ..at("Run", step_at::RUN)
+        });
+        steps.push(settle(STEP, Some(20.0), 1.5));
+        if let Some(file) = picture {
+            steps.push(shot(STEP, file));
+        }
+    };
+    let copies = |steps: &mut Vec<Step>, probe: &str, what: &str, columns: &[usize]| {
+        for column in columns {
+            let (plot, left, right) = STEP_COLUMNS[*column];
+            for (axis, (top, bottom)) in STEP_ROWS.into_iter().enumerate() {
+                let name = format!("{} {plot}", AXES[axis]);
+                let file = step_file(round, probe, what, &format!("{}-{plot}", AXES[axis]));
+                copy_axes(steps, STEP, &name, (left, top, right, bottom), file);
+            }
+        }
+    };
+    let pick = |steps: &mut Vec<Step>, list: (u32, u32), name: &str, item: (u32, u32)| {
+        steps.push(at(&format!("{name} (the list)"), list));
+        steps.push(pause(400));
+        steps.push(at(name, item));
+        steps.push(pause(300));
+    };
+
+    steps.push(click(LOG_VIEWER, "log", "Step Resp Tool", (3556, 787)));
+    steps.push(Step {
+        wait_s: Some(900),
+        ..settle(STEP, None, 2.0)
+    });
+    steps.push(shot(STEP, format!("r{round}-step-open")));
+    for (row, probe) in probes.iter().enumerate() {
+        if probe.area != Area::StepResponse {
+            continue;
+        }
+        let id = probe.id;
+        let y = step_at::LOG.1 + (59 * row as u32) / 2;
+        steps.push(at(&format!("log {id}"), (step_at::LOG.0, y)));
+        steps.push(pause(300));
+        run(steps, Some(step_file(round, id, "", "")));
+        copies(steps, id, "", &[0, 1, 2]);
+
+        steps.push(at("Raw", step_at::RAW));
+        steps.push(pause(400));
+        run(steps, Some(step_file(round, id, "raw", "")));
+        copies(steps, id, "raw", &[0]);
+        steps.push(at("Raw (off)", step_at::RAW));
+        steps.push(pause(400));
+
+        pick(
+            steps,
+            step_at::LATENCY_LIST,
+            "SP-Gyro Delay",
+            step_at::SP_GYRO,
+        );
+        run(steps, None);
+        copies(steps, id, "spgyro", &[2]);
+        pick(
+            steps,
+            step_at::LATENCY_LIST,
+            "SR Latency",
+            step_at::SR_LATENCY,
+        );
+
+        if smoothing_captured(probe) {
+            for (level, item) in &step_at::SMOOTHING[1..] {
+                pick(
+                    steps,
+                    step_at::SMOOTHING_LIST,
+                    &format!("smoothing {level}"),
+                    *item,
+                );
+                run(steps, None);
+                copies(steps, id, &format!("smoothing-{level}"), &[0]);
+            }
+            let (_, off) = step_at::SMOOTHING[0];
+            pick(steps, step_at::SMOOTHING_LIST, "smoothing off", off);
+        }
+    }
 }
 
 /// Name of the picture of `probe` on the spectrum at a smoothing level.
@@ -295,8 +451,7 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     });
     steps.push(shot(LOG_VIEWER, format!("r{round}-log-loaded")));
 
-    // the spectrum window, when the round has probes for it (the step
-    // response has its own window; its steps come with its first round)
+    // the spectrum window, when the round has probes for it
     if probes.iter().any(|p| p.area == Area::Spectrum) {
         steps.push(click(LOG_VIEWER, "log", "Spectral Analyzer", (3556, 706)));
         // the tool may still be decoding when the click lands: it then opens the
@@ -359,12 +514,21 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
             }
         }
     }
+    if probes.iter().any(|p| p.area == Area::StepResponse) {
+        step_response(&mut steps, round, probes);
+    }
     steps.push(Step {
         action: "windows",
         ..Step::default()
     });
     Plan {
-        about: if round < 2 {
+        about: if probes.iter().all(|p| p.area == Area::StepResponse) {
+            format!(
+                "Round {round}: every log through one open dialog, then the step response of \
+                 each: its nine plots, every window's response, the other latency, and for two \
+                 logs the smoothing levels, all copied as vector graphics."
+            )
+        } else if round < 2 {
             format!(
                 "Round {round}: every log through one open dialog, then the spectrum of each \
                  at the five smoothing levels."
@@ -409,7 +573,7 @@ fn crlf(text: &str) -> Vec<u8> {
 
 /// The files that make a pack runnable on the owner's machine: the script,
 /// its launcher and a note on how to run it.
-pub fn files(round: u32, shots: usize, copies: usize) -> Vec<(String, Vec<u8>)> {
+pub fn files(round: u32, shots: usize, copies: usize, predicted: bool) -> Vec<(String, Vec<u8>)> {
     let launcher = "@echo off\n\
                     cd /d \"%~dp0\"\n\
                     powershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0capture.ps1\" \
@@ -432,10 +596,10 @@ pub fn files(round: u32, shots: usize, copies: usize) -> Vec<(String, Vec<u8>)> 
     } else {
         "The copied plots replace what was on the clipboard.\n\n"
     };
-    let predictions = if copies == 0 {
-        ""
-    } else {
+    let predictions = if predicted {
         " predictions.json is what the\nmodel of the reference tool expects it to show;"
+    } else {
+        ""
     };
     let note = format!(
         "Calibration round {round}\n\
@@ -657,6 +821,95 @@ mod tests {
     }
 
     #[test]
+    fn round_4_copies_the_plots_of_the_step_response_window() {
+        let probes = catalogue::round(4).unwrap_or_default();
+        let plan = plan(4, &probes);
+        // nothing of the spectrum window
+        assert!(plan.steps.iter().all(|s| s.window != Some(SPECTRUM)));
+        assert!(plan.about.contains("step response"));
+        let names = |action: &str| -> Vec<&str> {
+            plan.steps
+                .iter()
+                .filter(|s| s.action == action)
+                .filter_map(|s| s.file.as_deref())
+                .collect()
+        };
+        let copies = names("clip_save");
+        // nine plots, three raw responses and three latencies a log, and
+        // nine smoothed responses for two logs
+        assert_eq!(copies.len(), 9 * 15 + 2 * 9);
+        assert_eq!(copies[0], "r4-t1-plants-2k-step-roll-response");
+        assert_eq!(copies[3], "r4-t1-plants-2k-step-roll-peak");
+        assert_eq!(copies[8], "r4-t1-plants-2k-step-yaw-latency");
+        assert_eq!(copies[9], "r4-t1-plants-2k-step-raw-roll-response");
+        assert_eq!(copies[12], "r4-t1-plants-2k-step-spgyro-roll-latency");
+        assert_eq!(
+            copies[15],
+            "r4-t1-plants-2k-step-smoothing-low-roll-response"
+        );
+        assert!(copies.contains(&"r4-t5-noise-2k-step-smoothing-high-yaw-response"));
+        assert!(
+            !copies
+                .iter()
+                .any(|c| c.starts_with("r4-t2") && c.contains("smoothing"))
+        );
+        let shots = names("shot");
+        assert_eq!(shots.len(), 2 + 9 * 2);
+        let mut unique: Vec<&str> = shots.iter().chain(&copies).copied().collect();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), shots.len() + copies.len());
+
+        // the positions the trial of this window used
+        let find = |file: &str| {
+            plan.steps
+                .iter()
+                .position(|s| s.file.as_deref() == Some(file))
+                .unwrap_or(4)
+        };
+        let roll = find("r4-t1-plants-2k-step-roll-response");
+        assert_eq!(plan.steps[roll - 4].at, Some((944, 462)));
+        assert_eq!(plan.steps[roll - 3].at, Some((1503, 153)));
+        assert_eq!(plan.steps[roll - 1].at, Some((1503, 249)));
+        let latency = find("r4-t1-plants-2k-step-yaw-latency");
+        assert_eq!(plan.steps[latency - 3].at, Some((2977, 1584)));
+        for step in &plan.steps {
+            // every step of that window is given in the script's own pictures
+            if step.window == Some(STEP) && step.at.is_some() {
+                assert_eq!(step.frame, Some("shot"), "{step:?}");
+                let (x, y) = step.at.unwrap_or((0, 0));
+                assert!(x < 3780 && y < 2427, "{step:?}");
+            }
+            assert!(
+                SCRIPT.contains(&format!("$action -eq \"{}\"", step.action)),
+                "{}",
+                step.action
+            );
+        }
+        // the logs of the list, 29.5 pixels apart
+        let rows: Vec<u32> = plan
+            .steps
+            .iter()
+            .filter(|s| s.name.as_deref().is_some_and(|n| n.starts_with("log t")))
+            .filter_map(|s| s.at.map(|a| a.1))
+            .collect();
+        assert_eq!(rows, [145, 174, 204, 233, 263, 292, 322, 351, 381]);
+        // every Run is waited for against a mark
+        let runs = plan
+            .steps
+            .iter()
+            .filter(|s| s.name.as_deref() == Some("Run"))
+            .count();
+        assert_eq!(runs, 9 * 3 + 2 * 3);
+        assert!(
+            plan.steps
+                .iter()
+                .filter(|s| s.name.as_deref() == Some("Run"))
+                .all(|s| s.mark == Some(true))
+        );
+    }
+
+    #[test]
     fn the_plan_is_what_the_script_reads() {
         let probes = catalogue::round(1).unwrap_or_default();
         let json = serde_json::to_value(plan(1, &probes)).unwrap_or_default();
@@ -683,7 +936,7 @@ mod tests {
 
     #[test]
     fn the_script_travels_with_the_pack() {
-        let files = files(1, 47, 0);
+        let files = files(1, 47, 0, false);
         let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
         assert_eq!(names, ["capture.ps1", "run.cmd", "README.txt"]);
         for (name, bytes) in &files {
@@ -700,12 +953,17 @@ mod tests {
         assert!(script.contains("function Invoke-Step"));
         assert!(String::from_utf8_lossy(&files[1].1).contains("-Steps \"steps.json\""));
         assert!(String::from_utf8_lossy(&files[2].1).contains("saves 47 pictures"));
-        let note = String::from_utf8(super::files(2, 32, 108)[2].1.clone()).unwrap_or_default();
+        let note =
+            String::from_utf8(super::files(2, 32, 108, true)[2].1.clone()).unwrap_or_default();
         assert!(
             note.contains("108 plots copied as vector graphics"),
             "{note}"
         );
         assert!(note.contains("11 minutes") && note.contains("predictions.json"));
         assert!(note.is_ascii());
+        // a round without a model says nothing of predictions
+        let step =
+            String::from_utf8(super::files(4, 20, 153, false)[2].1.clone()).unwrap_or_default();
+        assert!(step.contains("153 plots") && !step.contains("predictions.json"));
     }
 }

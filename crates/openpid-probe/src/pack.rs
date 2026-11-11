@@ -756,6 +756,7 @@ impl Pack {
             self.manifest.round,
             count("shot"),
             count("clip_save"),
+            self.predictions.is_some(),
         ));
         out
     }
