@@ -57,9 +57,11 @@ open point of the inventory.)
 - **Its curve sinks slowly**: 0.997 at 100 ms, 0.989 at 500 ms on the pure
   delay, and about 0.985 at 500 ms on the other two. OpenPID's ends between
   0.96 and 1.02.
-- **Its "Peak" plot** is close to the mean and the spread of the single
-  windows' peaks (yaw: 1.2522 ± 0.0526 from the 259 raw curves against
-  1.2521 ± 0.0531 on the plot).
+- **Its "Peak" value is the highest point of the mean curve** (0.9998,
+  0.9946 and 1.2521 on the three axes, equal to four decimals). What the
+  bar is, is not known yet: on yaw it is close to the spread of the single
+  windows' peaks (0.0526 against 0.0531 on the plot), on roll it is not
+  (0.0356 against 0.0166).
 - **Its "SR Latency"** is not where the mean curve crosses 0.5: it reads
   9.5 ± 0, 18.63 ± 0.64 and 17.86 ± 0.31 ms where the crossings are 9.75,
   18.85 and 18.08 ms. **"SP-Gyro Delay"** reads 10.0, 18.625 and 18.25 ms:
