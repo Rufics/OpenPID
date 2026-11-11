@@ -562,6 +562,54 @@ fn the_model_gives_the_curves_of_round_2() {
 }
 
 #[test]
+fn the_model_gives_the_flown_flight_of_round_3() {
+    // the hold-out: a flight with stick moves, motor noise and a resonance
+    // at four rates and lengths, read from the tool after the model was
+    // fixed. The filtered gyro of a log is the rounded flight (the test of
+    // round 1 above shows it), so no log has to be written here.
+    let probes = catalogue::round(3).unwrap();
+    let logged = |id: &str, axis: Axis| -> (f64, Vec<f64>) {
+        let flight = &probes.iter().find(|p| p.id == id).unwrap().flight;
+        let samples = flight.samples(axis).filtered;
+        (
+            flight.fs,
+            samples.iter().map(|v| v.round_ties_even()).collect(),
+        )
+    };
+    for (id, level, points, window) in [
+        ("h1-flight-2k", 2, 2301, 117),
+        ("h2-flight-1k", 2, 1601, 105),
+        ("h3-flight-4k", 2, 3170, 131),
+        ("h4-flight-8k", 2, 1901, 131),
+        // 8000 points: the window of "low" is three points there
+        ("h2-flight-1k", 0, 917, 3),
+    ] {
+        let (fs, values) = logged(id, Axis::Roll);
+        let curve = model::curve(&values, fs, level).unwrap();
+        assert_eq!(model::window(level, curve.db.len()), window, "{id}");
+        let name = model::LEVELS[level];
+        let drawn = reading(&format!("r3-{id}-{name}-roll-sub100.csv"));
+        assert_eq!(drawn.len(), points, "{id} {name}");
+        let off = worst(&curve, &drawn);
+        assert!(off < COPY_PRECISION_DB, "{id} {name}: {off} dB off");
+        // stick moves stand far above the tool's default upper limit
+        if level == 2 {
+            let top = drawn.iter().map(|p| p.1).fold(f64::MIN, f64::max);
+            assert!(top > 30.0, "{id}: {top}");
+        }
+    }
+    // the probe of round 1 again, in company this time: its span starts one
+    // sample later than every other log's, as it did when loaded alone
+    let (fs, values) = logged("h5-bands-2k", Axis::Yaw);
+    let drawn = reading("r3-h5-bands-2k-medium-yaw-sub100.csv");
+    let later = model::curve_of(&values, fs, 2003..58_002, 2).unwrap();
+    assert!(worst(&later, &drawn) < COPY_PRECISION_DB);
+    let as_the_others = model::curve(&values, fs, 2).unwrap();
+    let off = worst(&as_the_others, &drawn);
+    assert!(off > COPY_PRECISION_DB && off < 0.001, "{off}");
+}
+
+#[test]
 fn round_2_carries_the_model_s_predictions() {
     let pack = round_2();
     let names: Vec<String> = pack.files().into_iter().map(|(name, _)| name).collect();

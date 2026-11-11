@@ -49,10 +49,10 @@ const LATE: usize = 2;
 /// The samples of a log of `len` samples at `fs` that go into the spectrum,
 /// or `None` when the log is too short to have any.
 ///
-/// Two things about it are observed and not understood: at 8 kHz the span
-/// was one sample longer at its end, and for a log loaded alone (the trial
-/// of the vector copy) it started one sample later. Either moves the curve
-/// by less than 0.001 dB.
+/// Two things about it are observed and not understood: for one log of
+/// round 2 (12 s at 8 kHz) the span was one sample longer at its end, and
+/// for one flight (`s9-bands-2k`, alone or in company) it starts one sample
+/// later. Either moves a curve by about 0.01 dB at worst.
 pub fn span(len: usize, fs: f64) -> Option<Range<usize>> {
     let trim = (TRIM_S * fs).round() as usize;
     let count = len.checked_sub(2 * trim + 1)?;
