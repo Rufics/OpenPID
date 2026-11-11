@@ -11,11 +11,14 @@
 //!   about each, `ours.json` with what `OpenPID` computes for the same logs.
 //! - [`capture`]: the steps of the script that walks the reference tool
 //!   through a round and saves its screens; the script travels in the pack.
+//! - [`model`]: the spectrum curve of the reference tool as the rounds have
+//!   identified it, for the predictions of the next round.
 //! - [`cli`]: the command line of the `openpid-probe` binary.
 
 pub mod capture;
 pub mod catalogue;
 pub mod cli;
+pub mod model;
 pub mod pack;
 pub mod signal;
 
