@@ -167,8 +167,10 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     steps.push(shot(LOG_VIEWER, format!("r{round}-log-loaded")));
 
     steps.push(click(LOG_VIEWER, "log", "Spectral Analyzer", (3556, 706)));
+    // the tool may still be decoding when the click lands: it then opens the
+    // window once it is done, however long that takes
     steps.push(Step {
-        wait_s: Some(60),
+        wait_s: Some(900),
         ..settle(SPECTRUM, None, 1.5)
     });
     steps.push(shot(SPECTRUM, format!("r{round}-spectrum-open")));
