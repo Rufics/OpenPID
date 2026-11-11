@@ -439,7 +439,9 @@ pub fn settings(fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
                 max_hz,
                 q: h.get_f64("dyn_notch_q").map_or(0.0, |q| q / 100.0),
                 count: h.get_f64("dyn_notch_count").map(|c| c as u32),
-            }),
+            })
+            // a count of zero is how the firmware switches the dynamic notch off
+            .filter(|d| d.count != Some(0)),
             _ => None,
         },
         rpm_notch: h
