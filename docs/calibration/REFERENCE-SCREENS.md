@@ -91,7 +91,10 @@ order; "Show Differences Only"; a selector of the log.
   when the pointer is over the plot (the owner, 2026-11-11): an export
   menu (save the plot as a picture, copy it as a picture, **copy it as a
   vector graphic**), zoom in (press the button, then drag a rectangle over
-  the plot), zoom out, pan and "restore view".
+  the plot), zoom out, pan and "restore view". The export menu opens when
+  the pointer rests on its button, the leftmost of the toolbar. A vector
+  copy is a metafile on the clipboard with the plot's lines as points of
+  fractional coordinates (trial of the capture script, 2026-11-11).
 
 ## Freq x Throttle
 

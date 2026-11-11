@@ -34,7 +34,7 @@ response, Freq × throttle, Freq × time, the rest.
 | Round | Date | Areas | Pack (commit) | Result | Changes it led to |
 |---|---|---|---|---|---|
 | 0 (smoke) | 2026-11-11 | does the reference tool open a written log; one screenshot of every screen | `e525e7b` (#177): `openpid gen --out smoke-{1k,2k,4k}.bbl` of one 30 s flight at 1, 2 and 4 kHz, and `openpid decode` of the 2 kHz log as CSV | done: the `.bbl` opens at all three rates, a foreign CSV is refused; 38 screenshots, written up in [REFERENCE-SCREENS.md](REFERENCE-SCREENS.md) | none to OpenPID; the questions below for the rounds |
-| 1 | 2026-11-11 | Spectrum (#171) | `a82756a`: nine logs, the spectrum of each at the five smoothing levels, by the capture script (342 steps, 3.6 min). Run twice: the first pack (`68b855e`) got three logs of nine into the reference tool (its "open" dialog cut the list of paths) | 45 pictures. One model of the reference tool's curve reproduces all of them, within a pixel (0.12 dB) from "medium" up ([spectrum.md](spectrum.md)): one Hann-windowed transform of the log without its first and last second, no mean removed, the level without the window's loss, a local regression of the decibel values. It differs from OpenPID's density by construction: entry D-001 | none yet: D-001 is with the owner. Open for round 2: the span in points or in hertz, the span against the log rate, reading from a vector copy of the plot |
+| 1 | 2026-11-11 | Spectrum (#171) | `a82756a`: nine logs, the spectrum of each at the five smoothing levels, by the capture script (342 steps, 3.6 min). Run twice: the first pack (`68b855e`) got three logs of nine into the reference tool (its "open" dialog cut the list of paths) | 45 pictures. One model of the reference tool's curve reproduces all of them, within a pixel (0.12 dB) from "medium" up ([spectrum.md](spectrum.md)): one Hann-windowed transform of the log without its first and last second, no mean removed, the level without the window's loss, a local regression of the decibel values. It differs from OpenPID's density by construction: entry D-001 | none yet: D-001 is with the owner. Open for round 2: the span in points or in hertz, the spans of four levels exactly and against the log rate, the start of the analysed span |
 
 The columns:
 
@@ -73,3 +73,8 @@ clicks and the screenshots are scripted (#170): `tools/capture/capture.ps1`
 travels in every pack with the steps of the round. Its trial on the owner's
 machine on 2026-11-11 (one log, the spectrum, the step response, four lists)
 ran 42 steps without a failure and saved 10 correct pictures in 44 s.
+
+A second trial the same day (one log, 52 steps, 47 s) taught the script the
+toolbar of a plot: it copied three plots as vector graphics and zoomed into
+one. From round 2 on a curve is read from the points of such a copy, which
+are known to 0.00001 dB, and not from the pixels of a screenshot (0.12 dB).

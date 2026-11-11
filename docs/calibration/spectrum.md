@@ -43,6 +43,16 @@ curve is drawn as a line of the tool's width on the same pixel grid, and the
 top and the bottom of the line in every column are compared with the top and
 the bottom of the red in the screenshot. "RMS" below is over those columns.
 
+After the round the owner pointed out that every plot can be copied as a
+vector graphic. A trial of the capture script on `s9-bands-2k` (2026-11-11,
+52 steps, three copies) showed what such a copy holds: a metafile whose
+curve is a path of points with fractional coordinates, next to the axis
+lines and the tick labels that place it. The panel below 100 Hz carries
+every point of the curve (2 802 for 0 … 100 Hz); the Full Spectrum panel
+carries 3 636 of its 28 000, each of them a true point. A point is known to
+about 0.00001 dB. The section "Checked on the points of the curve" below is
+read that way; the readings of the round itself are from pixels.
+
 ### Readings of the level probes
 
 "Excess" is the height of a tone's peak above the floor of its curve; the
@@ -75,9 +85,9 @@ Excess of the tones over the floor at 2 kHz, dB (in brackets: the model):
 
 One model reproduces the 45 pictures, on all six panels of each.
 
-1. **The span**: the samples strictly between the first and the last second
-   of the log, `28·fs − 1` of them (27 999, 55 999 and 111 999 at 1, 2 and
-   4 kHz). With exactly `28·fs` samples every tone of the probes would sit
+1. **The span**: the log without its first and last second, `28·fs − 1`
+   samples (27 999, 55 999 and 111 999 at 1, 2 and 4 kHz). With exactly
+   `28·fs` samples every tone of the probes would sit
    on a bin; with one less it sits a little off, its skirts rise, and that
    is what the pictures show: around the 48 Hz tone of the 1 kHz log the
    model with `28·fs − 1` samples is 0.10 dB RMS from the picture, with
@@ -86,10 +96,12 @@ One model reproduces the 45 pictures, on all six panels of each.
    of `s7-low-2k` stand at 0 Hz as a rise of 7 and 17 dB at "medium". A
    model that removes the mean misses the roll picture there by 2.9 dB RMS;
    without it the miss is 0.3 dB.
-3. **One transform of the whole span**, through a Hann window: no averaging
-   over shorter pieces. The resolution is 1 / 28 s = 0.036 Hz.
-4. **The level**: `2·|X|² / (fs·N)`, as `10·log10`. The loss of the window
-   is not put back, so noise reads 4.26 dB below its density.
+3. **One transform of the whole span**, through a Hann window (the
+   symmetric one, zero at both ends): no averaging over shorter pieces. The
+   resolution is 1 / 28 s = 0.036 Hz.
+4. **The level**: `2·|X|² / (fs·N)`, as `10·log10`; the point at 0 Hz is
+   not doubled. The loss of the window is not put back, so noise reads
+   4.26 dB below its density.
 5. **The smoothing** works on the decibel values and is a local regression:
    at every point a straight line is fitted to the nearest `m` points with
    tricube weights, and its value at that point is the curve. Away from the
@@ -103,17 +115,47 @@ One model reproduces the 45 pictures, on all six panels of each.
 6. **Every channel of a picture** goes through the same steps
    (`s8-channels-2k`: the solid and the dotted curve).
 
-The spans, as the number of points with a weight above zero:
+The spans, as the number of points with a weight above zero (the window of
+the regression is two points longer: the weight falls to zero at its ends):
 
 | Level | Points | Half-width, points | Half-width for these 28 s logs |
 |---|---|---|---|
 | low | 3 | 2 | 0.07 Hz |
 | low-med | 33 | 17 | 0.6 Hz |
-| medium (the default) | 119 | 60 | 2.1 Hz |
+| medium (the default) | 119, exact | 60 | 2.1 Hz |
 | med-high | 283 | 142 | 5.1 Hz |
 | high | 551 | 276 | 9.9 Hz |
 
-There is no unsmoothed curve.
+"Medium" is exact (below); the other four are fitted to pixels and can be a
+few points off. There is no unsmoothed curve.
+
+### Checked on the points of the curve
+
+The vector copies of the trial are the "medium" curves of `s9-bands-2k`:
+yaw below 100 Hz (2 801 points on the grid of the transform) and pitch over
+the whole range (3 636 points, from 0 Hz to half the log rate). The model
+above gives every one of them:
+
+| Curve | Points | Largest difference | RMS |
+|---|---|---|---|
+| yaw, 0 … 100 Hz | 2 801 | 0.000016 dB | 0.000005 dB |
+| pitch, 0 … 1000 Hz | 3 636 | 0.000009 dB | 0.000004 dB |
+
+That is the precision of the coordinates in the copy. What it fixes:
+
+- **The samples**: 55 999 of them, the first being sample 2003 of the log
+  as OpenPID decodes it (counting from 0; 1.0015 s after the first). One
+  sample earlier or later is 0.0006 dB off. Why three samples past the
+  second is not known; a log of another rate or length will tell whether it
+  is a count or a time.
+- **The window**: the symmetric Hann. The periodic one is 0.0001 dB off.
+- **The point at 0 Hz is not doubled.** With it doubled the first 60 points
+  are up to 0.14 dB off, the rest unchanged.
+- **The kernel**: solved from the points alone (2 651 equations, 151 free
+  weights), it is the tricube with zeros at ±60 points to 0.000001 in every
+  weight, and it sums to 1.000000.
+- **The ends**: a line fitted to the 121 nearest points, the weights scaled
+  to the farthest of them. Exact at 0 Hz and at half the log rate.
 
 The first run took the smoothing for a plain moving average
 of 3, 21, 79, 197 and 401 points. The panel below 100 Hz tells the two
@@ -196,18 +238,13 @@ D-001 of [DECISIONS.md](DECISIONS.md).
 
 ### Not settled yet
 
-- **Points or hertz.** All nine logs are 28 s long after the trim, so a span
-  of 119 points and a span of 4.25 Hz are the same thing. A probe of
+- **Points or hertz.** All logs so far are 28 s long after the trim, so a
+  span of 119 points and a span of 4.25 Hz are the same thing. A probe of
   another length tells them apart (round 2).
-- **The span against the log rate.** Fitted on the 48 Hz tone alone, the
-  span comes out as 107, 119 and 127 points at 1, 2 and 4 kHz for "medium"
-  (31, 33, 35 for "low-med"; 273, 281, 297 for "med-high"). On noise the
-  three rates agree with one span to within a pixel. Either the span grows
-  slowly with the rate or the kernel's tails differ a little from tricube;
-  round 2 asks with tones of several heights at one rate.
-- **The weights at "low"**: three equal ones or the tricube's 0.29, 0.43,
-  0.29.
-- **Reading by pixels.** The reference tool can copy a plot as a vector
-  graphic (the owner, 2026-11-11). If the copy carries the points of the
-  curve, the readings of round 2 come from the points and not from pixels;
-  the capture script is tried on that first.
+- **The spans of the other four levels**, exactly, and whether they are the
+  same at every log rate. Fitted to pixels on one tone, the span of "medium"
+  came out as 107, 119 and 127 points at 1, 2 and 4 kHz; on the exact points
+  of the 2 kHz log it is 119. Round 2 reads all levels at three rates from
+  vector copies.
+- **The start of the span** at other rates and lengths (the three samples
+  above).
