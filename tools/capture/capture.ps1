@@ -15,7 +15,7 @@
 # byte-order mark in the system code page.
 
 param(
-    [string]$Steps = "steps-test.json",
+    [string]$Steps = "steps.json",
     [string]$Out = "capture-results"
 )
 
@@ -200,9 +200,9 @@ public static class OpCapture
     {
         Aware();
         SetCursorPos(x, y);
-        Thread.Sleep(120);
-        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
         Thread.Sleep(60);
+        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+        Thread.Sleep(40);
         mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
     }
 
@@ -263,13 +263,19 @@ public static class OpCapture
                 int count = Math.Abs(data.Stride) * height;
                 byte[] bytes = new byte[count];
                 Marshal.Copy(data.Scan0, bytes, 0, count);
+                int stride = Math.Abs(data.Stride);
                 ulong hash = 14695981039346656037UL;
                 unchecked
                 {
-                    for (int i = 0; i < count; i++)
+                    // every second row: enough to see a redraw, and twice as fast
+                    for (int row = 0; row < height; row += 2)
                     {
-                        hash ^= bytes[i];
-                        hash *= 1099511628211UL;
+                        int end = row * stride + stride;
+                        for (int i = row * stride; i < end; i++)
+                        {
+                            hash ^= bytes[i];
+                            hash *= 1099511628211UL;
+                        }
                     }
                 }
                 return hash.ToString("x16");
@@ -360,14 +366,14 @@ function Get-Fingerprint($hwnd, $step) {
 function Wait-Settled($hwnd, $step) {
     $changeS = 0.0
     if ($step.change_s) { $changeS = [double]$step.change_s }
-    $quietS = 2.0
+    $quietS = 1.2
     if ($step.quiet_s) { $quietS = [double]$step.quiet_s }
     $maxS = 180.0
     $start = Get-Date
     $h = Get-Fingerprint $hwnd $step
     if ($changeS -gt 0 -and $script:mark) {
         while (($h -eq $script:mark) -and (((Get-Date) - $start).TotalSeconds -lt $changeS)) {
-            Start-Sleep -Milliseconds 400
+            Start-Sleep -Milliseconds 150
             $h = Get-Fingerprint $hwnd $step
         }
         $waited = ((Get-Date) - $start).TotalSeconds
@@ -380,7 +386,7 @@ function Wait-Settled($hwnd, $step) {
     $last = $h
     $lastChange = Get-Date
     while ((((Get-Date) - $lastChange).TotalSeconds -lt $quietS) -and (((Get-Date) - $start).TotalSeconds -lt ($changeS + $maxS))) {
-        Start-Sleep -Milliseconds 400
+        Start-Sleep -Milliseconds 150
         $h = Get-Fingerprint $hwnd $step
         if ($h -ne $last) {
             $last = $h
@@ -393,7 +399,16 @@ function Wait-Settled($hwnd, $step) {
 
 # Types the path of a file into the "open" dialog that a click has brought up.
 function Open-File($step) {
-    $path = (Resolve-Path (Join-Path $here $step.path)).Path
+    # one path, or several as the dialog takes them: each in quotes, a space between
+    if ($step.paths) {
+        $quoted = @()
+        foreach ($one in $step.paths) {
+            $quoted += ('"' + (Resolve-Path (Join-Path $here $one)).Path + '"')
+        }
+        $path = $quoted -join " "
+    } else {
+        $path = (Resolve-Path (Join-Path $here $step.path)).Path
+    }
     $deadline = (Get-Date).AddSeconds(20)
     $dialog = 0
     do {
@@ -408,7 +423,7 @@ function Open-File($step) {
     } while (($dialog -eq 0) -and ((Get-Date) -lt $deadline))
     if ($dialog -eq 0) { throw "STOP: no file dialog came up after the click on Open File" }
     Log ("    dialog " + [OpCapture]::Describe([IntPtr]$dialog))
-    Start-Sleep -Milliseconds 700
+    Start-Sleep -Milliseconds 500
 
     $old = $null
     try {
@@ -419,7 +434,7 @@ function Open-File($step) {
     [System.Windows.Forms.Clipboard]::SetText($path)
     Start-Sleep -Milliseconds 200
     [OpCapture]::Chord(0x11, 0x56)
-    Start-Sleep -Milliseconds 500
+    Start-Sleep -Milliseconds 400
     [OpCapture]::Key(0x0D)
 
     $deadline = (Get-Date).AddSeconds(20)
@@ -483,7 +498,7 @@ function Invoke-Step($step, $index) {
         Show-ToolWindows
     }
     # an open list would close if its window were activated again
-    if ($step.front -ne $false) {
+    if (($step.front -ne $false) -and ([OpCapture]::Foreground() -ne $hwnd.ToInt64())) {
         $front = [OpCapture]::Front($hwnd)
         if (-not $front) { Log "    could not bring the window to the front" }
         Start-Sleep -Milliseconds 300

@@ -12,6 +12,7 @@
 
 use openpid_core::session::{Channel, ChannelSet, Diagnostics, FirmwareInfo, Origin, Timebase};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, Series, Settings, Unit};
+use openpid_dsp::{Complex, Fft};
 use serde::{Deserialize, Serialize};
 use std::f64::consts::{PI, TAU};
 
@@ -74,6 +75,19 @@ pub enum Wave {
         /// Root mean square, deg/s.
         rms: f64,
         /// Seed of the generator.
+        seed: u64,
+    },
+    /// Noise that is flat between two frequencies and absent outside: every
+    /// frequency of the band that fits the flight a whole number of times,
+    /// with equal amplitude and a random phase. Its power is exactly `rms²`.
+    Band {
+        /// Lower edge, Hz.
+        from_hz: f64,
+        /// Upper edge, Hz.
+        to_hz: f64,
+        /// Root mean square, deg/s.
+        rms: f64,
+        /// Seed of the phases.
         seed: u64,
     },
     /// A constant.
@@ -156,6 +170,12 @@ impl Wave {
                 let mut rng = Rng::new(*seed);
                 (0..n).map(|_| rms * rng.normal()).collect()
             }
+            Wave::Band {
+                from_hz,
+                to_hz,
+                rms,
+                seed,
+            } => band(n, fs, *from_hz, *to_hz, *rms, *seed),
             Wave::Offset { value } => vec![*value; n],
             Wave::Ramp { from, to } => {
                 let span = timeline.duration_s;
@@ -198,6 +218,32 @@ impl Wave {
             }
         }
     }
+}
+
+/// The bins of an `n`-sample spectrum at `fs` that lie in `from_hz .. to_hz`:
+/// first and one past the last, never the mean or the Nyquist bin.
+pub fn band_bins(n: usize, fs: f64, from_hz: f64, to_hz: f64) -> (usize, usize) {
+    let per_hz = n as f64 / fs;
+    let first = ((from_hz * per_hz - SAME_TIME_S).ceil().max(1.0) as usize).min(n / 2);
+    let end = ((to_hz * per_hz - SAME_TIME_S).ceil().max(0.0) as usize).min(n / 2);
+    (first, end.max(first))
+}
+
+/// Band-limited noise of `n` samples: see [`Wave::Band`].
+fn band(n: usize, fs: f64, from_hz: f64, to_hz: f64, rms: f64, seed: u64) -> Vec<f64> {
+    let (first, end) = band_bins(n, fs, from_hz, to_hz);
+    if end == first || n == 0 {
+        return vec![0.0; n];
+    }
+    // K cosines of amplitude a carry K·a²/2
+    let amplitude = rms * (2.0 / (end - first) as f64).sqrt();
+    let mut rng = Rng::new(seed);
+    let mut spectrum = vec![Complex::new(0.0, 0.0); n / 2 + 1];
+    for bin in &mut spectrum[first..end] {
+        let phase = TAU * rng.next();
+        *bin = Complex::new(phase.cos(), phase.sin()) * (amplitude * n as f64 / 2.0);
+    }
+    Fft::new().irfft(&spectrum, n)
 }
 
 /// What the pilot does with the stick of one axis: the rate asked for,
@@ -843,6 +889,65 @@ mod tests {
         // white: neighbouring samples are not correlated
         let lag1: f64 = a.windows(2).map(|w| w[0] * w[1]).sum::<f64>() / a.len() as f64;
         assert!(lag1.abs() < 0.3, "{lag1}");
+    }
+
+    #[test]
+    fn a_band_has_its_power_between_its_edges_and_nowhere_else() {
+        let fs = 2000.0;
+        let wave = Wave::Band {
+            from_hz: 100.0,
+            to_hz: 200.0,
+            rms: 10.0,
+            seed: 5,
+        };
+        let spec = flight_of(fs, 30.0, AxisSpec::of(vec![wave.clone()]));
+        let x = spec.samples(Axis::Roll).unfiltered;
+        assert!((rms(&x) - 10.0).abs() < 1e-9, "{}", rms(&x));
+        // 100 Hz of band at 1/30 Hz per bin
+        assert_eq!(band_bins(x.len(), fs, 100.0, 200.0), (3000, 6000));
+        let spectrum = Fft::new().rfft(&x);
+        let power = |bins: std::ops::Range<usize>| -> f64 {
+            let n = x.len() as f64;
+            spectrum[bins]
+                .iter()
+                .map(|c| 2.0 * c.norm_sqr() / (n * n))
+                .sum()
+        };
+        assert!((power(3000..6000) - 100.0).abs() < 1e-6);
+        assert!(power(1..3000) < 1e-12 && power(6000..30000) < 1e-12);
+        // flat: every bin of the band carries the same power
+        let one = 2.0 * spectrum[4000].norm_sqr() / (x.len() as f64).powi(2);
+        assert!((one - 100.0 / 3000.0).abs() < 1e-9);
+        // noise-like: no sample far beyond a few RMS, and not a repeating pattern
+        assert!(x.iter().all(|v| v.abs() < 60.0));
+        assert!((x[0] - x[2000]).abs() > 1e-6);
+        // the same seed, the same samples; another seed, others
+        let again = flight_of(fs, 30.0, AxisSpec::of(vec![wave]));
+        assert_eq!(again.samples(Axis::Roll).unfiltered, x);
+        let other = Wave::Band {
+            from_hz: 100.0,
+            to_hz: 200.0,
+            rms: 10.0,
+            seed: 6,
+        };
+        let y = flight_of(fs, 30.0, AxisSpec::of(vec![other]))
+            .samples(Axis::Roll)
+            .unfiltered;
+        assert!((rms(&y) - 10.0).abs() < 1e-9);
+        assert_ne!(x, y);
+        // a band with no bin in it, or beyond the Nyquist frequency, is silent
+        let none = Wave::Band {
+            from_hz: 100.0,
+            to_hz: 100.0,
+            rms: 10.0,
+            seed: 1,
+        };
+        let z = flight_of(fs, 1.0, AxisSpec::of(vec![none]))
+            .samples(Axis::Roll)
+            .unfiltered;
+        assert!(z.iter().all(|v| *v == 0.0));
+        assert_eq!(band_bins(2000, fs, 1500.0, 1800.0), (1000, 1000));
+        assert_eq!(band_bins(2000, fs, 0.0, 5.0), (1, 5));
     }
 
     #[test]

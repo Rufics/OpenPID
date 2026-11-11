@@ -1784,6 +1784,7 @@ version = "0.1.2"
 dependencies = [
  "openpid-analysis",
  "openpid-core",
+ "openpid-dsp",
  "openpid-fmt-blackbox",
  "serde",
  "serde_json",

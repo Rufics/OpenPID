@@ -9,8 +9,11 @@
 //!   one experiment per axis.
 //! - [`pack`]: a round as files: the logs, `manifest.json` with what is true
 //!   about each, `ours.json` with what `OpenPID` computes for the same logs.
+//! - [`capture`]: the steps of the script that walks the reference tool
+//!   through a round and saves its screens; the script travels in the pack.
 //! - [`cli`]: the command line of the `openpid-probe` binary.
 
+pub mod capture;
 pub mod catalogue;
 pub mod cli;
 pub mod pack;

@@ -33,6 +33,10 @@ pub struct Probe {
     pub flight: FlightSpec,
 }
 
+// The amplitudes are chosen for the reference tool's default axis of
+// -50 … 20 dB, on which round 0 showed a 20 deg/s tone near 5 dB and the
+// floor of a quiet axis near -40 dB: nothing has to be rescaled by hand.
+
 /// Length of a spectrum probe, seconds: long enough to average over many
 /// segments after a tool has dropped the ends of the log.
 const SPECTRUM_S: f64 = 30.0;
@@ -49,6 +53,16 @@ fn tones(seed: u64, tones: &[(f64, f64)]) -> AxisSpec {
     let mut waves: Vec<Wave> = tones.iter().map(|(hz, a)| Wave::tone(*hz, *a)).collect();
     waves.push(dither(seed));
     AxisSpec::of(waves)
+}
+
+/// Noise between two frequencies with the given density, (deg/s)²/Hz.
+fn band(from_hz: f64, to_hz: f64, density: f64, seed: u64) -> Wave {
+    Wave::Band {
+        from_hz,
+        to_hz,
+        rms: (density * (to_hz - from_hz)).sqrt(),
+        seed,
+    }
 }
 
 /// A tone that sounds from `from_s` to `to_s` only.
@@ -69,15 +83,15 @@ fn levels(id: &'static str, fs: f64) -> Probe {
         area: Area::Spectrum,
         title: "Tones of known amplitude: the dB reference, 10·log against 20·log, the log rate",
         purpose: [
-            "a 100 Hz tone of 10 deg/s: where the dB scale puts it",
+            "a 100 Hz tone of 3 deg/s: where the dB scale puts it",
             "the same tone ten times larger: 20 dB more for decibels of power or of amplitude, \
              10 dB if 10·log is taken of an amplitude, 40 dB if 20·log is taken of a power",
             "three tones of 10 deg/s at 48, 200 and 400 Hz: whether the level depends on the \
              frequency",
         ],
         flight: FlightSpec {
-            roll: tones(11, &[(100.0, 10.0)]),
-            pitch: tones(12, &[(100.0, 100.0)]),
+            roll: tones(11, &[(100.0, 3.0)]),
+            pitch: tones(12, &[(100.0, 30.0)]),
             yaw: tones(13, &[(48.0, 10.0), (200.0, 10.0), (400.0, 10.0)]),
             ..FlightSpec::quiet(fs, SPECTRUM_S)
         },
@@ -99,13 +113,13 @@ fn round_1() -> Vec<Probe> {
                 "two tones 4 Hz apart (100 and 104 Hz): one peak or two",
                 "two tones 1 Hz apart (100 and 101 Hz): resolved only by segments of a second \
                  or more",
-                "a tone on a 4 Hz grid (100 Hz) and one off it (302.3 Hz), both of 100 deg/s: \
+                "a tone on a 4 Hz grid (100 Hz) and one off it (302.3 Hz), both of 30 deg/s: \
                  the width of the peak, the side lobes, and how much lower the second reads",
             ],
             flight: FlightSpec {
-                roll: tones(21, &[(100.0, 50.0), (104.0, 50.0)]),
-                pitch: tones(22, &[(100.0, 50.0), (101.0, 50.0)]),
-                yaw: tones(23, &[(100.0, 100.0), (302.3, 100.0)]),
+                roll: tones(21, &[(100.0, 15.0), (104.0, 15.0)]),
+                pitch: tones(22, &[(100.0, 15.0), (101.0, 15.0)]),
+                yaw: tones(23, &[(100.0, 30.0), (302.3, 30.0)]),
                 ..quiet(2000.0)
             },
         },
@@ -208,6 +222,34 @@ fn round_1() -> Vec<Probe> {
                     },
                     ..tones(63, &[(100.0, 20.0)])
                 },
+                ..quiet(2000.0)
+            },
+        },
+        Probe {
+            id: "s9-bands-2k",
+            area: Area::Spectrum,
+            title: "Noise in bands of known density: what a smoothed curve does to width and edges",
+            purpose: [
+                "a band from 100 to 200 Hz with a density of 1 (deg/s)²/Hz: a plateau whose \
+                 height does not depend on how narrow lines are treated",
+                "three bands of that same density, 4, 20 and 80 Hz wide (at 100, 200 and 400 \
+                 Hz): how wide a feature has to be to keep its height at each smoothing level",
+                "a density of 0.1 from 20 to 150 Hz and from 200 to 900 Hz, nothing between: \
+                 how each smoothing level blurs an edge",
+            ],
+            flight: FlightSpec {
+                roll: AxisSpec::of(vec![band(100.0, 200.0, 1.0, 71), dither(71)]),
+                pitch: AxisSpec::of(vec![
+                    band(100.0, 104.0, 1.0, 72),
+                    band(200.0, 220.0, 1.0, 73),
+                    band(400.0, 480.0, 1.0, 74),
+                    dither(72),
+                ]),
+                yaw: AxisSpec::of(vec![
+                    band(20.0, 150.0, 0.1, 75),
+                    band(200.0, 900.0, 0.1, 76),
+                    dither(73),
+                ]),
                 ..quiet(2000.0)
             },
         },

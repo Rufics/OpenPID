@@ -104,7 +104,25 @@ fn the_manifest_is_true_of_the_logs() {
             "{name}"
         );
         // noise alone: the logged RMS is the noise plus the rounding (1/12)
-        if truth.tones.is_empty() && truth.logged_mean.abs() < 1.0 {
+        for band in &truth.bands {
+            // measured in the written log, a second way: the power of its
+            // spectrum between the edges
+            assert!(
+                (band.logged_rms / band.rms - 1.0).abs() < 0.01,
+                "{name}: band {} … {} Hz asked {} logged {}",
+                band.from_hz,
+                band.to_hz,
+                band.rms,
+                band.logged_rms
+            );
+            let density = band.rms.powi(2) / (band.to_hz - band.from_hz);
+            assert!((band.density - density).abs() < 1e-5, "{name}");
+            assert!(
+                (band.density_db - 10.0 * density.log10()).abs() < 1e-5,
+                "{name}"
+            );
+        }
+        if truth.tones.is_empty() && truth.bands.is_empty() && truth.logged_mean.abs() < 1.0 {
             let want = (truth.noise_rms.powi(2) + 1.0 / 12.0).sqrt();
             assert!(
                 (truth.logged_rms / want - 1.0).abs() < 0.01,
@@ -126,6 +144,21 @@ fn the_manifest_is_true_of_the_logs() {
     assert_eq!(channels.axes[0].unfiltered.tones[0].hz, 100.0);
     assert_eq!(channels.axes[0].filtered.tones[0].hz, 248.0);
     assert_eq!(channels.axes[2].filtered.tones[0].amplitude, 10.0);
+    // the bands of the last probe: one density, three widths
+    let bands = &probe("s9-bands-2k").axes[1].unfiltered.bands;
+    assert_eq!(bands.len(), 3);
+    assert!(
+        bands
+            .iter()
+            .all(|b| b.density == 1.0 && b.density_db == 0.0)
+    );
+    assert_eq!(
+        bands
+            .iter()
+            .map(|b| b.to_hz - b.from_hz)
+            .collect::<Vec<_>>(),
+        [4.0, 20.0, 80.0]
+    );
     // a burst is described by its span
     let burst = &probe("s6-averaging-2k").axes[2].unfiltered.tones[0];
     assert_eq!(burst.span_s, (10.0, 11.0));
@@ -185,13 +218,13 @@ fn our_spectrum_is_a_power_density() {
         assert_eq!((roll.bin_hz, roll.segments), (4.0, 223), "{id}");
         assert_eq!(roll.freq.len(), (fs / 8.0) as usize + 1, "{id}");
         assert!(
-            (level_at(roll, 100.0) - tone(10.0, 4.0)).abs() < 0.02,
+            (level_at(roll, 100.0) - tone(3.0, 4.0)).abs() < 0.03,
             "{id}"
         );
         // ten times the amplitude is 20 dB
         let pitch = spectrum(pack, id, 1, "gyro", 0.25);
         assert!(
-            (level_at(pitch, 100.0) - level_at(roll, 100.0) - 20.0).abs() < 0.01,
+            (level_at(pitch, 100.0) - level_at(roll, 100.0) - 20.0).abs() < 0.03,
             "{id}"
         );
         // the level does not depend on the frequency or on the log rate
@@ -205,10 +238,7 @@ fn our_spectrum_is_a_power_density() {
         // one-second segments: bins of 1 Hz up to 100 Hz, the tone 6 dB higher
         let low = spectrum(pack, id, 0, "gyro", 1.0);
         assert_eq!((low.bin_hz, low.freq.len()), (1.0, 101), "{id}");
-        assert!(
-            (level_at(low, 100.0) - tone(10.0, 1.0)).abs() < 0.02,
-            "{id}"
-        );
+        assert!((level_at(low, 100.0) - tone(3.0, 1.0)).abs() < 0.03, "{id}");
         // the floor is the dither plus the rounding of the log, as a density
         let floor = 10.0 * ((0.25 + 1.0 / 12.0) / (fs / 2.0)).log10();
         assert!(
@@ -227,6 +257,28 @@ fn our_spectrum_is_a_power_density() {
             median(s)
         );
     }
+    // a band of density 1 is a plateau at 0 dB, whatever its width; one of
+    // density 0.1 at -10 dB; between two bands only the floor is left
+    let plateau = spectrum(pack, "s9-bands-2k", 0, "gyro", 0.25);
+    for hz in [120.0, 148.0, 180.0] {
+        let level = level_at(plateau, hz);
+        assert!(level.abs() < 0.4, "{hz}: {level}");
+    }
+    assert!(level_at(plateau, 300.0) < -30.0);
+    let widths = spectrum(pack, "s9-bands-2k", 1, "gyro", 0.25);
+    for hz in [208.0, 212.0, 420.0, 440.0, 460.0] {
+        let level = level_at(widths, hz);
+        assert!(level.abs() < 0.4, "{hz}: {level}");
+    }
+    // 4 Hz of band are one bin wide: it reads 3 dB low
+    let narrow = level_at(widths, 100.0);
+    assert!((narrow + 3.0).abs() < 0.6, "{narrow}");
+    let gap = spectrum(pack, "s9-bands-2k", 2, "gyro", 0.25);
+    for hz in [60.0, 100.0, 300.0, 600.0] {
+        let level = level_at(gap, hz);
+        assert!((level + 10.0).abs() < 0.4, "{hz}: {level}");
+    }
+    assert!(level_at(gap, 176.0) < -30.0);
     // a tone in half of the analysed span is 3 dB down: powers are averaged
     let whole = level_at(spectrum(pack, "s6-averaging-2k", 1, "gyro", 0.25), 100.0);
     let half = level_at(spectrum(pack, "s6-averaging-2k", 0, "gyro", 0.25), 100.0);
@@ -269,10 +321,26 @@ fn a_pack_is_written_as_files() {
         .map(|e| e.unwrap().file_name().into_string().unwrap())
         .collect();
     names.sort();
-    assert_eq!(names.len(), 10);
-    assert_eq!(names[0], "manifest.json");
-    assert_eq!(names[1], "ours.json");
-    assert_eq!(names[2], "s1-levels-2k.bbl");
+    assert_eq!(
+        names,
+        [
+            "README.txt",
+            "capture.ps1",
+            "manifest.json",
+            "ours.json",
+            "run.cmd",
+            "s1-levels-2k.bbl",
+            "s2-levels-1k.bbl",
+            "s3-levels-4k.bbl",
+            "s4-resolution-2k.bbl",
+            "s5-noise-2k.bbl",
+            "s6-averaging-2k.bbl",
+            "s7-low-2k.bbl",
+            "s8-channels-2k.bbl",
+            "s9-bands-2k.bbl",
+            "steps.json",
+        ]
+    );
     let manifest: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
     assert_eq!(manifest["probes"][3]["id"], "s4-resolution-2k");
@@ -287,6 +355,11 @@ fn a_pack_is_written_as_files() {
         ours["probes"][0]["axes"][0]["spectra"][0]["channel"],
         "gyro"
     );
+    let steps: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("steps.json")).unwrap()).unwrap();
+    assert_eq!(steps["steps"][1]["paths"][0], "s1-levels-2k.bbl");
+    let note = std::fs::read_to_string(dir.join("README.txt")).unwrap();
+    assert!(note.contains("saves 47 pictures"), "{note}");
     assert_eq!(
         std::fs::read(dir.join("s1-levels-2k.bbl")).unwrap(),
         round_1().logs[0].1
@@ -319,7 +392,7 @@ fn the_command_line() {
     };
     let (result, out) = run(&["list"]);
     assert!(result.is_ok());
-    assert!(out.starts_with("round 1: 8 logs\n  s1-levels-2k.bbl  2000 Hz, 30 s  Tones of known"));
+    assert!(out.starts_with("round 1: 9 logs\n  s1-levels-2k.bbl  2000 Hz, 30 s  Tones of known"));
     assert!(out.contains("      pitch the same tone ten times larger"));
 
     let dir = temp("cli");
@@ -332,7 +405,7 @@ fn the_command_line() {
         "abc",
     ]);
     assert!(result.is_ok(), "{result:?}");
-    assert_eq!(out.lines().count(), 10);
+    assert_eq!(out.lines().count(), 15);
     assert!(out.contains("manifest.json"));
     let manifest = std::fs::read_to_string(dir.join("manifest.json")).unwrap();
     assert!(manifest.contains("\"built_from\": \"abc\""));

@@ -5,10 +5,12 @@
 //! it is the same bytes. That is what lets a reading taken months ago be
 //! traced back to the exact log it was taken from.
 
+use crate::capture;
 use crate::catalogue::{self, Area, Probe};
-use crate::signal::{AxisSamples, FlightSpec, Wave};
+use crate::signal::{AxisSamples, FlightSpec, Wave, band_bins};
 use openpid_analysis::{Analysis, AnalysisCtx, Epoch, PsdAnalysis, PsdParams};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, LogFormat, OpenOptions};
+use openpid_dsp::Fft;
 use openpid_fmt_blackbox::BlackboxFormat;
 use openpid_fmt_blackbox::write::{WriteError, WriteOptions, betaflight};
 use serde::Serialize;
@@ -74,11 +76,30 @@ pub struct ToneFact {
     pub logged_amplitude: f64,
 }
 
+/// A band of noise of a channel: what was asked for and what the log holds.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct BandFact {
+    /// Lower edge, Hz.
+    pub from_hz: f64,
+    /// Upper edge, Hz.
+    pub to_hz: f64,
+    /// RMS asked for, deg/s.
+    pub rms: f64,
+    /// Its density inside the band, (deg/s)²/Hz.
+    pub density: f64,
+    /// `10·log10(density)`.
+    pub density_db: f64,
+    /// RMS of the logged samples inside the band, from their spectrum.
+    pub logged_rms: f64,
+}
+
 /// What is true about one gyro channel of one axis.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ChannelTruth {
     /// The tones of the channel.
     pub tones: Vec<ToneFact>,
+    /// The bands of noise of the channel.
+    pub bands: Vec<BandFact>,
     /// RMS of the white noise asked for, deg/s (0 without noise).
     pub noise_rms: f64,
     /// Its two-sided-folded density over 0 … fs/2, (deg/s)²/Hz.
@@ -209,6 +230,8 @@ pub struct Pack {
     pub ours: Ours,
     /// File name and bytes of every log.
     pub logs: Vec<(String, Vec<u8>)>,
+    /// What the capture script does with them in the reference tool.
+    pub plan: capture::Plan,
 }
 
 /// FNV-1a, 64 bit.
@@ -281,6 +304,7 @@ fn channel_truth(
             _ => None,
         })
         .collect();
+    let bands = band_facts(flight, waves, logged);
     let noise_power: f64 = waves
         .iter()
         .map(|wave| match wave {
@@ -302,6 +326,7 @@ fn channel_truth(
         .fold(0.0f64, |m, (e, l)| m.max((e - l).abs()));
     ChannelTruth {
         tones,
+        bands,
         noise_rms: rounded(noise_power.sqrt()),
         noise_density: rounded(noise_density),
         noise_density_db: (noise_power > 0.0).then(|| rounded(10.0 * noise_density.log10())),
@@ -310,6 +335,42 @@ fn channel_truth(
         logged_range: (low, high),
         rounding: rounded(rounding),
     }
+}
+
+/// The bands of `waves`, with the power the logged samples have in each.
+fn band_facts(flight: &FlightSpec, waves: &[Wave], logged: &[f64]) -> Vec<BandFact> {
+    if !waves.iter().any(|w| matches!(w, Wave::Band { .. })) {
+        return Vec::new();
+    }
+    let n = logged.len();
+    let spectrum = Fft::new().rfft(logged);
+    waves
+        .iter()
+        .filter_map(|wave| match wave {
+            Wave::Band {
+                from_hz,
+                to_hz,
+                rms,
+                ..
+            } => {
+                let (first, end) = band_bins(n, flight.fs, *from_hz, *to_hz);
+                let power: f64 = spectrum[first..end]
+                    .iter()
+                    .map(|c| 2.0 * c.norm_sqr() / (n as f64 * n as f64))
+                    .sum();
+                let density = rms * rms / (to_hz - from_hz);
+                Some(BandFact {
+                    from_hz: *from_hz,
+                    to_hz: *to_hz,
+                    rms: rounded(*rms),
+                    density: rounded(density),
+                    density_db: rounded(10.0 * density.log10()),
+                    logged_rms: rounded(power.sqrt()),
+                })
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// The samples of a gyro channel of a decoded log.
@@ -492,6 +553,7 @@ pub fn build(round: u32, built_from: &str) -> Result<Pack, PackError> {
         ours.probes.push(results);
     }
     Ok(Pack {
+        plan: capture::plan(round, &probes),
         manifest,
         ours,
         logs,
@@ -506,11 +568,21 @@ fn json(value: &impl Serialize) -> Vec<u8> {
 }
 
 impl Pack {
-    /// Every file of the pack: name and content, the logs first.
+    /// Every file of the pack: name and content, the logs first, then what
+    /// is true and what `OpenPID` computes, then the capture script with its
+    /// steps.
     pub fn files(&self) -> Vec<(String, Vec<u8>)> {
         let mut out = self.logs.clone();
         out.push(("manifest.json".into(), json(&self.manifest)));
         out.push(("ours.json".into(), json(&self.ours)));
+        out.push(("steps.json".into(), json(&self.plan)));
+        let shots = self
+            .plan
+            .steps
+            .iter()
+            .filter(|s| s.action == "shot")
+            .count();
+        out.extend(capture::files(self.manifest.round, shots));
         out
     }
 

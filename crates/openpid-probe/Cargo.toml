@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 openpid-core = { workspace = true }
+openpid-dsp = { workspace = true }
 openpid-fmt-blackbox = { workspace = true }
 openpid-analysis = { workspace = true }
 serde = { workspace = true }
