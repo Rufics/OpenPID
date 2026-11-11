@@ -34,6 +34,7 @@ response, Freq × throttle, Freq × time, the rest.
 | Round | Date | Areas | Pack (commit) | Result | Changes it led to |
 |---|---|---|---|---|---|
 | 0 (smoke) | 2026-11-11 | does the reference tool open a written log; one screenshot of every screen | `e525e7b` (#177): `openpid gen --out smoke-{1k,2k,4k}.bbl` of one 30 s flight at 1, 2 and 4 kHz, and `openpid decode` of the 2 kHz log as CSV | done: the `.bbl` opens at all three rates, a foreign CSV is refused; 38 screenshots, written up in [REFERENCE-SCREENS.md](REFERENCE-SCREENS.md) | none to OpenPID; the questions below for the rounds |
+| 1, first part | 2026-11-11 | Spectrum (#171) | `68b855e`: nine logs, the spectrum of each at the five smoothing levels, by the capture script (342 steps, 3.5 min) | three logs of nine were loaded (the dialog cut the list of paths; fixed in `a82756a`): 15 valid pictures, the level probes at 1, 2 and 4 kHz. The reference tool's pipeline is identified ([spectrum.md](spectrum.md)); entry D-001 opened | none yet: D-001 is with the owner; the round is run again for the other six logs |
 
 The columns:
 
