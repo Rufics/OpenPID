@@ -477,7 +477,7 @@ fn cmd_gen(args: &Args) -> Result<(), String> {
 /// Whether `path` names a Blackbox log (`.bbl`, `.bfl`).
 fn is_blackbox_name(path: &Path) -> bool {
     path.extension()
-        .and_then(|e| e.to_str())
+        .and_then(std::ffi::OsStr::to_str)
         .is_some_and(|e| e.eq_ignore_ascii_case("bbl") || e.eq_ignore_ascii_case("bfl"))
 }
 
