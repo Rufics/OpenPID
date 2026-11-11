@@ -386,10 +386,11 @@ curve is settled. In one place:
 It is in code as `crates/openpid-probe/src/model.rs`, held by a test to
 eighteen curves of the reference tool in `tests/calibration/spectrum/`.
 
-What is open is not about the reference tool any more: which curve OpenPID
-draws (D-001, with the owner), and then the same care for the other
-channels of that window and for the "Freq x Throttle" and "Freq x Time"
-screens, which are areas of their own.
+What is left is not about the reference tool any more. The owner chose
+option A of D-001 on 2026-11-11: OpenPID draws the reference tool's curve
+by default and keeps its density as a second mode; that change is the next
+pull request of #171. The other channels of that window and the "Freq x
+Throttle" and "Freq x Time" screens are areas of their own.
 
 ### Not settled
 
