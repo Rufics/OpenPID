@@ -596,10 +596,10 @@ pub fn files(round: u32, shots: usize, copies: usize, predicted: bool) -> Vec<(S
     } else {
         "The copied plots replace what was on the clipboard.\n\n"
     };
-    let predictions = if !predicted {
-        ""
-    } else {
+    let predictions = if predicted {
         " predictions.json is what the\nmodel of the reference tool expects it to show;"
+    } else {
+        ""
     };
     let note = format!(
         "Calibration round {round}\n\
