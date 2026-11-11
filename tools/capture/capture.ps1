@@ -1,15 +1,18 @@
 # Drives a desktop tool through a list of steps and saves a screenshot of its
 # windows after each: click a control, pick a file in the "open" dialog, wait
-# until the plots stop changing, save the picture.
+# until the plots stop changing, save the picture. It can also move the
+# pointer over a plot, drag a rectangle on it, and save what a "copy" of the
+# tool has put on the clipboard (a plot copied as a vector graphic).
 #
 # Works with Windows PowerShell 5.1 (the one every Windows has); nothing is
 # installed. The steps come from a JSON file. Positions are given in the
 # pixels of a reference screenshot and are scaled to the window as it is now.
 #
 # What it touches: only the windows of the tool's own process, found by their
-# titles; the mouse, the Enter / Esc / Ctrl+V keys, and the clipboard (put
-# back afterwards). What it saves: the inside of those windows as PNG files
-# and a log with their titles and sizes.
+# titles; the mouse, the Enter / Esc / Ctrl+V keys, and the clipboard (text
+# that was on it is put back after a file dialog; a copied plot stays on it).
+# What it saves: the inside of those windows as PNG files, copied plots as
+# metafiles, and a log with the titles and sizes of the windows.
 #
 # This file is ASCII on purpose: Windows PowerShell reads a script without a
 # byte-order mark in the system code page.
@@ -79,6 +82,28 @@ public static class OpCapture
     private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")]
     private static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")]
+    private static extern uint GetClipboardSequenceNumber();
+    [DllImport("user32.dll")]
+    private static extern bool OpenClipboard(IntPtr owner);
+    [DllImport("user32.dll")]
+    private static extern bool CloseClipboard();
+    [DllImport("user32.dll")]
+    private static extern uint EnumClipboardFormats(uint format);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClipboardFormatName(uint format, StringBuilder name, int max);
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetClipboardData(uint format);
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr CopyEnhMetaFile(IntPtr source, string file);
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteEnhMetaFile(IntPtr handle);
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GlobalLock(IntPtr handle);
+    [DllImport("kernel32.dll")]
+    private static extern bool GlobalUnlock(IntPtr handle);
+    [DllImport("kernel32.dll")]
+    private static extern UIntPtr GlobalSize(IntPtr handle);
 
     // Real pixels on every monitor, whatever the display scaling is.
     private static void Aware()
@@ -206,6 +231,127 @@ public static class OpCapture
         mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
     }
 
+    // Moves the pointer along a line, as a hand does: a plot shows its
+    // toolbar and a menu stays open only while it sees the pointer move.
+    public static void Move(int x, int y)
+    {
+        Aware();
+        POINT from;
+        GetCursorPos(out from);
+        int steps = 16;
+        for (int i = 1; i <= steps; i++)
+        {
+            SetCursorPos(from.X + (x - from.X) * i / steps, from.Y + (y - from.Y) * i / steps);
+            mouse_event(0x0001, 0, 0, 0, UIntPtr.Zero);
+            Thread.Sleep(12);
+        }
+    }
+
+    public static void Drag(int x0, int y0, int x1, int y1)
+    {
+        Move(x0, y0);
+        Thread.Sleep(150);
+        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+        Thread.Sleep(120);
+        Move(x1, y1);
+        Thread.Sleep(150);
+        mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+    }
+
+    // Changes whenever something new is put on the clipboard.
+    public static uint ClipNumber()
+    {
+        return GetClipboardSequenceNumber();
+    }
+
+    private static string FormatName(uint format)
+    {
+        switch (format)
+        {
+            case 1: return "TEXT";
+            case 2: return "BITMAP";
+            case 3: return "METAFILEPICT";
+            case 8: return "DIB";
+            case 13: return "UNICODETEXT";
+            case 14: return "ENHMETAFILE";
+            case 17: return "DIBV5";
+        }
+        StringBuilder name = new StringBuilder(256);
+        GetClipboardFormatName(format, name, name.Capacity);
+        return name.Length > 0 ? name.ToString() : "?";
+    }
+
+    // Saves a copied plot: a metafile as <stem>.emf; PDF or SVG data, if the
+    // tool offers them, next to it. Returns the list of what the clipboard held.
+    public static string SaveClip(string stem)
+    {
+        bool open = false;
+        for (int i = 0; i < 20 && !open; i++)
+        {
+            open = OpenClipboard(IntPtr.Zero);
+            if (!open) { Thread.Sleep(100); }
+        }
+        if (!open) { return "the clipboard is busy"; }
+        StringBuilder report = new StringBuilder();
+        try
+        {
+            uint format = 0;
+            while ((format = EnumClipboardFormats(format)) != 0)
+            {
+                string name = FormatName(format);
+                report.Append(format).Append(" ").Append(name);
+                if (format == 14)
+                {
+                    IntPtr handle = GetClipboardData(14);
+                    IntPtr copy = handle == IntPtr.Zero ? IntPtr.Zero : CopyEnhMetaFile(handle, stem + ".emf");
+                    if (copy != IntPtr.Zero)
+                    {
+                        DeleteEnhMetaFile(copy);
+                        report.Append(" (saved as .emf)");
+                    }
+                    else
+                    {
+                        report.Append(" (could not be saved)");
+                    }
+                }
+                else if (format >= 0xC000)
+                {
+                    // a format registered by name holds plain bytes
+                    string lower = name.ToLowerInvariant();
+                    string ext = null;
+                    if (lower.Contains("pdf")) { ext = ".pdf"; }
+                    else if (lower.Contains("svg")) { ext = ".svg"; }
+                    if (ext != null)
+                    {
+                        IntPtr handle = GetClipboardData(format);
+                        IntPtr bytes = handle == IntPtr.Zero ? IntPtr.Zero : GlobalLock(handle);
+                        if (bytes != IntPtr.Zero)
+                        {
+                            try
+                            {
+                                int size = (int)GlobalSize(handle).ToUInt64();
+                                byte[] data = new byte[size];
+                                Marshal.Copy(bytes, data, 0, size);
+                                System.IO.File.WriteAllBytes(stem + ext, data);
+                                report.Append(" (saved as " + ext + ", " + size + " bytes)");
+                            }
+                            finally
+                            {
+                                GlobalUnlock(handle);
+                            }
+                        }
+                    }
+                }
+                report.Append("; ");
+            }
+        }
+        finally
+        {
+            CloseClipboard();
+        }
+        return report.Length > 0 ? report.ToString() : "the clipboard is empty";
+    }
+
     public static int[] Cursor()
     {
         Aware();
@@ -311,6 +457,7 @@ $script:mainHandle = 0
 $script:windowTitle = ""
 $script:mark = $null
 $script:cursor = $null
+$script:clip = [OpCapture]::ClipNumber()
 $script:failed = 0
 $script:missing = @{}
 
@@ -333,11 +480,11 @@ function Resolve-Window($title, $waitS) {
 }
 
 # A position of the reference screenshot as a point of the screen now.
-function Get-Point($hwnd, $step) {
+function Get-Point($hwnd, $step, $at) {
     $ref = $plan.refs.PSObject.Properties[$step.ref].Value
     $c = [OpCapture]::Client($hwnd)
-    $fx = ([double]$step.at[0] - [double]$ref.left) / [double]$ref.width
-    $fy = ([double]$step.at[1] - [double]$ref.top) / [double]$ref.height
+    $fx = ([double]$at[0] - [double]$ref.left) / [double]$ref.width
+    $fy = ([double]$at[1] - [double]$ref.top) / [double]$ref.height
     $x = [int][Math]::Round($c[0] + $fx * $c[2])
     $y = [int][Math]::Round($c[1] + $fy * $c[3])
     return @($x, $y)
@@ -478,6 +625,15 @@ function Open-File($step) {
     } catch { }
 }
 
+# The run stops when the pointer is not where the script left it.
+function Test-Mouse {
+    if ($script:cursor) {
+        $now = [OpCapture]::Cursor()
+        $moved = [Math]::Abs($now[0] - $script:cursor[0]) + [Math]::Abs($now[1] - $script:cursor[1])
+        if ($moved -gt 60) { throw "STOP: the mouse was moved, so the run was stopped" }
+    }
+}
+
 function Invoke-Step($step, $index) {
     $action = $step.action
     Log ("step {0}: {1}" -f $index, ($step | ConvertTo-Json -Compress))
@@ -491,6 +647,20 @@ function Invoke-Step($step, $index) {
     }
     if ($action -eq "windows") {
         Show-ToolWindows
+        return
+    }
+    if ($action -eq "clip_save") {
+        # what the last click with "clip" has copied
+        $waitS = 10
+        if ($step.wait_s) { $waitS = [int]$step.wait_s }
+        $deadline = (Get-Date).AddSeconds($waitS)
+        while (([OpCapture]::ClipNumber() -eq $script:clip) -and ((Get-Date) -lt $deadline)) {
+            Start-Sleep -Milliseconds 150
+        }
+        if ([OpCapture]::ClipNumber() -eq $script:clip) { throw "nothing was copied to the clipboard" }
+        Start-Sleep -Milliseconds 500
+        $stem = Join-Path $outDir $step.file
+        Log ("    clipboard: " + [OpCapture]::SaveClip($stem))
         return
     }
     if ($action -eq "key") {
@@ -533,16 +703,28 @@ function Invoke-Step($step, $index) {
         [OpCapture]::Save($c[0], $c[1], $c[2], $c[3], $file)
         Log ("    saved {0}.png, {1}x{2}" -f $step.file, $c[2], $c[3])
     } elseif ($action -eq "click") {
-        if ($script:cursor) {
-            $now = [OpCapture]::Cursor()
-            $moved = [Math]::Abs($now[0] - $script:cursor[0]) + [Math]::Abs($now[1] - $script:cursor[1])
-            if ($moved -gt 60) { throw "STOP: the mouse was moved, so the run was stopped" }
-        }
+        Test-Mouse
         if ($step.mark) { $script:mark = Get-Fingerprint $hwnd $step }
-        $p = Get-Point $hwnd $step
+        if ($step.clip) { $script:clip = [OpCapture]::ClipNumber() }
+        $p = Get-Point $hwnd $step $step.at
         [OpCapture]::Click($p[0], $p[1])
         $script:cursor = $p
         Log ("    clicked '{0}' at {1},{2}" -f $step.name, $p[0], $p[1])
+    } elseif ($action -eq "hover") {
+        Test-Mouse
+        $p = Get-Point $hwnd $step $step.at
+        [OpCapture]::Move($p[0], $p[1])
+        $script:cursor = $p
+        Log ("    pointer over '{0}' at {1},{2}" -f $step.name, $p[0], $p[1])
+        if ($step.ms) { Start-Sleep -Milliseconds ([int]$step.ms) }
+    } elseif ($action -eq "drag") {
+        Test-Mouse
+        if ($step.mark) { $script:mark = Get-Fingerprint $hwnd $step }
+        $a = Get-Point $hwnd $step $step.at
+        $b = Get-Point $hwnd $step $step.to
+        [OpCapture]::Drag($a[0], $a[1], $b[0], $b[1])
+        $script:cursor = $b
+        Log ("    dragged '{0}' from {1},{2} to {3},{4}" -f $step.name, $a[0], $a[1], $b[0], $b[1])
     } elseif ($action -eq "settle") {
         Wait-Settled $hwnd $step
     } else {
