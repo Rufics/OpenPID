@@ -323,25 +323,76 @@ The model is `crates/openpid-probe/src/model.rs`; twelve curves of the
 reference tool are in `tests/calibration/spectrum/` and a test holds the
 model to them.
 
-## Round 3 (sent 2026-11-11)
+## Round 3 (2026-11-11): the hold-out
 
-The hold-out. A flight as a craft flies it (random stick moves of up to
-300 deg/s through a second-order response, motor noise that follows a
-changing throttle with its second harmonic, a frame resonance, sensor
-noise, and a quieter filtered gyro) at 2, 1, 4 and 8 kHz and at 25, 18, 36
-and 21 s: no rate and length pair and no number of points that the first
-two rounds had. `s9-bands-2k` of round 1 goes in again as `h5-bands-2k`,
-loaded together with the others, for the start of the analysed span. The
-upper limit of the plots is raised to 70 dB first, because a vector copy
-holds only what is inside the plot and stick moves stand far above the
-default 20 dB at low frequencies.
+A flight as a craft flies it: random stick moves of up to 300 deg/s through
+a second-order response, motor noise that follows a changing throttle with
+its second harmonic, a frame resonance, sensor noise, and a quieter
+filtered gyro. Four logs of it, at 2, 1, 4 and 8 kHz and 25, 18, 36 and
+21 s: no rate and length pair and no number of points that the first two
+rounds had. `s9-bands-2k` of round 1 went in again as `h5-bands-2k`. The
+model was fixed and its predictions were in the pack before the reference
+tool saw the logs (pack `f7a4a3e`).
 
-If the model gives these curves with nothing changed, the area has had its
-three rounds and closes; D-001 then rests on a model that is confirmed.
+The script raised the upper limit of the plots to 70 dB first (a vector
+copy holds only what is inside the plot, and the stick moves stand at
+45 dB), took all 90 copies and 27 pictures in 8.6 minutes, and needed a
+second try for five copies. Every copy is the plot its name says.
 
-### Not settled yet
+| Probe | Samples analysed | Points of a curve | Windows, low … high | Copies | Points compared | Largest difference |
+|---|---|---|---|---|---|---|
+| `h1-flight-2k` | 45 999 | 23 000 | 5, 35, 117, 279, 545 | 18 | 102 383 | 0.000027 dB |
+| `h2-flight-1k` | 15 999 | 8 000 | 3, 31, 105, 249, 487 | 18 | 45 715 | 0.000026 dB |
+| `h3-flight-4k` | 135 999 | 68 000 | 5, 39, 131, 309, 605 | 18 | 57 672 | 0.000027 dB |
+| `h4-flight-8k` | 151 999 | 76 000 | 5, 39, 131, 313, 611 | 18 | 40 020 | 0.000027 dB |
+| `h5-bands-2k` | 55 999 | 28 000 | 5, 35, 121, 285, 555 | 18 | 47 200 | 0.000026 dB |
 
-- **The start and the end of the analysed span** to the sample: the extra
-  sample at 8 kHz and the later start of a log loaded alone (round 3 loads
-  that log in company).
-- **Whether a flown flight is treated as the probes were** (round 3).
+**The model gave the four flown logs with nothing changed**: 72 plots,
+245 790 points, each to the precision of the copies. Sixteen of the twenty
+windows are values no earlier round had, among them the 3 points of "low"
+for a curve of 8 000 points; the curve read is the filtered gyro, which in
+this flight differs from the unfiltered one. (A point where a curve leaves
+its plot is drawn on the edge of the plot and is not a point of the curve;
+12 such points were left out.)
+
+The two details of the analysed span that round 2 left:
+
+- **The start follows the log, not the company it is loaded in.**
+  `h5-bands-2k`, loaded with four other logs, started three samples after
+  the first second, as the same flight did when loaded alone; every other
+  log of rounds 2 and 3 starts two samples after it. What in that flight
+  moves the start by one sample is not known. Taking it as the others
+  moves its curves by 0.013 dB at worst.
+- **The extra sample at 8 kHz did not come back**: `h4-flight-8k` (21 s) has
+  `fs·(T − 2) − 1` samples like the rest, where `c6-short-8k` (12 s) had one
+  more. It looks like a comparison of times that falls either way at the
+  last sample.
+
+## Where the area stands
+
+Three rounds, the last without a change to the model: by the rule of
+[ROUNDS.md](ROUNDS.md) what the reference tool computes for its Spectrum
+curve is settled. In one place:
+
+1. The log without its first and last second: from two samples after the
+   first second (three for one flight), `fs·(T − 2) − 1` samples.
+2. Nothing removed; one transform of the whole span through a symmetric
+   Hann window.
+3. `10·log10(2·|X|² / (fs·N))`, the point at 0 Hz not doubled.
+4. A local regression of the decibel values with tricube weights over
+   `L³·log10(points)` points made odd, L = 1 … 5; at the two ends a line
+   through the nearest points of that many.
+
+It is in code as `crates/openpid-probe/src/model.rs`, held by a test to
+eighteen curves of the reference tool in `tests/calibration/spectrum/`.
+
+What is open is not about the reference tool any more: which curve OpenPID
+draws (D-001, with the owner), and then the same care for the other
+channels of that window and for the "Freq x Throttle" and "Freq x Time"
+screens, which are areas of their own.
+
+### Not settled
+
+- Why one flight starts a sample later, and when the span holds a sample
+  more (above). Both are below 0.02 dB and neither changes what a user
+  reads.
