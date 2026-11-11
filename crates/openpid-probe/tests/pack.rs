@@ -381,8 +381,12 @@ fn an_unknown_round_is_refused() {
     assert!(matches!(error, PackError::UnknownRound(7)));
     assert_eq!(
         error.to_string(),
-        "there is no round 7; the rounds are [1, 2]"
+        format!(
+            "there is no round 7; the rounds are {:?}",
+            catalogue::ROUNDS
+        )
     );
+    assert_eq!(catalogue::ROUNDS, [1, 2, 3]);
 }
 
 #[test]
