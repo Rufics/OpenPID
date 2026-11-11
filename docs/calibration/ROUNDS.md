@@ -33,7 +33,7 @@ response, Freq × throttle, Freq × time, the rest.
 
 | Round | Date | Areas | Pack (commit) | Result | Changes it led to |
 |---|---|---|---|---|---|
-| 0 (smoke) | — | — | — | planned (#168) | — |
+| 0 (smoke) | pack sent 2026-11-11 | does the reference tool open a written log; one screenshot of every screen (the reference side of the inventory) | `e525e7b` (#177): `openpid gen --out smoke-{1k,2k,4k}.bbl` of one 30 s flight at 1, 2 and 4 kHz, and `openpid decode` of the 2 kHz log as CSV | with the owner | — |
 
 The columns:
 
