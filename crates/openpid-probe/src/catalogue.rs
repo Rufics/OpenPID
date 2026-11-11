@@ -256,16 +256,88 @@ fn round_1() -> Vec<Probe> {
     ]
 }
 
+/// The probe of round 2: one flight at several log rates and lengths.
+fn mixed(id: &'static str, title: &'static str, fs: f64, duration_s: f64) -> Probe {
+    Probe {
+        id,
+        area: Area::Spectrum,
+        title,
+        purpose: [
+            "tones of 2, 8 and 32 deg/s at 30, 70 and 110 Hz: whether the width of a tone's \
+             bump depends on its height",
+            "a band of density 0.3 from 20 to 60 Hz next to an 80 Hz tone of 10 deg/s: the \
+             level of the band and the shape of its edges",
+            "white noise of 4 deg/s RMS on an offset of 20 deg/s: the floor, and the rise \
+             towards 0 Hz",
+        ],
+        flight: FlightSpec {
+            roll: tones(81, &[(30.0, 2.0), (70.0, 8.0), (110.0, 32.0)]),
+            pitch: AxisSpec::of(vec![
+                band(20.0, 60.0, 0.3, 82),
+                Wave::tone(80.0, 10.0),
+                dither(82),
+            ]),
+            yaw: AxisSpec::of(vec![
+                Wave::Offset { value: 20.0 },
+                Wave::Noise { rms: 4.0, seed: 83 },
+            ]),
+            ..FlightSpec::quiet(fs, duration_s)
+        },
+    }
+}
+
+/// Round 2: the spectrum again, to confirm the model of round 1
+/// (`crate::model`) on a flight it was not fitted to, and to settle what
+/// logs of one length and three rates could not: whether the smoothing
+/// spans are counted in points or in hertz, and where the analysed span of
+/// a log starts.
+fn round_2() -> Vec<Probe> {
+    vec![
+        mixed(
+            "c1-mixed-2k",
+            "The flight of round 2 as round 1 had its logs: 2 kHz, 30 s",
+            2000.0,
+            SPECTRUM_S,
+        ),
+        mixed(
+            "c2-mixed-1k",
+            "The same at 1 kHz: the spans and the start of the analysed span against the rate",
+            1000.0,
+            SPECTRUM_S,
+        ),
+        mixed("c3-mixed-4k", "The same at 4 kHz", 4000.0, SPECTRUM_S),
+        mixed(
+            "c4-short-2k",
+            "12 s at 2 kHz: points of 0.1 Hz, so a span in points and a span in hertz differ",
+            2000.0,
+            12.0,
+        ),
+        mixed(
+            "c5-long-2k",
+            "47 s at 2 kHz: points of 0.022 Hz",
+            2000.0,
+            47.0,
+        ),
+        mixed(
+            "c6-short-8k",
+            "12 s at 8 kHz: the highest log rate, and a rate and a length changed together",
+            8000.0,
+            12.0,
+        ),
+    ]
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
         1 => Some(round_1()),
+        2 => Some(round_2()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1];
+pub const ROUNDS: &[u32] = &[1, 2];
 
 #[cfg(test)]
 mod tests {
@@ -296,7 +368,7 @@ mod tests {
 
     #[test]
     fn spectrum_probes_keep_the_sticks_still_and_stay_inside_the_gyro_range() {
-        for p in round(1).unwrap() {
+        for p in ROUNDS.iter().flat_map(|r| round(*r).unwrap()) {
             assert_eq!(p.area, Area::Spectrum);
             for axis in Axis::ALL {
                 assert_eq!(p.flight.axis(axis).stick, Stick::Silence, "{}", p.id);
@@ -333,6 +405,43 @@ mod tests {
                 base,
                 "{id}"
             );
+        }
+    }
+
+    #[test]
+    fn round_2_is_one_flight_at_several_rates_and_lengths() {
+        let probes = round(2).unwrap();
+        let shape: Vec<(&str, f64, f64)> = probes
+            .iter()
+            .map(|p| (p.id, p.flight.fs, p.flight.duration_s))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("c1-mixed-2k", 2000.0, 30.0),
+                ("c2-mixed-1k", 1000.0, 30.0),
+                ("c3-mixed-4k", 4000.0, 30.0),
+                ("c4-short-2k", 2000.0, 12.0),
+                ("c5-long-2k", 2000.0, 47.0),
+                ("c6-short-8k", 8000.0, 12.0),
+            ]
+        );
+        let base = probes[0].flight.clone();
+        for p in &probes[1..] {
+            let same = FlightSpec {
+                fs: base.fs,
+                duration_s: base.duration_s,
+                ..p.flight.clone()
+            };
+            assert_eq!(same, base, "{}", p.id);
+        }
+        // every tone and the band are below the lowest Nyquist frequency
+        for wave in base.roll.waves.iter().chain(&base.pitch.waves) {
+            match wave {
+                Wave::Tone { hz, .. } => assert!(*hz < 500.0),
+                Wave::Band { to_hz, .. } => assert!(*to_hz < 500.0),
+                _ => {}
+            }
         }
     }
 }

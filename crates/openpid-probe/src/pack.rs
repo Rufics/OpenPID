@@ -1,5 +1,8 @@
 //! The pack of a round: every probe as a log file, the manifest that says
 //! what is true about each, and what `OpenPID` computes for the same files.
+//! From round 2 on also what the model of the reference tool
+//! ([`crate::model`]) expects the tool to show, written before the tool is
+//! asked.
 //!
 //! The pack is a pure function of the round and of this crate: built twice,
 //! it is the same bytes. That is what lets a reading taken months ago be
@@ -7,6 +10,7 @@
 
 use crate::capture;
 use crate::catalogue::{self, Area, Probe};
+use crate::model;
 use crate::signal::{AxisSamples, FlightSpec, Wave, band_bins};
 use openpid_analysis::{Analysis, AnalysisCtx, Epoch, PsdAnalysis, PsdParams};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, LogFormat, OpenOptions};
@@ -221,6 +225,80 @@ pub struct Ours {
     pub probes: Vec<OursProbe>,
 }
 
+/// The level the model expects at one point of a curve.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PredictedPoint {
+    /// Frequency of the point, Hz.
+    pub hz: f64,
+    /// Level, dB.
+    pub db: f64,
+}
+
+/// The expected curve of one axis, at the frequencies of [`PREDICTED_HZ`].
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PredictedAxis {
+    /// `roll`, `pitch` or `yaw`.
+    pub axis: &'static str,
+    /// The points.
+    pub points: Vec<PredictedPoint>,
+}
+
+/// The expected curves at one smoothing level.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PredictedLevel {
+    /// Name of the level in the tool's list.
+    pub smoothing: &'static str,
+    /// Points of the regression window the model uses for it.
+    pub window: usize,
+    /// The three axes (the filtered gyro: the solid curve).
+    pub axes: Vec<PredictedAxis>,
+}
+
+/// What the model expects for one probe.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PredictedProbe {
+    /// Id of the probe.
+    pub id: &'static str,
+    /// First sample of the analysed span, counting from 0.
+    pub first_sample: usize,
+    /// Number of samples analysed.
+    pub samples: usize,
+    /// Distance between two points of a curve, Hz.
+    pub bin_hz: f64,
+    /// The five smoothing levels.
+    pub levels: Vec<PredictedLevel>,
+}
+
+/// `predictions.json`: what the model of the reference tool expects it to
+/// show for the logs of the pack.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Predictions {
+    /// Layout version.
+    pub format: u32,
+    /// The round.
+    pub round: u32,
+    /// What the model assumes where the rounds so far leave a choice.
+    pub assumes: Vec<&'static str>,
+    /// The probes.
+    pub probes: Vec<PredictedProbe>,
+}
+
+/// The frequencies at which a prediction is written down, Hz (those below
+/// half the log rate; the point nearest to each).
+pub const PREDICTED_HZ: [f64; 18] = [
+    0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 110.0,
+    200.0, 400.0,
+];
+
+/// What the predictions of a round rest on beyond what is measured.
+const ASSUMES: [&str; 3] = [
+    "the smoothing spans are counted in points and are the same at every log rate and length",
+    "the spans of low, low-med, med-high and high are 5, 35, 285 and 553 points (fitted to \
+     pictures; medium, 121, is exact)",
+    "the analysed span starts three samples after the first second and is one sample short of \
+     the log without its first and last second, at every rate and length",
+];
+
 /// A built pack.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pack {
@@ -228,6 +306,8 @@ pub struct Pack {
     pub manifest: Manifest,
     /// What `OpenPID` computes for them.
     pub ours: Ours,
+    /// What the model of the reference tool expects, from round 2 on.
+    pub predictions: Option<Predictions>,
     /// File name and bytes of every log.
     pub logs: Vec<(String, Vec<u8>)>,
     /// What the capture script does with them in the reference tool.
@@ -435,8 +515,74 @@ fn spectra(
     Ok(out)
 }
 
-/// One probe: its log, its manifest entry and `OpenPID`'s results.
-fn build_probe(probe: &Probe) -> Result<(ProbeEntry, OursProbe, Vec<u8>), PackError> {
+/// The curves the model of the reference tool expects for a written log.
+fn predicted(
+    session: &FlightSession,
+    fs: f64,
+    id: &'static str,
+) -> Result<PredictedProbe, PackError> {
+    let too_short = || PackError::Read {
+        probe: id,
+        message: "the log is too short for the reference tool's spectrum".into(),
+    };
+    let mut channels = Vec::new();
+    for axis in Axis::ALL {
+        channels.push((axis, logged(session, axis, GyroStage::Filtered, id)?));
+    }
+    let mut levels = Vec::new();
+    let mut span = None;
+    for (smoothing, window) in model::LEVELS {
+        let mut axes = Vec::new();
+        for (axis, values) in &channels {
+            let curve = model::curve(values, fs, window).ok_or_else(too_short)?;
+            let points = PREDICTED_HZ
+                .iter()
+                .filter(|hz| **hz < fs / 2.0)
+                .filter_map(|hz| {
+                    let k = (hz / curve.bin_hz).round();
+                    Some(PredictedPoint {
+                        hz: rounded(k * curve.bin_hz),
+                        db: rounded(curve.at(*hz)?),
+                    })
+                })
+                .collect();
+            axes.push(PredictedAxis {
+                axis: axis_name(*axis),
+                points,
+            });
+            span = Some((curve.span.start, curve.span.len(), curve.bin_hz));
+        }
+        levels.push(PredictedLevel {
+            smoothing,
+            window,
+            axes,
+        });
+    }
+    let (first_sample, samples, bin_hz) = span.ok_or_else(too_short)?;
+    Ok(PredictedProbe {
+        id,
+        first_sample,
+        samples,
+        bin_hz: rounded(bin_hz),
+        levels,
+    })
+}
+
+/// One probe as the pack holds it.
+struct Built {
+    /// Its entry in the manifest.
+    entry: ProbeEntry,
+    /// `OpenPID`'s results.
+    ours: OursProbe,
+    /// What the model of the reference tool expects.
+    predicted: PredictedProbe,
+    /// The log.
+    bytes: Vec<u8>,
+}
+
+/// One probe: its log, its manifest entry, `OpenPID`'s results and the
+/// model's predictions.
+fn build_probe(probe: &Probe) -> Result<Built, PackError> {
     let id = probe.id;
     let flight = &probe.flight;
     let options = WriteOptions {
@@ -523,7 +669,12 @@ fn build_probe(probe: &Probe) -> Result<(ProbeEntry, OursProbe, Vec<u8>), PackEr
         epoch_s: (epoch.start_s, epoch.end_s),
         axes: ours,
     };
-    Ok((entry, ours, bytes))
+    Ok(Built {
+        entry,
+        ours,
+        predicted: predicted(&session, flight.fs, id)?,
+        bytes,
+    })
 }
 
 /// Builds the pack of `round`. `built_from` names the commit, for the
@@ -546,16 +697,26 @@ pub fn build(round: u32, built_from: &str) -> Result<Pack, PackError> {
         probes: Vec::new(),
     };
     let mut logs = Vec::new();
+    let mut expected = Vec::new();
     for probe in &probes {
-        let (entry, results, bytes) = build_probe(probe)?;
-        logs.push((entry.file.clone(), bytes));
-        manifest.probes.push(entry);
-        ours.probes.push(results);
+        let built = build_probe(probe)?;
+        logs.push((built.entry.file.clone(), built.bytes));
+        manifest.probes.push(built.entry);
+        ours.probes.push(built.ours);
+        expected.push(built.predicted);
     }
+    // round 1 was run before there was a model: its pack stays as it was
+    let predictions = (round >= 2).then(|| Predictions {
+        format: FORMAT,
+        round,
+        assumes: ASSUMES.to_vec(),
+        probes: expected,
+    });
     Ok(Pack {
         plan: capture::plan(round, &probes),
         manifest,
         ours,
+        predictions,
         logs,
     })
 }
@@ -575,14 +736,22 @@ impl Pack {
         let mut out = self.logs.clone();
         out.push(("manifest.json".into(), json(&self.manifest)));
         out.push(("ours.json".into(), json(&self.ours)));
+        if let Some(predictions) = &self.predictions {
+            out.push(("predictions.json".into(), json(predictions)));
+        }
         out.push(("steps.json".into(), json(&self.plan)));
-        let shots = self
-            .plan
-            .steps
-            .iter()
-            .filter(|s| s.action == "shot")
-            .count();
-        out.extend(capture::files(self.manifest.round, shots));
+        let count = |action: &str| {
+            self.plan
+                .steps
+                .iter()
+                .filter(|s| s.action == action)
+                .count()
+        };
+        out.extend(capture::files(
+            self.manifest.round,
+            count("shot"),
+            count("clip_save"),
+        ));
         out
     }
 

@@ -4,7 +4,7 @@
 use openpid_core::{Axis, ChannelId, GyroStage, LogFormat, OpenOptions};
 use openpid_fmt_blackbox::BlackboxFormat;
 use openpid_probe::pack::{self, ChannelTruth, PackError, Spectrum};
-use openpid_probe::{Pack, catalogue};
+use openpid_probe::{Pack, catalogue, model};
 use std::sync::OnceLock;
 
 /// Round 1, built once for every test.
@@ -379,7 +379,10 @@ fn a_pack_is_written_as_files() {
 fn an_unknown_round_is_refused() {
     let error = pack::build(7, "x").unwrap_err();
     assert!(matches!(error, PackError::UnknownRound(7)));
-    assert_eq!(error.to_string(), "there is no round 7; the rounds are [1]");
+    assert_eq!(
+        error.to_string(),
+        "there is no round 7; the rounds are [1, 2]"
+    );
 }
 
 #[test]
@@ -433,5 +436,154 @@ fn the_command_line() {
         let (result, _) = run(args);
         let error = result.unwrap_err();
         assert!(error.contains(message), "{args:?}: {error}");
+    }
+}
+
+/// The points of a curve read from the reference tool: index in the
+/// transform, level in dB.
+fn reading(file: &str) -> Vec<(usize, f64)> {
+    let path = format!(
+        "{}/../../tests/calibration/spectrum/{file}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .skip(1)
+        .map(|line| {
+            let (bin, db) = line.split_once(',').unwrap();
+            (bin.parse().unwrap(), db.parse().unwrap())
+        })
+        .collect()
+}
+
+#[test]
+fn the_model_gives_the_points_the_reference_tool_drew() {
+    // the "medium" curves of s9-bands-2k, copied from the tool as vector
+    // graphics: yaw below 100 Hz point by point, pitch over the whole range
+    let pack = round_1();
+    let (_, bytes) = pack
+        .logs
+        .iter()
+        .find(|(name, _)| name == "s9-bands-2k.bbl")
+        .unwrap();
+    let log = BlackboxFormat::new()
+        .open(bytes, &OpenOptions::default())
+        .unwrap();
+    let session = &log.sessions[0];
+    let medium = model::LEVELS[2];
+    assert_eq!(medium, ("medium", 121));
+    for (axis, file, points) in [
+        (Axis::Yaw, "r1-s9-bands-2k-medium-yaw-sub100.csv", 2801),
+        (Axis::Pitch, "r1-s9-bands-2k-medium-pitch-full.csv", 3636),
+    ] {
+        let id = ChannelId::Gyro {
+            axis,
+            stage: GyroStage::Filtered,
+        };
+        let logged = session.channel(&id).unwrap().data.values();
+        let curve = model::curve(logged, 2000.0, medium.1).unwrap();
+        assert_eq!(curve.span, 2003..58_002);
+        assert_eq!(curve.db.len(), 28_000);
+        let drawn = reading(file);
+        assert_eq!(drawn.len(), points, "{file}");
+        let worst = drawn
+            .iter()
+            .map(|(bin, db)| (curve.db[*bin] - db).abs())
+            .fold(0.0, f64::max);
+        // the copy holds single-precision coordinates: 0.00002 dB
+        assert!(worst < 5.0e-5, "{file}: {worst} dB off");
+    }
+    // the pitch copy runs from 0 Hz to the last point of the transform
+    let pitch = reading("r1-s9-bands-2k-medium-pitch-full.csv");
+    assert_eq!((pitch[0].0, pitch[pitch.len() - 1].0), (0, 27_999));
+}
+
+#[test]
+fn round_2_carries_the_model_s_predictions() {
+    let pack = pack::build(2, "test").unwrap();
+    let names: Vec<String> = pack.files().into_iter().map(|(name, _)| name).collect();
+    assert_eq!(
+        names,
+        [
+            "c1-mixed-2k.bbl",
+            "c2-mixed-1k.bbl",
+            "c3-mixed-4k.bbl",
+            "c4-short-2k.bbl",
+            "c5-long-2k.bbl",
+            "c6-short-8k.bbl",
+            "manifest.json",
+            "ours.json",
+            "predictions.json",
+            "steps.json",
+            "capture.ps1",
+            "run.cmd",
+            "README.txt",
+        ]
+    );
+    // round 1 was run without predictions and stays as it was
+    assert!(round_1().predictions.is_none());
+    assert!(
+        round_1()
+            .files()
+            .iter()
+            .all(|(n, _)| n != "predictions.json")
+    );
+
+    let predictions = pack.predictions.as_ref().unwrap();
+    assert_eq!(predictions.round, 2);
+    assert_eq!(predictions.assumes.len(), 3);
+    let spans: Vec<(&str, usize, usize)> = predictions
+        .probes
+        .iter()
+        .map(|p| (p.id, p.first_sample, p.samples))
+        .collect();
+    assert_eq!(
+        spans,
+        [
+            ("c1-mixed-2k", 2003, 55_999),
+            ("c2-mixed-1k", 1003, 27_999),
+            ("c3-mixed-4k", 4003, 111_999),
+            ("c4-short-2k", 2003, 19_999),
+            ("c5-long-2k", 2003, 89_999),
+            ("c6-short-8k", 8003, 79_999),
+        ]
+    );
+    let c1 = &predictions.probes[0];
+    let windows: Vec<usize> = c1.levels.iter().map(|l| l.window).collect();
+    assert_eq!(windows, [5, 35, 121, 285, 553]);
+    let medium = &c1.levels[2];
+    assert_eq!(medium.smoothing, "medium");
+    let level = |axis: usize, hz: f64| {
+        medium.axes[axis]
+            .points
+            .iter()
+            .find(|p| (p.hz - hz).abs() < 0.02)
+            .unwrap()
+            .db
+    };
+    // yaw: white noise of 4 deg/s RMS has a density of 16 / 1000 (deg/s)²/Hz
+    // (the rounding of the log adds 1/12 to the 16) and reads 6.8 dB lower
+    let density = 10.0 * ((16.0 + 1.0 / 12.0) / 1000.0f64).log10();
+    for hz in [200.0, 400.0] {
+        let got = level(2, hz);
+        assert!((got - (density - 6.77)).abs() < 0.6, "{hz} Hz: {got}");
+    }
+    // ... and the offset of 20 deg/s lifts the curve at 0 Hz
+    let rise = level(2, 0.0) - level(2, 200.0);
+    assert!(rise > 1.0 && rise < 12.0, "{rise}");
+    // pitch: the band of density 0.3 stands some 30 dB over the floor
+    assert!(level(1, 40.0) > level(1, 200.0) + 25.0);
+    // roll: the tone of 32 deg/s is a bump of a few decibels at "medium"
+    let bump = level(0, 110.0) - level(0, 200.0);
+    assert!(bump > 3.0 && bump < 9.0, "{bump}");
+    // every frequency of the list is below half of the lowest log rate
+    for probe in &predictions.probes {
+        for level in &probe.levels {
+            for axis in &level.axes {
+                assert!(axis.points.len() >= 17, "{} {}", probe.id, level.smoothing);
+                assert!(axis.points.iter().all(|p| p.db.is_finite()));
+            }
+        }
     }
 }

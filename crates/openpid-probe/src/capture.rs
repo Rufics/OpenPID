@@ -3,8 +3,13 @@
 //!
 //! The script is `tools/capture/capture.ps1`; it is carried inside every
 //! pack, so a pack is all the owner needs. Positions are pixels of the
-//! round 0 screenshots (`docs/calibration/REFERENCE-SCREENS.md`); the script
-//! scales them to the window as it is.
+//! round 0 screenshots (`docs/calibration/REFERENCE-SCREENS.md`), or of the
+//! pictures the script itself saves; the script scales them to the window
+//! as it is.
+//!
+//! From round 2 on the curves are not read from pictures: every plot is
+//! copied as a vector graphic through the small toolbar the tool shows
+//! above a plot, and the script saves the copy from the clipboard.
 
 use crate::catalogue::{Area, Probe};
 use serde::Serialize;
@@ -28,6 +33,25 @@ const SMOOTHING: [(&str, u32); 5] = [
     ("medium", 2),
 ];
 
+/// The plots of the spectrum window in a picture the script saves: left,
+/// top, right, bottom of the axes of each row (roll, pitch, yaw), "Full
+/// Spectrum" first, then "Sub 100Hz".
+const PLOTS: [[(u32, u32, u32, u32); 2]; 3] = [
+    [(227, 160, 1662, 753), (1814, 160, 3250, 753)],
+    [(227, 875, 1662, 1468), (1814, 875, 3250, 1468)],
+    [(227, 1590, 1662, 2183), (1814, 1590, 3250, 2183)],
+];
+/// The rows of [`PLOTS`].
+const AXES: [&str; 3] = ["roll", "pitch", "yaw"];
+/// The columns of [`PLOTS`], as the copies are named.
+const COLUMNS: [&str; 2] = ["full", "sub"];
+/// The export button of a plot's toolbar, from the top right corner of the
+/// axes: this far left of it and this far above.
+const EXPORT_BUTTON: (u32, u32) = (197, 19);
+/// "Copy as vector graphic", the third item of the export menu, this far
+/// below the button.
+const COPY_ITEM: u32 = 96;
+
 /// The frame of a reference screenshot: where the inside of its window is.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Frame {
@@ -48,12 +72,16 @@ pub struct Frames {
     pub log: Frame,
     /// The spectrum window, round 0.
     pub spectrum: Frame,
+    /// A picture of the spectrum window saved by the script: all of it is
+    /// the inside of the window.
+    pub shot: Frame,
 }
 
 /// One step of the script. Only the fields a step uses are written.
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
 pub struct Step {
-    /// What to do: `click`, `open_file`, `settle`, `shot`, `pause`, `windows`.
+    /// What to do: `click`, `open_file`, `settle`, `shot`, `pause`,
+    /// `windows`, `hover`, `clip_save`.
     pub action: &'static str,
     /// Part of the title of the window the step is about.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,9 +113,17 @@ pub struct Step {
     /// Name of the picture, without the extension.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
-    /// Length of a pause, milliseconds.
+    /// Length of a pause, or of the rest after the pointer has arrived,
+    /// milliseconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ms: Option<u32>,
+    /// The click copies something: the clipboard is watched from here on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clip: Option<bool>,
+    /// `false`: the window is not brought to the front first (an open menu
+    /// would close).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub front: Option<bool>,
 }
 
 /// `steps.json` of a pack.
@@ -139,13 +175,94 @@ fn shot(window: &'static str, file: String) -> Step {
     }
 }
 
+/// The pointer travels to `at` of a picture of the spectrum window and
+/// rests there.
+fn hover(name: String, at: (u32, u32), ms: u32) -> Step {
+    Step {
+        action: "hover",
+        window: Some(SPECTRUM),
+        name: Some(name),
+        frame: Some("shot"),
+        at: Some(at),
+        ms: Some(ms),
+        front: Some(false),
+        ..Step::default()
+    }
+}
+
+/// Name of the vector copy of one plot: `axis` 0 … 2, `column` 0 (the whole
+/// range) or 1 (below 100 Hz).
+pub fn spectrum_copy(
+    round: u32,
+    probe: &str,
+    smoothing: &str,
+    axis: usize,
+    column: usize,
+) -> String {
+    format!(
+        "r{round}-{probe}-spectrum-{smoothing}-{}-{}",
+        AXES[axis % 3],
+        COLUMNS[column % 2]
+    )
+}
+
+/// The plots copied as vector graphics at a smoothing level: none in round
+/// 1 (it was read from pictures); from round 2 on the three plots below
+/// 100 Hz, which carry every point of their curve, and at the tool's
+/// default level also the three over the whole range.
+fn copied(round: u32, smoothing: &str) -> Vec<(usize, usize)> {
+    if round < 2 {
+        return Vec::new();
+    }
+    let columns: &[usize] = if smoothing == "medium" { &[1, 0] } else { &[1] };
+    columns
+        .iter()
+        .flat_map(|column| (0..3).map(move |axis| (axis, *column)))
+        .collect()
+}
+
+/// The steps that copy one plot as a vector graphic and save the copy:
+/// the pointer over the plot (its toolbar appears), over the export button
+/// (its menu opens), down to the third item, a click, the clipboard.
+fn copy_plot(steps: &mut Vec<Step>, axis: usize, column: usize, file: String) {
+    let (left, top, right, bottom) = PLOTS[axis % 3][column % 2];
+    let plot = format!("{} {}", AXES[axis % 3], COLUMNS[column % 2]);
+    let button = (right - EXPORT_BUTTON.0, top - EXPORT_BUTTON.1);
+    let item = (button.0, button.1 + COPY_ITEM);
+    steps.push(hover(
+        format!("{plot} plot"),
+        (left.midpoint(right), top.midpoint(bottom)),
+        500,
+    ));
+    steps.push(hover(format!("{plot} export menu"), button, 700));
+    steps.push(hover(format!("{plot} copy as vector graphic"), item, 400));
+    steps.push(Step {
+        clip: Some(true),
+        front: Some(false),
+        ..click(
+            SPECTRUM,
+            "shot",
+            &format!("{plot} copy as vector graphic"),
+            item,
+        )
+    });
+    steps.push(Step {
+        action: "clip_save",
+        file: Some(file),
+        wait_s: Some(15),
+        ..Step::default()
+    });
+    steps.push(pause(200));
+}
+
 /// Name of the picture of `probe` on the spectrum at a smoothing level.
 pub fn spectrum_shot(round: u32, probe: &str, smoothing: &str) -> String {
     format!("r{round}-{probe}-spectrum-{smoothing}")
 }
 
 /// The plan of a round: load every log at once, then for every spectrum
-/// probe the spectrum at each smoothing level.
+/// probe the spectrum at each smoothing level, as a picture and, from round
+/// 2 on, as vector copies of its plots.
 pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     let mut steps = Vec::new();
     // the main window: all logs through one "open" dialog
@@ -212,6 +329,10 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
             steps.push(click(SPECTRUM, "spectrum", "Run", (3470, 1004)));
             steps.push(settle(SPECTRUM, Some(20.0), 1.2));
             steps.push(shot(SPECTRUM, spectrum_shot(round, probe.id, level)));
+            for (axis, column) in copied(round, level) {
+                let file = spectrum_copy(round, probe.id, level, axis, column);
+                copy_plot(&mut steps, axis, column, file);
+            }
         }
     }
     steps.push(Step {
@@ -219,10 +340,18 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
         ..Step::default()
     });
     Plan {
-        about: format!(
-            "Round {round}: every log through one open dialog, then the spectrum of each at \
-             the five smoothing levels."
-        ),
+        about: if round < 2 {
+            format!(
+                "Round {round}: every log through one open dialog, then the spectrum of each \
+                 at the five smoothing levels."
+            )
+        } else {
+            format!(
+                "Round {round}: every log through one open dialog, then the spectrum of each \
+                 at the five smoothing levels, every plot below 100 Hz copied as a vector \
+                 graphic."
+            )
+        },
         refs: Frames {
             log: Frame {
                 left: 1,
@@ -235,6 +364,12 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
                 top: 47,
                 width: 3776,
                 height: 2424,
+            },
+            shot: Frame {
+                left: 0,
+                top: 0,
+                width: 3780,
+                height: 2427,
             },
         },
         steps,
@@ -250,29 +385,51 @@ fn crlf(text: &str) -> Vec<u8> {
 
 /// The files that make a pack runnable on the owner's machine: the script,
 /// its launcher and a note on how to run it.
-pub fn files(round: u32, shots: usize) -> Vec<(String, Vec<u8>)> {
+pub fn files(round: u32, shots: usize, copies: usize) -> Vec<(String, Vec<u8>)> {
     let launcher = "@echo off\n\
                     cd /d \"%~dp0\"\n\
                     powershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0capture.ps1\" \
                     -Steps \"steps.json\"\n\
                     echo.\n\
                     pause\n";
+    let saves = if copies == 0 {
+        format!("saves {shots} pictures of the\n   tool's windows")
+    } else {
+        // a picture with its Run takes about five seconds, a copy four
+        let minutes = (shots * 5 + copies * 4).div_ceil(60) + 1;
+        format!(
+            "saves {shots} pictures of the\n   \
+             tool's windows and {copies} plots copied as vector graphics, in about\n   \
+             {minutes} minutes"
+        )
+    };
+    let clipboard = if copies == 0 {
+        ""
+    } else {
+        "The copied plots replace what was on the clipboard.\n\n"
+    };
+    let predictions = if copies == 0 {
+        ""
+    } else {
+        " predictions.json is what the\nmodel of the reference tool expects it to show;"
+    };
     let note = format!(
         "Calibration round {round}\n\
          \n\
          1. Unpack everything into one folder.\n\
-         2. Start the reference tool and wait for its main window (Log Viewer).\n   \
+         2. Start the reference tool anew and wait for its main window (Log Viewer).\n   \
          Open nothing in it and leave the window as it comes up.\n\
          3. Double-click run.cmd. After five seconds the script takes the mouse and the\n   \
-         keyboard: it loads the logs of this folder and saves {shots} pictures of the\n   \
-         tool's windows. Leave both alone until it beeps twice.\n\
+         keyboard: it loads the logs of this folder and {saves}.\n   \
+         Leave both alone until it beeps twice.\n\
          4. Send back capture-results.zip, which appears next to the script.\n\
          \n\
-         To stop it, move the mouse: it stops before its next click.\n\
+         To stop it, move the mouse: it stops before its next move.\n\
          \n\
+         {clipboard}\
          What the files are: *.bbl are the probe logs; manifest.json says what is true\n\
-         about each; ours.json is what OpenPID computes for them; steps.json is what the\n\
-         script does, step by step; capture.ps1 is the script.\n"
+         about each; ours.json is what OpenPID computes for them;{predictions} steps.json\n\
+         is what the script does, step by step; capture.ps1 is the script.\n"
     );
     vec![
         ("capture.ps1".to_string(), crlf(SCRIPT)),
@@ -375,6 +532,79 @@ mod tests {
     }
 
     #[test]
+    fn round_2_copies_the_plots_as_vector_graphics() {
+        let probes = catalogue::round(2).unwrap_or_default();
+        let plan = plan(2, &probes);
+        let names = |action: &str| -> Vec<&str> {
+            plan.steps
+                .iter()
+                .filter(|s| s.action == action)
+                .filter_map(|s| s.file.as_deref())
+                .collect()
+        };
+        let shots = names("shot");
+        assert_eq!(shots.len(), 2 + probes.len() * 5);
+        let copies = names("clip_save");
+        // below 100 Hz at every level, the whole range at the default one
+        assert_eq!(copies.len(), probes.len() * (5 * 3 + 3));
+        assert_eq!(copies[0], "r2-c1-mixed-2k-spectrum-low-roll-sub");
+        assert_eq!(copies[2], "r2-c1-mixed-2k-spectrum-low-yaw-sub");
+        assert_eq!(
+            *copies.last().unwrap_or(&""),
+            "r2-c6-short-8k-spectrum-medium-yaw-full"
+        );
+        let mut unique: Vec<&str> = shots.iter().chain(&copies).copied().collect();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), shots.len() + copies.len());
+
+        // a copy is: over the plot, over the button, over the item, the
+        // click that copies, the clipboard
+        let steps = &plan.steps;
+        for (i, step) in steps.iter().enumerate() {
+            if step.action != "clip_save" {
+                continue;
+            }
+            let before: Vec<&str> = steps[i - 4..i].iter().map(|s| s.action).collect();
+            assert_eq!(before, ["hover", "hover", "hover", "click"]);
+            let (plot, button, item, click) =
+                (&steps[i - 4], &steps[i - 3], &steps[i - 2], &steps[i - 1]);
+            assert_eq!(click.clip, Some(true));
+            assert_eq!(click.at, item.at);
+            for s in [plot, button, item, click] {
+                assert_eq!((s.frame, s.front), (Some("shot"), Some(false)));
+                let (x, y) = s.at.unwrap_or((0, 0));
+                assert!(x < 3780 && y < 2427, "{s:?}");
+            }
+            let (px, py) = plot.at.unwrap_or((0, 0));
+            let (bx, by) = button.at.unwrap_or((0, 0));
+            let (ix, iy) = item.at.unwrap_or((0, 0));
+            // the button is above the plot near its right edge, the item
+            // under the button inside the plot
+            assert!(bx > px && by < py && ix == bx && iy == by + 96, "{step:?}");
+        }
+        // the pitch plot of the whole range, as the trial of the script had it
+        let pitch = steps
+            .iter()
+            .position(|s| s.file.as_deref() == Some("r2-c1-mixed-2k-spectrum-medium-pitch-full"))
+            .unwrap_or(4);
+        assert_eq!(steps[pitch - 4].at, Some((944, 1171)));
+        assert_eq!(steps[pitch - 3].at, Some((1465, 856)));
+        assert_eq!(steps[pitch - 1].at, Some((1465, 952)));
+        // every action is one the script knows
+        for step in steps {
+            assert!(
+                SCRIPT.contains(&format!("$action -eq \"{}\"", step.action)),
+                "{}",
+                step.action
+            );
+        }
+        // round 1 stays as it was run
+        let first = super::plan(1, &catalogue::round(1).unwrap_or_default());
+        assert!(first.steps.iter().all(|s| s.action != "hover"));
+    }
+
+    #[test]
     fn the_plan_is_what_the_script_reads() {
         let probes = catalogue::round(1).unwrap_or_default();
         let json = serde_json::to_value(plan(1, &probes)).unwrap_or_default();
@@ -401,7 +631,7 @@ mod tests {
 
     #[test]
     fn the_script_travels_with_the_pack() {
-        let files = files(1, 47);
+        let files = files(1, 47, 0);
         let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
         assert_eq!(names, ["capture.ps1", "run.cmd", "README.txt"]);
         for (name, bytes) in &files {
@@ -418,5 +648,12 @@ mod tests {
         assert!(script.contains("function Invoke-Step"));
         assert!(String::from_utf8_lossy(&files[1].1).contains("-Steps \"steps.json\""));
         assert!(String::from_utf8_lossy(&files[2].1).contains("saves 47 pictures"));
+        let note = String::from_utf8(super::files(2, 32, 108)[2].1.clone()).unwrap_or_default();
+        assert!(
+            note.contains("108 plots copied as vector graphics"),
+            "{note}"
+        );
+        assert!(note.contains("11 minutes") && note.contains("predictions.json"));
+        assert!(note.is_ascii());
     }
 }

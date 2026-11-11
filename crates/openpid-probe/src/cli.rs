@@ -17,9 +17,11 @@ COMMANDS:
     list   The rounds and their probes: one log per line, with what each axis settles.
     pack   Write the pack of a round into <dir>: every probe as a Betaflight Blackbox
            log, manifest.json (what is true about each log), ours.json (what OpenPID
-           computes for the same logs), and the capture script with its steps
-           (capture.ps1, steps.json, run.cmd), which walks the reference tool through
-           the round on Windows. The same round always gives the same bytes.
+           computes for the same logs), from round 2 on predictions.json (what the
+           model of the reference tool expects it to show), and the capture script
+           with its steps (capture.ps1, steps.json, run.cmd), which walks the
+           reference tool through the round on Windows. The same round always gives
+           the same bytes.
            --built-from records the commit in the manifest.
 ";
 
