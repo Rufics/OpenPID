@@ -45,6 +45,13 @@ const PLOTS: [[(u32, u32, u32, u32); 2]; 3] = [
 const AXES: [&str; 3] = ["roll", "pitch", "yaw"];
 /// The columns of [`PLOTS`], as the copies are named.
 const COLUMNS: [&str; 2] = ["full", "sub"];
+/// The "Y max" box of the spectrum window, in a picture the script saves.
+const Y_MAX_BOX: (u32, u32) = (3610, 1542);
+/// The upper limit of the plots from round 3 on, dB: a flight with stick
+/// moves is above the tool's default of 20 dB at low frequencies, and a
+/// vector copy holds only what is inside the plot.
+pub const Y_MAX_DB: u32 = 70;
+
 /// The export button of a plot's toolbar, from the top right corner of the
 /// axes: this far left of it and this far above.
 const EXPORT_BUTTON: (u32, u32) = (197, 19);
@@ -81,7 +88,7 @@ pub struct Frames {
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
 pub struct Step {
     /// What to do: `click`, `open_file`, `settle`, `shot`, `pause`,
-    /// `windows`, `hover`, `clip_save`.
+    /// `windows`, `hover`, `clip_save`, `type`.
     pub action: &'static str,
     /// Part of the title of the window the step is about.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -124,6 +131,9 @@ pub struct Step {
     /// would close).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub front: Option<bool>,
+    /// What is typed into a text box.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 /// `steps.json` of a pack.
@@ -249,7 +259,9 @@ fn copy_plot(steps: &mut Vec<Step>, axis: usize, column: usize, file: String) {
     steps.push(Step {
         action: "clip_save",
         file: Some(file),
-        wait_s: Some(15),
+        // a copy is on the clipboard within a second or two; when none
+        // comes the script goes through the plot's menu again, slower
+        wait_s: Some(6),
         ..Step::default()
     });
     steps.push(pause(200));
@@ -291,6 +303,14 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
         ..settle(SPECTRUM, None, 1.5)
     });
     steps.push(shot(SPECTRUM, format!("r{round}-spectrum-open")));
+    if round >= 3 {
+        steps.push(Step {
+            action: "type",
+            text: Some(Y_MAX_DB.to_string()),
+            ..click(SPECTRUM, "shot", "Y max", Y_MAX_BOX)
+        });
+        steps.push(pause(300));
+    }
     let spectrum: Vec<&Probe> = probes.iter().filter(|p| p.area == Area::Spectrum).collect();
     for probe in spectrum {
         // the logs are listed in the order of their names, which is the
@@ -602,6 +622,34 @@ mod tests {
         // round 1 stays as it was run
         let first = super::plan(1, &catalogue::round(1).unwrap_or_default());
         assert!(first.steps.iter().all(|s| s.action != "hover"));
+    }
+
+    #[test]
+    fn round_3_raises_the_top_of_the_plots_first() {
+        let probes = catalogue::round(3).unwrap_or_default();
+        let plan = plan(3, &probes);
+        let typed: Vec<&Step> = plan.steps.iter().filter(|s| s.action == "type").collect();
+        assert_eq!(typed.len(), 1);
+        assert_eq!(typed[0].text.as_deref(), Some("70"));
+        assert_eq!(
+            (typed[0].frame, typed[0].at),
+            (Some("shot"), Some((3610, 1542)))
+        );
+        let at = |action: &str| plan.steps.iter().position(|s| s.action == action);
+        // after the window is up, before the first Run
+        assert!(at("type") > at("shot") && at("type") < at("clip_save"));
+        let copies = plan
+            .steps
+            .iter()
+            .filter(|s| s.action == "clip_save")
+            .count();
+        assert_eq!(copies, probes.len() * 18);
+        assert!(SCRIPT.contains("$action -eq \"type\""));
+        // rounds 1 and 2 stay as they were run
+        for round in [1, 2] {
+            let earlier = super::plan(round, &catalogue::round(round).unwrap_or_default());
+            assert!(earlier.steps.iter().all(|s| s.action != "type"));
+        }
     }
 
     #[test]

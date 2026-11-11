@@ -9,7 +9,7 @@
 # pixels of a reference screenshot and are scaled to the window as it is now.
 #
 # What it touches: only the windows of the tool's own process, found by their
-# titles; the mouse, the Enter / Esc / Ctrl+V keys, and the clipboard (text
+# titles; the mouse, the Enter / Esc / Ctrl+A / Ctrl+V keys, and the clipboard (text
 # that was on it is put back after a file dialog; a copied plot stays on it).
 # What it saves: the inside of those windows as PNG files, copied plots as
 # metafiles, and a log with the titles and sizes of the windows.
@@ -458,6 +458,7 @@ $script:windowTitle = ""
 $script:mark = $null
 $script:cursor = $null
 $script:clip = [OpCapture]::ClipNumber()
+$script:slow = 1
 $script:failed = 0
 $script:missing = @{}
 
@@ -716,7 +717,36 @@ function Invoke-Step($step, $index) {
         [OpCapture]::Move($p[0], $p[1])
         $script:cursor = $p
         Log ("    pointer over '{0}' at {1},{2}" -f $step.name, $p[0], $p[1])
-        if ($step.ms) { Start-Sleep -Milliseconds ([int]$step.ms) }
+        if ($step.ms) { Start-Sleep -Milliseconds ([int]$step.ms * $script:slow) }
+    } elseif ($action -eq "type") {
+        # a text box: click into it, replace what it holds, Enter
+        Test-Mouse
+        $p = Get-Point $hwnd $step $step.at
+        [OpCapture]::Click($p[0], $p[1])
+        $script:cursor = $p
+        Start-Sleep -Milliseconds 300
+        $old = $null
+        try {
+            if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+                $old = [System.Windows.Forms.Clipboard]::GetText()
+            }
+        } catch { }
+        [System.Windows.Forms.Clipboard]::SetText([string]$step.text)
+        Start-Sleep -Milliseconds 150
+        [OpCapture]::Chord(0x11, 0x41)
+        Start-Sleep -Milliseconds 100
+        [OpCapture]::Chord(0x11, 0x56)
+        Start-Sleep -Milliseconds 250
+        [OpCapture]::Key(0x0D)
+        Start-Sleep -Milliseconds 250
+        try {
+            if ($old) {
+                [System.Windows.Forms.Clipboard]::SetText($old)
+            } else {
+                [System.Windows.Forms.Clipboard]::Clear()
+            }
+        } catch { }
+        Log ("    typed '{0}' into '{1}' at {2},{3}" -f $step.text, $step.name, $p[0], $p[1])
     } elseif ($action -eq "drag") {
         Test-Mouse
         if ($step.mark) { $script:mark = Get-Fingerprint $hwnd $step }
@@ -746,14 +776,35 @@ Write-Host "Starting in 5 seconds..."
 Start-Sleep -Seconds 5
 
 $index = 0
-foreach ($step in $plan.steps) {
-    $index++
+$all = @($plan.steps)
+for ($i = 0; $i -lt $all.Count; $i++) {
+    $step = $all[$i]
+    $index = $i + 1
     try {
         Invoke-Step $step $index
     } catch {
-        $script:failed++
-        Log ("    FAILED: " + $_.Exception.Message)
-        if ($_.Exception.Message -like "STOP*") { break }
+        $message = $_.Exception.Message
+        $done = $false
+        # a copy that did not happen (the menu of the plot did not open in
+        # time) is tried again, slower: the four steps before it and itself
+        if (($step.action -eq "clip_save") -and ($message -like "nothing was copied*") -and ($i -ge 4)) {
+            for ($again = 1; ($again -le 2) -and (-not $done); $again++) {
+                Log ("    nothing was copied: once more, slower ({0})" -f $again)
+                $script:slow = 1 + $again
+                try {
+                    for ($j = $i - 4; $j -le $i; $j++) { Invoke-Step $all[$j] ($j + 1) }
+                    $done = $true
+                } catch {
+                    $message = $_.Exception.Message
+                }
+                $script:slow = 1
+            }
+        }
+        if (-not $done) {
+            $script:failed++
+            Log ("    FAILED: " + $message)
+            if ($message -like "STOP*") { break }
+        }
     }
 }
 

@@ -7,7 +7,7 @@
 //! belong to any log; a new question gets a new probe in a later round
 //! (`docs/calibration/ROUNDS.md`).
 
-use crate::signal::{AxisSpec, Filtered, FlightSpec, Wave};
+use crate::signal::{AxisSpec, Filtered, FlightSpec, Plant, Stick, Throttle, Wave};
 use serde::Serialize;
 
 /// The part of the tools a probe is about.
@@ -327,22 +327,126 @@ fn round_2() -> Vec<Probe> {
     ]
 }
 
+/// One axis of the flight of round 3: the craft follows random stick
+/// moves, and its gyro carries motor noise that moves with the throttle, a
+/// frame resonance and sensor noise. The filtered gyro has less of each, as
+/// after the firmware's filters.
+fn flown(seed: u64, stick_deg_s: f64, resonance_hz: f64) -> AxisSpec {
+    let noise = |amplitude: f64, floor: f64| {
+        vec![
+            Wave::ThrottleTone {
+                hz_at_zero: 70.0,
+                hz_per_percent: 2.5,
+                amplitude: 12.0 * amplitude,
+                band: None,
+            },
+            Wave::ThrottleTone {
+                hz_at_zero: 140.0,
+                hz_per_percent: 5.0,
+                amplitude: 5.0 * amplitude,
+                band: None,
+            },
+            Wave::tone(resonance_hz, 4.0 * amplitude),
+            Wave::Noise { rms: floor, seed },
+        ]
+    };
+    AxisSpec {
+        stick: Stick::Random {
+            seed: seed + 100,
+            hold_min_ms: 150,
+            hold_max_ms: 900,
+            amplitude: stick_deg_s,
+        },
+        plant: Plant::SecondOrder {
+            natural_hz: 14.0,
+            damping: 0.6,
+            delay_ms: 4.0,
+            gain: 1.0,
+        },
+        waves: noise(1.0, 2.0),
+        filtered: Filtered::Separate {
+            waves: noise(0.4, 1.0),
+        },
+    }
+}
+
+/// The flight of round 3 at a log rate and a length.
+fn flight(id: &'static str, title: &'static str, fs: f64, duration_s: f64) -> Probe {
+    Probe {
+        id,
+        area: Area::Spectrum,
+        title,
+        purpose: [
+            "stick moves of up to 300 deg/s, motor noise from 120 to 270 Hz and its second \
+             harmonic, a resonance at 410 Hz",
+            "the same with stick moves of up to 250 deg/s and the resonance at 380 Hz",
+            "the same with stick moves of up to 120 deg/s and the resonance at 330 Hz",
+        ],
+        flight: FlightSpec {
+            fs,
+            duration_s,
+            roll: flown(91, 300.0, 410.0),
+            pitch: flown(92, 250.0, 380.0),
+            yaw: flown(93, 120.0, 330.0),
+            throttle: Throttle::Stairs {
+                steps: vec![
+                    (20.0, 2.0),
+                    (45.0, 3.0),
+                    (70.0, 2.5),
+                    (35.0, 1.5),
+                    (80.0, 2.0),
+                    (55.0, 3.0),
+                ],
+            },
+        },
+    }
+}
+
+/// Round 3: the hold-out. A flight as a craft flies it, which the model
+/// (`crate::model`) was not fitted to, at four log rates and four lengths
+/// none of which the earlier rounds had; and one probe of round 1 again,
+/// to see whether the start of the analysed span follows the log or the
+/// company it is loaded in.
+fn round_3() -> Vec<Probe> {
+    let again = round_1()
+        .into_iter()
+        .find(|p| p.id == "s9-bands-2k")
+        .map(|p| Probe {
+            id: "h5-bands-2k",
+            title: "s9-bands-2k of round 1 again, loaded with other logs this time",
+            ..p
+        });
+    let mut probes = vec![
+        flight(
+            "h1-flight-2k",
+            "A flight with stick moves, motor noise and a resonance: 2 kHz, 25 s",
+            2000.0,
+            25.0,
+        ),
+        flight("h2-flight-1k", "The same at 1 kHz, 18 s", 1000.0, 18.0),
+        flight("h3-flight-4k", "The same at 4 kHz, 36 s", 4000.0, 36.0),
+        flight("h4-flight-8k", "The same at 8 kHz, 21 s", 8000.0, 21.0),
+    ];
+    probes.extend(again);
+    probes
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
         1 => Some(round_1()),
         2 => Some(round_2()),
+        3 => Some(round_3()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2];
+pub const ROUNDS: &[u32] = &[1, 2, 3];
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::signal::Stick;
     use openpid_core::Axis;
     use std::collections::BTreeSet;
 
@@ -368,7 +472,7 @@ mod tests {
 
     #[test]
     fn spectrum_probes_keep_the_sticks_still_and_stay_inside_the_gyro_range() {
-        for p in ROUNDS.iter().flat_map(|r| round(*r).unwrap()) {
+        for p in [1, 2].iter().flat_map(|r| round(*r).unwrap()) {
             assert_eq!(p.area, Area::Spectrum);
             for axis in Axis::ALL {
                 assert_eq!(p.flight.axis(axis).stick, Stick::Silence, "{}", p.id);
@@ -441,6 +545,63 @@ mod tests {
                 Wave::Tone { hz, .. } => assert!(*hz < 500.0),
                 Wave::Band { to_hz, .. } => assert!(*to_hz < 500.0),
                 _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn round_3_is_a_flight_with_sticks_and_a_probe_of_round_1_again() {
+        let probes = round(3).unwrap();
+        let shape: Vec<(&str, f64, f64)> = probes
+            .iter()
+            .map(|p| (p.id, p.flight.fs, p.flight.duration_s))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("h1-flight-2k", 2000.0, 25.0),
+                ("h2-flight-1k", 1000.0, 18.0),
+                ("h3-flight-4k", 4000.0, 36.0),
+                ("h4-flight-8k", 8000.0, 21.0),
+                ("h5-bands-2k", 2000.0, 30.0),
+            ]
+        );
+        // no length of the earlier rounds
+        for p in &probes[..4] {
+            for earlier in [1, 2].iter().flat_map(|r| round(*r).unwrap()) {
+                assert_ne!(p.flight.len(), earlier.flight.len(), "{}", p.id);
+            }
+        }
+        let s9 = round(1).unwrap().pop().unwrap();
+        assert_eq!((s9.id, &s9.flight), ("s9-bands-2k", &probes[4].flight));
+
+        // the craft moves, and the gyro stays inside what a log holds
+        let h1 = &probes[0].flight;
+        for axis in Axis::ALL {
+            let spec = h1.axis(axis);
+            assert!(matches!(spec.stick, Stick::Random { .. }));
+            let s = h1.samples(axis);
+            let peak = s.unfiltered.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+            assert!(peak > 100.0 && peak < 2000.0, "{axis:?}: {peak}");
+            assert!(s.setpoint.iter().any(|v| *v != 0.0));
+            // the filtered gyro is the quieter of the two
+            let rms = |x: &[f64]| (x.iter().map(|v| v * v).sum::<f64>() / x.len() as f64).sqrt();
+            let noise = |x: &[f64]| {
+                let d: Vec<f64> = x.iter().zip(&s.response).map(|(a, b)| a - b).collect();
+                rms(&d)
+            };
+            assert!(noise(&s.filtered) < 0.6 * noise(&s.unfiltered), "{axis:?}");
+            // every tone below the lowest Nyquist frequency of the round
+            for wave in &spec.waves {
+                match wave {
+                    Wave::Tone { hz, .. } => assert!(*hz < 500.0),
+                    Wave::ThrottleTone {
+                        hz_at_zero,
+                        hz_per_percent,
+                        ..
+                    } => assert!(hz_at_zero + 100.0 * hz_per_percent < 4000.0),
+                    _ => {}
+                }
             }
         }
     }

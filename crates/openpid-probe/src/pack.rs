@@ -292,11 +292,12 @@ pub const PREDICTED_HZ: [f64; 18] = [
 
 /// What the predictions of a round rest on beyond what is measured.
 const ASSUMES: [&str; 3] = [
-    "the smoothing spans are counted in points and are the same at every log rate and length",
-    "the spans of low, low-med, med-high and high are 5, 35, 285 and 553 points (fitted to \
-     pictures; medium, 121, is exact)",
-    "the analysed span starts three samples after the first second and is one sample short of \
-     the log without its first and last second, at every rate and length",
+    "the regression window of smoothing level L (1 for low ... 5 for high) is L cubed times \
+     log10 of the number of points of the curve, made odd (found in round 2 on six logs)",
+    "the analysed span starts two samples after the first second and is one sample short of \
+     the log without its first and last second (round 2; at 8 kHz it was one sample longer)",
+    "a realistic flight is treated as the probes were: nothing but the trim, the transform \
+     and the smoothing",
 ];
 
 /// A built pack.
@@ -531,10 +532,12 @@ fn predicted(
     }
     let mut levels = Vec::new();
     let mut span = None;
-    for (smoothing, window) in model::LEVELS {
+    for (level, smoothing) in model::LEVELS.into_iter().enumerate() {
         let mut axes = Vec::new();
+        let mut window = 0;
         for (axis, values) in &channels {
-            let curve = model::curve(values, fs, window).ok_or_else(too_short)?;
+            let curve = model::curve(values, fs, level).ok_or_else(too_short)?;
+            window = model::window(level, curve.db.len());
             let points = PREDICTED_HZ
                 .iter()
                 .filter(|hz| **hz < fs / 2.0)
