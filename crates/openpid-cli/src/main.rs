@@ -18,7 +18,7 @@ USAGE:
                 [--axis roll|pitch|yaw] [--channel KEY] [--out <path>] [--png <path>]
     openpid sliders <file> [--session N] [--set KEY=VALUE,...] [--json]
     openpid diff <fileA> <fileB> [--session N] [--session-b M] [--json] [--cli]
-    openpid gen [<spec.json>] [--out synthetic.csv] | gen --example
+    openpid gen [<spec.json>] [--out synthetic.csv | synthetic.bbl] | gen --example
     openpid --help | --version
 
 COMMANDS:
@@ -62,6 +62,9 @@ COMMANDS:
              throttle, white/pink noise, a PT1 'firmware' filter, jitter, dropouts)
              as a scaled CSV that `openpid` opens like any log. Without a spec the
              defaults are used; --example prints the default spec as JSON to edit.
+             With --out <name>.bbl (or .bfl) it is written as a Betaflight Blackbox
+             log instead, the way a flight controller logs it (whole deg/s, the
+             firmware's frames and headers), for any tool that reads such logs.
 
 OPTIONS:
     --session N   Restrict to session index N (0-based)
@@ -440,7 +443,19 @@ fn cmd_gen(args: &Args) -> Result<(), String> {
     if spec.is_empty() {
         return Err("the spec produces no samples (fs × duration_s < 1)".into());
     }
-    let session = spec.build();
+    let mut session = spec.build();
+    if let Some(path) = args.out.as_ref().filter(|p| is_blackbox_name(p)) {
+        // as a flight controller logs it: armed half a minute after power-up
+        session.settings.loop_rates = openpid_fmt_blackbox::write::typical_rates(spec.fs);
+        let options = openpid_fmt_blackbox::write::WriteOptions {
+            time_offset_us: 30_000_000,
+            ..Default::default()
+        };
+        let bytes = openpid_fmt_blackbox::write::betaflight(&session, &options)
+            .map_err(|e| e.to_string())?;
+        return std::fs::write(path, bytes)
+            .map_err(|e| format!("cannot create {}: {e}", path.display()));
+    }
     let log = LogFile {
         source: openpid_core::session::SourceInfo {
             path: None,
@@ -457,6 +472,13 @@ fn cmd_gen(args: &Args) -> Result<(), String> {
     };
     write_scaled_csv(&log, 0, &mut sink)?;
     sink.flush().map_err(|e| e.to_string())
+}
+
+/// Whether `path` names a Blackbox log (`.bbl`, `.bfl`).
+fn is_blackbox_name(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("bbl") || e.eq_ignore_ascii_case("bfl"))
 }
 
 fn parse_axis(s: Option<&str>) -> Result<openpid_core::Axis, String> {

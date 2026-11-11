@@ -363,6 +363,91 @@ fn gen_command_writes_a_session_openpid_can_analyse() {
 }
 
 #[test]
+fn gen_command_writes_a_betaflight_log() {
+    let spec_path = temp("bbl-spec.json");
+    std::fs::write(
+        &spec_path,
+        r#"{"fs": 2000, "duration_s": 3, "filter_hz": 120, "noise": {"white": 1.0}}"#,
+    )
+    .unwrap();
+    let log = temp("synthetic.BBL");
+    let (ok, _, err) = run(&[
+        "gen",
+        spec_path.to_str().unwrap(),
+        "--out",
+        log.to_str().unwrap(),
+    ]);
+    assert!(ok, "{err}");
+    let bytes = std::fs::read(&log).unwrap();
+    assert!(bytes.starts_with(b"H Product:Blackbox flight data recorder by Nicholas Sherlock\n"));
+
+    // it is a Betaflight log: firmware, rates, frames, channels, no damage
+    let (ok, out, err) = run(&["info", log.to_str().unwrap(), "--json"]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    let s = &v[0];
+    assert_eq!(s["profile_id"], "betaflight");
+    assert_eq!(s["firmware_version"], "2025.12.2");
+    assert_eq!(s["samples"], 6000);
+    assert_eq!(s["sample_rate_hz"], 2000.0);
+    assert_eq!(s["first_time_us"], 30_000_000);
+    assert_eq!(s["corrupt_frames"], 0);
+    assert_eq!(s["skipped_bytes"], 0);
+    // the log check finds nothing wrong with the file (it is only short)
+    for check in s["fitness"]["checks"].as_array().unwrap() {
+        let id = check["id"].as_str().unwrap();
+        if ["rate", "raw_gyro", "erpm", "frames", "gaps"].contains(&id) {
+            assert_eq!(check["level"], "Ok", "{check}");
+        }
+    }
+    let keys: Vec<&str> = s["channels"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["key"].as_str().unwrap())
+        .collect();
+    for key in [
+        "gyro.filtered.roll",
+        "gyro.raw.yaw",
+        "setpoint.roll",
+        "motor.3",
+        "motor_rpm.0",
+    ] {
+        assert!(keys.contains(&key), "{key} missing in {keys:?}");
+    }
+
+    // the settings the spec implies are in the headers
+    let (ok, out, err) = run(&["info", log.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    assert!(out.contains("Betaflight 2025.12.2"), "{out}");
+    let (ok, out, err) = run(&["run", "filter-sim", log.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    let description = v["description"].to_string();
+    assert!(description.contains("120"), "{description}");
+
+    // the analyses run on it as on any log
+    let (ok, out, err) = run(&["run", "step", log.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert!(v["metrics"]["delay_ms"].is_number());
+
+    // what cannot be logged is refused
+    std::fs::write(&spec_path, r#"{"duration_s": 5000}"#).unwrap();
+    let (ok, _, err) = run(&[
+        "gen",
+        spec_path.to_str().unwrap(),
+        "--out",
+        log.to_str().unwrap(),
+    ]);
+    assert!(!ok && err.contains("does not fit a Blackbox log"), "{err}");
+    let (ok, _, err) = run(&["gen", "--out", "/nonexistent-dir/x.bbl"]);
+    assert!(!ok && err.contains("cannot create"), "{err}");
+    std::fs::remove_file(&log).ok();
+    std::fs::remove_file(&spec_path).ok();
+}
+
+#[test]
 fn png_of_a_heatmap() {
     let l = log("betaflight-4.2.0.BFL");
     let f = l.to_str().unwrap();

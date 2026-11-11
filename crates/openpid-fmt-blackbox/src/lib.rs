@@ -20,6 +20,7 @@ pub mod predictor;
 pub mod profiles;
 pub mod reader;
 pub mod session;
+pub mod write;
 
 pub use cli::BetaflightCli;
 pub use headers::{Headers, LOG_START_MARKER};
