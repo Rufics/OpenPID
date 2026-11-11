@@ -399,13 +399,21 @@ function Wait-Settled($hwnd, $step) {
 
 # Types the path of a file into the "open" dialog that a click has brought up.
 function Open-File($step) {
-    # one path, or several as the dialog takes them: each in quotes, a space between
+    # One path, or several as the dialog takes them: each in quotes, a space
+    # between. The name field of the dialog holds about 259 characters, so for
+    # several files the folder is entered first and then the bare names.
+    $folder = $null
     if ($step.paths) {
+        $folder = $here
         $quoted = @()
         foreach ($one in $step.paths) {
-            $quoted += ('"' + (Resolve-Path (Join-Path $here $one)).Path + '"')
+            $null = Resolve-Path (Join-Path $here $one)
+            $quoted += ('"' + $one + '"')
         }
         $path = $quoted -join " "
+        if ($path.Length -gt 250) {
+            throw ("STOP: {0} file names are {1} characters, more than the dialog takes at once" -f $step.paths.Count, $path.Length)
+        }
     } else {
         $path = (Resolve-Path (Join-Path $here $step.path)).Path
     }
@@ -431,8 +439,23 @@ function Open-File($step) {
             $old = [System.Windows.Forms.Clipboard]::GetText()
         }
     } catch { }
+    if ($folder) {
+        # Enter on a folder only opens it; the dialog stays
+        [System.Windows.Forms.Clipboard]::SetText($folder)
+        Start-Sleep -Milliseconds 200
+        [OpCapture]::Chord(0x11, 0x41)
+        Start-Sleep -Milliseconds 100
+        [OpCapture]::Chord(0x11, 0x56)
+        Start-Sleep -Milliseconds 400
+        [OpCapture]::Key(0x0D)
+        Start-Sleep -Milliseconds 1200
+        Log ("    in the folder, {0} names of {1} characters" -f $step.paths.Count, $path.Length)
+    }
     [System.Windows.Forms.Clipboard]::SetText($path)
     Start-Sleep -Milliseconds 200
+    # whatever is in the name field is replaced
+    [OpCapture]::Chord(0x11, 0x41)
+    Start-Sleep -Milliseconds 100
     [OpCapture]::Chord(0x11, 0x56)
     Start-Sleep -Milliseconds 400
     [OpCapture]::Key(0x0D)
