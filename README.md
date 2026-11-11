@@ -58,6 +58,8 @@ Format details per Betaflight version are in
 **Binaries**: download the archive for your platform from the
 [latest release](https://github.com/Rufics/OpenPID/releases/latest)
 (`openpid-vX.Y.Z-<target>.tar.gz` for Linux and macOS, `.zip` for Windows).
+The targets are Linux x86_64, macOS arm64 (Apple silicon) and Windows x86_64;
+Intel Macs are not supported.
 Each one holds `openpid-gui` (desktop) and `openpid` (CLI).
 
 **From source** (the pinned Rust toolchain is installed automatically by
