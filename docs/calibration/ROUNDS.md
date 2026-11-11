@@ -68,4 +68,7 @@ changes OpenPID before a probe has settled it and the owner has chosen.
 | 7 | The flags value of an armed craft in acro is labelled `ANGLE_MODE` | #175; whether a mode changes what it analyses is not known |
 
 For the owner the round took about an hour of clicking. From round 1 on the
-clicks and the screenshots are scripted (#170).
+clicks and the screenshots are scripted (#170): `tools/capture/capture.ps1`
+travels in every pack with the steps of the round. Its trial on the owner's
+machine on 2026-11-11 (one log, the spectrum, the step response, four lists)
+ran 42 steps without a failure and saved 10 correct pictures in 44 s.

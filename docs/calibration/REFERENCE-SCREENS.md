@@ -175,9 +175,19 @@ and end frequency and its duration, "combine lpf", "Log Frequency",
 "Magnitude dB". It is a calculator of the filters typed into it; it does not
 use the log.
 
-## Not captured in round 0
+## The lists (trial of the capture script, 2026-11-11)
 
-- The open "smoothing" and "Delay:" lists of the Spectral Analyzer and the
-  smoothing list of the Step Resp Tool (their options and defaults).
+| Window | List | Options (default in bold) |
+|---|---|---|
+| Spectral Analyzer | smoothing | low, low-med, **medium**, med-high, high: there is no "off" |
+| Spectral Analyzer | "Delay:" | **Delay:** (nothing), filter delay, SP-gyro delay, SP smoothing delay |
+| Step Resp Tool | smoothing | **off**, low, medium, high |
+| Step Resp Tool | latency | **SR Latency**, SP-Gyro Delay |
+
+So a spectrum of the reference tool is always a smoothed curve; the least
+smoothed one is "low". Its step response is not smoothed unless asked.
+
+## Not captured so far
+
 - The PID slider tool as its own window.
 - "Period", "Markup", "Expand", "Y corr." and "RPM est." in use.
