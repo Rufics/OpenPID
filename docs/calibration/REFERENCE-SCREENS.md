@@ -87,6 +87,11 @@ order; "Show Differences Only"; a selector of the log.
   smoothing, or how it averages) is the first question of round 1.
 - With RPM Notches on, each motor's harmonics are drawn over the spectra as
   curves from the eRPM.
+- Every plot has a small toolbar that appears above its top right corner
+  when the pointer is over the plot (the owner, 2026-11-11): an export
+  menu (save the plot as a picture, copy it as a picture, **copy it as a
+  vector graphic**), zoom in (press the button, then drag a rectangle over
+  the plot), zoom out, pan and "restore view".
 
 ## Freq x Throttle
 
