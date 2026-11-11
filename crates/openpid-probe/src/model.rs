@@ -19,12 +19,11 @@
 //!    length of the curve ([`window`]).
 
 use openpid_dsp::fft::Fft;
-use std::f64::consts::TAU;
 use std::ops::Range;
 
 /// The smoothing levels of the tool's spectrum window, in the order of its
 /// list. "medium" is the tool's default.
-pub const LEVELS: [&str; 5] = ["low", "low-med", "medium", "med-high", "high"];
+pub const LEVELS: [&str; 5] = openpid_analysis::CURVE_LEVELS;
 
 /// Points of the regression window at smoothing level `level` (0 for "low"
 /// … 4 for "high") for a curve of `points` points: the cube of the level's
@@ -34,11 +33,7 @@ pub const LEVELS: [&str; 5] = ["low", "low-med", "medium", "med-high", "high"];
 /// Round 2 found it on thirty curves: six logs from 20 000 to 112 000
 /// samples at five levels, every one exact.
 pub fn window(level: usize, points: usize) -> usize {
-    let cube = (level.min(LEVELS.len() - 1) + 1).pow(3) as f64;
-    let exact = cube * (points.max(1) as f64).log10();
-    // an even or fractional length goes to the odd number at or below it,
-    // or just above an even one: 120.07 and 120 both give 121
-    2 * (exact / 2.0 + 1.0e-9).floor() as usize + 1
+    openpid_analysis::curve_window(level, points)
 }
 
 /// Seconds the tool leaves out at each end of a log.
@@ -61,86 +56,17 @@ pub fn span(len: usize, fs: f64) -> Option<Range<usize>> {
 }
 
 /// The transform of `x` as the tool scales it, decibels: one value per
-/// point of the one-sided spectrum, `fs / x.len()` apart.
+/// point of the one-sided spectrum, `fs / x.len()` apart. This is the
+/// level `OpenPID` itself computes for its curve (decision D-001).
 pub fn raw_db(x: &[f64], fs: f64) -> Vec<f64> {
-    let n = x.len();
-    if n < 2 {
-        return Vec::new();
-    }
-    let windowed: Vec<f64> = x
-        .iter()
-        .enumerate()
-        .map(|(i, v)| v * (0.5 - 0.5 * (TAU * i as f64 / (n - 1) as f64).cos()))
-        .collect();
-    let scale = fs * n as f64;
-    Fft::new()
-        .rfft(&windowed)
-        .iter()
-        .enumerate()
-        .map(|(k, bin)| {
-            let sides = if k == 0 { 1.0 } else { 2.0 };
-            // a point of no power at all stays a number
-            10.0 * (sides * bin.norm_sqr() / scale).max(1.0e-300).log10()
-        })
-        .collect()
+    openpid_analysis::curve_level_db(&Fft::new(), x, fs)
 }
 
-/// The tricube weight at a distance of `d` window half-widths.
-fn tricube(d: f64) -> f64 {
-    let d = d.abs().min(1.0);
-    (1.0 - d * d * d).powi(3)
-}
-
-/// `values` smoothed by a local regression over `window` points: at every
-/// point the value of the line fitted to the `window` nearest points, the
-/// weights tricube and scaled so that the farthest of those points weighs
-/// nothing. Away from the ends the window is centred and the fit is a
-/// weighted mean; at an end the window stays inside the data and the line
-/// carries the slope.
-///
-/// A `window` below three, or values shorter than the window, come back
-/// unchanged.
+/// `values` smoothed by a local regression over `window` points
+/// (`openpid_dsp::smooth::local_line`): at every point the value of the line
+/// fitted to the `window` nearest points with tricube weights.
 pub fn smooth(values: &[f64], window: usize) -> Vec<f64> {
-    let n = values.len();
-    let window = window | 1;
-    if window < 3 || n < window {
-        return values.to_vec();
-    }
-    let half = window / 2;
-    let kernel: Vec<f64> = (0..window)
-        .map(|j| tricube((j as f64 - half as f64) / half as f64))
-        .collect();
-    let total: f64 = kernel.iter().sum();
-    let mut out = vec![0.0; n];
-    for (i, value) in out.iter_mut().enumerate().take(n - half).skip(half) {
-        let slice = &values[i - half..=i + half];
-        *value = slice.iter().zip(&kernel).map(|(v, w)| v * w).sum::<f64>() / total;
-    }
-    let mut end = |i: usize| {
-        let first = i.saturating_sub(half).min(n - window);
-        let reach = (i - first).max(first + window - 1 - i) as f64;
-        // weighted least squares of v = a + b·(j − i): `a` is the value at i
-        let (mut sw, mut sx, mut sxx, mut sv, mut sxv) = (0.0, 0.0, 0.0, 0.0, 0.0);
-        for (j, v) in values.iter().enumerate().skip(first).take(window) {
-            let x = j as f64 - i as f64;
-            let w = tricube(x / reach);
-            sw += w;
-            sx += w * x;
-            sxx += w * x * x;
-            sv += w * v;
-            sxv += w * x * v;
-        }
-        let det = sw * sxx - sx * sx;
-        out[i] = if det.abs() > f64::EPSILON * sw * sxx {
-            (sxx * sv - sx * sxv) / det
-        } else {
-            sv / sw
-        };
-    };
-    for i in (0..half).chain(n - half..n) {
-        end(i);
-    }
-    out
+    openpid_dsp::smooth::local_line(values, window)
 }
 
 /// The tool's curve for one channel of a log.
@@ -189,6 +115,7 @@ pub fn curve_of(logged: &[f64], fs: f64, span: Range<usize>, level: usize) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::f64::consts::TAU;
 
     #[test]
     fn the_span_is_the_log_without_a_second_at_each_end_one_sample_short() {
@@ -222,7 +149,7 @@ mod tests {
         assert!(s[90].abs() < 1.0e-15 && s[210].abs() < 1.0e-15);
         assert!(s[91] > 0.0 && (s[91] - s[209]).abs() < 1.0e-15);
         let peak = s[150];
-        assert!((s[180] / peak - tricube(0.5)).abs() < 1.0e-12);
+        assert!((s[180] / peak - (1.0f64 - 0.125).powi(3)).abs() < 1.0e-12);
         assert!((peak - 0.014_400).abs() < 1.0e-5, "{peak}");
     }
 

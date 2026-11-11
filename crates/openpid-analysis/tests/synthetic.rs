@@ -91,6 +91,147 @@ fn psd_finds_the_injected_tone() {
 }
 
 #[test]
+fn the_curve_is_one_transform_of_the_epoch_smoothed_in_decibels() {
+    use openpid_analysis::{PsdMethod, curve_db, curve_window};
+    // white noise of 3 deg/s RMS: a density of 9 (deg/s)² over half the rate
+    let spec = SignalSpec {
+        duration_s: 12.0,
+        setpoint: SetpointProfile::Silence,
+        noise: Noise {
+            white: 3.0,
+            pink: 0.0,
+            tones: vec![Tone {
+                hz: 137.0,
+                amplitude: 5.0,
+            }],
+            motor: None,
+        },
+        filter_hz: 0.0,
+        ..SignalSpec::default()
+    };
+    let s = spec.build();
+    let ctx = AnalysisCtx {
+        session: &s,
+        epoch: None,
+    };
+    let channel = ChannelId::Gyro {
+        axis: Axis::Roll,
+        stage: GyroStage::Raw,
+    };
+    let curve = |smoothing: usize, max_hz: Option<f64>| {
+        PsdAnalysis
+            .run(
+                &ctx,
+                &PsdParams {
+                    channel: channel.clone(),
+                    method: PsdMethod::Curve,
+                    smoothing,
+                    max_hz,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+    };
+    let out = curve(2, None);
+    let x = s.channel(&channel).unwrap().data.values();
+    assert_eq!(out.method, PsdMethod::Curve);
+    assert_eq!((out.nperseg, out.segments), (x.len(), 1));
+    assert_eq!(out.freq.len(), x.len() / 2 + 1);
+    assert!((out.freq[1] - out.fs / x.len() as f64).abs() < 1.0e-12);
+    // it is the curve of the samples themselves
+    let by_hand = curve_db(&openpid_dsp::Fft::new(), x, out.fs, 2);
+    assert_eq!(out.power_db, by_hand);
+    for (p, db) in out.power.iter().zip(&out.power_db) {
+        assert!((10.0 * p.log10() - db).abs() < 1.0e-9);
+    }
+    // noise reads 6.8 dB below its density: 4.26 dB of the window that is
+    // not put back, 2.51 dB from averaging decibels
+    let density_db = 10.0 * (9.0 / (out.fs / 2.0)).log10();
+    let floor: Vec<f64> = out
+        .freq
+        .iter()
+        .zip(&out.power_db)
+        .filter(|(f, _)| **f > 200.0 && **f < 450.0)
+        .map(|(_, db)| *db)
+        .collect();
+    let mean = floor.iter().sum::<f64>() / floor.len() as f64;
+    assert!((mean - (density_db - 6.77)).abs() < 0.3, "{mean}");
+    // a steady tone of 5 deg/s is a small bump here ...
+    let at = |o: &openpid_analysis::PsdOutput, hz: f64| {
+        let k = (hz / o.freq[1]).round() as usize;
+        o.power_db[k]
+    };
+    let bump = at(&out, 137.0) - mean;
+    assert!(bump > 1.0 && bump < 12.0, "{bump}");
+    // ... and a line of tens of decibels in the density
+    let density = PsdAnalysis
+        .run(
+            &ctx,
+            &PsdParams {
+                channel: channel.clone(),
+                segment_s: 1.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(density.method, PsdMethod::Density);
+    let line = at(&density, 137.0) - density_db;
+    assert!(line > 25.0, "{line}");
+
+    // a higher level is a wider window, and a flatter curve
+    let points = out.freq.len();
+    assert!(curve_window(4, points) > curve_window(2, points));
+    let spread = |o: &openpid_analysis::PsdOutput| {
+        let v: Vec<f64> = o
+            .freq
+            .iter()
+            .zip(&o.power_db)
+            .filter(|(f, _)| **f > 200.0 && **f < 450.0)
+            .map(|(_, db)| *db)
+            .collect();
+        let m = v.iter().sum::<f64>() / v.len() as f64;
+        (v.iter().map(|d| (d - m).powi(2)).sum::<f64>() / v.len() as f64).sqrt()
+    };
+    assert!(spread(&curve(4, None)) < spread(&out));
+    assert!(spread(&curve(0, None)) > spread(&out));
+    // the upper bound cuts the curve, it does not change it
+    let low = curve(2, Some(100.0));
+    assert!(low.freq.last().is_some_and(|f| *f <= 100.0 && *f > 99.9));
+    assert_eq!(low.power_db[..], out.power_db[..low.power_db.len()]);
+}
+
+#[test]
+fn the_method_and_the_level_are_part_of_what_a_spectrum_is() {
+    use openpid_analysis::PsdMethod;
+    use std::hash::{Hash, Hasher};
+    let hash = |p: &PsdParams| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        p.hash(&mut h);
+        h.finish()
+    };
+    let density = PsdParams::default();
+    assert_eq!(density.method, PsdMethod::Density);
+    assert_eq!(density.smoothing, 2);
+    let curve = PsdParams {
+        method: PsdMethod::Curve,
+        ..PsdParams::default()
+    };
+    assert_ne!(hash(&density), hash(&curve));
+    assert_ne!(
+        hash(&curve),
+        hash(&PsdParams {
+            smoothing: 3,
+            ..curve.clone()
+        })
+    );
+    // parameters saved before the curve existed read as the density
+    let old: PsdParams = serde_json::from_str(r#"{"segment_s":0.5}"#).unwrap();
+    assert_eq!((old.method, old.segment_s), (PsdMethod::Density, 0.5));
+    let text = serde_json::to_string(&curve).unwrap();
+    assert!(text.contains(r#""method":"curve""#), "{text}");
+}
+
+#[test]
 fn throttle_heatmap_ridge_follows_the_motor_speed() {
     let spec = SignalSpec {
         duration_s: 20.0,
