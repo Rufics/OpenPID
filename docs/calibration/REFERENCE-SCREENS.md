@@ -145,7 +145,11 @@ order; "Show Differences Only"; a selector of the log.
 - Controls: Run, Reset, Save Fig, Save Settings, Period, Markup, a smoothing
   list, the latency list (SR Latency, SP-Gyro …), R / P / Y, Expand, Raw, BF
   sliders, Y corr.
-- "Raw" draws every window's response over the mean. "BF sliders" replaces
+- "Raw" draws every window's response over the mean; a second click turns
+  it off. The smoothing list shows "smoothing…" whatever level is chosen
+  (the names are cut by the width of the list). Every plot of the window
+  has the toolbar of the spectrum's plots and copies as a vector graphic
+  (trial of 2026-11-11). "BF sliders" replaces
   the right half by "Betaflight PID Sliders": Damping, Tracking, Stick Resp.,
   Dynamic D., Drift-Wobble, Pitch D., Pitch T., Master on 0 … 2, with "MODE:
   RPY".
