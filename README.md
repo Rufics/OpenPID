@@ -18,7 +18,8 @@ written in Rust, MIT licensed.
 - **Step response**: setpoint-to-gyro deconvolution per axis, with verdicts
   (rise, delay, overshoot, settling, final value) judged against Freestyle,
   Racing or Cinematic targets, and a target band on the plot.
-- **Noise**: Welch spectra with automatic peak markers, frequency × throttle
+- **Noise**: spectra (the reference tool's smoothed curve, or Welch's power
+  density) with automatic peak markers, frequency × throttle
   and frequency × time heatmaps, a player that steps through the
   spectrum over time, and an RPM overlay of the motor harmonics.
 - **Filters**: Filter Sim runs the unfiltered gyro through the modelled filter
@@ -96,7 +97,7 @@ the heatmaps), so it fits in scripts and notebooks:
 ```sh
 openpid info flight.bbl                                   # sessions, firmware, rates, channels, log check
 openpid run step flight.bbl --axis pitch --epoch auto     # step response, take-off and landing trimmed
-openpid run psd flight.bbl --channel gyro.raw.roll        # Welch spectrum
+openpid run psd flight.bbl --channel gyro.raw.roll        # spectrum (--method density for Welch)
 openpid run thr-heatmap flight.bbl --png throttle.png     # frequency x throttle
 openpid run filter-sim flight.bbl --set lpf1_hz=120       # what if the gyro lowpass moved to 120 Hz
 openpid run recommend flight.bbl --cli                    # tuning advice as Betaflight `set …` commands

@@ -15,7 +15,7 @@ use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{
     GridInput, GridMark, HoverPosition, Line, LineStyle, Plot, PlotPoint, PlotPoints, Text, VLine,
 };
-use openpid_analysis::{PsdOutput, PsdParams};
+use openpid_analysis::{CURVE_LEVELS, PsdMethod, PsdOutput, PsdParams};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, PidTerm};
 use openpid_dsp::Peak;
 use std::sync::Arc;
@@ -33,7 +33,9 @@ const X_LABEL_H: f32 = 18.0;
 /// Share of the width taken by the full-spectrum column.
 const FULL_SHARE: f32 = 0.6;
 
-/// Smoothing levels: the width (Hz) of the moving average over the power.
+/// Smoothing levels of the power density: the width (Hz) of the moving
+/// average over the power. The curve has its own five levels
+/// ([`CURVE_LEVELS`]), which are part of how it is computed.
 pub const SMOOTHING: [(&str, f64); 6] = [
     ("off", 0.0),
     ("low", 2.0),
@@ -236,7 +238,11 @@ pub fn spectrum(app: &mut App, ui: &mut Ui) {
     let display = app.tools.spectrum_display.clone();
     let setup = Setup {
         quantity: Quantity::of(&app.tools.spectrum_channel),
-        width_hz: SMOOTHING[display.smoothing.min(SMOOTHING.len() - 1)].1,
+        // the curve comes smoothed; only the density is smoothed for display
+        width_hz: match app.tools.psd.method {
+            PsdMethod::Curve => 0.0,
+            PsdMethod::Density => SMOOTHING[display.smoothing.min(SMOOTHING.len() - 1)].1,
+        },
         display,
         db: app.tools.psd_db,
         base: app.tools.psd.clone(),
@@ -681,19 +687,57 @@ fn controls(app: &mut App, ui: &mut Ui) {
         tr("Prefilt (dotted)"),
         tr("the unfiltered gyro beside the filtered one; the gyro only"),
     );
-    let smoothing: Vec<(usize, String)> = SMOOTHING
-        .iter()
-        .enumerate()
-        .map(|(i, (name, _))| (i, tr(name).to_string()))
-        .collect();
+    let methods = [
+        (PsdMethod::Curve, tr("smoothed curve").to_string()),
+        (PsdMethod::Density, tr("power density").to_string()),
+    ];
     panel::choice(
         ui,
-        "spectrum-smoothing",
-        tr("Smoothing"),
-        tr("a moving average of the power over 0, 2, 4, 8, 16 or 32 Hz; medium (8 Hz) by default"),
-        &mut d.smoothing,
-        &smoothing,
+        "spectrum-method",
+        tr("Spectrum"),
+        tr(
+            "smoothed curve: one transform of the whole log with its decibels smoothed, as the reference tool draws it; broad noise shows well, a steady tone almost vanishes. power density: averaged segments (Welch); noise reads its true density and a steady tone stands out",
+        ),
+        &mut app.tools.psd.method,
+        &methods,
     );
+    match app.tools.psd.method {
+        PsdMethod::Curve => {
+            let levels: Vec<(usize, String)> = CURVE_LEVELS
+                .iter()
+                .enumerate()
+                .map(|(i, name)| (i, tr(name).to_string()))
+                .collect();
+            app.tools.psd.smoothing = app.tools.psd.smoothing.min(CURVE_LEVELS.len() - 1);
+            panel::choice(
+                ui,
+                "spectrum-smoothing",
+                tr("Smoothing"),
+                tr(
+                    "how wide the smoothing of the curve is, as in the reference tool; medium by default. The same level is a wider band for a shorter log",
+                ),
+                &mut app.tools.psd.smoothing,
+                &levels,
+            );
+        }
+        PsdMethod::Density => {
+            let smoothing: Vec<(usize, String)> = SMOOTHING
+                .iter()
+                .enumerate()
+                .map(|(i, (name, _))| (i, tr(name).to_string()))
+                .collect();
+            panel::choice(
+                ui,
+                "spectrum-smoothing",
+                tr("Smoothing"),
+                tr(
+                    "a moving average of the power over 0, 2, 4, 8, 16 or 32 Hz; medium (8 Hz) by default",
+                ),
+                &mut d.smoothing,
+                &smoothing,
+            );
+        }
+    }
     panel::section(ui, tr("Scale"));
     panel::check(
         ui,
@@ -751,18 +795,21 @@ fn controls(app: &mut App, ui: &mut Ui) {
             .small()
             .color(crate::colormap::MUTED),
     );
-    panel::section(ui, tr("Analysis"));
-    panel::drag(
-        ui,
-        tr("Segment"),
-        tr(
-            "length of each averaged piece of the full spectrum: longer gives finer frequency steps and less averaging",
-        ),
-        &mut app.tools.psd.segment_s,
-        0.01,
-        0.02..=2.0,
-        " s",
-    );
+    // the curve is one piece, the whole log: it has no segment to set
+    if app.tools.psd.method == PsdMethod::Density {
+        panel::section(ui, tr("Analysis"));
+        panel::drag(
+            ui,
+            tr("Segment"),
+            tr(
+                "length of each averaged piece of the full spectrum: longer gives finer frequency steps and less averaging",
+            ),
+            &mut app.tools.psd.segment_s,
+            0.01,
+            0.02..=2.0,
+            " s",
+        );
+    }
 }
 
 /// The marker list (with the delta of the last two) and each log's top peak

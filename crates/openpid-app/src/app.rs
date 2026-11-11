@@ -241,7 +241,12 @@ impl Default for Tools {
         Tools {
             axis: Axis::Roll,
             step: StepParams::default(),
-            psd: PsdParams::default(),
+            // decision D-001: the Spectrum tab draws the reference tool's
+            // curve unless the density is asked for
+            psd: PsdParams {
+                method: openpid_analysis::PsdMethod::Curve,
+                ..PsdParams::default()
+            },
             throttle: ThrottleHeatmapParams::default(),
             stft: StftParams::default(),
             filter_sim: FilterSimParams::default(),

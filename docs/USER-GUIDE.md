@@ -195,10 +195,10 @@ filters.
 
 ## 4. Spectrum
 
-Welch PSD (DESIGN §6.3) of roll, pitch and yaw at once, one row per axis, each
-with two plots: the **full spectrum** (0 … Nyquist) on the left and **below
-100 Hz** on the right, computed with 1 s segments (1 Hz bins) so the
-propwash and frame range is readable. Every log is drawn in its colour; for the
+The spectrum (DESIGN §6.3) of roll, pitch and yaw at once, one row per axis,
+each with two plots: the **full spectrum** (0 … Nyquist) on the left and
+**below 100 Hz** on the right, so the propwash and frame range is readable.
+Every log is drawn in its colour; for the
 gyro the unfiltered gyro (prefilt) is dotted beside the filtered one: the gap
 between them is the work of the filters, what is left in the solid line reaches
 the PIDs. The x axes of a column move together; a double click resets them.
@@ -207,8 +207,25 @@ The control panel on the right (hover any field for its explanation):
 
 - **Channel**: Gyro (default), D-term, P-term, PID sum, PID error, Setpoint;
   **Prefilt (dotted)** (on by default; the gyro only).
-- **Smoothing**: off / low / low-med / **medium** (default) / med-high / high,
-  a moving average of the power over 0 / 2 / 4 / 8 / 16 / 32 Hz.
+- **Spectrum**: what the curves are.
+  - **smoothed curve** (default): one transform of the whole analysis window
+    whose decibel values are smoothed along the frequency. It is the curve the
+    reference tool draws, within a hundredth of a decibel, so its numbers and
+    the ones in tuning guides are the same. In it the height of a peak follows its width
+    as well as its strength: broad noise, such as motor noise that moves with
+    the throttle, shows well; a steady tone at one frequency almost vanishes
+    (20 deg/s over the whole flight is a bump of under 4 dB); white noise
+    reads 6.8 dB below its true density.
+  - **power density**: Welch's method, the averaged power of 0.25 s segments
+    (1 s for the plots below 100 Hz) in unit²/Hz. Noise reads its true density
+    and a steady resonance stands tens of decibels above it. Use it to find a
+    fixed resonance, and to read absolute levels.
+- **Smoothing**: for the smoothed curve low / low-med / **medium** (default) /
+  med-high / high, as in the reference tool; the same level is a wider band
+  for a shorter log (at medium about 5 Hz either side for 12 s, 1.4 Hz for
+  47 s). For the power density off / low / low-med / **medium** (default) /
+  med-high / high, a moving average of the power over 0 / 2 / 4 / 8 / 16 /
+  32 Hz.
 - **dB**, **Log frequency** (a logarithmic axis on the full spectrum),
   **Y min** / **Y max**: automatic by default (the drawn data above 2 Hz, the
   same for every plot so the rows compare); click **auto** to fix an end, the
@@ -220,8 +237,8 @@ The control panel on the right (hover any field for its explanation):
   panel lists the markers and the Δ between the last two, **Clear markers**
   removes them. Manual markers are mirrored as horizontal lines on both
   heatmaps, handy for matching a spectrum peak with a motor harmonic.
-- **Segment**: the segment length of the full spectrum (longer = finer
-  frequency grid, less averaging).
+- **Segment** (power density only): the segment length of the full spectrum
+  (longer = finer frequency grid, less averaging).
 
 ## 5. Freq × throttle
 
@@ -515,7 +532,7 @@ with a new log.
 | Log viewer | `openpid info <log>`, `openpid decode <log> --scaled` |
 | Log check | `openpid info <log>`: the `fitness` block (the `fitness` field with `--json`) |
 | Step response | `openpid run step <log> --axis pitch --epoch 2..12` (`--json` carries `verdicts` against the project's targets, or the defaults) |
-| Spectrum | `openpid run psd <log> --channel gyro.raw.roll` |
+| Spectrum | `openpid run psd <log> --channel gyro.raw.roll` (`--method density` for the power density, `--smoothing high` for another level of the curve) |
 | Freq × throttle | `openpid run thr-heatmap <log> [--png out.png]` |
 | Freq × time | `openpid run stft <log> --channel motor.0` |
 | Filter Sim | `openpid run filter-sim <log> --set lpf1_hz=100,lpf1_type=1` |
