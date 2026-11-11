@@ -35,8 +35,9 @@ disagreements) and [ROUNDS.md](ROUNDS.md) (the ledger of probe rounds).
 - **Reference tool** holds only what this repository already records:
   `docs/DESIGN.md` §6.2 and §6.7, the `docs/design/*/README.md` notes and
   `docs/USER-GUIDE.md`. No code of the reference tool was read and nothing
-  was looked up elsewhere. "not recorded — round 0" means the repository says
-  nothing; the cell is completed from the round 0 screenshots of #168.
+  was looked up elsewhere. "not recorded — round 0" means the repository said
+  nothing when the row was written; what round 0 then showed of that screen
+  is in [REFERENCE-SCREENS.md](REFERENCE-SCREENS.md).
 - **Status** is one of:
   - `matched on evidence`: the repository holds a comparison with the
     reference tool (its numbers in a test, or a comparison recorded in
