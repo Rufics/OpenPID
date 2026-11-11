@@ -708,8 +708,10 @@ pub fn build(round: u32, built_from: &str) -> Result<Pack, PackError> {
         ours.probes.push(built.ours);
         expected.push(built.predicted);
     }
-    // round 1 was run before there was a model: its pack stays as it was
-    let predictions = (round >= 2).then(|| Predictions {
+    // round 1 was run before there was a model: its pack stays as it was;
+    // the model is of the spectrum, so it predicts for spectrum rounds only
+    let spectrum = probes.iter().any(|p| p.area == Area::Spectrum);
+    let predictions = (round >= 2 && spectrum).then(|| Predictions {
         format: FORMAT,
         round,
         assumes: ASSUMES.to_vec(),

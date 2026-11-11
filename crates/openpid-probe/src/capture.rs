@@ -295,63 +295,67 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     });
     steps.push(shot(LOG_VIEWER, format!("r{round}-log-loaded")));
 
-    steps.push(click(LOG_VIEWER, "log", "Spectral Analyzer", (3556, 706)));
-    // the tool may still be decoding when the click lands: it then opens the
-    // window once it is done, however long that takes
-    steps.push(Step {
-        wait_s: Some(900),
-        ..settle(SPECTRUM, None, 1.5)
-    });
-    steps.push(shot(SPECTRUM, format!("r{round}-spectrum-open")));
-    if round >= 3 {
+    // the spectrum window, when the round has probes for it (the step
+    // response has its own window; its steps come with its first round)
+    if probes.iter().any(|p| p.area == Area::Spectrum) {
+        steps.push(click(LOG_VIEWER, "log", "Spectral Analyzer", (3556, 706)));
+        // the tool may still be decoding when the click lands: it then opens the
+        // window once it is done, however long that takes
         steps.push(Step {
-            action: "type",
-            text: Some(Y_MAX_DB.to_string()),
-            ..click(SPECTRUM, "shot", "Y max", Y_MAX_BOX)
+            wait_s: Some(900),
+            ..settle(SPECTRUM, None, 1.5)
         });
-        steps.push(pause(300));
-    }
-    let spectrum: Vec<&Probe> = probes.iter().filter(|p| p.area == Area::Spectrum).collect();
-    for probe in spectrum {
-        // the logs are listed in the order of their names, which is the
-        // order of the catalogue; the legend of every picture names its log
-        let row = probes.iter().position(|p| p.id == probe.id).unwrap_or(0) as u32;
-        for (k, (level, item)) in SMOOTHING.into_iter().enumerate() {
-            if k == 0 {
-                // a click selects this log alone
-                let y = 161 + (59 * row) / 2;
-                steps.push(Step {
-                    mark: Some(true),
-                    ..click(
-                        SPECTRUM,
-                        "spectrum",
-                        &format!("log {}", probe.id),
-                        (3483, y),
-                    )
-                });
-                steps.push(pause(250));
-                steps.push(click(SPECTRUM, "spectrum", "smoothing list", (3641, 1314)));
-            } else {
-                steps.push(Step {
-                    mark: Some(true),
-                    ..click(SPECTRUM, "spectrum", "smoothing list", (3641, 1314))
-                });
-            }
-            steps.push(pause(350));
-            let name = format!("smoothing {level}");
-            steps.push(click(
-                SPECTRUM,
-                "spectrum",
-                &name,
-                (3647, 1347 + (67 * item) / 2),
-            ));
-            steps.push(pause(200));
-            steps.push(click(SPECTRUM, "spectrum", "Run", (3470, 1004)));
-            steps.push(settle(SPECTRUM, Some(20.0), 1.2));
-            steps.push(shot(SPECTRUM, spectrum_shot(round, probe.id, level)));
-            for (axis, column) in copied(round, level) {
-                let file = spectrum_copy(round, probe.id, level, axis, column);
-                copy_plot(&mut steps, axis, column, file);
+        steps.push(shot(SPECTRUM, format!("r{round}-spectrum-open")));
+        if round >= 3 {
+            steps.push(Step {
+                action: "type",
+                text: Some(Y_MAX_DB.to_string()),
+                ..click(SPECTRUM, "shot", "Y max", Y_MAX_BOX)
+            });
+            steps.push(pause(300));
+        }
+        let spectrum: Vec<&Probe> = probes.iter().filter(|p| p.area == Area::Spectrum).collect();
+        for probe in spectrum {
+            // the logs are listed in the order of their names, which is the
+            // order of the catalogue; the legend of every picture names its log
+            let row = probes.iter().position(|p| p.id == probe.id).unwrap_or(0) as u32;
+            for (k, (level, item)) in SMOOTHING.into_iter().enumerate() {
+                if k == 0 {
+                    // a click selects this log alone
+                    let y = 161 + (59 * row) / 2;
+                    steps.push(Step {
+                        mark: Some(true),
+                        ..click(
+                            SPECTRUM,
+                            "spectrum",
+                            &format!("log {}", probe.id),
+                            (3483, y),
+                        )
+                    });
+                    steps.push(pause(250));
+                    steps.push(click(SPECTRUM, "spectrum", "smoothing list", (3641, 1314)));
+                } else {
+                    steps.push(Step {
+                        mark: Some(true),
+                        ..click(SPECTRUM, "spectrum", "smoothing list", (3641, 1314))
+                    });
+                }
+                steps.push(pause(350));
+                let name = format!("smoothing {level}");
+                steps.push(click(
+                    SPECTRUM,
+                    "spectrum",
+                    &name,
+                    (3647, 1347 + (67 * item) / 2),
+                ));
+                steps.push(pause(200));
+                steps.push(click(SPECTRUM, "spectrum", "Run", (3470, 1004)));
+                steps.push(settle(SPECTRUM, Some(20.0), 1.2));
+                steps.push(shot(SPECTRUM, spectrum_shot(round, probe.id, level)));
+                for (axis, column) in copied(round, level) {
+                    let file = spectrum_copy(round, probe.id, level, axis, column);
+                    copy_plot(&mut steps, axis, column, file);
+                }
             }
         }
     }

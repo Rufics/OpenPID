@@ -804,6 +804,11 @@ for ($i = 0; $i -lt $all.Count; $i++) {
             $script:failed++
             Log ("    FAILED: " + $message)
             if ($message -like "STOP*") { break }
+            # a step the rest of the run depends on: no point in going on
+            if ($step.must) {
+                Log "    STOP: this step has to work for the rest of the run"
+                break
+            }
         }
     }
 }

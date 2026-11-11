@@ -16,6 +16,8 @@ use serde::Serialize;
 pub enum Area {
     /// The spectrum of a channel.
     Spectrum,
+    /// The step response: how the craft follows the stick.
+    StepResponse,
 }
 
 /// One log of a round.
@@ -431,18 +433,247 @@ fn round_3() -> Vec<Probe> {
     probes
 }
 
+/// Length of a step-response probe, seconds.
+const STEP_S: f64 = 30.0;
+
+/// The plant most step-response probes fly: a second-order response that
+/// overshoots by a quarter, 5 ms late.
+const UNDERDAMPED: Plant = Plant::SecondOrder {
+    natural_hz: 15.0,
+    damping: 0.4,
+    delay_ms: 5.0,
+    gain: 1.0,
+};
+
+/// An axis that follows random stick moves through `plant`: whole levels
+/// within `±amplitude`, each held between `hold_ms.0` and `hold_ms.1`, with
+/// white noise of `noise` deg/s RMS on the gyro (none when zero).
+fn moved(seed: u64, amplitude: f64, hold_ms: (u32, u32), plant: Plant, noise: f64) -> AxisSpec {
+    AxisSpec {
+        waves: if noise > 0.0 {
+            vec![Wave::Noise { rms: noise, seed }]
+        } else {
+            Vec::new()
+        },
+        ..AxisSpec::following(
+            Stick::Random {
+                seed: seed + 1000,
+                hold_min_ms: hold_ms.0,
+                hold_max_ms: hold_ms.1,
+                amplitude,
+            },
+            plant,
+        )
+    }
+}
+
+/// The plant probe at a log rate and a length: three plants whose step
+/// responses are known in closed form.
+fn plants(id: &'static str, title: &'static str, fs: f64, duration_s: f64) -> Probe {
+    Probe {
+        id,
+        area: Area::StepResponse,
+        title,
+        purpose: [
+            "a pure delay of 10 ms: the true response is a step at 10 ms, with no overshoot; \
+             what a tool draws shows its own rounding of an edge and its latency rule",
+            "a first-order response (time constant 20 ms) after 5 ms: no overshoot, half way \
+             at 18.9 ms",
+            "a second-order response (15 Hz, damping 0.4) after 5 ms: a peak of 1.254",
+        ],
+        flight: FlightSpec {
+            roll: moved(101, 200.0, (150, 700), Plant::Delay { delay_ms: 10.0 }, 0.0),
+            pitch: moved(
+                102,
+                200.0,
+                (150, 700),
+                Plant::FirstOrder {
+                    tau_ms: 20.0,
+                    delay_ms: 5.0,
+                    gain: 1.0,
+                },
+                0.0,
+            ),
+            yaw: moved(103, 200.0, (150, 700), UNDERDAMPED, 0.0),
+            ..FlightSpec::quiet(fs, duration_s)
+        },
+    }
+}
+
+/// A stick that is still but for the seconds from `from_s` to `to_s`, where
+/// it moves every quarter of a second.
+fn busy_between(from_s: f64, to_s: f64, amplitude: f64) -> Stick {
+    let quarters = (STEP_S * 4.0) as usize;
+    let mut state = 12_345u64;
+    let levels = (0..quarters)
+        .map(|k| {
+            // a fixed sequence of whole levels within the amplitude
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            let unit = ((state >> 33) % 2001) as f64 / 1000.0 - 1.0;
+            let t = k as f64 / 4.0;
+            if t >= from_s && t < to_s {
+                (unit * amplitude).round()
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    Stick::Steps {
+        start_s: 0.0,
+        every_s: 0.25,
+        levels,
+    }
+}
+
+/// Round 4, the first of the step response: what the reference tool draws
+/// for plants whose true response is known, and what its curve, its window
+/// count, its peak and its latency depend on.
+fn round_4() -> Vec<Probe> {
+    let quiet = FlightSpec::quiet(2000.0, STEP_S);
+    let hold = (150, 700);
+    vec![
+        plants(
+            "t1-plants-2k",
+            "Three plants of known step response: a delay, a first-order and a second-order one",
+            2000.0,
+            STEP_S,
+        ),
+        plants("t2-plants-1k", "The same at 1 kHz", 1000.0, STEP_S),
+        plants("t3-plants-4k", "The same at 4 kHz", 4000.0, STEP_S),
+        Probe {
+            id: "t4-amplitude-2k",
+            area: Area::StepResponse,
+            title: "One plant, stick moves of three sizes: is the response the same for each",
+            purpose: [
+                "stick moves within 25 deg/s: below what a tool may ask of a window",
+                "stick moves within 100 deg/s",
+                "stick moves within 400 deg/s",
+            ],
+            flight: FlightSpec {
+                roll: moved(111, 25.0, hold, UNDERDAMPED, 0.0),
+                pitch: moved(112, 100.0, hold, UNDERDAMPED, 0.0),
+                yaw: moved(113, 400.0, hold, UNDERDAMPED, 0.0),
+                ..quiet.clone()
+            },
+        },
+        Probe {
+            id: "t5-noise-2k",
+            area: Area::StepResponse,
+            title: "One plant under gyro noise of three levels: what the noise does to the curve",
+            purpose: [
+                "gyro noise of 0.5 deg/s RMS",
+                "gyro noise of 5 deg/s RMS",
+                "gyro noise of 20 deg/s RMS",
+            ],
+            flight: FlightSpec {
+                roll: moved(121, 200.0, hold, UNDERDAMPED, 0.5),
+                pitch: moved(122, 200.0, hold, UNDERDAMPED, 5.0),
+                yaw: moved(123, 200.0, hold, UNDERDAMPED, 20.0),
+                ..quiet.clone()
+            },
+        },
+        Probe {
+            id: "t6-holds-2k",
+            area: Area::StepResponse,
+            title: "One plant, the stick held for short, medium and long times",
+            purpose: [
+                "a new level every 40 to 120 ms: the craft never settles",
+                "a new level every 300 to 900 ms",
+                "a new level every 1.5 to 3 s: few moves, long rests",
+            ],
+            flight: FlightSpec {
+                roll: moved(131, 200.0, (40, 120), UNDERDAMPED, 0.0),
+                pitch: moved(132, 200.0, (300, 900), UNDERDAMPED, 0.0),
+                yaw: moved(133, 200.0, (1500, 3000), UNDERDAMPED, 0.0),
+                ..quiet.clone()
+            },
+        },
+        Probe {
+            id: "t7-gain-2k",
+            area: Area::StepResponse,
+            title: "A craft that flies less, as much and more than asked: where the curve settles",
+            purpose: [
+                "the craft reaches 0.8 of the rate asked for",
+                "the craft reaches the rate asked for",
+                "the craft reaches 1.25 of the rate asked for",
+            ],
+            flight: FlightSpec {
+                roll: moved(
+                    141,
+                    200.0,
+                    hold,
+                    Plant::SecondOrder {
+                        natural_hz: 15.0,
+                        damping: 0.4,
+                        delay_ms: 5.0,
+                        gain: 0.8,
+                    },
+                    0.0,
+                ),
+                pitch: moved(142, 200.0, hold, UNDERDAMPED, 0.0),
+                yaw: moved(
+                    143,
+                    200.0,
+                    hold,
+                    Plant::SecondOrder {
+                        natural_hz: 15.0,
+                        damping: 0.4,
+                        delay_ms: 5.0,
+                        gain: 1.25,
+                    },
+                    0.0,
+                ),
+                ..quiet.clone()
+            },
+        },
+        Probe {
+            id: "t8-sparse-2k",
+            area: Area::StepResponse,
+            title: "Stick moves in parts of the flight only: which parts a tool takes its windows \
+                    from, and how many",
+            purpose: [
+                "moves from 5 to 10 s, a still stick before and after",
+                "moves from 20 to 22 s only",
+                "a move every 2 s, between 150 and -150 deg/s",
+            ],
+            flight: FlightSpec {
+                roll: AxisSpec::following(busy_between(5.0, 10.0, 200.0), UNDERDAMPED),
+                pitch: AxisSpec::following(busy_between(20.0, 22.0, 200.0), UNDERDAMPED),
+                yaw: AxisSpec::following(
+                    Stick::Steps {
+                        start_s: 1.0,
+                        every_s: 2.0,
+                        levels: vec![150.0, -150.0],
+                    },
+                    UNDERDAMPED,
+                ),
+                ..quiet
+            },
+        },
+        plants(
+            "t9-short-2k",
+            "The three plants in a flight of 12 s",
+            2000.0,
+            12.0,
+        ),
+    ]
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
         1 => Some(round_1()),
         2 => Some(round_2()),
         3 => Some(round_3()),
+        4 => Some(round_4()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2, 3];
+pub const ROUNDS: &[u32] = &[1, 2, 3, 4];
 
 #[cfg(test)]
 mod tests {
@@ -604,5 +835,60 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn round_4_flies_plants_of_known_step_response() {
+        let probes = round(4).unwrap();
+        let ids: Vec<&str> = probes.iter().map(|p| p.id).collect();
+        assert_eq!(
+            ids,
+            [
+                "t1-plants-2k",
+                "t2-plants-1k",
+                "t3-plants-4k",
+                "t4-amplitude-2k",
+                "t5-noise-2k",
+                "t6-holds-2k",
+                "t7-gain-2k",
+                "t8-sparse-2k",
+                "t9-short-2k",
+            ]
+        );
+        for p in &probes {
+            assert_eq!(p.area, Area::StepResponse);
+            for axis in Axis::ALL {
+                let spec = p.flight.axis(axis);
+                assert_ne!(spec.stick, Stick::Silence, "{} {axis:?}", p.id);
+                assert_ne!(spec.plant, Plant::None, "{} {axis:?}", p.id);
+                let s = p.flight.samples(axis);
+                let peak = s.unfiltered.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+                assert!(peak > 20.0 && peak < 2000.0, "{} {axis:?}: {peak}", p.id);
+                // the setpoint is whole deg/s, as a log keeps it
+                assert!(s.setpoint.iter().all(|v| v.fract() == 0.0));
+            }
+        }
+        // what the titles promise about the plants
+        let yaw = probes[0].flight.yaw.plant;
+        assert!(
+            (yaw.overshoot() - 0.254).abs() < 0.001,
+            "{}",
+            yaw.overshoot()
+        );
+        let pitch = probes[0].flight.pitch.plant;
+        assert!((pitch.step_response(0.005 + 0.02 * 2.0f64.ln()) - 0.5).abs() < 1.0e-9);
+        let roll = probes[0].flight.roll.plant;
+        assert_eq!(roll.step_response(0.0099), 0.0);
+        assert_eq!(roll.step_response(0.0101), 1.0);
+        // the sparse probe is still outside its busy seconds
+        let sparse = probes[7].flight.samples(Axis::Roll).setpoint;
+        assert!(sparse[..9_990].iter().all(|v| *v == 0.0));
+        assert!(sparse[10_000..20_000].iter().any(|v| *v != 0.0));
+        assert!(sparse[20_010..].iter().all(|v| *v == 0.0));
+        let late = probes[7].flight.samples(Axis::Pitch).setpoint;
+        assert!(
+            late[..39_990].iter().all(|v| *v == 0.0) && late[44_010..].iter().all(|v| *v == 0.0)
+        );
+        assert!(late[40_000..44_000].iter().any(|v| *v != 0.0));
     }
 }
