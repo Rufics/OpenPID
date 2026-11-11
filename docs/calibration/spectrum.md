@@ -127,7 +127,9 @@ the regression is two points longer: the weight falls to zero at its ends):
 | high | 551 | 276 | 9.9 Hz |
 
 "Medium" is exact (below); the other four are fitted to pixels and can be a
-few points off. There is no unsmoothed curve.
+few points off. There is no unsmoothed curve. Round 2 showed that these are
+the spans of a curve of 28 000 points only: the window follows the number
+of points (see "What the round changed" under round 2).
 
 ### Checked on the points of the curve
 
@@ -236,15 +238,110 @@ tone as its power over 1.5 bins (15.2 dB for 20 deg/s).
 The two tools draw different things under one axis label. This is decision
 D-001 of [DECISIONS.md](DECISIONS.md).
 
+## Round 2 (2026-11-11)
+
+The confirming round: one flight (tones of three heights, a band next to a
+tone, white noise on an offset) as six logs, and the model's predictions
+written into the pack before the reference tool saw the logs (pack
+`cf9d9a9`, `predictions.json`). The curves were read from vector copies:
+every plot below 100 Hz at the five smoothing levels and the plots of the
+whole range at "medium". 102 of the 108 copies were taken (six times the
+menu of a plot did not open in time; the script now tries such a copy
+again), and every one is the plot its name says, by the labels inside it.
+
+| Probe | Log rate | Length | Samples analysed | Points of a curve |
+|---|---|---|---|---|
+| `c1-mixed-2k` | 2 kHz | 30 s | 55 999 | 28 000 |
+| `c2-mixed-1k` | 1 kHz | 30 s | 27 999 | 14 000 |
+| `c3-mixed-4k` | 4 kHz | 30 s | 111 999 | 56 000 |
+| `c4-short-2k` | 2 kHz | 12 s | 19 999 | 10 000 |
+| `c5-long-2k` | 2 kHz | 47 s | 89 999 | 45 000 |
+| `c6-short-8k` | 8 kHz | 12 s | 80 000 | 40 001 |
+
+### The predictions against the curves
+
+The largest and the median difference between a predicted level and the
+point the tool drew, over the frequencies written down below 100 Hz, dB:
+
+| Probe | low | low-med | medium | med-high | high |
+|---|---|---|---|---|---|
+| `c1-mixed-2k` | 0.001 / 0.0003 | 0.003 / 0.0002 | 0.001 / 0.0001 | 0.000 / 0.0000 | 0.006 / 0.0009 |
+| `c2-mixed-1k` | 0.005 / 0.0009 | 0.93 / 0.067 | 0.60 / 0.061 | 0.24 / 0.045 | 0.10 / 0.020 |
+| `c3-mixed-4k` | 0.001 / 0.0001 | 0.93 / 0.064 | 0.33 / 0.047 | 0.13 / 0.032 | 0.19 / 0.030 |
+| `c4-short-2k` | 0.002 / 0.0003 | 0.94 / 0.10 | 0.57 / 0.099 | 1.98 / 0.12 | 0.98 / 0.082 |
+| `c5-long-2k` | 0.000 / 0.0001 | 0.93 / 0.069 | 0.15 / 0.024 | 0.10 / 0.009 | 0.13 / 0.015 |
+| `c6-short-8k` | 0.20 / 0.012 | 2.40 / 0.078 | 0.60 / 0.028 | 0.27 / 0.036 | 0.43 / 0.045 |
+
+For a log of the shape round 1 had (2 kHz, 30 s) the model held on a flight
+it was not fitted to, to a few thousandths of a decibel. For the other five
+it was close (a median of 0.01 … 0.12 dB) and wrong: two of its three
+assumptions did not hold.
+
+### What the round changed
+
+**The smoothing window is neither a number of points nor a width in
+hertz.** It is
+
+    window = L³ · log10(points of the curve), made odd
+
+with L = 1 … 5 for "low" … "high". The windows measured on the six logs,
+each of them the only one that gives the tool's curve (the next odd number
+is 0.003 … 8 dB off, the right one 0.00002 dB):
+
+| Points of the curve | low | low-med | medium | med-high | high |
+|---|---|---|---|---|---|
+| 10 000 | 5 | 33 | 109 | 257 | 501 |
+| 14 000 | 5 | 33 | 111 | 265 | 519 |
+| 28 000 | 5 | 35 | 121 | 285 | 555 |
+| 40 001 | 5 | 37 | 125 | 295 | 575 |
+| 45 000 | 5 | 37 | 125 | 297 | 581 |
+| 56 000 | 5 | 37 | 129 | 303 | 593 |
+
+The formula gives all thirty. (Round 1 had "high" as 553 from pixels; it is
+555.) What it means in hertz: the same level smooths a short log over a far
+wider band than a long one. At "medium" the half-width is 5.4 Hz for the
+12 s log at 2 kHz, 2.1 Hz for the 30 s log and 1.4 Hz for the 47 s log; the
+log rate matters only through the number of points.
+
+**The analysed span** starts two samples after the first second in all six
+logs (sample 2002 at 2 kHz, counting from 0), and holds `fs·(T − 2) − 1`
+samples at 1, 2 and 4 kHz. Two things are observed and not understood:
+
+- at 8 kHz it holds one sample more, at its end;
+- in the trial of the vector copy, where `s9-bands-2k` was loaded alone, it
+  started three samples after the first second.
+
+Either moves a curve by less than 0.001 dB.
+
+**Everything else held exactly**: the symmetric Hann window, the level with
+the point at 0 Hz undoubled, the tricube weights, the fitted line at the two
+ends. With the window and the span above, the model gives the thirty curves
+checked (yaw below 100 Hz of every log at every level; pitch for one of
+them) to 0.000016 dB at worst.
+
+The model is `crates/openpid-probe/src/model.rs`; twelve curves of the
+reference tool are in `tests/calibration/spectrum/` and a test holds the
+model to them.
+
+## Round 3 (sent 2026-11-11)
+
+The hold-out. A flight as a craft flies it (random stick moves of up to
+300 deg/s through a second-order response, motor noise that follows a
+changing throttle with its second harmonic, a frame resonance, sensor
+noise, and a quieter filtered gyro) at 2, 1, 4 and 8 kHz and at 25, 18, 36
+and 21 s: no rate and length pair and no number of points that the first
+two rounds had. `s9-bands-2k` of round 1 goes in again as `h5-bands-2k`,
+loaded together with the others, for the start of the analysed span. The
+upper limit of the plots is raised to 70 dB first, because a vector copy
+holds only what is inside the plot and stick moves stand far above the
+default 20 dB at low frequencies.
+
+If the model gives these curves with nothing changed, the area has had its
+three rounds and closes; D-001 then rests on a model that is confirmed.
+
 ### Not settled yet
 
-- **Points or hertz.** All logs so far are 28 s long after the trim, so a
-  span of 119 points and a span of 4.25 Hz are the same thing. A probe of
-  another length tells them apart (round 2).
-- **The spans of the other four levels**, exactly, and whether they are the
-  same at every log rate. Fitted to pixels on one tone, the span of "medium"
-  came out as 107, 119 and 127 points at 1, 2 and 4 kHz; on the exact points
-  of the 2 kHz log it is 119. Round 2 reads all levels at three rates from
-  vector copies.
-- **The start of the span** at other rates and lengths (the three samples
-  above).
+- **The start and the end of the analysed span** to the sample: the extra
+  sample at 8 kHz and the later start of a log loaded alone (round 3 loads
+  that log in company).
+- **Whether a flown flight is treated as the probes were** (round 3).
