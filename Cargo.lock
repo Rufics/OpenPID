@@ -1779,6 +1779,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "openpid-probe"
+version = "0.1.2"
+dependencies = [
+ "openpid-analysis",
+ "openpid-core",
+ "openpid-fmt-blackbox",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "openpid-sim"
 version = "0.1.2"
 dependencies = [

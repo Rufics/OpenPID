@@ -1,0 +1,296 @@
+//! The probes of every round, as data.
+//!
+//! A probe is one log. Each of its axes carries one experiment: a signal
+//! chosen so that one unknown of a tool's pipeline leaves one mark that can
+//! be read off a screen. The probes of a round that has been run are never
+//! changed afterwards, or the readings taken from them would no longer
+//! belong to any log; a new question gets a new probe in a later round
+//! (`docs/calibration/ROUNDS.md`).
+
+use crate::signal::{AxisSpec, Filtered, FlightSpec, Wave};
+use serde::Serialize;
+
+/// The part of the tools a probe is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Area {
+    /// The spectrum of a channel.
+    Spectrum,
+}
+
+/// One log of a round.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Probe {
+    /// Short name, also the file name: `s1-levels-2k`.
+    pub id: &'static str,
+    /// What it is about.
+    pub area: Area,
+    /// What the log is for, in one line.
+    pub title: &'static str,
+    /// What each axis settles: roll, pitch, yaw.
+    pub purpose: [&'static str; 3],
+    /// The flight.
+    pub flight: FlightSpec,
+}
+
+/// Length of a spectrum probe, seconds: long enough to average over many
+/// segments after a tool has dropped the ends of the log.
+const SPECTRUM_S: f64 = 30.0;
+
+/// A little white noise under every tone. Whole deg/s is all a log keeps,
+/// and a pure sine rounded to whole numbers has spurious lines; with noise
+/// of this RMS under it the rounding error is noise as well.
+fn dither(seed: u64) -> Wave {
+    Wave::Noise { rms: 0.5, seed }
+}
+
+/// An axis that carries `tones` (Hz, deg/s) over the dither.
+fn tones(seed: u64, tones: &[(f64, f64)]) -> AxisSpec {
+    let mut waves: Vec<Wave> = tones.iter().map(|(hz, a)| Wave::tone(*hz, *a)).collect();
+    waves.push(dither(seed));
+    AxisSpec::of(waves)
+}
+
+/// A tone that sounds from `from_s` to `to_s` only.
+fn burst(hz: f64, amplitude: f64, from_s: f64, to_s: f64) -> Wave {
+    Wave::Tone {
+        hz,
+        amplitude,
+        phase_deg: 0.0,
+        from_s: Some(from_s),
+        to_s: Some(to_s),
+    }
+}
+
+/// The level probe at `fs`: the same three axes at every log rate.
+fn levels(id: &'static str, fs: f64) -> Probe {
+    Probe {
+        id,
+        area: Area::Spectrum,
+        title: "Tones of known amplitude: the dB reference, 10·log against 20·log, the log rate",
+        purpose: [
+            "a 100 Hz tone of 10 deg/s: where the dB scale puts it",
+            "the same tone ten times larger: 20 dB more for decibels of power or of amplitude, \
+             10 dB if 10·log is taken of an amplitude, 40 dB if 20·log is taken of a power",
+            "three tones of 10 deg/s at 48, 200 and 400 Hz: whether the level depends on the \
+             frequency",
+        ],
+        flight: FlightSpec {
+            roll: tones(11, &[(100.0, 10.0)]),
+            pitch: tones(12, &[(100.0, 100.0)]),
+            yaw: tones(13, &[(48.0, 10.0), (200.0, 10.0), (400.0, 10.0)]),
+            ..FlightSpec::quiet(fs, SPECTRUM_S)
+        },
+    }
+}
+
+/// Round 1: the spectrum.
+fn round_1() -> Vec<Probe> {
+    let quiet = |fs: f64| FlightSpec::quiet(fs, SPECTRUM_S);
+    vec![
+        levels("s1-levels-2k", 2000.0),
+        levels("s2-levels-1k", 1000.0),
+        levels("s3-levels-4k", 4000.0),
+        Probe {
+            id: "s4-resolution-2k",
+            area: Area::Spectrum,
+            title: "Close tones and a lone tone: the segment length and the window",
+            purpose: [
+                "two tones 4 Hz apart (100 and 104 Hz): one peak or two",
+                "two tones 1 Hz apart (100 and 101 Hz): resolved only by segments of a second \
+                 or more",
+                "a tone on a 4 Hz grid (100 Hz) and one off it (302.3 Hz), both of 100 deg/s: \
+                 the width of the peak, the side lobes, and how much lower the second reads",
+            ],
+            flight: FlightSpec {
+                roll: tones(21, &[(100.0, 50.0), (104.0, 50.0)]),
+                pitch: tones(22, &[(100.0, 50.0), (101.0, 50.0)]),
+                yaw: tones(23, &[(100.0, 100.0), (302.3, 100.0)]),
+                ..quiet(2000.0)
+            },
+        },
+        Probe {
+            id: "s5-noise-2k",
+            area: Area::Spectrum,
+            title: "White noise of known power: density against amplitude, and the smoothing",
+            purpose: [
+                "white noise of 10 deg/s RMS: a flat line whose height says how the spectrum \
+                 is normalised",
+                "the same noise with a 152 Hz tone of 20 deg/s in it: how far each smoothing \
+                 level spreads the line",
+                "white noise of 3 deg/s RMS: 10.46 dB below the roll axis on any scale of \
+                 power",
+            ],
+            flight: FlightSpec {
+                roll: AxisSpec::of(vec![Wave::Noise {
+                    rms: 10.0,
+                    seed: 31,
+                }]),
+                pitch: AxisSpec::of(vec![
+                    Wave::Noise {
+                        rms: 10.0,
+                        seed: 32,
+                    },
+                    Wave::tone(152.0, 20.0),
+                ]),
+                yaw: AxisSpec::of(vec![Wave::Noise { rms: 3.0, seed: 33 }]),
+                ..quiet(2000.0)
+            },
+        },
+        Probe {
+            id: "s6-averaging-2k",
+            area: Area::Spectrum,
+            title: "A tone that is not always there: how the segments are averaged",
+            purpose: [
+                "a 100 Hz tone of 20 deg/s in the first half of the log only: 3 dB below the \
+                 pitch axis if powers are averaged, far lower if decibels are",
+                "the same tone over the whole log, to compare with",
+                "the same tone for one second (10 s to 11 s): 14.5 dB below pitch for a mean \
+                 of powers over 28 s, equal to it for a maximum",
+            ],
+            flight: FlightSpec {
+                roll: AxisSpec::of(vec![burst(100.0, 20.0, 0.0, 15.0), dither(41)]),
+                pitch: tones(42, &[(100.0, 20.0)]),
+                yaw: AxisSpec::of(vec![burst(100.0, 20.0, 10.0, 11.0), dither(43)]),
+                ..quiet(2000.0)
+            },
+        },
+        Probe {
+            id: "s7-low-2k",
+            area: Area::Spectrum,
+            title: "Offsets, drift and low tones: the lowest bins and the panel below 100 Hz",
+            purpose: [
+                "a constant 30 deg/s under a 20 Hz tone of 10 deg/s: whether the mean is \
+                 removed",
+                "a drift from -50 to 50 deg/s under the same tone: whether a trend is removed",
+                "tones of 10 deg/s at 5, 20, 60 and 61 Hz: the resolution of the panel below \
+                 100 Hz",
+            ],
+            flight: FlightSpec {
+                roll: AxisSpec::of(vec![
+                    Wave::Offset { value: 30.0 },
+                    Wave::tone(20.0, 10.0),
+                    dither(51),
+                ]),
+                pitch: AxisSpec::of(vec![
+                    Wave::Ramp {
+                        from: -50.0,
+                        to: 50.0,
+                    },
+                    Wave::tone(20.0, 10.0),
+                    dither(52),
+                ]),
+                yaw: tones(53, &[(5.0, 10.0), (20.0, 10.0), (60.0, 10.0), (61.0, 10.0)]),
+                ..quiet(2000.0)
+            },
+        },
+        Probe {
+            id: "s8-channels-2k",
+            area: Area::Spectrum,
+            title: "Different tones before and after the filters: which curve is which channel",
+            purpose: [
+                "100 Hz on the unfiltered gyro, 248 Hz on the filtered one, both 20 deg/s",
+                "the same 100 Hz tone of 20 deg/s on both: the two curves coincide",
+                "100 Hz at 20 deg/s unfiltered and at 10 deg/s filtered: the curves are 6.02 \
+                 dB apart",
+            ],
+            flight: FlightSpec {
+                roll: AxisSpec {
+                    filtered: Filtered::Separate {
+                        waves: vec![Wave::tone(248.0, 20.0), dither(61)],
+                    },
+                    ..tones(61, &[(100.0, 20.0)])
+                },
+                pitch: tones(62, &[(100.0, 20.0)]),
+                yaw: AxisSpec {
+                    filtered: Filtered::Separate {
+                        waves: vec![Wave::tone(100.0, 10.0), dither(63)],
+                    },
+                    ..tones(63, &[(100.0, 20.0)])
+                },
+                ..quiet(2000.0)
+            },
+        },
+    ]
+}
+
+/// The probes of `round`, or `None` for a round that does not exist.
+pub fn round(round: u32) -> Option<Vec<Probe>> {
+    match round {
+        1 => Some(round_1()),
+        _ => None,
+    }
+}
+
+/// The rounds that exist.
+pub const ROUNDS: &[u32] = &[1];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::signal::Stick;
+    use openpid_core::Axis;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn every_round_has_probes_with_unique_file_names() {
+        assert!(round(0).is_none());
+        assert!(round(99).is_none());
+        for r in ROUNDS {
+            let probes = round(*r).unwrap();
+            assert!(!probes.is_empty());
+            let ids: BTreeSet<&str> = probes.iter().map(|p| p.id).collect();
+            assert_eq!(ids.len(), probes.len(), "round {r}: ids repeat");
+            for p in &probes {
+                let name_ok =
+                    p.id.chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+                assert!(name_ok, "{}", p.id);
+                assert!(!p.title.is_empty() && p.purpose.iter().all(|s| !s.is_empty()));
+                assert!(!p.flight.is_empty(), "{}", p.id);
+            }
+        }
+    }
+
+    #[test]
+    fn spectrum_probes_keep_the_sticks_still_and_stay_inside_the_gyro_range() {
+        for p in round(1).unwrap() {
+            assert_eq!(p.area, Area::Spectrum);
+            for axis in Axis::ALL {
+                assert_eq!(p.flight.axis(axis).stick, Stick::Silence, "{}", p.id);
+                let s = p.flight.samples(axis);
+                let peak = s
+                    .unfiltered
+                    .iter()
+                    .chain(&s.filtered)
+                    .fold(0.0f64, |m, v| m.max(v.abs()));
+                assert!(peak < 2000.0, "{} {axis:?}: {peak} deg/s", p.id);
+                // every tone is below the Nyquist frequency of its log
+                for wave in &p.flight.axis(axis).waves {
+                    if let Wave::Tone { hz, .. } = wave {
+                        assert!(*hz < p.flight.fs / 2.0, "{} {axis:?}: {hz} Hz", p.id);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_level_probe_is_the_same_flight_at_every_rate() {
+        let probes = round(1).unwrap();
+        let at = |id: &str| probes.iter().find(|p| p.id == id).unwrap().flight.clone();
+        let base = at("s1-levels-2k");
+        for (id, fs) in [("s2-levels-1k", 1000.0), ("s3-levels-4k", 4000.0)] {
+            let other = at(id);
+            assert_eq!(other.fs, fs);
+            assert_eq!(
+                FlightSpec {
+                    fs: 2000.0,
+                    ..other
+                },
+                base,
+                "{id}"
+            );
+        }
+    }
+}

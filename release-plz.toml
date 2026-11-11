@@ -39,4 +39,5 @@ changelog_include = [
     "openpid-fmt-ardupilot",
     "openpid-fmt-csv",
     "openpid-app",
+    "openpid-probe",
 ]

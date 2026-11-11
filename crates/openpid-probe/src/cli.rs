@@ -1,0 +1,91 @@
+//! The command line of `openpid-probe`.
+
+use crate::catalogue;
+use crate::pack;
+use std::io::Write;
+use std::path::PathBuf;
+
+/// The help text.
+pub const USAGE: &str = "\
+openpid-probe - calibration probes: synthetic flights of exactly known content
+
+USAGE:
+    openpid-probe list
+    openpid-probe pack <round> --out <dir> [--built-from <commit>]
+
+COMMANDS:
+    list   The rounds and their probes: one log per line, with what each axis settles.
+    pack   Write the pack of a round into <dir>: every probe as a Betaflight Blackbox
+           log, manifest.json (what is true about each log) and ours.json (what
+           OpenPID computes for the same logs). The same round always gives the same
+           bytes. --built-from records the commit in the manifest.
+";
+
+/// Runs the tool with `args` (without the program name), printing to `out`.
+///
+/// # Errors
+/// The message for the user when the arguments or the work fail.
+pub fn run(args: &[String], out: &mut dyn Write) -> Result<(), String> {
+    let print = |out: &mut dyn Write, text: String| {
+        writeln!(out, "{text}").map_err(|e| format!("cannot print: {e}"))
+    };
+    match args.first().map(String::as_str) {
+        Some("list") => {
+            for round in catalogue::ROUNDS {
+                let probes = catalogue::round(*round).unwrap_or_default();
+                print(out, format!("round {round}: {} logs", probes.len()))?;
+                for probe in probes {
+                    let f = &probe.flight;
+                    print(
+                        out,
+                        format!(
+                            "  {}.bbl  {} Hz, {} s  {}",
+                            probe.id, f.fs, f.duration_s, probe.title
+                        ),
+                    )?;
+                    for (axis, purpose) in ["roll", "pitch", "yaw"].iter().zip(probe.purpose) {
+                        print(out, format!("      {axis:<5} {purpose}"))?;
+                    }
+                }
+            }
+            Ok(())
+        }
+        Some("pack") => {
+            let mut round = None;
+            let mut dir: Option<PathBuf> = None;
+            let mut built_from = String::from("unknown");
+            let mut rest = args[1..].iter();
+            while let Some(arg) = rest.next() {
+                match arg.as_str() {
+                    "--out" => dir = Some(rest.next().ok_or("--out needs a directory")?.into()),
+                    "--built-from" => {
+                        built_from.clone_from(rest.next().ok_or("--built-from needs a commit")?);
+                    }
+                    other if other.starts_with("--") => {
+                        return Err(format!("unknown option {other}\n\n{USAGE}"));
+                    }
+                    number => {
+                        round =
+                            Some(number.parse::<u32>().map_err(|_| {
+                                format!("the round must be a number, not {number}")
+                            })?);
+                    }
+                }
+            }
+            let round = round.ok_or("pack needs a round")?;
+            let dir = dir.ok_or("pack needs --out <dir>")?;
+            let pack = pack::build(round, &built_from).map_err(|e| e.to_string())?;
+            pack.write_to(&dir).map_err(|e| e.to_string())?;
+            for (name, bytes) in pack.files() {
+                print(
+                    out,
+                    format!("{:>10}  {}", bytes.len(), dir.join(name).display()),
+                )?;
+            }
+            Ok(())
+        }
+        Some("--help" | "-h" | "help") => print(out, USAGE.to_string()),
+        Some(other) => Err(format!("unknown command {other}\n\n{USAGE}")),
+        None => Err(USAGE.to_string()),
+    }
+}
