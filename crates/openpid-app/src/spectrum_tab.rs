@@ -403,7 +403,7 @@ fn trace(slot: Slot, prefilt: bool, out: Arc<Output>, db: bool, width_hz: f64) -
 
 fn points(p: &PsdOutput, db: bool, width_hz: f64) -> (Vec<f64>, Vec<f64>) {
     let power = smooth_power(&p.freq, &p.power, width_hz);
-    let y = if db {
+    let y: Vec<f64> = if db {
         power
             .iter()
             .map(|v| 10.0 * v.max(f64::MIN_POSITIVE).log10())
@@ -411,7 +411,44 @@ fn points(p: &PsdOutput, db: bool, width_hz: f64) -> (Vec<f64>, Vec<f64>) {
     } else {
         power
     };
-    (p.freq.clone(), y)
+    thin(&p.freq, &y, MAX_DRAWN)
+}
+
+/// Most points a trace is drawn with. The curve of a long log at a high
+/// rate has more than a million; a plot is a thousand pixels wide.
+const MAX_DRAWN: usize = 8192;
+
+/// At most about `max` points of a curve for drawing: the curve is cut into
+/// equal runs and each run gives its lowest and its highest point, in the
+/// order they come, so every peak and every dip stays on screen. A curve
+/// that is short enough comes back as it is.
+pub fn thin(x: &[f64], y: &[f64], max: usize) -> (Vec<f64>, Vec<f64>) {
+    let n = x.len().min(y.len());
+    if n <= max.max(4) {
+        return (x[..n].to_vec(), y[..n].to_vec());
+    }
+    let run = n.div_ceil(max / 2);
+    let mut out = (Vec::with_capacity(max + 2), Vec::with_capacity(max + 2));
+    for start in (0..n).step_by(run) {
+        let end = (start + run).min(n);
+        let (mut lo, mut hi) = (start, start);
+        for i in start..end {
+            if y[i] < y[lo] {
+                lo = i;
+            }
+            if y[i] > y[hi] {
+                hi = i;
+            }
+        }
+        let (first, second) = (lo.min(hi), lo.max(hi));
+        out.0.push(x[first]);
+        out.1.push(y[first]);
+        if second != first {
+            out.0.push(x[second]);
+            out.1.push(y[second]);
+        }
+    }
+    out
 }
 
 /// The power range of every row and column: the panel's fixed ends, else
@@ -855,6 +892,25 @@ fn readout(markers: &[f64], peaks: &[(Slot, Axis, Vec<Peak>)]) -> Vec<String> {
 #[cfg(test)]
 mod unit {
     use super::*;
+
+    #[test]
+    fn a_long_curve_is_thinned_to_its_lows_and_highs() {
+        let x: Vec<f64> = (0..100_000).map(f64::from).collect();
+        let mut y: Vec<f64> = x.iter().map(|v| (v / 500.0).sin()).collect();
+        y[40_123] = 9.0;
+        y[77_777] = -9.0;
+        let (tx, ty) = thin(&x, &y, 8192);
+        assert!(tx.len() <= 8192 + 2 && tx.len() > 4000, "{}", tx.len());
+        // in order, and the single spike and the single dip are kept
+        assert!(tx.windows(2).all(|w| w[0] < w[1]));
+        let at = |v: f64| tx.iter().position(|t| *t == v).map(|i| ty[i]);
+        assert_eq!(at(40_123.0), Some(9.0));
+        assert_eq!(at(77_777.0), Some(-9.0));
+        // a short curve is not touched
+        let (sx, sy) = thin(&x[..5000], &y[..5000], 8192);
+        assert_eq!((sx.len(), sy.len()), (5000, 5000));
+        assert_eq!(thin(&[], &[], 8192), (vec![], vec![]));
+    }
 
     #[test]
     fn smoothing_averages_over_the_width() {
