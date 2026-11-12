@@ -5,8 +5,8 @@ use crate::parser::{EventData, Frame, MainKind, ParseStats, Parser, StreamGap};
 use openpid_core::modes::{ModeChange, push_change};
 use openpid_core::session::{AuxRow, AuxTable, Diagnostics, Event, EventKind};
 use openpid_core::{
-    BoundProfile, Channel, ChannelId, ChannelSet, FlightSession, Origin, ProfileRegistry, Series,
-    Timebase, Unit,
+    BoundProfile, Channel, ChannelId, ChannelSet, FieldMapping, FlightSession, Origin,
+    ProfileRegistry, Series, Timebase, Unit,
 };
 
 /// Raw decode result of one log: integer columns exactly as logged.
@@ -200,6 +200,34 @@ pub fn build_session(
         });
     }
 
+    // What the frames beside the main ones carry (slow state, GPS fixes,
+    // the home point) becomes channels too where the profile knows the
+    // field: on the timeline of the main frames, each value held until the
+    // next one. The tables themselves stay in `aux`.
+    if let Some(b) = &bound {
+        let tables = [Some(&log.slow), log.gps.as_ref(), log.gps_home.as_ref()];
+        for table in tables.into_iter().flatten() {
+            for (column, name) in table.columns.iter().enumerate() {
+                let Some(m) = b.map_aux_field(&table.kind, name) else {
+                    continue;
+                };
+                // a main-frame field of the same identity stays
+                if channels.contains(&m.id) {
+                    continue;
+                }
+                channels.insert(Channel {
+                    data: held(table, column, log.len(), &m),
+                    id: m.id,
+                    name: name.clone(),
+                    unit: m.unit,
+                    origin: Origin::Logged {
+                        field: name.clone(),
+                    },
+                });
+            }
+        }
+    }
+
     let mut diagnostics = Diagnostics {
         corrupt_frames: log.stats.corrupt_total(),
         desync_frames: log.stats.desync_total(),
@@ -276,6 +304,22 @@ pub fn build_session(
         b.derive(&mut session);
     }
     session
+}
+
+/// One column of a table of frames logged now and then as a series over
+/// the `len` main frames: sample `i` has the value of the last row logged at
+/// or before main frame `i` (a row counts from the main frame that follows
+/// it, as the forward-filled slow fields of the raw CSV do), and no value
+/// before the first row.
+fn held(table: &AuxTable, column: usize, len: usize, mapping: &FieldMapping) -> Series {
+    let mut rows = table.rows.iter().peekable();
+    let mut current = None;
+    Series::from_options((0..len).map(|i| {
+        while let Some(row) = rows.next_if(|r| r.sample_index <= i) {
+            current = row.values.get(column).map(|v| mapping.apply(*v));
+        }
+        current
+    }))
 }
 
 /// The mode changes of the slow frames' `flightModeFlags`, each word turned

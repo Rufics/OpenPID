@@ -4,8 +4,8 @@ use super::common::{self, Log};
 use crate::cli::BetaflightCli;
 use crate::releases::{self, Release, Selection};
 use openpid_core::{
-    BoundProfile, Exporter, FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor,
-    FirmwareVersion, FlightMode, FlightSession, RawHeaders, Settings, SliderModel,
+    BoundProfile, ChannelId, Exporter, FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor,
+    FirmwareVersion, FlightMode, FlightSession, RawHeaders, Settings, SliderModel, Unit,
 };
 
 /// Mode boxes of Betaflight before 3.3 and of Cleanflight, in bit order.
@@ -176,9 +176,112 @@ struct Bound<'a> {
     note: Option<String>,
 }
 
+/// Main-frame fields only Betaflight logs under these names and in these
+/// units; the names stay the channel keys they have always had.
+///
+/// - `pitot[0]`, `pitot[1]` (`master` at `4b1520e`, `blackbox.c`: the
+///   indicated airspeed and the differential pressure of `sensors/pitot.h`,
+///   "cm/s" and "Pa, zero-corrected");
+/// - `servo[n]`: the pulse width of the servo output in microseconds
+///   (`flight/servos.c`: centred on `DEFAULT_SERVO_MIDDLE`, 1500; the log
+///   predicts 1500), `servo[5]` alone up to 4.5, `servo[0..7]` from 2025.12;
+/// - `magADC[n]`: the magnetometer as its driver reads it, sensor counts
+///   after board alignment (`sensors/compass.c`); no physical unit;
+/// - `surfaceRaw`: the rangefinder distance in centimetres, −1 when out of
+///   range (`sensors/rangefinder.c`, tags 4.2.11 to `master`).
+fn own_field(field: &str) -> Option<FieldMapping> {
+    let (base, idx) = common::split_indexed(field);
+    let unit = match (base, idx) {
+        ("pitot", Some(0)) => Unit::Custom("cm/s".into()),
+        ("pitot", Some(1)) => Unit::Custom("Pa".into()),
+        ("servo", Some(0..=7)) => Unit::Microseconds,
+        ("magADC", Some(0..=2)) => Unit::Raw,
+        ("surfaceRaw", None) => Unit::Centimeters,
+        _ => return None,
+    };
+    Some(FieldMapping::new(
+        ChannelId::Custom(field.to_string()),
+        unit,
+    ))
+}
+
+/// The fields of the frames Betaflight logs beside the main ones, from 4.0
+/// on, with their units.
+///
+/// GPS frames (`blackbox.c`, `writeGPSFrame`, and the units of `gpsSol` in
+/// `io/gps.h` and `io/gps.c`, tags 4.2.11 to `master`; the 4.5.0 fixture has
+/// them): the fix time in the log's microseconds, the number of satellites,
+/// the coordinates in 1e-7 degrees (logged against the home point, absolute
+/// once decoded), the altitude in 0.1 m (`altCm / 10`), the speed in cm/s
+/// (the 3D speed where the release logs it under `gps_use_3d_speed`, see
+/// [`Release::gps_speed_3d`], else the speed over ground), the course over
+/// ground in 0.1 degrees; from 2025.12 the velocity north, east and down in
+/// cm/s; from 2026.6 the receiver's time of week in milliseconds.
+///
+/// Home frames (`writeGPSHomeFrame`): the coordinates of the home point in
+/// 1e-7 degrees; from 2025.12 its altitude in 0.1 m; from 2026.6 the time it
+/// was taken as Unix seconds (`gpsDateTimeToEpoch`, `io/gps.c`).
+///
+/// Slow frames (`blackboxSlowFields`, `loadSlowState`): `stateFlags` is the
+/// firmware's state word (`fc/runtime_config.h`: bit 0 home point set, bit 1
+/// GPS fix, bit 2 GPS fix ever); `failsafePhase` is the phase of
+/// `flight/failsafe.h` (0 idle, 1 signal loss detected, 2 landing, 3 landed,
+/// 4 monitoring the link, 5 link recovered, 6 GPS rescue, and 7 autopilot on
+/// `master`); `rxSignalReceived` and `rxFlightChannelsValid` are 0 or 1.
+/// `flightModeFlags` is not a channel: it becomes the session's flight
+/// modes.
+fn aux_field(release: &Release, h: &RawHeaders, table: &str, field: &str) -> Option<FieldMapping> {
+    use openpid_core::GpsField as G;
+    let gps = |f, unit, scale| FieldMapping::scaled(ChannelId::Gps(f), unit, scale);
+    let named = |unit| FieldMapping::new(ChannelId::Custom(field.to_string()), unit);
+    Some(match (table, field) {
+        ("gps", "time") => gps(G::FixTime, Unit::Microseconds, 1.0),
+        ("gps", "GPS_numSat") => gps(G::Satellites, Unit::Unitless, 1.0),
+        ("gps", "GPS_coord[0]") => gps(G::Latitude, Unit::Degrees, 1.0e-7),
+        ("gps", "GPS_coord[1]") => gps(G::Longitude, Unit::Degrees, 1.0e-7),
+        ("gps", "GPS_altitude") => gps(G::Altitude, Unit::Meters, 0.1),
+        ("gps", "GPS_speed") => {
+            let three_d = release.gps_speed_3d && h.get_i64("gps_use_3d_speed") == Some(1);
+            let which = if three_d { G::Speed3d } else { G::GroundSpeed };
+            gps(which, Unit::MetersPerSecond, 0.01)
+        }
+        ("gps", "GPS_ground_course") => gps(G::Course, Unit::Degrees, 0.1),
+        ("gps", "GPS_velned[0]") => gps(G::VelocityNorth, Unit::MetersPerSecond, 0.01),
+        ("gps", "GPS_velned[1]") => gps(G::VelocityEast, Unit::MetersPerSecond, 0.01),
+        ("gps", "GPS_velned[2]") => gps(G::VelocityDown, Unit::MetersPerSecond, 0.01),
+        ("gps", "GPS_time") => gps(G::TimeOfWeek, Unit::Seconds, 0.001),
+        ("gps_home", "GPS_home[0]") => gps(G::HomeLatitude, Unit::Degrees, 1.0e-7),
+        ("gps_home", "GPS_home[1]") => gps(G::HomeLongitude, Unit::Degrees, 1.0e-7),
+        ("gps_home", "GPS_home[2]") => gps(G::HomeAltitude, Unit::Meters, 0.1),
+        ("gps_home", "GPS_home_epoch") => gps(G::HomeTime, Unit::Seconds, 1.0),
+        ("slow", "stateFlags") => named(Unit::Flags),
+        ("slow", "failsafePhase" | "rxSignalReceived" | "rxFlightChannelsValid") => {
+            named(Unit::Unitless)
+        }
+        _ => return None,
+    })
+}
+
+impl Bound<'_> {
+    /// Betaflight from 4.0 on: the firmware whose fields this profile knows
+    /// from its source. Earlier Betaflight and Cleanflight are read with
+    /// the fields of the whole family only.
+    fn described(&self) -> bool {
+        self.log.fw.vendor == FirmwareVendor::Betaflight && !self.log.release.is_before_4_0()
+    }
+}
+
 impl BoundProfile for Bound<'_> {
     fn map_field(&self, field: &str) -> Option<FieldMapping> {
-        self.log.map_field(field)
+        self.log
+            .map_field(field)
+            .or_else(|| self.described().then(|| own_field(field)).flatten())
+    }
+
+    fn map_aux_field(&self, table: &str, field: &str) -> Option<FieldMapping> {
+        self.described()
+            .then(|| aux_field(self.log.release, self.log.h, table, field))
+            .flatten()
     }
 
     fn settings(&self) -> Settings {
@@ -225,6 +328,71 @@ mod tests {
             vendor,
             version: Some(FirmwareVersion::new(major, minor, patch)),
             ..FirmwareInfo::unknown()
+        }
+    }
+
+    #[test]
+    fn fields_of_betaflight_alone_have_units() {
+        use openpid_core::GpsField as G;
+        let h = |pairs: &[(&str, &str)]| {
+            RawHeaders(
+                pairs
+                    .iter()
+                    .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                    .collect(),
+            )
+        };
+        let (new, none) = (fw(FirmwareVendor::Betaflight, 2026, 12, 0), h(&[]));
+        let log = Betaflight.bind(&new, &none);
+        let unit = |field: &str| {
+            let m = log.map_field(field).unwrap_or_else(|| panic!("{field}"));
+            assert_eq!(m.id, ChannelId::Custom(field.into()), "the key stays");
+            assert_eq!((m.scale, m.offset), (1.0, 0.0));
+            m.unit
+        };
+        assert_eq!(unit("pitot[0]"), Unit::Custom("cm/s".into()));
+        assert_eq!(unit("pitot[1]"), Unit::Custom("Pa".into()));
+        assert_eq!(unit("servo[0]"), Unit::Microseconds);
+        assert_eq!(unit("servo[7]"), Unit::Microseconds);
+        assert_eq!(unit("magADC[2]"), Unit::Raw);
+        assert_eq!(unit("surfaceRaw"), Unit::Centimeters);
+        assert_eq!(log.map_field("pitot[2]"), None);
+        assert_eq!(log.map_field("servo[8]"), None);
+        assert_eq!(log.map_field("futureThing[3]"), None);
+        // the GPS time and the home point's time of 2026.6 on
+        let aux = |field: &str, table: &str| log.map_aux_field(table, field).map(|m| m.id);
+        assert_eq!(aux("GPS_time", "gps"), Some(ChannelId::Gps(G::TimeOfWeek)));
+        assert_eq!(
+            aux("GPS_home_epoch", "gps_home"),
+            Some(ChannelId::Gps(G::HomeTime))
+        );
+        assert_eq!(aux("GPS_numSat", "slow"), None, "a field of another frame");
+        assert_eq!(aux("flightModeFlags", "slow"), None);
+        assert_eq!(aux("GPS_future", "gps"), None);
+        // what `GPS_speed` is: the 3D speed from 2025.12 on when the header
+        // says so; the speed over ground otherwise, and always before
+        let three_d = h(&[("gps_use_3d_speed", "1")]);
+        let ground = h(&[("gps_use_3d_speed", "0")]);
+        let speed = |v: &FirmwareInfo, h: &RawHeaders| {
+            Betaflight
+                .bind(v, h)
+                .map_aux_field("gps", "GPS_speed")
+                .map(|m| (m.id, m.unit, m.scale))
+        };
+        let is = |f| Some((ChannelId::Gps(f), Unit::MetersPerSecond, 0.01));
+        let bf = |major, minor| fw(FirmwareVendor::Betaflight, major, minor, 0);
+        assert_eq!(speed(&bf(2025, 12), &three_d), is(G::Speed3d));
+        assert_eq!(speed(&bf(2026, 6), &three_d), is(G::Speed3d));
+        assert_eq!(speed(&bf(2025, 12), &ground), is(G::GroundSpeed));
+        assert_eq!(speed(&bf(2025, 12), &none), is(G::GroundSpeed));
+        assert_eq!(speed(&bf(4, 5), &three_d), is(G::GroundSpeed));
+        assert_eq!(speed(&bf(4, 4), &three_d), is(G::GroundSpeed));
+        // Betaflight before 4.0 and Cleanflight are not described here
+        for old in [bf(3, 5), fw(FirmwareVendor::Cleanflight, 2, 5, 0)] {
+            let log = Betaflight.bind(&old, &none);
+            assert_eq!(log.map_aux_field("gps", "GPS_speed"), None);
+            assert_eq!(log.map_aux_field("slow", "stateFlags"), None);
+            assert_eq!(log.map_field("servo[5]"), None);
         }
     }
 

@@ -515,3 +515,175 @@ fn settings_in_words_come_from_the_betaflight_profile_only() {
         Some("2026-02-20T09:16:22.352+00:00")
     );
 }
+
+/// What a Betaflight log carries beside its main frames is in the session
+/// as channels with units, on the timeline of the main frames (#183): the
+/// GPS fixes and the home point of the 4.5.0 and 2025.12 fixtures, and the
+/// slow state of every one. Each channel holds exactly what the table of
+/// those frames holds, scaled, from the main frame after each row to the
+/// next row.
+#[test]
+fn gps_home_and_slow_frames_are_channels_with_units() {
+    use openpid_core::session::AuxTable;
+    use openpid_core::{GpsField as G, Unit};
+    let open = |name: &str| {
+        let data = std::fs::read(common::logs_dir().join(name)).unwrap();
+        BlackboxFormat::new()
+            .open(&data, &OpenOptions::default())
+            .unwrap()
+            .sessions
+            .remove(0)
+    };
+    // the channel `id` against column `field` of the table `kind`
+    let check = |s: &openpid_core::FlightSession,
+                 kind: &str,
+                 field: &str,
+                 id: ChannelId,
+                 unit: Unit,
+                 scale: f64| {
+        let table: &AuxTable = s.aux.iter().find(|t| t.kind == kind).unwrap();
+        let column = table.columns.iter().position(|c| c == field).unwrap();
+        let channel = s
+            .channel(&id)
+            .unwrap_or_else(|| panic!("no channel {id} for {field}"));
+        assert_eq!(channel.unit, unit, "{field}");
+        assert_eq!(channel.name, field);
+        assert_eq!(channel.data.len(), s.len(), "{field}");
+        assert!(!table.rows.is_empty(), "{field}: the table has rows");
+        let mut expected: Vec<Option<f64>> = vec![None; s.len()];
+        for (k, row) in table.rows.iter().enumerate() {
+            let until = table
+                .rows
+                .get(k + 1)
+                .map_or(s.len(), |next| next.sample_index);
+            for e in expected.iter_mut().take(until).skip(row.sample_index) {
+                *e = Some(row.values[column] as f64 * scale);
+            }
+        }
+        let got: Vec<Option<f64>> = channel.data.iter().collect();
+        if let Some(i) = (0..s.len()).find(|i| got[*i] != expected[*i]) {
+            panic!("{field}: sample {i} is {:?}, not {:?}", got[i], expected[i]);
+        }
+        // the rows of the table are all there, each from its main frame on
+        let shown = table
+            .rows
+            .iter()
+            .filter(|r| r.sample_index < s.len())
+            .filter(|r| got[r.sample_index] == Some(r.values[column] as f64 * scale))
+            .count();
+        let last_of_a_frame = table
+            .rows
+            .iter()
+            .enumerate()
+            .filter(|(k, r)| {
+                r.sample_index < s.len()
+                    && table
+                        .rows
+                        .get(k + 1)
+                        .is_none_or(|next| next.sample_index > r.sample_index)
+            })
+            .count();
+        assert!(
+            shown >= last_of_a_frame,
+            "{field}: {shown} of {last_of_a_frame}"
+        );
+    };
+    let gps = |s: &openpid_core::FlightSession, field: &str, f: G, unit: Unit, scale: f64| {
+        check(s, "gps", field, ChannelId::Gps(f), unit, scale);
+    };
+    let home = |s: &openpid_core::FlightSession, field: &str, f: G, unit: Unit, scale: f64| {
+        check(s, "gps_home", field, ChannelId::Gps(f), unit, scale);
+    };
+    let slow = |s: &openpid_core::FlightSession| {
+        for (field, unit) in [
+            ("stateFlags", Unit::Flags),
+            ("failsafePhase", Unit::Unitless),
+            ("rxSignalReceived", Unit::Unitless),
+            ("rxFlightChannelsValid", Unit::Unitless),
+        ] {
+            check(s, "slow", field, ChannelId::Custom(field.into()), unit, 1.0);
+        }
+        // the mode word is the session's flight modes, not a channel
+        assert!(
+            !s.channels
+                .contains(&ChannelId::Custom("flightModeFlags".into()))
+        );
+    };
+
+    // Betaflight 4.5.0, a GPS rescue: fixes and the home point
+    let s = open("betaflight-4.5.0-gps-rescue.bbl");
+    gps(&s, "time", G::FixTime, Unit::Microseconds, 1.0);
+    gps(&s, "GPS_numSat", G::Satellites, Unit::Unitless, 1.0);
+    gps(&s, "GPS_coord[0]", G::Latitude, Unit::Degrees, 1.0e-7);
+    gps(&s, "GPS_coord[1]", G::Longitude, Unit::Degrees, 1.0e-7);
+    gps(&s, "GPS_altitude", G::Altitude, Unit::Meters, 0.1);
+    gps(&s, "GPS_speed", G::GroundSpeed, Unit::MetersPerSecond, 0.01);
+    gps(&s, "GPS_ground_course", G::Course, Unit::Degrees, 0.1);
+    home(&s, "GPS_home[0]", G::HomeLatitude, Unit::Degrees, 1.0e-7);
+    home(&s, "GPS_home[1]", G::HomeLongitude, Unit::Degrees, 1.0e-7);
+    slow(&s);
+    // the numbers are those of a place and a flight: coordinates on the
+    // globe a few hundred metres from home, a fix time within the log
+    let value = |f: G, i: usize| s.channel(&ChannelId::Gps(f)).unwrap().data.get(i);
+    let end = s.len() - 1;
+    let latitude = value(G::Latitude, end).unwrap();
+    let longitude = value(G::Longitude, end).unwrap();
+    assert!(latitude.abs() <= 90.0 && longitude.abs() <= 180.0 && latitude != 0.0);
+    assert!((latitude - value(G::HomeLatitude, end).unwrap()).abs() < 0.01);
+    assert!((longitude - value(G::HomeLongitude, end).unwrap()).abs() < 0.01);
+    assert!((4.0..=40.0).contains(&value(G::Satellites, end).unwrap()));
+    let fix = value(G::FixTime, end).unwrap() as i64;
+    assert!(fix >= s.timebase.time_us[0] && fix <= s.timebase.time_us[end] + 1_000_000);
+    // 4.5 logs the speed over ground whatever `gps_use_3d_speed` says
+    assert!(!s.channels.contains(&ChannelId::Gps(G::Speed3d)));
+
+    // Betaflight 2025.12: velocities and the altitude of the home point too
+    let s = open("betaflight-2025.12.2-btfl_027.bbl");
+    gps(&s, "GPS_coord[0]", G::Latitude, Unit::Degrees, 1.0e-7);
+    gps(&s, "GPS_altitude", G::Altitude, Unit::Meters, 0.1);
+    gps(&s, "GPS_speed", G::GroundSpeed, Unit::MetersPerSecond, 0.01);
+    gps(
+        &s,
+        "GPS_velned[0]",
+        G::VelocityNorth,
+        Unit::MetersPerSecond,
+        0.01,
+    );
+    gps(
+        &s,
+        "GPS_velned[1]",
+        G::VelocityEast,
+        Unit::MetersPerSecond,
+        0.01,
+    );
+    gps(
+        &s,
+        "GPS_velned[2]",
+        G::VelocityDown,
+        Unit::MetersPerSecond,
+        0.01,
+    );
+    home(&s, "GPS_home[2]", G::HomeAltitude, Unit::Meters, 0.1);
+    slow(&s);
+
+    // a log without GPS frames has the slow state alone; the other
+    // firmwares of the family keep their tables only
+    let s = open("betaflight-4.2.11-two-logs.bbl");
+    slow(&s);
+    assert!(!s.channels.iter().any(|c| matches!(c.id, ChannelId::Gps(_))));
+    for name in [
+        "inav-9.0.1-truncated.TXT",
+        "rotorflight-4.3.0-LOG246.TXT",
+        "emuflight-3.7.0-truncated.BFL",
+    ] {
+        let s = open(name);
+        assert!(
+            !s.channels.iter().any(|c| matches!(c.id, ChannelId::Gps(_))),
+            "{name}"
+        );
+        assert!(
+            !s.channels.contains(&ChannelId::Custom("stateFlags".into())),
+            "{name}"
+        );
+    }
+}

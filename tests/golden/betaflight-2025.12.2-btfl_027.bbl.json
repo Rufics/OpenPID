@@ -61,6 +61,15 @@
         "valid": 39481
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 39480
+      },
+      {
         "key": "custom:imuQuaternion[0]",
         "max": 0.082125,
         "mean": -0.006392,
@@ -115,6 +124,24 @@
         "valid": 39481
       },
       {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 39480
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 39480
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 37.4,
         "mean": 22.318657,
@@ -122,6 +149,15 @@
         "name": "setpoint[3]",
         "unit": "%",
         "valid": 39481
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 7.0,
+        "mean": 7.0,
+        "min": 7.0,
+        "name": "stateFlags",
+        "unit": "flags",
+        "valid": 39480
       },
       {
         "key": "erpm.0",
@@ -158,6 +194,123 @@
         "name": "eRPM[3]",
         "unit": "raw",
         "valid": 39481
+      },
+      {
+        "key": "gps.altitude",
+        "max": 84.4,
+        "mean": 81.390167,
+        "min": 78.5,
+        "name": "GPS_altitude",
+        "unit": "m",
+        "valid": 39480
+      },
+      {
+        "key": "gps.course",
+        "max": 354.0,
+        "mean": 99.408967,
+        "min": 0.0,
+        "name": "GPS_ground_course",
+        "unit": "deg",
+        "valid": 39480
+      },
+      {
+        "key": "gps.fix_time",
+        "max": 111776682.0,
+        "mean": 91963460.419428,
+        "min": 72214921.0,
+        "name": "time",
+        "unit": "us",
+        "valid": 39480
+      },
+      {
+        "key": "gps.ground_speed",
+        "max": 2.96,
+        "mean": 0.743107,
+        "min": 0.01,
+        "name": "GPS_speed",
+        "unit": "m/s",
+        "valid": 39480
+      },
+      {
+        "key": "gps.home_altitude",
+        "max": 84.1,
+        "mean": 84.1,
+        "min": 84.1,
+        "name": "GPS_home[2]",
+        "unit": "m",
+        "valid": 39480
+      },
+      {
+        "key": "gps.home_latitude",
+        "max": 47.619211,
+        "mean": 47.619211,
+        "min": 47.619211,
+        "name": "GPS_home[0]",
+        "unit": "deg",
+        "valid": 39480
+      },
+      {
+        "key": "gps.home_longitude",
+        "max": -122.303944,
+        "mean": -122.303944,
+        "min": -122.303944,
+        "name": "GPS_home[1]",
+        "unit": "deg",
+        "valid": 39480
+      },
+      {
+        "key": "gps.latitude",
+        "max": 47.619234,
+        "mean": 47.619206,
+        "min": 47.619178,
+        "name": "GPS_coord[0]",
+        "unit": "deg",
+        "valid": 39480
+      },
+      {
+        "key": "gps.longitude",
+        "max": -122.303944,
+        "mean": -122.303976,
+        "min": -122.304012,
+        "name": "GPS_coord[1]",
+        "unit": "deg",
+        "valid": 39480
+      },
+      {
+        "key": "gps.satellites",
+        "max": 8.0,
+        "mean": 7.921884,
+        "min": 7.0,
+        "name": "GPS_numSat",
+        "unit": "",
+        "valid": 39480
+      },
+      {
+        "key": "gps.velocity_down",
+        "max": 3.88,
+        "mean": -0.069286,
+        "min": -2.89,
+        "name": "GPS_velned[2]",
+        "unit": "m/s",
+        "valid": 39480
+      },
+      {
+        "key": "gps.velocity_east",
+        "max": 1.52,
+        "mean": 0.096851,
+        "min": -1.29,
+        "name": "GPS_velned[1]",
+        "unit": "m/s",
+        "valid": 39480
+      },
+      {
+        "key": "gps.velocity_north",
+        "max": 2.48,
+        "mean": -0.051335,
+        "min": -2.87,
+        "name": "GPS_velned[0]",
+        "unit": "m/s",
+        "valid": 39480
       },
       {
         "key": "gyro.filtered.pitch",
@@ -630,10 +783,6 @@
     "sample_rate_hz": 997.008973,
     "samples": 39481,
     "skipped_bytes": 0,
-    "unmapped_fields": [
-      "magADC[0]",
-      "magADC[1]",
-      "magADC[2]"
-    ]
+    "unmapped_fields": []
   }
 ]

@@ -116,6 +116,53 @@ fn decode_raw_and_scaled() {
     assert!(!ok && err.contains("no session 7"));
 }
 
+/// The GPS fixes, the home point and the slow state of a Betaflight log are
+/// columns of the scaled CSV, with units (#183).
+#[test]
+fn decode_scaled_has_the_gps_and_the_slow_state() {
+    let l = log("betaflight-4.5.0-gps-rescue.bbl");
+    let (ok, out, _) = run(&["decode", l.to_str().unwrap(), "--scaled"]);
+    assert!(ok);
+    let mut lines = out.lines();
+    let header: Vec<&str> = lines.next().unwrap().split(',').collect();
+    for column in [
+        "gps.satellites ()",
+        "gps.latitude (deg)",
+        "gps.longitude (deg)",
+        "gps.altitude (m)",
+        "gps.ground_speed (m/s)",
+        "gps.course (deg)",
+        "gps.fix_time (us)",
+        "gps.home_latitude (deg)",
+        "gps.home_longitude (deg)",
+        "custom:stateFlags (flags)",
+        "custom:failsafePhase ()",
+        "custom:rxSignalReceived ()",
+        "custom:rxFlightChannelsValid ()",
+    ] {
+        assert!(header.contains(&column), "{column}: {header:?}");
+    }
+    let rows: Vec<Vec<&str>> = lines.map(|l| l.split(',').collect()).collect();
+    assert!(rows.iter().all(|r| r.len() == header.len()));
+    let column = |name: &str| header.iter().position(|c| *c == name).unwrap();
+    // the last row has a fix: a latitude and a longitude in degrees, near home
+    let last = rows.last().unwrap();
+    let number = |name: &str| last[column(name)].parse::<f64>().unwrap();
+    let latitude = number("gps.latitude (deg)");
+    let longitude = number("gps.longitude (deg)");
+    assert!(latitude.abs() <= 90.0 && longitude.abs() <= 180.0 && latitude != 0.0);
+    assert!((latitude - number("gps.home_latitude (deg)")).abs() < 0.01);
+    assert!((longitude - number("gps.home_longitude (deg)")).abs() < 0.01);
+    assert!(number("gps.satellites ()") >= 4.0);
+    // and the scaled CSV still opens as a log, the GPS columns with it
+    let tmp = temp("gps-scaled.csv");
+    std::fs::write(&tmp, &out).unwrap();
+    let (ok, info, err) = run(&["info", tmp.to_str().unwrap()]);
+    std::fs::remove_file(&tmp).ok();
+    assert!(ok, "{err}");
+    assert!(info.contains("gps.latitude"), "{info}");
+}
+
 #[test]
 fn decode_csv_input() {
     let l = log("betaflight-4.2.0.BFL");
