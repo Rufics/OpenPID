@@ -29,8 +29,12 @@ pub struct Scales {
     pub gyro: f64,
     /// Degrees per second per raw setpoint unit.
     pub setpoint: f64,
-    /// Multiplier for `rcCommand` values.
+    /// Multiplier for `rcCommand` of roll, pitch and yaw: the channel is in
+    /// the units Betaflight used up to 2026.6, ±500 at full deflection.
     pub rc: f64,
+    /// Multiplier and, before it, offset for `rcCommand[3]`, the throttle:
+    /// the channel runs from 1000 to 2000.
+    pub rc_throttle: (f64, f64),
     /// G per raw accelerometer unit, `None` when `acc_1G` is unknown.
     pub acc: Option<f64>,
     /// Volts per raw battery unit.
@@ -51,15 +55,24 @@ impl Scales {
         } else {
             1.0
         };
-        let rc_scale = h
+        // Betaflight after 2026.6 logs rcCommand as a fraction of full
+        // deflection (−1 … 1; the throttle 0 … 1) times `rc_command_scale`,
+        // and says so with that header. Earlier firmware logs ±500 and
+        // 1000 … 2000 and has no such header. Both become the earlier units.
+        let rc_fraction = h
             .get_f64("rc_command_scale")
             .filter(|s| *s > 0.0)
-            .unwrap_or(1.0);
+            .map(|s| s * hires);
+        let (rc, rc_throttle) = match rc_fraction {
+            Some(one) => (RC_FULL / one, (RC_THROTTLE_SPAN / one, one)),
+            None => (1.0 / hires, (1.0 / hires, 0.0)),
+        };
         let (motor_low, motor_high) = motor_range(h);
         Scales {
             gyro: gyro_scale(h) / hires,
             setpoint: 1.0 / hires,
-            rc: 1.0 / (rc_scale * hires),
+            rc,
+            rc_throttle,
             acc: h.get_f64("acc_1G").filter(|g| *g > 0.0).map(|g| 1.0 / g),
             vbat: if fw.is_at_least(4, 0) { 0.01 } else { 0.1 },
             amperage: 0.01,
@@ -196,7 +209,18 @@ pub fn map_field(field: &str, s: &Scales) -> Option<FieldMapping> {
         }
         "rcCommand" => {
             let ch = idx.filter(|i| *i < 8)? as u8;
-            FieldMapping::scaled(ChannelId::RcCommand { ch }, Unit::Raw, s.rc)
+            let id = ChannelId::RcCommand { ch };
+            if ch == 3 {
+                let (scale, offset) = s.rc_throttle;
+                FieldMapping {
+                    id,
+                    unit: Unit::Raw,
+                    scale,
+                    offset,
+                }
+            } else {
+                FieldMapping::scaled(id, Unit::Raw, s.rc)
+            }
         }
         "motor" => motor_mapping(idx.filter(|i| *i < 8)?, s),
         "eRPM" => FieldMapping::new(
@@ -605,6 +629,8 @@ pub const BOXES_COMMON: [&str; 3] = ["ARM", "ANGLE", "HORIZON"];
 
 /// Full deflection of `rcCommand` on roll, pitch and yaw.
 const RC_FULL: f64 = 500.0;
+/// The range of `rcCommand[3]`, the throttle, which starts at 1000.
+const RC_THROTTLE_SPAN: f64 = 1000.0;
 
 /// The stick channels from `rcCommand`, in the canonical convention of
 /// [`ChannelId::Stick`]: roll and pitch as logged (±500 is full deflection),
@@ -781,6 +807,50 @@ pub fn derive(s: &mut FlightSession) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rc_command_comes_out_in_one_set_of_units() {
+        let fw = FirmwareInfo {
+            vendor: FirmwareVendor::Betaflight,
+            version: Some(FirmwareVersion::new(2026, 12, 0)),
+            ..FirmwareInfo::unknown()
+        };
+        let headers = |pairs: &[(&str, &str)]| {
+            RawHeaders(
+                pairs
+                    .iter()
+                    .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                    .collect(),
+            )
+        };
+        let value = |h: &RawHeaders, field: &str, raw: f64| {
+            let m = map_field(field, &Scales::betaflight(&fw, h)).unwrap();
+            (raw + m.offset) * m.scale
+        };
+        // up to 2026.6: ±500 and 1000 … 2000 as logged, ten times that in a
+        // high-resolution log
+        let old = headers(&[]);
+        assert_eq!(value(&old, "rcCommand[0]", -500.0), -500.0);
+        assert_eq!(value(&old, "rcCommand[3]", 1500.0), 1500.0);
+        let old_fine = headers(&[("blackbox_high_resolution", "1")]);
+        assert_eq!(value(&old_fine, "rcCommand[1]", 2500.0), 250.0);
+        assert_eq!(value(&old_fine, "rcCommand[3]", 15_000.0), 1500.0);
+        // after it: a fraction of full deflection times the scale
+        let new = headers(&[("rc_command_scale", "1000")]);
+        assert_eq!(value(&new, "rcCommand[0]", 1000.0), 500.0);
+        assert_eq!(value(&new, "rcCommand[2]", -300.0), -150.0);
+        assert_eq!(value(&new, "rcCommand[3]", 0.0), 1000.0);
+        assert_eq!(value(&new, "rcCommand[3]", 1000.0), 2000.0);
+        let new_fine = headers(&[
+            ("rc_command_scale", "1000"),
+            ("blackbox_high_resolution", "1"),
+        ]);
+        assert_eq!(value(&new_fine, "rcCommand[0]", 10_000.0), 500.0);
+        assert_eq!(value(&new_fine, "rcCommand[3]", 5000.0), 1500.0);
+        // a scale of nothing is no scale
+        let broken = headers(&[("rc_command_scale", "0")]);
+        assert_eq!(value(&broken, "rcCommand[0]", 500.0), 500.0);
+    }
 
     #[test]
     fn filter_details_come_from_the_headers_or_the_version() {
