@@ -432,24 +432,25 @@ pub fn spectrum_shot(round: u32, probe: &str, smoothing: &str) -> String {
 /// probe the spectrum at each smoothing level, as a picture and, from round
 /// 2 on, as vector copies of its plots.
 pub fn plan(round: u32, probes: &[Probe]) -> Plan {
-    let mut steps = Vec::new();
-    // the main window: all logs through one "open" dialog
-    steps.push(Step {
-        mark: Some(true),
-        ..click(LOG_VIEWER, "log", "Open File", (3468, 222))
-    });
-    steps.push(Step {
-        action: "open_file",
-        paths: Some(probes.iter().map(|p| format!("{}.bbl", p.id)).collect()),
-        ..Step::default()
-    });
-    // decoding takes several seconds a log
-    steps.push(settle(LOG_VIEWER, Some(900.0), 6.0));
-    steps.push(Step {
-        action: "windows",
-        ..Step::default()
-    });
-    steps.push(shot(LOG_VIEWER, format!("r{round}-log-loaded")));
+    // the main window: all logs through one "open" dialog; decoding takes
+    // several seconds a log
+    let mut steps = vec![
+        Step {
+            mark: Some(true),
+            ..click(LOG_VIEWER, "log", "Open File", (3468, 222))
+        },
+        Step {
+            action: "open_file",
+            paths: Some(probes.iter().map(|p| format!("{}.bbl", p.id)).collect()),
+            ..Step::default()
+        },
+        settle(LOG_VIEWER, Some(900.0), 6.0),
+        Step {
+            action: "windows",
+            ..Step::default()
+        },
+        shot(LOG_VIEWER, format!("r{round}-log-loaded")),
+    ];
 
     // the spectrum window, when the round has probes for it
     if probes.iter().any(|p| p.area == Area::Spectrum) {
