@@ -19,7 +19,8 @@ USAGE:
                 [--method curve|density] [--smoothing LEVEL]
     openpid sliders <file> [--session N] [--set KEY=VALUE,...] [--json]
     openpid diff <fileA> <fileB> [--session N] [--session-b M] [--json] [--cli]
-    openpid gen [<spec.json>] [--out synthetic.csv | synthetic.bbl] | gen --example
+    openpid gen [<spec.json>] [--out synthetic.csv | synthetic.bbl] [--firmware VERSION]
+    openpid gen --example
     openpid --help | --version
 
 COMMANDS:
@@ -67,7 +68,8 @@ COMMANDS:
              defaults are used; --example prints the default spec as JSON to edit.
              With --out <name>.bbl (or .bfl) it is written as a Betaflight Blackbox
              log instead, the way a flight controller logs it (whole deg/s, the
-             firmware's frames and headers), for any tool that reads such logs.
+             firmware's frames and headers), for any tool that reads such logs;
+             --firmware names the Betaflight release whose format is written.
 
 OPTIONS:
     --session N   Restrict to session index N (0-based)
@@ -88,6 +90,8 @@ OPTIONS:
     --session-b M diff: session index in the second file (default: --session)
     --cli         diff / run recommend: the firmware's commands instead of the table / JSON
     --example     gen: print the default spec instead of generating
+    --firmware V  gen: the Betaflight release a .bbl is written for: 4.2, 4.3, 4.4, 4.5,
+                  2025.12 (the default), 2026.6 or 2026.12-dev (the unreleased master)
     --raw         Skip firmware-profile scaling and derived channels
     --out <path>  Write to a file instead of stdout
     --png <path>  thr-heatmap / stft: also write the grid as a PNG image (viridis)
@@ -111,6 +115,8 @@ struct Args {
     session: Option<usize>,
     json: bool,
     example: bool,
+    /// The Betaflight release `gen` writes a Blackbox log for.
+    firmware: Option<String>,
     raw: bool,
     scaled: bool,
     out: Option<PathBuf>,
@@ -144,6 +150,7 @@ fn parse_args() -> Result<Args, String> {
                 args.session = Some(v.parse().map_err(|_| format!("bad session index: {v}"))?);
             }
             "--out" => args.out = Some(PathBuf::from(it.next().ok_or("--out needs a path")?)),
+            "--firmware" => args.firmware = Some(it.next().ok_or("--firmware needs a version")?),
             "--png" => args.png = Some(PathBuf::from(it.next().ok_or("--png needs a path")?)),
             "--project" => {
                 args.project = Some(PathBuf::from(it.next().ok_or("--project needs a path")?));
@@ -460,8 +467,15 @@ fn cmd_gen(args: &Args) -> Result<(), String> {
     if let Some(path) = args.out.as_ref().filter(|p| is_blackbox_name(p)) {
         // as a flight controller logs it: armed half a minute after power-up
         session.settings.loop_rates = openpid_fmt_blackbox::write::typical_rates(spec.fs);
+        let target = match &args.firmware {
+            Some(version) => openpid_fmt_blackbox::write::Target::from_name(version).ok_or(
+                format!("no Betaflight release {version} to write for: 4.2, 4.3, 4.4, 4.5, 2025.12, 2026.6 or 2026.12-dev"),
+            )?,
+            None => openpid_fmt_blackbox::write::Target::default(),
+        };
         let options = openpid_fmt_blackbox::write::WriteOptions {
             time_offset_us: 30_000_000,
+            target,
             ..Default::default()
         };
         let bytes = openpid_fmt_blackbox::write::betaflight(&session, &options)

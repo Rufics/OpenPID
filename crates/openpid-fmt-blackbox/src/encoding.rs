@@ -415,8 +415,10 @@ pub mod encode {
             buf.push(((v[1] as u8 & 0x0F) << 4) | (v[2] as u8 & 0x0F));
         } else if v.iter().all(|x| fits(*x, 6)) {
             buf.push((2 << 6) | (v[0] as u8 & 0x3F));
-            buf.push(v[1] as u8 & 0x3F);
-            buf.push(v[2] as u8 & 0x3F);
+            // the firmware writes the whole low byte of the second and third
+            // value: the two bits a decoder masks off carry the sign
+            buf.push(v[1] as u8);
+            buf.push(v[2] as u8);
         } else {
             let widths = [byte_width(v[0]), byte_width(v[1]), byte_width(v[2])];
             buf.push((3 << 6) | widths[0] | (widths[1] << 2) | (widths[2] << 4));
@@ -613,6 +615,53 @@ mod tests {
             assert_eq!(zigzag_encode(s), z);
             assert_eq!(zigzag_decode(z), s);
         }
+    }
+
+    /// Bytes worked out by hand from the layouts of the firmware's encoders
+    /// (Betaflight `master` 4b1520e, `src/main/blackbox/blackbox_encoding.c`):
+    /// what a flight controller puts on the card for these values.
+    #[test]
+    fn bytes_of_the_firmware_encoders() {
+        let tag2 = |v: [i32; 3]| {
+            let mut buf = Vec::new();
+            write_tag2_3s32(&mut buf, v);
+            buf
+        };
+        // two bits each: one byte
+        assert_eq!(tag2([1, -1, 0]), [0x1c]);
+        // four bits each
+        assert_eq!(tag2([7, -8, 3]), [0x47, 0x83]);
+        // six bits: the second and third value keep their whole low byte
+        assert_eq!(tag2([10, -5, -20]), [0x8a, 0xfb, 0xec]);
+        assert_eq!(tag2([-32, 31, -9]), [0xa0, 0x1f, 0xf7]);
+        // one, two and three bytes, the widths in the low bits of the tag
+        assert_eq!(
+            tag2([100, -200, 70_000]),
+            [0xe4, 0x64, 0x38, 0xff, 0x70, 0x11, 0x01]
+        );
+        assert_eq!(
+            tag2([-9_000_000, 0, 0]),
+            [0xc3, 0xc0, 0xab, 0x76, 0xff, 0x00, 0x00]
+        );
+        for v in [[10, -5, -20], [-32, 31, -9], [31, -32, 0]] {
+            assert_eq!(read_tag2_3s32(&mut Reader::new(&tag2(v))), Ok(v));
+        }
+
+        let mut buf = Vec::new();
+        write_tag8_4s16(&mut buf, [0, 5, -100, 300]);
+        assert_eq!(buf, [0xe4, 0x59, 0xc0, 0x12, 0xc0]);
+        let mut buf = Vec::new();
+        write_tag8_8svb(&mut buf, &[0, 3, 0, -1]);
+        assert_eq!(buf, [0x0a, 0x06, 0x01]);
+        // a single field has no presence byte
+        let mut buf = Vec::new();
+        write_tag8_8svb(&mut buf, &[-3]);
+        assert_eq!(buf, [0x05]);
+        // the battery against its reference: 14 bits of the difference
+        let mut buf = Vec::new();
+        write_neg14(&mut buf, 1650 - 1680);
+        write_neg14(&mut buf, 1700 - 1680);
+        assert_eq!(buf, [0x1e, 0xec, 0x7f]);
     }
 
     #[test]
