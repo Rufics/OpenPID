@@ -218,13 +218,19 @@ fn lowpass_code(l: &Lowpass) -> f64 {
 }
 
 /// Headers of one filter chain. A filter the chain does not have is written
-/// as switched off, so the log says exactly what the session says.
+/// as switched off, so the log says exactly what the session says. The
+/// low-passes are written under the names of 4.3 and later and under those
+/// of 4.2 (`gyro_lowpass_hz`, `dterm_filter_type`, …): each release has one
+/// set of them.
 fn filter_headers(out: &mut Lines, prefix: &str, chain: &FilterChain) {
-    for (slot, lowpass) in [(1, &chain.lowpass1), (2, &chain.lowpass2)] {
+    for (slot, old, lowpass) in [(1, "", &chain.lowpass1), (2, "2", &chain.lowpass2)] {
         let code = lowpass.as_ref().map_or(0.0, lowpass_code);
         let cutoff = lowpass.as_ref().map_or(0.0, |l| l.cutoff_hz);
         out.replace(&format!("{prefix}_lpf{slot}_type"), number(code));
         out.replace(&format!("{prefix}_lpf{slot}_static_hz"), number(cutoff));
+        out.replace(&format!("{prefix}_lowpass{old}_type"), number(code));
+        out.replace(&format!("{prefix}_filter{old}_type"), number(code));
+        out.replace(&format!("{prefix}_lowpass{old}_hz"), number(cutoff));
     }
     let first = chain.lowpass1.as_ref();
     let range = [
@@ -232,6 +238,7 @@ fn filter_headers(out: &mut Lines, prefix: &str, chain: &FilterChain) {
         first.and_then(|l| l.dyn_max_hz).unwrap_or(0.0),
     ];
     out.replace(&format!("{prefix}_lpf1_dyn_hz"), list(&range));
+    out.replace(&format!("{prefix}_lowpass_dyn_hz"), list(&range));
     if let Some(l) = first.filter(|l| l.dyn_min_hz.is_some()) {
         let key = format!("{prefix}_lpf1_dyn_expo");
         out.replace(&key, number(l.dyn_expo * 10.0));
@@ -257,7 +264,10 @@ fn gains_headers(out: &mut Lines, gains: [&PidGains; 3]) {
     }
     out.replace("d_max", list(&gains.map(|g| g.d_max.unwrap_or(0.0))));
     out.replace("d_min", list(&gains.map(|g| g.d_min.unwrap_or(0.0))));
-    out.replace("ff_weight", list(&gains.map(|g| g.f.unwrap_or(0.0))));
+    let feedforward = list(&gains.map(|g| g.f.unwrap_or(0.0)));
+    out.replace("ff_weight", feedforward.clone());
+    // the name of 4.2
+    out.replace("feedforward_weight", feedforward);
 }
 
 /// Headers of the notches that follow the motors.
@@ -273,11 +283,18 @@ fn notch_headers(out: &mut Lines, chain: &FilterChain) {
     let rpm = chain.rpm_notch.as_ref();
     let harmonics = rpm.map_or(0, |r| r.harmonics);
     out.replace("rpm_filter_harmonics", harmonics.to_string());
+    // the names of 4.2
+    out.replace("gyro_rpm_notch_harmonics", harmonics.to_string());
     let Some(r) = rpm else {
         return;
     };
     out.replace("rpm_filter_q", number(r.q * 100.0));
     out.replace("rpm_filter_min_hz", number(r.min_hz));
+    out.replace("gyro_rpm_notch_q", number(r.q * 100.0));
+    out.replace("gyro_rpm_notch_min", number(r.min_hz));
+    if r.lpf_hz > 0.0 {
+        out.replace("rpm_notch_lpf", number(r.lpf_hz));
+    }
     out.replace("rpm_filter_fade_range_hz", number(r.fade_range_hz));
     if r.lpf_hz > 0.0 {
         out.replace("rpm_filter_lpf_hz", number(r.lpf_hz));

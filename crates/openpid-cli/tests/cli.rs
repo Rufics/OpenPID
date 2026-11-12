@@ -432,6 +432,19 @@ fn gen_command_writes_a_betaflight_log() {
     let v: serde_json::Value = serde_json::from_str(&out).expect("json");
     assert!(v["metrics"]["delay_ms"].is_number());
 
+    // for another release of the firmware
+    for (version, logged) in [("4.5", "4.5.5"), ("2026.12-dev", "2026.12.0")] {
+        let (ok, _, err) = run(&["gen", "--out", log.to_str().unwrap(), "--firmware", version]);
+        assert!(ok, "{err}");
+        let (ok, out, err) = run(&["info", log.to_str().unwrap(), "--json"]);
+        assert!(ok, "{err}");
+        let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+        assert_eq!(v[0]["firmware_version"], logged);
+        assert_eq!(v[0]["corrupt_frames"], 0);
+    }
+    let (ok, _, err) = run(&["gen", "--out", log.to_str().unwrap(), "--firmware", "3.2"]);
+    assert!(!ok && err.contains("no Betaflight release 3.2"), "{err}");
+
     // what cannot be logged is refused
     let nothing = r#"{"dropouts": [{"start_s": 0.0, "len_s": 100.0}]}"#;
     std::fs::write(&spec_path, nothing).unwrap();

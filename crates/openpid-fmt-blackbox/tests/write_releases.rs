@@ -9,7 +9,9 @@ use blackbox_log::frame::Frame as _;
 use blackbox_log::prelude::*;
 use openpid_core::modes::{FlightMode, ModeChange};
 use openpid_core::session::{AdjustmentValue, AuxRow, AuxTable, Event, EventKind};
-use openpid_core::settings::{DebugMode, LoopRates, PerAxis, PidGains};
+use openpid_core::settings::{
+    DebugMode, FilterChain, LoopRates, Lowpass, LowpassKind, PerAxis, PidGains, RpmNotch,
+};
 use openpid_core::{
     Axis, BatteryField, Channel, ChannelId, FlightSession, GyroStage, LogFormat, OpenOptions,
     Origin, PidTerm, Series, Unit,
@@ -577,15 +579,17 @@ fn assert_modes_and_events(
 fn every_field_frame_and_event_of_every_release_at_every_rate() {
     // the rates: a quarter of a 4 kHz loop; a P interval that does not divide
     // the I interval (3.2 kHz gyros: I 102, P 4); every loop; I frames only
+    // (the last: 16 is one of the five P intervals of 4.3 and later; 4.2,
+    // which divides the I interval by any ratio, logs it as no P frames)
     let schedules = [
-        (rates(8000.0, 4000.0, 1000.0), ("128", "4"), 1000.0),
-        (rates(3200.0, 3200.0, 800.0), ("102", "4"), 800.0),
-        (rates(8000.0, 8000.0, 8000.0), ("256", "1"), 8000.0),
-        (rates(8000.0, 2000.0, 31.25), ("64", "0"), 31.25),
-        (rates(500.0, 500.0, 31.25), ("16", "16"), 31.25),
+        (rates(8000.0, 4000.0, 1000.0), ("128", "4", "4"), 1000.0),
+        (rates(3200.0, 3200.0, 800.0), ("102", "4", "4"), 800.0),
+        (rates(8000.0, 8000.0, 8000.0), ("256", "1", "1"), 8000.0),
+        (rates(8000.0, 2000.0, 31.25), ("64", "0", "0"), 31.25),
+        (rates(500.0, 500.0, 31.25), ("16", "16", "0"), 31.25),
     ];
     let mut cases = 0;
-    for (loop_rates, (i_interval, p_interval), log_hz) in schedules {
+    for (loop_rates, (i_interval, p_interval, p_of_4_2), log_hz) in schedules {
         // some 600 frames each, and less than the 8.2 s after which the
         // firmware repeats a slow frame
         let mut original = everything(log_hz, (600.0 / log_hz).min(6.0));
@@ -600,6 +604,11 @@ fn every_field_frame_and_event_of_every_release_at_every_rate() {
                     target,
                     rates: loop_rates,
                     high_resolution,
+                };
+                let p_interval = if target == Target::V4_2 {
+                    p_of_4_2
+                } else {
+                    p_interval
                 };
                 let name = case.name();
                 let bytes = betaflight(&original, &case.options()).unwrap();
@@ -636,7 +645,7 @@ fn every_field_frame_and_event_of_every_release_at_every_rate() {
             }
         }
     }
-    assert_eq!(cases, 5 * (6 + 5));
+    assert_eq!(cases, 5 * (7 + 5));
 }
 
 /// What the headers of the full flight say on each release: nothing is
@@ -653,7 +662,9 @@ fn the_headers_describe_the_craft_that_logs_all_this() {
         };
         let back = read(&betaflight(&original, &options).unwrap());
         let name = target.to_string();
-        assert_eq!(back.header("fields_disabled_mask"), Some("0"), "{name}");
+        // 4.2 has no mask
+        let mask = (target >= Target::V4_3).then_some("0");
+        assert_eq!(back.header("fields_disabled_mask"), mask, "{name}");
         assert_eq!(back.header("debug_mode"), Some("3"), "{name}");
         assert_eq!(back.header("dshot_bidir"), Some("1"), "{name}");
         let features: i64 = back.header("features").unwrap().parse().unwrap();
@@ -723,7 +734,8 @@ fn a_bare_flight_logs_what_it_has_and_the_headers_say_so() {
         assert_eq!(raw.field_names(), fields, "{name}");
         assert!(raw.gps.is_none() && raw.gps_home.is_none(), "{name}");
         // no sensor is switched off: the craft has none of them
-        assert_eq!(back.header("fields_disabled_mask"), Some("0"), "{name}");
+        let mask = (target >= Target::V4_3).then_some("0");
+        assert_eq!(back.header("fields_disabled_mask"), mask, "{name}");
         for line in ["vbat_scale", "vbatcellvoltage", "vbatref", "currentSensor"] {
             assert_eq!(back.header(line), None, "{name}: {line}");
         }
@@ -979,7 +991,7 @@ fn stick_commands_change_their_units_with_the_release() {
 fn the_independent_decoder_reads_the_full_flight() {
     let mut original = everything(1000.0, 0.6);
     original.settings.loop_rates = rates(8000.0, 4000.0, 1000.0);
-    for target in [Target::V4_3, Target::V4_4, Target::V4_5] {
+    for target in [Target::V4_2, Target::V4_3, Target::V4_4, Target::V4_5] {
         let options = WriteOptions {
             target,
             ..WriteOptions::default()
@@ -1038,5 +1050,68 @@ fn the_independent_decoder_reads_the_full_flight() {
         assert_eq!(row, original.len(), "{target}: every frame was read");
         assert_eq!(fixes, 12, "{target}: every fix was read");
         assert!(compared > 15_000, "{target}: compared only {compared}");
+    }
+}
+
+/// The gains and the filters of the session are in the headers of every
+/// release, under the names that release has for them (4.2 calls the
+/// low-passes `gyro_lowpass_hz` and `dterm_filter_type`, the feedforward
+/// `feedforward_weight`, the RPM filter `gyro_rpm_notch_*`).
+#[test]
+fn the_settings_are_written_under_the_names_of_each_release() {
+    let mut original = everything(1000.0, 0.2);
+    original.settings.loop_rates = rates(8000.0, 4000.0, 1000.0);
+    let lowpass = |kind: LowpassKind, cutoff_hz: f64| Lowpass {
+        kind: Some(kind),
+        cutoff_hz,
+        dyn_min_hz: None,
+        dyn_max_hz: None,
+        dyn_expo: 0.5,
+    };
+    original.settings.gyro_filters = FilterChain {
+        lowpass1: Some(lowpass(LowpassKind::Pt1, 180.0)),
+        lowpass2: Some(lowpass(LowpassKind::Biquad, 260.0)),
+        rpm_notch: Some(RpmNotch {
+            harmonics: 2,
+            q: 6.5,
+            min_hz: 90.0,
+            fade_range_hz: 50.0,
+            weights: Vec::new(),
+            lpf_hz: 150.0,
+        }),
+        ..FilterChain::default()
+    };
+    original.settings.dterm_filters = FilterChain {
+        lowpass1: Some(lowpass(LowpassKind::Pt2, 110.0)),
+        ..FilterChain::default()
+    };
+    for target in Target::ALL {
+        let options = WriteOptions {
+            target,
+            ..WriteOptions::default()
+        };
+        let back = read(&betaflight(&original, &options).unwrap());
+        let name = target.to_string();
+        let (wrote, read) = (&original.settings, &back.settings);
+        let gains = |s: &openpid_core::Settings| {
+            let pid = s.pid.as_ref().unwrap();
+            [&pid.roll, &pid.pitch, &pid.yaw].map(|g| (g.p, g.i, g.d, g.f))
+        };
+        assert_eq!(gains(read), gains(wrote), "{name}");
+        let cut = |l: &Option<Lowpass>| l.as_ref().map(|l| (l.kind.clone(), l.cutoff_hz));
+        let (g, h) = (&read.gyro_filters, &wrote.gyro_filters);
+        assert_eq!(cut(&g.lowpass1), cut(&h.lowpass1), "{name}");
+        assert_eq!(cut(&g.lowpass2), cut(&h.lowpass2), "{name}");
+        assert_eq!(g.lowpass1.as_ref().unwrap().dyn_min_hz, None, "{name}");
+        let (g, h) = (g.rpm_notch.as_ref().unwrap(), h.rpm_notch.as_ref().unwrap());
+        assert_eq!(
+            (g.harmonics, g.q, g.min_hz, g.lpf_hz),
+            (h.harmonics, h.q, h.min_hz, h.lpf_hz),
+            "{name}"
+        );
+        let (d, e) = (&read.dterm_filters, &wrote.dterm_filters);
+        assert_eq!(cut(&d.lowpass1), cut(&e.lowpass1), "{name}");
+        assert!(d.lowpass2.is_none(), "{name}");
+        assert_eq!(read.loop_rates, wrote.loop_rates, "{name}");
     }
 }

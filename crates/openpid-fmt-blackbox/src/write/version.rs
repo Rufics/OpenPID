@@ -8,9 +8,10 @@
 //! `blackboxGpsGFields`, `blackboxGpsHFields` and `blackboxSlowFields` and
 //! in `testBlackboxConditionUncached` of `src/main/blackbox/blackbox.c`, and
 //! the bits in `blackbox.h` (to 4.5) or `blackbox_fielddefs.h` (from
-//! 2025.12). The tags read: `4.3.2`, `4.4.3`, `4.5.0` … `4.5.5`,
+//! 2025.12). The tags read: `4.2.11`, `4.3.2`, `4.4.3`, `4.5.0` … `4.5.5`,
 //! `2025.12.1` … `2025.12.5`, `2026.6.1`, `2026.6.2`, and `master` at
-//! `4b1520e`; the patch releases of one version do not differ in any of it.
+//! `4b1520e`. Where several patch releases of a version were read (4.5,
+//! 2025.12, 2026.6) they do not differ in any of it.
 //!
 //! No firmware code is copied: the tables below are rebuilt from the names
 //! and numbers, which are the format.
@@ -28,6 +29,8 @@ use std::fmt;
 /// same format, so a target is a version, not a patch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Target {
+    /// Betaflight 4.2 (read at the tag `4.2.11`).
+    V4_2,
     /// Betaflight 4.3 (read at the tag `4.3.2`).
     V4_3,
     /// Betaflight 4.4 (`4.4.3`).
@@ -47,7 +50,8 @@ pub enum Target {
 
 impl Target {
     /// Every target, oldest first.
-    pub const ALL: [Target; 6] = [
+    pub const ALL: [Target; 7] = [
+        Target::V4_2,
         Target::V4_3,
         Target::V4_4,
         Target::V4_5,
@@ -59,6 +63,7 @@ impl Target {
     /// The version as the firmware numbers it; `master` is 2026.12.
     pub fn version(self) -> FirmwareVersion {
         match self {
+            Target::V4_2 => FirmwareVersion::new(4, 2, 11),
             Target::V4_3 => FirmwareVersion::new(4, 3, 2),
             Target::V4_4 => FirmwareVersion::new(4, 4, 3),
             Target::V4_5 => FirmwareVersion::new(4, 5, 5),
@@ -71,6 +76,7 @@ impl Target {
     /// The name of the version: `4.5`, `2025.12`, `2026.12-dev`.
     pub fn name(self) -> &'static str {
         match self {
+            Target::V4_2 => "4.2",
             Target::V4_3 => "4.3",
             Target::V4_4 => "4.4",
             Target::V4_5 => "4.5",
@@ -111,7 +117,8 @@ impl Target {
     /// The bit of `fields_disabled_mask` that switches `group` off, `None`
     /// where the release has no such bit.
     ///
-    /// The enum `FlightLogFieldSelect_e`: to 4.4 twelve groups; 4.5 added
+    /// 4.2 has no mask at all. The enum `FlightLogFieldSelect_e` came with
+    /// 4.3: to 4.4 twelve groups; 4.5 added
     /// RPM and GYROUNFILT at the end; 2025.12 put ATTITUDE before ACC (so
     /// ACC and everything after it moved up by one) and added SERVO;
     /// `master` added PITOT.
@@ -121,6 +128,7 @@ impl Target {
             Pitot, RcCommands, Rpm, Rssi, Servo, Setpoint,
         };
         let order: &[Select] = match self {
+            Target::V4_2 => &[],
             Target::V4_3 | Target::V4_4 => &[
                 Pid, RcCommands, Setpoint, Battery, Mag, Altitude, Rssi, Gyro, Acc, DebugLog,
                 Motor, Gps,
@@ -147,6 +155,30 @@ impl Target {
     /// tests the bit.
     fn servo_bit_is_ignored(self) -> bool {
         matches!(self, Target::V2025_12 | Target::V2026_6)
+    }
+
+    /// Whether the GPS frames carry a time of their own
+    /// (`FLIGHT_LOG_FIELD_CONDITION_NOT_LOGGING_EVERY_FRAME`). From 4.3 the
+    /// firmware tests whether `P interval` differs from `I interval`; 4.2
+    /// tests whether its `P ratio` setting is not 1.
+    pub(super) fn gps_frames_have_time(
+        self,
+        i_interval: i64,
+        p_interval: i64,
+        p_ratio: i64,
+    ) -> bool {
+        if self == Target::V4_2 {
+            p_ratio != 1
+        } else {
+            p_interval != i_interval
+        }
+    }
+
+    /// Whether the `P interval` is one of five (1, 2, 4, 8, 16: the setting
+    /// `sample_rate`, from 4.3). In 4.2 it is the `I interval` divided by
+    /// any `P ratio`.
+    pub(super) fn has_sample_rates(self) -> bool {
+        self >= Target::V4_3
     }
 
     /// The target whose release wrote a log of firmware `version`.
@@ -245,9 +277,9 @@ pub(super) enum When {
     /// The craft has at least this many motors, the ESCs report their speed
     /// and the RPM fields are not switched off.
     Rpm(u8),
-    /// GPS frames: the log does not have a main frame every `I interval`
-    /// iterations only (`P interval` differs from `I interval`).
-    NotEveryFrameIsIntra,
+    /// GPS frames: the frame has a time of its own
+    /// ([`Target::gps_frames_have_time`]).
+    GpsTime,
 }
 
 /// The integer type the firmware keeps a value in before it is logged
@@ -555,15 +587,7 @@ pub(super) fn gps_fields(target: Target) -> Vec<FieldDef> {
         );
     };
     let time = (pred::LAST_MAIN_FRAME_TIME, enc::UNSIGNED_VB);
-    t.add(
-        "time",
-        None,
-        false,
-        time,
-        time,
-        When::NotEveryFrameIsIntra,
-        Store::U32,
-    );
+    t.add("time", None, false, time, time, When::GpsTime, Store::U32);
     plain(&mut t, "GPS_numSat", None, false);
     let home = (pred::HOME_COORD, enc::SIGNED_VB);
     for i in 0..2 {
@@ -683,8 +707,8 @@ pub(super) struct Craft {
     pub acc: bool,
     /// A debug mode is set.
     pub debug: bool,
-    /// `P interval` differs from `I interval`.
-    pub not_every_frame_is_intra: bool,
+    /// The GPS frames have a time of their own.
+    pub gps_time: bool,
 }
 
 impl Craft {
@@ -730,7 +754,7 @@ impl Craft {
             When::Tricopter => self.tricopter && on(Select::Motor),
             When::Servos => self.servos && (target.servo_bit_is_ignored() || on(Select::Servo)),
             When::Rpm(n) => self.motors >= n && self.dshot_telemetry && on(Select::Rpm),
-            When::NotEveryFrameIsIntra => self.not_every_frame_is_intra,
+            When::GpsTime => self.gps_time,
         }
     }
 }
@@ -748,6 +772,7 @@ mod tests {
     #[test]
     fn the_tables_have_the_fields_of_each_release() {
         for (target, main, gps, home) in [
+            (Target::V4_2, 49, 7, 2),
             (Target::V4_3, 49, 7, 2),
             (Target::V4_4, 49, 7, 2),
             (Target::V4_5, 64, 7, 2),
@@ -807,7 +832,7 @@ mod tests {
             assert_eq!(mine, values, "{key}");
             checked += 1;
         }
-        assert_eq!(checked, 6 * (6 + 4 + 4));
+        assert_eq!(checked, 7 * (6 + 4 + 4));
     }
 
     #[test]
@@ -816,6 +841,11 @@ mod tests {
         assert_eq!(Target::V2025_12.select_bit(Select::Acc), Some(9));
         assert_eq!(Target::V2025_12.select_bit(Select::Attitude), Some(8));
         assert_eq!(Target::V4_4.select_bit(Select::Rpm), None);
+        assert_eq!(Target::V4_2.select_bit(Select::Pid), None, "no mask in 4.2");
+        assert!(Target::V4_2.gps_frames_have_time(32, 32, 0));
+        assert!(!Target::V4_2.gps_frames_have_time(32, 32, 1));
+        assert!(!Target::V4_3.gps_frames_have_time(32, 32, 1));
+        assert!(Target::V4_3.gps_frames_have_time(32, 0, 0));
         assert_eq!(Target::V4_5.select_bit(Select::GyroUnfilt), Some(13));
         assert_eq!(Target::V2026_6.select_bit(Select::Pitot), None);
         assert_eq!(Target::Master.select_bit(Select::Pitot), Some(16));
@@ -852,14 +882,19 @@ mod tests {
         assert_eq!(Target::from_name("4.5"), Some(Target::V4_5));
         assert_eq!(Target::from_name("master"), Some(Target::Master));
         assert_eq!(Target::from_name(" 2026.12-dev "), Some(Target::Master));
-        assert_eq!(Target::from_name("4.2"), None);
+        assert_eq!(Target::from_name("4.2"), Some(Target::V4_2));
+        assert_eq!(Target::from_name("4.1"), None);
         assert_eq!(Target::Master.to_string(), "Betaflight 2026.12-dev");
         assert!(Target::V4_5 < Target::V2025_12 && Target::V2026_6 < Target::Master);
         assert_eq!(
             Target::of_version(FirmwareVersion::new(4, 5, 0)),
             Some(Target::V4_5)
         );
-        assert_eq!(Target::of_version(FirmwareVersion::new(4, 2, 11)), None);
+        assert_eq!(
+            Target::of_version(FirmwareVersion::new(4, 2, 0)),
+            Some(Target::V4_2)
+        );
+        assert_eq!(Target::of_version(FirmwareVersion::new(4, 1, 7)), None);
         assert_eq!(Store::I16.limit(40_000), 32_767);
         assert_eq!(Store::U16.limit(-1), 0);
         assert_eq!(Store::I32.limit(1 << 40), i64::from(i32::MAX));

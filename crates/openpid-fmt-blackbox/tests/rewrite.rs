@@ -249,14 +249,58 @@ fn a_log_is_carried_to_every_other_release() {
     }
 }
 
-/// Betaflight 4.2 is not a target: the writer describes the releases from
-/// 4.3 on. The logs of 4.2 can be written for one of those.
+/// Betaflight 4.2: the 47 logs of the three clean fixtures, among them one
+/// with GPS frame definitions and a debug mode.
 #[test]
-fn an_older_log_is_written_for_a_release_the_writer_knows() {
-    let data = fixture("betaflight-4.2.11-two-logs.bbl");
+fn the_logs_of_4_2_are_written_back_byte_for_byte() {
+    let mut logs = 0;
+    for (file, expected) in [
+        ("betaflight-4.2.0.BFL", 1),
+        ("betaflight-4.2.8-44-logs.bbl", 44),
+        ("betaflight-4.2.11-two-logs.bbl", 2),
+    ] {
+        let data = fixture(file);
+        let segments = split_logs(&data);
+        assert_eq!(segments.len(), expected, "{file}");
+        for (i, (_, original)) in segments.into_iter().enumerate() {
+            let name = format!("{file}, log {i}");
+            let session = session(original);
+            let d = &session.diagnostics;
+            let mine = written(&session, Target::V4_2);
+            if (file, i) == ("betaflight-4.2.8-44-logs.bbl", 43) {
+                // the last log of the dump ends after its headers: what
+                // follows them (536 bytes) is not a frame. It is written
+                // back as it was read: the headers, and no frame.
+                assert_eq!((session.len(), d.skipped_bytes), (0, 536), "{name}");
+                let (theirs, ours) = (
+                    Headers::parse(original).unwrap(),
+                    Headers::parse(&mine).unwrap(),
+                );
+                assert_eq!(&original[..theirs.data_start], &mine[..], "{name}");
+                assert_eq!(ours.data_start, mine.len(), "{name}");
+                continue;
+            }
+            assert_eq!(
+                (d.corrupt_frames, d.desync_frames, d.skipped_bytes),
+                (0, 0, 0),
+                "{name}: the fixture is a clean log"
+            );
+            assert_same_log(&name, original, &mine);
+            logs += 1;
+        }
+    }
+    assert_eq!(logs, 46);
+}
+
+/// A log that is not Betaflight's (or older than 4.2) has no release of its
+/// own among the targets: it is written as a flight of the craft for the
+/// release asked for.
+#[test]
+fn a_log_of_another_firmware_is_written_for_the_release_asked_for() {
+    let data = fixture("emuflight-3.7.0-truncated.BFL");
     let (_, first) = split_logs(&data)[0];
     let original = session(first);
-    assert_eq!(Target::from_name("4.2"), None);
+    assert_eq!(Target::from_name("3.7"), None);
     let back = session(&written(&original, Target::V4_3));
     assert_eq!(back.len(), original.len());
     assert_eq!(back.diagnostics.corrupt_frames, 0);

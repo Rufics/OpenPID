@@ -117,7 +117,11 @@ pub(super) fn layout(
 ) -> Result<Layout, WriteError> {
     let mut craft = Craft {
         mask: lines.int("fields_disabled_mask") as u32,
-        not_every_frame_is_intra: schedule.p_interval != schedule.i_interval,
+        gps_time: target.gps_frames_have_time(
+            schedule.i_interval,
+            schedule.p_interval,
+            lines.int("P ratio"),
+        ),
         ..Craft::default()
     };
     for (axis, key) in ["rollPID", "pitchPID", "yawPID"].into_iter().enumerate() {

@@ -154,10 +154,15 @@ pub(crate) struct Schedule {
 impl Schedule {
     /// The schedule of the loop rates, with the header lines that state it,
     /// by the arithmetic of the firmware (`gyroInitSensor` and
-    /// `blackboxInit`, the same from 4.3 to `master`): the gyro period and
+    /// `blackboxInit`, the same from 4.2 to `master`): the gyro period and
     /// the PID period are whole microseconds, rounded down, and an `I`
     /// frame is due every 32 ms of PID loops, rounded down again.
-    fn of_rates(rates: &LoopRates, sampled_hz: f64, lines: &mut Lines) -> Result<Self, WriteError> {
+    fn of_rates(
+        target: Target,
+        rates: &LoopRates,
+        sampled_hz: f64,
+        lines: &mut Lines,
+    ) -> Result<Self, WriteError> {
         let log_hz = rates.log_hz.unwrap_or(sampled_hz);
         let pid_hz = rates.pid_hz.unwrap_or(log_hz);
         let gyro_hz = rates.gyro_hz.unwrap_or(pid_hz);
@@ -182,8 +187,9 @@ impl Schedule {
             return Err(bad);
         }
         // every frame an I frame: the firmware says `P interval:0` unless
-        // the interval is one of its own five (1, 2, 4, 8, 16)
-        let its_own = per_frame <= 16 && (per_frame as u64).is_power_of_two();
+        // the interval is one of its own five (1, 2, 4, 8, 16; from 4.3)
+        let its_own =
+            target.has_sample_rates() && per_frame <= 16 && (per_frame as u64).is_power_of_two();
         let p_interval = if per_frame == i_interval && !its_own {
             0
         } else {
@@ -675,9 +681,11 @@ pub fn betaflight(session: &FlightSession, options: &WriteOptions) -> Result<Vec
     let n = time.len();
     let carried = fields::carried(session, target);
     let mut lines = config::lines(session, &source, target, carried, options);
-    let schedule = match Schedule::of_headers(&lines) {
-        Some(schedule) => schedule,
-        None => Schedule::of_rates(&session.settings.loop_rates, sampled_hz(&time), &mut lines)?,
+    let schedule = if let Some(schedule) = Schedule::of_headers(&lines) {
+        schedule
+    } else {
+        let rates = &session.settings.loop_rates;
+        Schedule::of_rates(target, rates, sampled_hz(&time), &mut lines)?
     };
     let layout = fields::layout(session, &source, target, schedule, &mut lines)?;
     let gyro_logged = layout.main.iter().any(|f| f.name == "gyroADC[0]");
@@ -686,7 +694,12 @@ pub fn betaflight(session: &FlightSession, options: &WriteOptions) -> Result<Vec
     } else {
         vec![true; n]
     };
-    let first = valid.iter().position(|v| *v).ok_or(WriteError::Empty)?;
+    let first = match valid.iter().position(|v| *v) {
+        Some(first) => first,
+        // a log that ended before its first frame is written as it was
+        None if source.decoded => n,
+        None => return Err(WriteError::Empty),
+    };
 
     let mut columns = fields::columns(session, &source, &layout, &lines, n);
     let replayed = logged_iterations(session, schedule, n).filter(|_| source.decoded);
@@ -697,11 +710,11 @@ pub fn betaflight(session: &FlightSession, options: &WriteOptions) -> Result<Vec
     });
     columns[1] = time.iter().map(|t| wrapped(*t)).collect();
     let field = |name: &str| layout.main.iter().position(|f| f.name == name);
-    if let Some(voltage) = field("vbatLatest")
+    if let Some(voltage) = field("vbatLatest").and_then(|v| columns[v].get(first))
         && !lines.is_given("vbatref")
     {
         // the voltage when the log began
-        lines.replace("vbatref", columns[voltage][first].to_string());
+        lines.replace("vbatref", voltage.to_string());
     }
     if target >= Target::Master && !lines.is_given("debug_mode_name") {
         let name = match (&session.settings.debug_mode, lines.int("debug_mode")) {
@@ -846,8 +859,13 @@ mod tests {
     /// `pid_process_denom` for a gyro, PID and log rate.
     fn headers(gyro_hz: f64, pid_hz: f64, log_hz: f64) -> [i64; 5] {
         let mut lines = lines();
-        let schedule =
-            Schedule::of_rates(&rates(gyro_hz, pid_hz, log_hz), 0.0, &mut lines).unwrap();
+        let schedule = Schedule::of_rates(
+            Target::default(),
+            &rates(gyro_hz, pid_hz, log_hz),
+            0.0,
+            &mut lines,
+        )
+        .unwrap();
         assert_eq!(schedule.i_interval, lines.int("I interval"));
         assert_eq!(schedule.p_interval, lines.int("P interval"));
         [
@@ -877,6 +895,11 @@ mod tests {
         assert_eq!(headers(8000.0, 2000.0, 125.0), [64, 16, 4, 125, 4]);
         assert_eq!(headers(500.0, 500.0, 31.25), [16, 16, 1, 2000, 1]);
         assert_eq!(headers(8000.0, 4000.0, 31.25), [128, 0, 0, 125, 2]);
+        // 4.2 has no interval of its own: any P ratio, and 0 for no P frames
+        let mut lines = lines();
+        let slow = rates(500.0, 500.0, 31.25);
+        let schedule = Schedule::of_rates(Target::V4_2, &slow, 0.0, &mut lines).unwrap();
+        assert_eq!((schedule.i_interval, schedule.p_interval), (16, 0));
     }
 
     #[test]
@@ -907,7 +930,8 @@ mod tests {
     #[test]
     fn rates_the_firmware_cannot_log() {
         let refused = |gyro_hz, pid_hz, log_hz| {
-            Schedule::of_rates(&rates(gyro_hz, pid_hz, log_hz), 0.0, &mut lines()).is_err()
+            let rates = rates(gyro_hz, pid_hz, log_hz);
+            Schedule::of_rates(Target::default(), &rates, 0.0, &mut lines()).is_err()
         };
         assert!(refused(8000.0, 1500.0, 1000.0), "not a whole multiple");
         assert!(refused(6000.0, 4000.0, 1000.0), "gyro and PID");

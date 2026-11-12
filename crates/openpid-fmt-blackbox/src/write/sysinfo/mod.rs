@@ -11,6 +11,7 @@
 mod master;
 mod v2025_12;
 mod v2026_6;
+mod v4_2;
 mod v4_3;
 mod v4_4;
 mod v4_5;
@@ -48,6 +49,11 @@ pub(super) enum Build {
     IntegratedYaw,
     /// `USE_FEEDFORWARD`.
     Feedforward,
+    /// `USE_INTERPOLATED_SP` (4.2: the feedforward from the interpolated
+    /// setpoint).
+    InterpolatedSetpoint,
+    /// `USE_GYRO_DATA_ANALYSE` (4.2: the dynamic notch).
+    GyroAnalysis,
     /// `USE_CHIRP`.
     Chirp,
     /// `USE_DYN_NOTCH_FILTER`.
@@ -121,6 +127,7 @@ const fn open(name: &'static str, when: &'static [Build]) -> Line {
 /// Every header line `target` can write, in the firmware's order.
 pub(super) fn lines(target: Target) -> &'static [Line] {
     match target {
+        Target::V4_2 => v4_2::LINES,
         Target::V4_3 => v4_3::LINES,
         Target::V4_4 => v4_4::LINES,
         Target::V4_5 => v4_5::LINES,
@@ -138,8 +145,8 @@ pub(super) fn lines(target: Target) -> &'static [Line] {
 pub(super) fn stock_build(target: Target) -> Vec<Build> {
     use Build::{
         AbsoluteControl, Acc, Baro, BoardInfo, DMinMax, DshotTelemetry, DynIdle, DynLpf, DynNotch,
-        Feedforward, Gps, GpsRescue, IntegratedYaw, ItermRelax, Mag, NotWing, RcSmoothing,
-        RpmFilter, SagCompensation, SimplifiedTuning,
+        Feedforward, Gps, GpsRescue, GyroAnalysis, IntegratedYaw, InterpolatedSetpoint, ItermRelax,
+        Mag, NotWing, RcSmoothing, RpmFilter, SagCompensation, SimplifiedTuning,
     };
     let mut on = vec![
         BoardInfo,
@@ -158,7 +165,16 @@ pub(super) fn stock_build(target: Target) -> Vec<Build> {
         NotWing,
     ];
     if !target.assembled_from_options() {
-        on.extend([AbsoluteControl, IntegratedYaw, Baro, Mag, Gps, GpsRescue]);
+        on.extend([
+            AbsoluteControl,
+            IntegratedYaw,
+            InterpolatedSetpoint,
+            GyroAnalysis,
+            Baro,
+            Mag,
+            Gps,
+            GpsRescue,
+        ]);
     }
     on
 }
@@ -210,7 +226,6 @@ mod tests {
                 "pid_process_denom",
                 "rollPID",
                 "motorOutput",
-                "fields_disabled_mask",
                 "features",
                 "debug_mode",
             ] {
@@ -257,6 +272,16 @@ mod tests {
             logged("betaflight-4.5.1-two-sessions.bbl"),
             written_by(Target::V4_5, &everything)
         );
+        // 4.2: all three fixtures are official builds; the craft of 4.2.8
+        // has no current meter on an ADC
+        let mut all = stock_build(Target::V4_2);
+        all.push(Vbat);
+        let without_adc = written_by(Target::V4_2, &all);
+        all.push(CurrentAdc);
+        let with_adc = written_by(Target::V4_2, &all);
+        assert_eq!(logged("betaflight-4.2.11-two-logs.bbl"), with_adc);
+        assert_eq!(logged("betaflight-4.2.0.BFL"), with_adc);
+        assert_eq!(logged("betaflight-4.2.8-44-logs.bbl"), without_adc);
         // 2025.12.2, a cloud build for a wing with GPS, compass and barometer
         let wing = [
             BoardInfo,
@@ -303,6 +328,7 @@ mod tests {
             (lines(t).len(), written_by(t, &build).len())
         });
         let expected = [
+            (112, 112),
             (136, 136),
             (172, 172),
             (191, 191),
@@ -320,6 +346,10 @@ mod tests {
         assert!(has(Target::V4_5, "minthrottle") && !has(Target::V2025_12, "minthrottle"));
         assert!(!has(Target::V4_5, "DeviceUID") && has(Target::V2025_12, "DeviceUID"));
         assert!(!has(Target::V4_3, "blackbox_high_resolution"));
+        // the mask of the fields came with 4.3, and the new names of the filters
+        assert!(!has(Target::V4_2, "fields_disabled_mask"));
+        assert!(has(Target::V4_3, "fields_disabled_mask"));
+        assert!(has(Target::V4_2, "gyro_lowpass_hz") && has(Target::V4_3, "gyro_lpf1_static_hz"));
         assert!(has(Target::V4_4, "blackbox_high_resolution"));
         assert!(has(Target::V4_5, "d_min") && has(Target::V2025_12, "d_max"));
         assert!(
