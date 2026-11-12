@@ -277,7 +277,6 @@ pub struct Parser<'a> {
     /// Observed microseconds per loop iteration, learnt from accepted frames;
     /// used to reject junk that happens to parse as an intra frame after a sync loss.
     us_per_iteration: Option<f64>,
-    rollover_us: i64,
     last_skipped: u32,
 
     slow_buf: Vec<i64>,
@@ -353,7 +352,6 @@ impl<'a> Parser<'a> {
             last_iteration: None,
             last_time: None,
             us_per_iteration: None,
-            rollover_us: 0,
             last_skipped: 0,
             slow_buf: vec![0; headers.def(b'S').map_or(0, FrameDef::len)],
             gps_buf: vec![0; gps_def.map_or(0, FrameDef::len)],
@@ -636,7 +634,11 @@ impl<'a> Parser<'a> {
         let code = r.read_u8().ok_or(DecodeError::Eof)?;
         Ok(match code {
             EVENT_SYNC_BEEP => {
-                let t = i64::from(enc::read_uvb(r)?) + self.rollover_us;
+                let t32 = enc::read_uvb(r)?;
+                // the beep sounds within the frames around it
+                let t = self
+                    .last_time
+                    .map_or(i64::from(t32), |last| unwrap_near(last, t32));
                 Some(EventData::SyncBeep { time_us: t })
             }
             EVENT_INFLIGHT_ADJUSTMENT => {
@@ -658,10 +660,10 @@ impl<'a> Parser<'a> {
             }
             EVENT_LOGGING_RESUME => {
                 let iteration = enc::read_uvb(r)?;
-                let t = i64::from(enc::read_uvb(r)?) + self.rollover_us;
+                let t32 = enc::read_uvb(r)?;
                 Some(EventData::LoggingResume {
                     iteration,
-                    time_us: t,
+                    time_us: self.resume_time(iteration, t32),
                 })
             }
             EVENT_DISARM => Some(EventData::Disarm {
@@ -760,16 +762,46 @@ impl<'a> Parser<'a> {
         n
     }
 
-    /// 32-bit microsecond counter rollover recovery.
-    fn apply_rollover(&mut self, t: i64) -> i64 {
-        if let Some(last) = self.last_time {
-            let t32 = t as u32;
-            let last32 = last as u32;
-            if t32 < last32 && i64::from(t32.wrapping_sub(last32)) < MAX_TIME_JUMP_US {
-                self.rollover_us += 1i64 << 32;
-            }
+    /// The time of a main frame from the 32-bit microsecond counter it
+    /// logs. The counter wraps every 71.6 minutes; the time goes on from
+    /// the last accepted main frame (or "logging resume" event): a value
+    /// below that one's, but less than [`MAX_TIME_JUMP_US`] on from it
+    /// through the wrap, is in the next round of the counter.
+    ///
+    /// Nothing is kept besides the time of the last accepted frame: a frame
+    /// that is rejected, and a GPS frame or an event with a time of its
+    /// own, leave the times of the main frames after them alone.
+    fn main_time(&self, t32: u32) -> i64 {
+        let Some(last) = self.last_time else {
+            return i64::from(t32);
+        };
+        let last32 = last as u32;
+        let round = last - i64::from(last32);
+        if t32 < last32 && i64::from(t32.wrapping_sub(last32)) < MAX_TIME_JUMP_US {
+            round + (1i64 << 32) + i64::from(t32)
+        } else {
+            round + i64::from(t32)
         }
-        i64::from(t as u32) + self.rollover_us
+    }
+
+    /// The time of a "logging resume" event from the 32-bit counter value
+    /// it carries. Logging was paused for any length of time, so the
+    /// counter may have wrapped, more than once: the iteration count, which
+    /// the firmware keeps running while logging is paused, says how long the
+    /// pause was when the rate of the log is known. Without a rate it is
+    /// the first such time after the last frame.
+    fn resume_time(&self, iteration: u32, t32: u32) -> i64 {
+        let Some(last) = self.last_time else {
+            return i64::from(t32);
+        };
+        match (self.last_iteration, self.us_per_iteration) {
+            (Some(li), Some(upi)) if iteration > li => {
+                let expected = last + (f64::from(iteration - li) * upi) as i64;
+                Some(unwrap_near(expected, t32)).filter(|t| *t >= last)
+            }
+            _ => None,
+        }
+        .unwrap_or_else(|| unwrap_forward(last, t32))
     }
 
     fn validate_main(&self, iteration: u32, time_us: i64) -> bool {
@@ -892,7 +924,6 @@ impl<'a> Parser<'a> {
         probe.probing = true;
         let _ = probe.set_reference(iteration, time_us);
         probe.hist[self.cur][self.time_idx] = time_us;
-        probe.rollover_us = time_us - i64::from(time_us as u32);
         probe.last_accept_pos = probe.reader.pos();
         let mut last = (iteration, time_us);
         // an intra frame comes at least every `I interval` iterations
@@ -936,7 +967,6 @@ impl<'a> Parser<'a> {
             hole_bytes: 0,
         });
         self.hist[self.cur][self.time_idx] = time_us;
-        self.rollover_us = time_us - i64::from(time_us as u32);
         self.set_reference(iteration, time_us)
     }
 
@@ -950,7 +980,7 @@ impl<'a> Parser<'a> {
         match body {
             Body::Main(kind) => {
                 let raw_t = self.hist[self.cur][self.time_idx];
-                let t = self.apply_rollover(raw_t);
+                let t = self.main_time(raw_t as u32);
                 self.hist[self.cur][self.time_idx] = t;
                 let iteration = self.hist[self.cur][self.iter_idx] as u32;
                 let valid = self.validate_main(iteration, t);
@@ -999,9 +1029,12 @@ impl<'a> Parser<'a> {
             }
             Body::Slow => Some(Accepted::Slow),
             Body::Gps => {
-                if let Some(ti) = self.gps_time_idx {
-                    let t = self.gps_buf[ti];
-                    self.gps_buf[ti] = self.apply_rollover(t);
+                // The time of a GPS frame is logged against the main frame
+                // before it and is its own: the counter may wrap between
+                // the two, and the main frames after it go on from the last
+                // main frame, not from here.
+                if let (Some(ti), Some(last)) = (self.gps_time_idx, self.last_time) {
+                    self.gps_buf[ti] = unwrap_near(last, self.gps_buf[ti] as u32);
                 }
                 Some(Accepted::Gps {
                     home_valid: self.home_valid,
@@ -1687,6 +1720,151 @@ H motorOutput:158,2047\n";
         intra(&mut data, 4, 100, [0, 0, 0], [1200, 1300]);
         let (frames, _, _) = collect(&data);
         assert_eq!(frames[1][1], i64::from(u32::MAX) + 1 + 100);
+    }
+
+    /// Issue #183 D: the time of a GPS frame is logged against the main
+    /// frame before it. When the 32-bit counter wrapped between the two,
+    /// the GPS frame moved the times of all later main frames a round on,
+    /// once more with every frame, and all of them were rejected.
+    #[test]
+    fn a_gps_frame_after_the_time_wrap_leaves_the_main_frames_alone() {
+        let header = format!(
+            "{HDR}H Field G name:time,GPS_numSat,GPS_speed\n\
+             H Field G signed:0,0,0\n\
+             H Field G predictor:10,0,0\n\
+             H Field G encoding:1,1,1\n"
+        );
+        // the 20th I frame is 300 us before the wrap; a GPS frame follows
+        // it by `after` us
+        for after in [200u32, 300, 400] {
+            let t0 = (1i64 << 32) - 19 * 32_000 - 300;
+            let mut data = header.as_bytes().to_vec();
+            let (mut rows, mut gps_times) = (Vec::new(), Vec::new());
+            for k in 0..200i64 {
+                let t = t0 + k * 32_000;
+                intra(&mut data, k as u32 * 4, t as u32, [1, 2, 3], [1200, 1300]);
+                rows.push(vec![k * 4, t, 1, 2, 3, 1200, 1300]);
+                if k % 3 == 0 || k == 19 {
+                    let dt = if k == 19 { after } else { 250 };
+                    data.push(b'G');
+                    encode::write_uvb(&mut data, dt);
+                    encode::write_uvb(&mut data, 14);
+                    encode::write_uvb(&mut data, 1200);
+                    gps_times.push(t + i64::from(dt));
+                }
+            }
+            let h = Headers::parse(&data).unwrap();
+            let mut p = Parser::new(&data, &h);
+            let (mut frames, mut gps) = (Vec::new(), Vec::new());
+            while let Some(f) = p.next_frame() {
+                match f {
+                    Frame::Main { values, .. } => frames.push(values.to_vec()),
+                    Frame::Gps { values, .. } => gps.push(values[0]),
+                    _ => {}
+                }
+            }
+            assert_same(&frames, &rows, &format!("a GPS frame {after} us on"));
+            assert_eq!(gps, gps_times, "{after}");
+            assert_eq!(p.stats.desync_total(), 0);
+        }
+    }
+
+    /// A frame that is rejected leaves the times of the frames after it
+    /// alone too (it used to move them a round on when its own time looked
+    /// like one after the wrap).
+    #[test]
+    fn a_rejected_frame_near_the_time_wrap_changes_nothing() {
+        let mut data = HDR.as_bytes().to_vec();
+        intra(&mut data, 8, u32::MAX - 1000, [0, 0, 0], [1200, 1300]);
+        intra(&mut data, 4, 50, [0, 0, 0], [1200, 1300]); // the iteration runs backwards
+        intra(&mut data, 12, u32::MAX - 500, [0, 0, 0], [1200, 1300]);
+        intra(&mut data, 16, 500, [0, 0, 0], [1200, 1300]);
+        let (frames, _, stats) = collect(&data);
+        let times: Vec<i64> = frames.iter().map(|f| f[1]).collect();
+        let max = i64::from(u32::MAX);
+        assert_eq!(times, [max - 1000, max - 500, max + 1 + 500]);
+        assert_eq!(stats.frames[&b'I'].desync, 1);
+    }
+
+    /// Issue #183 E: the time of a "logging resume" event was put in the
+    /// round of the counter of the frames before the pause: after a pause
+    /// that spans the wrap the time ran back by 2^32 us.
+    #[test]
+    fn a_pause_may_span_the_time_wrap() {
+        // I frames only (no rate known): the first such time after the pause
+        let t0 = (1i64 << 32) - 5_000_000;
+        let mut data = HDR.as_bytes().to_vec();
+        let mut rows = Vec::new();
+        let mut frame = |data: &mut Vec<u8>, k: i64| {
+            let t = t0 + k * 32_000;
+            intra(data, k as u32 * 4, t as u32, [1, 2, 3], [1200, 1300]);
+            rows.push(vec![k * 4, t, 1, 2, 3, 1200, 1300]);
+        };
+        for k in 0..50 {
+            frame(&mut data, k);
+        }
+        let resume = t0 + 1050 * 32_000; // 32 s later, past the wrap
+        data.extend_from_slice(b"E\x0e");
+        encode::write_uvb(&mut data, 1050 * 4);
+        encode::write_uvb(&mut data, resume as u32);
+        for k in 1050..1100 {
+            frame(&mut data, k);
+        }
+        let (frames, events, stats) = collect(&data);
+        assert_same(&frames, &rows, "a pause over the wrap");
+        assert_eq!(
+            events,
+            [EventData::LoggingResume {
+                iteration: 4200,
+                time_us: resume
+            }]
+        );
+        assert!(resume > 1 << 32);
+        assert_eq!(stats.desync_total(), 0);
+        assert!(stats.resumed_gaps.is_empty(), "the event announces the gap");
+        // with a rate the pause may be longer than a round of the counter:
+        // the iteration count says how long it was. 40 000 000 iterations of
+        // 125 us are 5000 s; a round is 4295 s
+        let mut data = HDR.as_bytes().to_vec();
+        let mut rows = steady(&mut data, 0..400, 1_000_000, 125);
+        let resume = 1_000_000 + 40_000_000 * 125;
+        data.extend_from_slice(b"E\x0e");
+        encode::write_uvb(&mut data, 40_000_000);
+        encode::write_uvb(&mut data, resume as u32);
+        rows.extend(steady(&mut data, 40_000_000..40_000_400, 1_000_000, 125));
+        let (frames, events, stats) = collect(&data);
+        assert_same(&frames, &rows, "a pause of more than a round");
+        assert_eq!(
+            events,
+            [EventData::LoggingResume {
+                iteration: 40_000_000,
+                time_us: resume
+            }]
+        );
+        assert!(resume > 1 << 32 && (resume as u32) > 1_000_000);
+        assert_eq!(stats.desync_total(), 0);
+        // the arming beep is timed against the frames around it
+        let mut data = HDR.as_bytes().to_vec();
+        intra(&mut data, 0, u32::MAX - 100, [0, 0, 0], [1200, 1300]);
+        data.extend_from_slice(b"E\x00");
+        encode::write_uvb(&mut data, 20);
+        intra(&mut data, 4, 100, [0, 0, 0], [1200, 1300]);
+        data.extend_from_slice(b"E\x00");
+        encode::write_uvb(&mut data, u32::MAX - 50);
+        intra(&mut data, 8, 600, [0, 0, 0], [1200, 1300]);
+        let (frames, events, _) = collect(&data);
+        assert_eq!(frames.len(), 3);
+        assert_eq!(
+            events,
+            [
+                EventData::SyncBeep {
+                    time_us: (1 << 32) + 20
+                },
+                EventData::SyncBeep {
+                    time_us: i64::from(u32::MAX) - 50
+                }
+            ]
+        );
     }
 
     #[test]
