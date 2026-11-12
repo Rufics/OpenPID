@@ -95,6 +95,10 @@ development branch before the release: it lacks `ez_landing_speed` and logs
 differences (`tests/rewrite.rs`). `betaflight-4.2.11-error-recovery.bbl` is
 corrupted on purpose and is not written back.
 
+`tools/betaflight-blackbox/extract.py` reads the field definitions and the
+header lines out of a Betaflight checkout at a tag; its README says how a
+release is added.
+
 The values of the example craft in `write/sysinfo/` are a configuration, not
 facts of a version: those of the fixture's craft where it logs the line
 (linear rates of 1000 deg/s, no debug mode, no GPS feature), the firmware's

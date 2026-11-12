@@ -664,11 +664,18 @@ fn header_block(layout: &Layout, lines: Lines) -> Vec<u8> {
 /// session has no channel for is not logged and `fields_disabled_mask`, or
 /// the absence of the sensor's header lines, says so; the PID terms alone
 /// are logged as zero when the session has none, which is what the firmware
-/// logs while the controller is idle. In a session that was not decoded
-/// from a log a sample without a gyro value is not logged: the log pauses
-/// there and resumes, with the firmware's "logging resumed" event, at the
-/// next `I` frame, as a flight controller does when its storage falls
-/// behind.
+/// logs while the controller is idle.
+///
+/// A session decoded from a Blackbox log is written as that log was: every
+/// frame at the loop iteration it had, the events and the slow, GPS and home
+/// frames where they were, nothing added. (Where the log lost frames to
+/// damage, the `P` frames after the gap are predicted from the frames that
+/// are left, and a decoder counts their loop iterations on from there.)
+///
+/// In any other session a sample without a gyro value is not logged: the
+/// log pauses there and resumes, with the firmware's "logging resumed"
+/// event, at the next `I` frame, as a flight controller does when its
+/// storage falls behind.
 ///
 /// # Errors
 /// [`WriteError`] when there is nothing to log, a needed channel is absent,

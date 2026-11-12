@@ -316,3 +316,30 @@ fn a_log_of_another_firmware_is_written_for_the_release_asked_for() {
         );
     }
 }
+
+/// A log with damaged frames (`betaflight-4.2.11-error-recovery.bbl`, cut
+/// and corrupted on purpose) is written as the frames that survived: the
+/// decoder reads the same values back, without the damage. Byte for byte it
+/// cannot be the original, which holds the damage.
+#[test]
+fn a_damaged_log_is_written_as_the_frames_that_survived() {
+    let original = fixture("betaflight-4.2.11-error-recovery.bbl");
+    let session = session(&original);
+    assert!(
+        session.diagnostics.corrupt_frames > 0,
+        "the fixture is damaged"
+    );
+    let back = self::session(&written(&session, Target::V4_2));
+    let d = &back.diagnostics;
+    assert_eq!((d.corrupt_frames, d.skipped_bytes), (0, 0));
+    assert_eq!(back.len(), session.len());
+    for channel in session.channels.iter() {
+        if channel.id == openpid_core::ChannelId::LoopIteration {
+            // a P frame does not carry the counter: after a lost frame the
+            // decoder counts on from the last frame it has
+            continue;
+        }
+        let other = back.channel(&channel.id).unwrap();
+        assert_eq!(channel.data, other.data, "{:?}", channel.id);
+    }
+}
