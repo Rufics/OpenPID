@@ -300,3 +300,34 @@ fn the_time_may_wrap_while_logging_is_paused() {
     )));
     assert_eq!(log.stats.desync_total(), 0);
 }
+
+/// G: a log of a firmware that predicts a field in a way this reader does
+/// not know (the gyro of the 4.2 fixture gets predictor 12 here). The log
+/// came out as an empty session with nothing to say why; it is an error
+/// that names the predictor and the field now, as an unknown encoding has
+/// always been.
+#[test]
+fn a_predictor_the_reader_does_not_know_is_an_error_that_says_so() {
+    let data = fixture("betaflight-4.2.0.BFL");
+    let line = b"H Field I predictor:";
+    let at = data.windows(line.len()).position(|w| w == line).unwrap() + line.len();
+    let end = at + data[at..].iter().position(|b| *b == b'\n').unwrap();
+    let names = Headers::parse(&data).unwrap().main_def().names.clone();
+    let gyro = names.iter().position(|n| n == "gyroADC[0]").unwrap();
+    let mut predictors: Vec<&str> = std::str::from_utf8(&data[at..end])
+        .unwrap()
+        .split(',')
+        .collect();
+    predictors[gyro] = "12";
+    let mut changed = data[..at].to_vec();
+    changed.extend_from_slice(predictors.join(",").as_bytes());
+    changed.extend_from_slice(&data[end..]);
+    let error = BlackboxFormat::new()
+        .open(&changed, &OpenOptions::default())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("unsupported predictor 12 for field gyroADC[0]"),
+        "{error}"
+    );
+}

@@ -1,6 +1,7 @@
 //! Header block parsing (`H name:value` lines) and frame definitions.
 
 use crate::encoding;
+use crate::predictor;
 use openpid_core::{FirmwareInfo, RawHeaders};
 use std::collections::BTreeMap;
 
@@ -60,6 +61,18 @@ impl FrameDef {
             return Err(HeaderError::Inconsistent(
                 ft,
                 "encoding list length differs from names".into(),
+            ));
+        }
+        // A frame with a predictor this crate cannot apply has no values:
+        // every one of them would be rejected, and the log would come out
+        // empty with nothing to say why.
+        if let Some(i) = (0..self.len()).find(|i| !predictor::is_known(self.predictors[*i])) {
+            return Err(HeaderError::Inconsistent(
+                ft,
+                format!(
+                    "unsupported predictor {} for field {}",
+                    self.predictors[i], self.names[i]
+                ),
             ));
         }
         let mut i = 0;
@@ -204,6 +217,33 @@ impl Headers {
         }
         for (ft, def) in &defs {
             def.validate(*ft)?;
+        }
+        // The same goes for a predictor that refers to a field the log
+        // does not have.
+        let lacks = |ft: u8, predictor: u8, field: &str| {
+            defs.get(&ft)
+                .and_then(|d| d.predictors.iter().position(|p| *p == predictor))
+                .map(|i| {
+                    HeaderError::Inconsistent(
+                        ft as char,
+                        format!(
+                            "predictor {predictor} for field {} needs the field {field}, which \
+                             the log does not define",
+                            defs[&ft].names[i]
+                        ),
+                    )
+                })
+        };
+        if i_def.index_of("motor[0]").is_none() {
+            for ft in *b"IP" {
+                lacks(ft, predictor::MOTOR_0, "motor[0]").map_or(Ok(()), Err)?;
+            }
+        }
+        let home = defs.get(&b'H');
+        for field in ["GPS_home[0]", "GPS_home[1]"] {
+            if home.is_none_or(|h| h.index_of(field).is_none()) {
+                lacks(b'G', predictor::HOME_COORD, field).map_or(Ok(()), Err)?;
+            }
         }
         if i_def.index_of("loopIteration").is_none() {
             return Err(HeaderError::MissingMainField("loopIteration"));
@@ -408,5 +448,59 @@ I\x00";
             Headers::parse(b"garbage"),
             Err(HeaderError::NoHeader)
         ));
+    }
+
+    /// Issue #183 G: a predictor id this crate does not know made every
+    /// frame fail, and the log came out empty with no explanation; an
+    /// encoding it does not know has always been an error that says so.
+    #[test]
+    fn rejects_predictors_it_cannot_apply() {
+        let error = |from: &str, to: &str| {
+            let text = String::from_utf8_lossy(SAMPLE).replace(from, to);
+            assert_ne!(text.as_bytes(), SAMPLE, "{from}");
+            Headers::parse(text.as_bytes()).unwrap_err().to_string()
+        };
+        assert_eq!(
+            error(
+                "H Field I predictor:0,0,0,0,0,11,5\n",
+                "H Field I predictor:0,0,0,0,12,11,5\n"
+            ),
+            "field definition for frame 'I' is inconsistent: unsupported predictor 12 for field \
+             axisP[2]"
+        );
+        assert!(
+            error(
+                "H Field P predictor:6,2,1,1,1,3,3\n",
+                "H Field P predictor:6,2,1,1,1,3,200\n"
+            )
+            .contains("frame 'P' is inconsistent: unsupported predictor 200 for field motor[1]")
+        );
+        assert!(
+            error(
+                "H Field S predictor:0,0,0,0,0\n",
+                "H Field S predictor:0,0,0,0,99\n"
+            )
+            .contains("frame 'S'")
+        );
+        // a predictor that refers to a field the log does not have
+        assert!(error("motor[0],motor[1]\n", "motorA,motorB\n").contains(
+            "predictor 5 for field motorB needs the field motor[0], which the log does not \
+                 define"
+        ));
+        let gps = "H Field G name:GPS_numSat,GPS_coord[0],GPS_coord[1]\n\
+                   H Field G signed:0,1,1\n\
+                   H Field G predictor:0,7,7\n\
+                   H Field G encoding:1,0,0\n";
+        let home = "H Field H name:GPS_home[0],GPS_home[1]\n\
+                    H Field H signed:1,1\n\
+                    H Field H predictor:0,0\n\
+                    H Field H encoding:0,0\n";
+        let marker = "H Firmware revision:";
+        assert!(error(marker, &format!("{gps}{marker}")).contains(
+            "frame 'G' is inconsistent: predictor 7 for field GPS_coord[0] needs the field \
+                 GPS_home[0]"
+        ));
+        let text = String::from_utf8_lossy(SAMPLE).replace(marker, &format!("{gps}{home}{marker}"));
+        assert!(Headers::parse(text.as_bytes()).is_ok());
     }
 }
