@@ -484,6 +484,24 @@ fn settings_in_words_come_from_the_betaflight_profile_only() {
             .contains("D max 100"),
         "simplified_d_max_gain, renamed from simplified_dmax_gain"
     );
+    // how the numbers of the log are to be taken (#183)
+    assert_eq!(
+        detail(&new, "Logging").as_deref(),
+        Some("normal resolution; rcCommand as ±500 and the throttle 1000–2000")
+    );
+    assert_eq!(
+        detail(&new, "GPS").as_deref(),
+        Some("the speed logged is the speed over ground; home point set anew at each arming")
+    );
+    assert_eq!(
+        detail(&old, "Logging").as_deref(),
+        Some("rcCommand as ±500 and the throttle 1000–2000")
+    );
+    assert_eq!(
+        detail(&first("betaflight-4.2.11-two-logs.bbl"), "GPS"),
+        None,
+        "a log without GPS frames"
+    );
     // a flight controller without a clock logs the year 0000: no date
     let no_clock = first("betaflight-4.5.1-two-sessions.bbl");
     assert_eq!(no_clock.settings.log_start, None);
