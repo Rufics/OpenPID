@@ -13,6 +13,7 @@
 //!   through a round and saves its screens; the script travels in the pack.
 //! - [`model`]: the spectrum curve of the reference tool as the rounds have
 //!   identified it, for the predictions of the next round.
+//! - [`step_model`]: the step response of the reference tool, likewise.
 //! - [`cli`]: the command line of the `openpid-probe` binary.
 
 pub mod capture;
@@ -21,6 +22,7 @@ pub mod cli;
 pub mod model;
 pub mod pack;
 pub mod signal;
+pub mod step_model;
 
 pub use catalogue::{Area, Probe};
 pub use pack::{Manifest, Ours, Pack, PackError};
