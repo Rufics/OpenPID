@@ -218,6 +218,16 @@ pub fn build_session(
             .notes
             .push("no firmware profile matched; channels are raw".into());
     }
+    if let Some(longest) = log.stats.resumed_gaps.iter().max_by_key(|g| g.time_us) {
+        diagnostics.notes.push(format!(
+            "the log goes on after {} gap(s) that no logging-resume event announces (the \
+             longest: {:.1} s, {} loop iterations): frames were lost while logging; the frames \
+             after each gap are read",
+            log.stats.resumed_gaps.len(),
+            longest.time_us as f64 / 1.0e6,
+            longest.iterations
+        ));
+    }
     if log.stats.trailing_bytes > 0 {
         diagnostics.notes.push(format!(
             "{} trailing bytes after the last valid frame are not blackbox data (stale card \

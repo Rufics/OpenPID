@@ -2,6 +2,35 @@
 //! the reference decoders: a frame is accepted only when it decodes without
 //! error, is not absurdly long, is immediately followed by another frame
 //! letter (or EOF), and its iteration/time counters move forward sanely.
+//!
+//! # Going on after a gap
+//!
+//! "Sanely" means within [`MAX_ITERATION_JUMP`] iterations and
+//! [`MAX_TIME_JUMP_US`] of the last accepted main frame: bytes that are not
+//! frames decode to arbitrary counters, and that window is what keeps them
+//! out. A log can also really jump further than that with no "logging
+//! resume" event to announce it: the firmware drops frames while the storage
+//! is busy, and its counters run on. Every frame after such a gap is outside
+//! the window of the last frame before it, for ever. So an intra frame
+//! outside the window is not thrown away at once: it becomes the new
+//! reference when there is evidence that it is the same log going on
+//! (`Parser::anchor_time`, `Parser::corroborated`):
+//!
+//! 1. its iteration is one the firmware writes an intra frame on (a multiple
+//!    of `I interval`) and lies after the last accepted one;
+//! 2. iteration and time moved together across the gap, at the rate of the
+//!    log so far (within [`RATE_TOLERANCE`]), which is what one flight
+//!    controller's two counters do and what the remains of another log on
+//!    the same card do not;
+//! 3. the frames that follow it read on without one corrupt frame, rejected
+//!    frame or stray byte up to the next intra frame (or the "end of log"
+//!    marker), and that frame agrees with it in iteration and time at the
+//!    same rate.
+//!
+//! Where the log so far has no rate (it has only intra frames, or the gap is
+//! at its start) the rate inside the frames after the gap stands in for it
+//! in rule 2. Junk has to pass every one of these at once to be read as a
+//! frame, and nothing that passed before is rejected now.
 
 use crate::encoding::{self as enc, DecodeError};
 use crate::headers::{FrameDef, Headers};
@@ -17,8 +46,16 @@ pub const MAX_FRAME_LEN: usize = 256;
 /// treated as not being blackbox data at all (stale sectors on the card, another
 /// file's remains) instead of one failed frame attempt per byte.
 pub const GIVE_UP_BYTES: usize = 16 * 1024;
-const MAX_ITERATION_JUMP: u32 = 500 * 10;
-const MAX_TIME_JUMP_US: i64 = 10 * 1_000_000;
+/// Most loop iterations between two main frames of an unbroken stream.
+pub const MAX_ITERATION_JUMP: u32 = 500 * 10;
+/// Most time between two main frames of an unbroken stream.
+pub const MAX_TIME_JUMP_US: i64 = 10 * 1_000_000;
+/// How far two measurements of the microseconds per loop iteration of one
+/// log may be apart, as a ratio either way, to count as the same rate: the
+/// rate across a gap against the rate before it and after it. The loop of a
+/// flight controller runs off a crystal, so the real spread is a few
+/// percent; the allowance is for the rate being learnt from single frames.
+pub const RATE_TOLERANCE: f64 = 1.25;
 
 const EVENT_SYNC_BEEP: u8 = 0;
 const EVENT_INFLIGHT_ADJUSTMENT: u8 = 13;
@@ -135,6 +172,20 @@ pub struct ParseStats {
     /// Bytes left unread once the parser gave up (see [`GIVE_UP_BYTES`]);
     /// not included in `skipped_bytes`.
     pub trailing_bytes: u64,
+    /// Places where the log went on after a gap that no "logging resume"
+    /// event announced, in log order.
+    pub resumed_gaps: Vec<StreamGap>,
+}
+
+/// A gap in the main frames the parser read across (see the module
+/// documentation): what lies between the last frame before it and the intra
+/// frame after it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamGap {
+    /// Loop iterations between the two frames.
+    pub iterations: u32,
+    /// Time between the two frames, microseconds.
+    pub time_us: i64,
 }
 
 impl ParseStats {
@@ -176,8 +227,18 @@ enum Accepted {
     Event(EventData),
 }
 
+/// What one attempt to read a frame came to.
+enum Step {
+    /// A frame was accepted.
+    Frame(Accepted),
+    /// A stray byte, a corrupt frame or a frame that failed validation.
+    Rejected,
+    /// Nothing more to read.
+    End,
+}
+
 /// Streaming parser over the frame data of one log.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Parser<'a> {
     reader: Reader<'a>,
     headers: &'a Headers,
@@ -217,6 +278,9 @@ pub struct Parser<'a> {
     done: bool,
     /// Reader position just after the last accepted frame.
     last_accept_pos: usize,
+    /// This parser is a copy reading ahead to corroborate a new reference
+    /// frame: it takes no new reference itself.
+    probing: bool,
 }
 
 fn is_frame_letter(b: u8) -> bool {
@@ -286,6 +350,7 @@ impl<'a> Parser<'a> {
             stats,
             done: false,
             last_accept_pos: 0,
+            probing: false,
         }
     }
 
@@ -302,53 +367,10 @@ impl<'a> Parser<'a> {
     /// Next accepted frame, or `None` at the end of the log.
     pub fn next_frame(&mut self) -> Option<Frame<'_>> {
         let accepted = loop {
-            if self.done {
-                return None;
-            }
-            let start = self.reader.pos();
-            if start - self.last_accept_pos > GIVE_UP_BYTES {
-                // nothing decodable for a long stretch: the log ended here
-                self.stats.trailing_bytes = (self.reader.len() - start) as u64;
-                self.done = true;
-                return None;
-            }
-            let letter = self.reader.read_u8()?;
-            if !is_frame_letter(letter) {
-                self.stats.skipped_bytes += 1;
-                self.stream_valid = false;
-                continue;
-            }
-            let body = self.parse_body(letter);
-            self.reader.align();
-            let size = self.reader.pos() - start - 1;
-            // "End of log" terminates the stream: nothing after it has to look like a frame.
-            let is_log_end = matches!(body, Ok(Body::Event(Some(EventData::LogEnd))));
-            let next_ok = is_log_end || self.reader.peek_u8().is_none_or(is_frame_letter);
-            let complete = body.is_ok() && size <= MAX_FRAME_LEN && next_ok;
-            if !complete {
-                let st = self.stats.frame(letter);
-                st.corrupt += 1;
-                self.stream_valid = false;
-                self.prev = None;
-                self.prev2 = None;
-                self.reader.set_pos(start + 1);
-                continue;
-            }
-            let body = body.unwrap_or(Body::Event(None));
-            match self.complete(letter, body) {
-                Some(acc) => {
-                    let st = self.stats.frame(letter);
-                    st.valid += 1;
-                    st.bytes += size as u64 + 1;
-                    // only time-validated main frames prove the stream is still alive
-                    if matches!(acc, Accepted::Main { .. }) {
-                        self.last_accept_pos = self.reader.pos();
-                    }
-                    break acc;
-                }
-                None => {
-                    self.stats.frame(letter).desync += 1;
-                }
+            match self.step() {
+                Step::Frame(acc) => break acc,
+                Step::Rejected => {}
+                Step::End => return None,
             }
         };
         Some(match accepted {
@@ -371,6 +393,57 @@ impl<'a> Parser<'a> {
             Accepted::GpsHome => Frame::GpsHome(&self.home_published),
             Accepted::Event(e) => Frame::Event(e),
         })
+    }
+
+    /// One attempt to read a frame at the reader's position.
+    fn step(&mut self) -> Step {
+        if self.done {
+            return Step::End;
+        }
+        let start = self.reader.pos();
+        if start - self.last_accept_pos > GIVE_UP_BYTES {
+            // nothing decodable for a long stretch: the log ended here
+            self.stats.trailing_bytes = (self.reader.len() - start) as u64;
+            self.done = true;
+            return Step::End;
+        }
+        let Some(letter) = self.reader.read_u8() else {
+            return Step::End;
+        };
+        if !is_frame_letter(letter) {
+            self.stats.skipped_bytes += 1;
+            self.stream_valid = false;
+            return Step::Rejected;
+        }
+        let body = self.parse_body(letter);
+        self.reader.align();
+        let size = self.reader.pos() - start - 1;
+        // "End of log" terminates the stream: nothing after it has to look like a frame.
+        let is_log_end = matches!(body, Ok(Body::Event(Some(EventData::LogEnd))));
+        let next_ok = is_log_end || self.reader.peek_u8().is_none_or(is_frame_letter);
+        let complete = body.is_ok() && size <= MAX_FRAME_LEN && next_ok;
+        if !complete {
+            let st = self.stats.frame(letter);
+            st.corrupt += 1;
+            self.stream_valid = false;
+            self.prev = None;
+            self.prev2 = None;
+            self.reader.set_pos(start + 1);
+            return Step::Rejected;
+        }
+        let body = body.unwrap_or(Body::Event(None));
+        let Some(acc) = self.complete(letter, body) else {
+            self.stats.frame(letter).desync += 1;
+            return Step::Rejected;
+        };
+        let st = self.stats.frame(letter);
+        st.valid += 1;
+        st.bytes += size as u64 + 1;
+        // only time-validated main frames prove the stream is still alive
+        if matches!(acc, Accepted::Main { .. }) {
+            self.last_accept_pos = self.reader.pos();
+        }
+        Step::Frame(acc)
     }
 
     fn parse_body(&mut self, letter: u8) -> Result<Body, DecodeError> {
@@ -677,6 +750,130 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// The intra frame just decoded becomes the reference of the stream.
+    fn set_reference(&mut self, iteration: u32, time_us: i64) -> Accepted {
+        self.stream_valid = true;
+        self.last_iteration = Some(iteration);
+        self.last_time = Some(time_us);
+        let buf = self.cur;
+        self.prev = Some(buf);
+        self.prev2 = Some(buf);
+        self.cur = self.free_slot();
+        Accepted::Main {
+            buf,
+            kind: MainKind::Intra,
+            iteration,
+            time_us,
+        }
+    }
+
+    /// The time of an intra frame outside the window of the last accepted
+    /// frame, when the frame is the same log going on after a gap (see the
+    /// module documentation); `None` when the evidence is not there.
+    fn anchor_after_gap(&self, iteration: u32, t32: u32) -> Option<i64> {
+        if self.probing {
+            return None;
+        }
+        let t = self.anchor_time(iteration, t32)?;
+        self.corroborated(iteration, t).then_some(t)
+    }
+
+    /// Rules 1 and 2 of going on after a gap: the time an intra frame with
+    /// these counters has when it can be a later frame of this log, the
+    /// 32-bit time counter unwrapped to where the iteration count puts it.
+    fn anchor_time(&self, iteration: u32, t32: u32) -> Option<i64> {
+        if !iteration.is_multiple_of(self.headers.i_interval) {
+            return None;
+        }
+        let (Some(li), Some(lt)) = (self.last_iteration, self.last_time) else {
+            // no frame before it to agree with
+            return Some(i64::from(t32));
+        };
+        if iteration <= li {
+            return None;
+        }
+        let d_iter = f64::from(iteration - li);
+        let t = match self.us_per_iteration {
+            Some(upi) => {
+                let t = unwrap_near(lt + (d_iter * upi) as i64, t32);
+                if !same_rate((t - lt) as f64 / d_iter, upi) {
+                    return None;
+                }
+                t
+            }
+            // no rate yet: the first time after the last frame; the frames
+            // that follow have to show the same rate (`corroborated`)
+            None => unwrap_forward(lt, t32),
+        };
+        (t > lt).then_some(t)
+    }
+
+    /// Rule 3 of going on after a gap: whether the frames after an intra
+    /// frame with these counters, the one just decoded, read on cleanly to
+    /// the next intra frame or the end of the log and agree with it.
+    fn corroborated(&self, iteration: u32, time_us: i64) -> bool {
+        let gap_rate = match (self.last_iteration, self.last_time) {
+            (Some(li), Some(lt)) => Some((time_us - lt) as f64 / f64::from(iteration - li)),
+            _ => None,
+        };
+        // the frames after it agree with it when the rate from it to them
+        // is the rate of the log so far and the rate across the gap
+        let agrees = |i: u32, t: i64| {
+            if i <= iteration || t <= time_us {
+                return false;
+            }
+            let rate = (t - time_us) as f64 / f64::from(i - iteration);
+            self.us_per_iteration.is_none_or(|upi| same_rate(rate, upi))
+                && gap_rate.is_none_or(|gap| same_rate(gap, rate))
+        };
+        let mut probe = self.clone();
+        probe.probing = true;
+        let _ = probe.set_reference(iteration, time_us);
+        probe.hist[self.cur][self.time_idx] = time_us;
+        probe.rollover_us = time_us - i64::from(time_us as u32);
+        probe.last_accept_pos = probe.reader.pos();
+        let mut last = (iteration, time_us);
+        // an intra frame comes at least every `I interval` iterations
+        for _ in 0..=u64::from(self.headers.i_interval) {
+            loop {
+                match probe.step() {
+                    Step::Frame(Accepted::Main {
+                        kind,
+                        iteration: i,
+                        time_us: t,
+                        ..
+                    }) => {
+                        last = (i, t);
+                        if kind == MainKind::Intra {
+                            return i.is_multiple_of(self.headers.i_interval) && agrees(i, t);
+                        }
+                        break;
+                    }
+                    Step::Frame(Accepted::Event(EventData::LogEnd)) => {
+                        return agrees(last.0, last.1);
+                    }
+                    Step::Frame(_) => {}
+                    Step::Rejected | Step::End => return false,
+                }
+            }
+        }
+        false
+    }
+
+    /// The intra frame just decoded is the log going on after a gap: it
+    /// becomes the reference, and the gap is put on record.
+    fn take_anchor(&mut self, iteration: u32, time_us: i64) -> Accepted {
+        if let (Some(li), Some(lt)) = (self.last_iteration, self.last_time) {
+            self.stats.resumed_gaps.push(StreamGap {
+                iterations: iteration - li,
+                time_us: time_us - lt,
+            });
+        }
+        self.hist[self.cur][self.time_idx] = time_us;
+        self.rollover_us = time_us - i64::from(time_us as u32);
+        self.set_reference(iteration, time_us)
+    }
+
     fn free_slot(&self) -> usize {
         (0..3)
             .find(|i| Some(*i) != self.prev && Some(*i) != self.prev2)
@@ -694,26 +891,19 @@ impl<'a> Parser<'a> {
                 match kind {
                     MainKind::Intra => {
                         if !valid {
+                            // outside the window: the log going on after a
+                            // gap, when there is evidence for that
+                            if let Some(t) = self.anchor_after_gap(iteration, raw_t as u32) {
+                                return Some(self.take_anchor(iteration, t));
+                            }
                             self.stream_valid = false;
                             self.prev = None;
                             self.prev2 = None;
                             return None;
                         }
-                        self.stream_valid = true;
                         self.stats.intentionally_absent_iterations +=
                             u64::from(self.count_skipped_to(iteration));
-                        self.last_iteration = Some(iteration);
-                        self.last_time = Some(t);
-                        let buf = self.cur;
-                        self.prev = Some(buf);
-                        self.prev2 = Some(buf);
-                        self.cur = self.free_slot();
-                        Some(Accepted::Main {
-                            buf,
-                            kind,
-                            iteration,
-                            time_us: t,
-                        })
+                        Some(self.set_reference(iteration, t))
                     }
                     MainKind::Inter => {
                         if self.stream_valid && !valid {
@@ -773,6 +963,24 @@ impl<'a> Parser<'a> {
             }
         }
     }
+}
+
+/// The time congruent to the 32-bit counter value `t32` that is nearest to
+/// `reference`.
+fn unwrap_near(reference: i64, t32: u32) -> i64 {
+    reference + i64::from(t32.wrapping_sub(reference as u32) as i32)
+}
+
+/// The first time at or after `reference` congruent to the 32-bit counter
+/// value `t32`.
+fn unwrap_forward(reference: i64, t32: u32) -> i64 {
+    reference + i64::from(t32.wrapping_sub(reference as u32))
+}
+
+/// Whether two rates (microseconds per loop iteration) are the same within
+/// [`RATE_TOLERANCE`].
+fn same_rate(a: f64, b: f64) -> bool {
+    a > 0.0 && b > 0.0 && a <= b * RATE_TOLERANCE && b <= a * RATE_TOLERANCE
 }
 
 /// Decode every field of `def` from `r` into `out`.
@@ -1037,6 +1245,214 @@ H motorOutput:158,2047\n";
             "attempts stop once nothing decodes: {}",
             stats.corrupt_total()
         );
+    }
+
+    /// The frames of a steady flight over `iterations` (which start on a
+    /// multiple of 4): an I frame every fourth iteration, a P frame between,
+    /// `rate` microseconds per iteration from `t0` at iteration 0. Returns
+    /// the rows a decoder has to produce.
+    fn steady(
+        data: &mut Vec<u8>,
+        iterations: std::ops::Range<u32>,
+        t0: i64,
+        rate: i64,
+    ) -> Vec<Vec<i64>> {
+        let mut rows: Vec<Vec<i64>> = Vec::new();
+        for it in iterations.step_by(2) {
+            let i = i64::from(it);
+            let (t, g) = (t0 + i * rate, i % 50);
+            let row = vec![i, t, g, -g, 7, 1200 + i % 7, 1300];
+            if it.is_multiple_of(4) {
+                intra(
+                    data,
+                    it,
+                    t as u32,
+                    [g as i32, -g as i32, 7],
+                    [row[5] as i32, 1300],
+                );
+            } else {
+                let p = rows.last().expect("a P frame follows an I frame");
+                inter(data, t, [g, -g, 7], [row[5], 1300], p, p);
+            }
+            rows.push(row);
+        }
+        rows
+    }
+
+    /// Compare decoded rows with the expected ones without printing a whole
+    /// log when they differ.
+    fn assert_same(frames: &[Vec<i64>], rows: &[Vec<i64>], what: &str) {
+        assert_eq!(frames.len(), rows.len(), "{what}: number of frames");
+        if let Some(i) = (0..rows.len()).find(|i| frames[*i] != rows[*i]) {
+            panic!("{what}: frame {i} is {:?}, not {:?}", frames[i], rows[i]);
+        }
+    }
+
+    /// The same flight logged with I frames only, so that the parser never
+    /// learns its rate.
+    fn steady_intra_only(
+        data: &mut Vec<u8>,
+        iterations: std::ops::Range<u32>,
+        t0: i64,
+        rate: i64,
+    ) -> Vec<Vec<i64>> {
+        let mut rows = Vec::new();
+        for it in iterations.step_by(4) {
+            let i = i64::from(it);
+            let t = t0 + i * rate;
+            intra(data, it, t as u32, [1, 2, 3], [1200, 1300]);
+            rows.push(vec![i, t, 1, 2, 3, 1200, 1300]);
+        }
+        rows
+    }
+
+    /// Issue #183 B: frames lost while logging leave a gap of more than
+    /// [`MAX_ITERATION_JUMP`] iterations with no "logging resume" event.
+    /// The I frame after it is outside the window of the last frame before
+    /// it, and so was every frame after that: the rest of the log was lost.
+    #[test]
+    fn goes_on_after_a_gap_without_a_resume_event() {
+        // 39 600 iterations (4.95 s) lost, then 20 s, then 30 s more
+        for (second, third) in [(40_000u32, 40_400u32), (160_000, 400_000)] {
+            let mut data = HDR.as_bytes().to_vec();
+            let mut rows = steady(&mut data, 0..400, 1_000_000, 125);
+            rows.extend(steady(&mut data, second..second + 400, 1_000_000, 125));
+            rows.extend(steady(&mut data, third..third + 400, 1_000_000, 125));
+            let (frames, _, stats) = collect(&data);
+            assert_same(&frames, &rows, "two gaps");
+            assert_eq!((stats.corrupt_total(), stats.desync_total()), (0, 0));
+            let gap = |from: u32, to: u32| StreamGap {
+                iterations: to - from,
+                time_us: i64::from(to - from) * 125,
+            };
+            let expected: Vec<StreamGap> = [(398, second), (second + 398, third)]
+                .into_iter()
+                .filter(|(from, to)| to - from >= MAX_ITERATION_JUMP)
+                .map(|(from, to)| gap(from, to))
+                .collect();
+            assert_eq!(stats.resumed_gaps, expected);
+        }
+        // a log of I frames only has no rate to hold the gap against: the
+        // frames after the gap carry it
+        let mut data = HDR.as_bytes().to_vec();
+        let mut rows = steady_intra_only(&mut data, 0..400, 1_000_000, 125);
+        rows.extend(steady_intra_only(&mut data, 80_000..80_400, 1_000_000, 125));
+        let (frames, _, stats) = collect(&data);
+        assert_same(&frames, &rows, "I frames only");
+        assert_eq!(stats.resumed_gaps.len(), 1);
+        // the time counter may wrap inside the gap: 2^32 us is 34 359 738
+        // iterations of 125 us
+        let mut data = HDR.as_bytes().to_vec();
+        let mut rows = steady(&mut data, 0..400, 1_000_000, 125);
+        rows.extend(steady(&mut data, 34_400_000..34_400_400, 1_000_000, 125));
+        let (frames, _, stats) = collect(&data);
+        assert_same(&frames, &rows, "time runs on past 2^32 us");
+        assert!(frames[200][1] > 1 << 32);
+        assert_eq!(stats.resumed_gaps.len(), 1);
+        // the log may end soon after the gap: the frames up to the "end of
+        // log" marker are evidence too
+        let mut data = HDR.as_bytes().to_vec();
+        let mut rows = steady(&mut data, 0..400, 1_000_000, 125);
+        rows.extend(steady(&mut data, 40_000..40_004, 1_000_000, 125));
+        data.extend_from_slice(b"E\xffEnd of log\0");
+        let (frames, _, _) = collect(&data);
+        assert_same(&frames, &rows, "the end of the log after a gap");
+    }
+
+    /// The other direction of #183 B: what is not this log going on is
+    /// still not read as frames, however much it looks like frames.
+    #[test]
+    fn what_follows_a_gap_needs_evidence() {
+        let good = |data: &mut Vec<u8>| steady(data, 0..400, 1_000_000, 125);
+        // one frame with the right counters and nothing readable after it
+        let mut data = HDR.as_bytes().to_vec();
+        let mut rows = good(&mut data);
+        intra(&mut data, 40_000, 6_000_000, [1, 2, 3], [1200, 1300]);
+        data.extend_from_slice(b"I\x80\x80\x00\x01\x02zz");
+        rows.extend(steady(&mut data, 400..800, 1_000_000, 125));
+        let (frames, _, stats) = collect(&data);
+        assert_same(&frames, &rows, "the lone frame is not taken, the log is");
+        assert!(stats.resumed_gaps.is_empty());
+        assert!(stats.desync_total() >= 1);
+        // the remains of another flight: frames that agree with each other,
+        // but whose time is not where this log's iteration count puts it
+        for (iterations, t0, rate) in [
+            (40_000..40_400, 300_000_000, 125), // another time base
+            (40_000..40_400, 1_000_000, 500),   // another rate
+            (40_000..40_400, -2_000_000, 200),  // the right time at the first frame only
+            (0..300, 1_000_000, 125),           // iterations this log already has
+            (40_000..40_400, -4_500_000, 125),  // time runs backwards
+        ] {
+            let mut data = HDR.as_bytes().to_vec();
+            let rows = good(&mut data);
+            let _ = steady(&mut data, iterations.clone(), t0, rate);
+            let (frames, _, stats) = collect(&data);
+            assert_same(
+                &frames,
+                &rows,
+                &format!("{iterations:?} from {t0} at {rate}"),
+            );
+            assert!(stats.resumed_gaps.is_empty());
+        }
+        // with I frames only there is no rate so far: the gap still has to
+        // have the rate of the frames after it
+        let mut data = HDR.as_bytes().to_vec();
+        let rows = steady_intra_only(&mut data, 0..400, 1_000_000, 125);
+        let _ = steady_intra_only(&mut data, 80_000..80_400, 300_000_000, 125);
+        let (frames, _, stats) = collect(&data);
+        assert_same(&frames, &rows, "I frames only, another time base");
+        assert!(stats.resumed_gaps.is_empty());
+        // an I frame on an iteration the firmware writes none on
+        let mut data = HDR.as_bytes().to_vec();
+        let rows = good(&mut data);
+        for it in (40_002u32..40_400).step_by(4) {
+            let t = 1_000_000 + it * 125;
+            intra(&mut data, it, t, [1, 2, 3], [1200, 1300]);
+        }
+        let (frames, _, _) = collect(&data);
+        assert_same(&frames, &rows, "I frames off the grid");
+    }
+
+    /// Bytes that are not a log do not become one: pseudo-random bytes of
+    /// several kinds after good frames, many times over.
+    #[test]
+    fn junk_is_not_taken_for_the_log_going_on() {
+        let mut x: u32 = 0x9E37_79B9;
+        let mut next = move || {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            x
+        };
+        let mut accepted_junk = 0;
+        for round in 0..150 {
+            let mut data = HDR.as_bytes().to_vec();
+            let rows = steady(&mut data, 0..400, 1_000_000, 125);
+            // below the give-up limit, so that every byte is tried
+            for _ in 0..12 * 1024 {
+                let r = next();
+                data.push(match round % 3 {
+                    // any byte, a frame letter every twelfth
+                    0 if r.is_multiple_of(12) => b"IPSGHE"[(r as usize / 12) % 6],
+                    0 => (r >> 8) as u8,
+                    // short numbers and many I frames: most attempts decode
+                    1 if r.is_multiple_of(5) => b'I',
+                    1 => (r >> 8) as u8 & 0x7F,
+                    // numbers of every length
+                    _ if r.is_multiple_of(7) => b"IP"[(r as usize / 7) % 2],
+                    _ if r.is_multiple_of(3) => (r >> 8) as u8 | 0x80,
+                    _ => (r >> 8) as u8 & 0x7F,
+                });
+            }
+            let (frames, _, stats) = collect(&data);
+            // the last good frame may go: no frame letter follows it
+            assert!(frames.len() >= rows.len() - 1, "round {round}");
+            assert_eq!(&frames[..rows.len() - 1], &rows[..rows.len() - 1]);
+            assert!(stats.resumed_gaps.is_empty(), "round {round}");
+            accepted_junk += frames.len().saturating_sub(rows.len());
+        }
+        // inside the window junk passes as rarely as it did
+        assert!(accepted_junk <= 150, "{accepted_junk}");
     }
 
     #[test]
