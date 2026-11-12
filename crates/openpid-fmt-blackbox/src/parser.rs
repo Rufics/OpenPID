@@ -27,6 +27,13 @@
 //!    marker), and that frame agrees with it in iteration and time at the
 //!    same rate.
 //!
+//! The same rules find the log again after a hole in the storage: more
+//! than [`GIVE_UP_BYTES`] that are no frames (unwritten or overwritten
+//! blocks). The parser used to take everything after such a stretch as not
+//! being the log; it now looks on for an intra frame that passes the three
+//! rules, wherever its counters lie, and only when there is none are the
+//! remaining bytes trailing ones.
+//!
 //! Where the log so far has no rate (it has only intra frames, or the gap is
 //! at its start) the rate inside the frames after the gap stands in for it
 //! in rule 2. Junk has to pass every one of these at once to be read as a
@@ -42,9 +49,11 @@ use std::collections::BTreeMap;
 
 /// Longest frame body (without the letter) the firmware can write.
 pub const MAX_FRAME_LEN: usize = 256;
-/// Bytes without a single accepted frame after which the rest of the file is
-/// treated as not being blackbox data at all (stale sectors on the card, another
-/// file's remains) instead of one failed frame attempt per byte.
+/// Bytes without a single accepted main frame after which the parser stops
+/// making one frame attempt per byte: what follows is a hole in the storage
+/// that the log goes on after, or not blackbox data at all (stale sectors on
+/// the card, another file's remains). It looks for the frame the log goes on
+/// with and takes the rest of the file as trailing bytes when there is none.
 pub const GIVE_UP_BYTES: usize = 16 * 1024;
 /// Most loop iterations between two main frames of an unbroken stream.
 pub const MAX_ITERATION_JUMP: u32 = 500 * 10;
@@ -186,6 +195,10 @@ pub struct StreamGap {
     pub iterations: u32,
     /// Time between the two frames, microseconds.
     pub time_us: i64,
+    /// Bytes between the two frames that are no frames, when the parser
+    /// had given up on them (more than [`GIVE_UP_BYTES`]: a hole in the
+    /// storage); 0 when the frames lie next to each other.
+    pub hole_bytes: u64,
 }
 
 impl ParseStats {
@@ -349,7 +362,7 @@ impl<'a> Parser<'a> {
             home_valid: false,
             stats,
             done: false,
-            last_accept_pos: 0,
+            last_accept_pos: headers.data_start,
             probing: false,
         }
     }
@@ -402,10 +415,9 @@ impl<'a> Parser<'a> {
         }
         let start = self.reader.pos();
         if start - self.last_accept_pos > GIVE_UP_BYTES {
-            // nothing decodable for a long stretch: the log ended here
-            self.stats.trailing_bytes = (self.reader.len() - start) as u64;
-            self.done = true;
-            return Step::End;
+            // nothing decodable for a long stretch: the log goes on after a
+            // hole, or it ended here
+            return self.search_past_hole(start);
         }
         let Some(letter) = self.reader.read_u8() else {
             return Step::End;
@@ -444,6 +456,56 @@ impl<'a> Parser<'a> {
             self.last_accept_pos = self.reader.pos();
         }
         Step::Frame(acc)
+    }
+
+    /// The log from `from` on, after [`GIVE_UP_BYTES`] without a main
+    /// frame: no longer one attempt per byte and per frame kind, but a
+    /// search for the intra frame the log goes on with, which has to pass
+    /// the rules of going on after a gap (see the module documentation)
+    /// wherever its counters lie. When there is none, the rest of the file
+    /// is not this log.
+    fn search_past_hole(&mut self, from: usize) -> Step {
+        let data = self.reader.data();
+        let mut at = from;
+        while !self.probing
+            && let Some(offset) = data[at..].iter().position(|b| *b == b'I')
+        {
+            let start = at + offset;
+            if let Some(acc) = self.intra_past_hole(start) {
+                self.stats.skipped_bytes += (start - from) as u64;
+                if let Some(gap) = self.stats.resumed_gaps.last_mut() {
+                    gap.hole_bytes = (start - self.last_accept_pos) as u64;
+                }
+                self.last_accept_pos = self.reader.pos();
+                return Step::Frame(acc);
+            }
+            at = start + 1;
+        }
+        self.stats.trailing_bytes = (data.len() - from) as u64;
+        self.done = true;
+        Step::End
+    }
+
+    /// The intra frame at `start`, when it is one and the log goes on with
+    /// it; it is the reference then.
+    fn intra_past_hole(&mut self, start: usize) -> Option<Accepted> {
+        self.reader.set_pos(start + 1);
+        self.parse_main(MainKind::Intra).ok()?;
+        self.reader.align();
+        let size = self.reader.pos() - start - 1;
+        if size > MAX_FRAME_LEN || !self.reader.peek_u8().is_none_or(is_frame_letter) {
+            return None;
+        }
+        let iteration = self.hist[self.cur][self.iter_idx] as u32;
+        let t32 = self.hist[self.cur][self.time_idx] as u32;
+        let t = self.anchor_time(iteration, t32)?;
+        if !self.corroborated(iteration, t) {
+            return None;
+        }
+        let st = self.stats.frame(b'I');
+        st.valid += 1;
+        st.bytes += size as u64 + 1;
+        Some(self.take_anchor(iteration, t))
     }
 
     fn parse_body(&mut self, letter: u8) -> Result<Body, DecodeError> {
@@ -863,12 +925,16 @@ impl<'a> Parser<'a> {
     /// The intra frame just decoded is the log going on after a gap: it
     /// becomes the reference, and the gap is put on record.
     fn take_anchor(&mut self, iteration: u32, time_us: i64) -> Accepted {
-        if let (Some(li), Some(lt)) = (self.last_iteration, self.last_time) {
-            self.stats.resumed_gaps.push(StreamGap {
-                iterations: iteration - li,
-                time_us: time_us - lt,
-            });
-        }
+        // a log whose first frames are lost has no frame before the gap
+        let (li, lt) = (
+            self.last_iteration.unwrap_or(iteration),
+            self.last_time.unwrap_or(time_us),
+        );
+        self.stats.resumed_gaps.push(StreamGap {
+            iterations: iteration - li,
+            time_us: time_us - lt,
+            hole_bytes: 0,
+        });
         self.hist[self.cur][self.time_idx] = time_us;
         self.rollover_us = time_us - i64::from(time_us as u32);
         self.set_reference(iteration, time_us)
@@ -1324,6 +1390,7 @@ H motorOutput:158,2047\n";
             let gap = |from: u32, to: u32| StreamGap {
                 iterations: to - from,
                 time_us: i64::from(to - from) * 125,
+                hole_bytes: 0,
             };
             let expected: Vec<StreamGap> = [(398, second), (second + 398, third)]
                 .into_iter()
@@ -1411,6 +1478,116 @@ H motorOutput:158,2047\n";
         }
         let (frames, _, _) = collect(&data);
         assert_same(&frames, &rows, "I frames off the grid");
+    }
+
+    /// Pseudo-random bytes with a frame letter every twelfth.
+    fn junk(len: usize, seed: u32) -> Vec<u8> {
+        let mut x = seed;
+        (0..len)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                if x.is_multiple_of(12) {
+                    b"IPSGHE"[(x as usize / 12) % 6]
+                } else {
+                    (x >> 8) as u8
+                }
+            })
+            .collect()
+    }
+
+    /// Issue #183 C: more than [`GIVE_UP_BYTES`] of undecodable bytes in
+    /// the middle of a log (a block of the storage that was never written,
+    /// or written over) ended it: everything after the hole was reported as
+    /// trailing bytes.
+    #[test]
+    fn goes_on_after_a_hole_in_the_storage() {
+        let holes: [(&str, Vec<u8>); 3] = [
+            ("zeros", vec![0; 20 * 1024]),
+            ("erased flash", vec![0xFF; 20 * 1024]),
+            ("another file's bytes", junk(64 * 1024, 0x1234_5678)),
+        ];
+        for (what, hole) in &holes {
+            // the frames on both sides of the hole belong together; then
+            // frames were lost with the hole; then the log has I frames only
+            for (lost, intra_only) in [(0u32, false), (20_000, false), (0, true), (20_000, true)] {
+                let write = if intra_only {
+                    steady_intra_only
+                } else {
+                    steady
+                };
+                let mut data = HDR.as_bytes().to_vec();
+                let mut rows = write(&mut data, 0..400, 1_000_000, 125);
+                // the frame before the hole goes with it: no frame follows it
+                rows.pop();
+                data.extend_from_slice(hole);
+                rows.extend(write(&mut data, 400 + lost..800 + lost, 1_000_000, 125));
+                data.extend_from_slice(b"E\xffEnd of log\0");
+                let (frames, events, stats) = collect(&data);
+                let what = format!("{what}, {lost} iterations lost, I only: {intra_only}");
+                assert_same(&frames, &rows, &what);
+                assert_eq!(events, [EventData::LogEnd], "{what}");
+                assert_eq!(stats.trailing_bytes, 0, "{what}");
+                assert_eq!(stats.resumed_gaps.len(), 1, "{what}");
+                let gap = stats.resumed_gaps[0];
+                assert!(gap.hole_bytes >= hole.len() as u64, "{what}: {gap:?}");
+                assert!(gap.iterations >= lost, "{what}: {gap:?}");
+                assert!(
+                    stats.skipped_bytes as usize + stats.corrupt_total() as usize >= hole.len() / 2
+                        && stats.skipped_bytes as usize <= hole.len() + 64,
+                    "{what}: the hole is counted once: {stats:?}"
+                );
+            }
+        }
+        // a hole right after the headers, before any frame
+        let mut data = HDR.as_bytes().to_vec();
+        data.extend_from_slice(&holes[0].1);
+        let rows = steady(&mut data, 400..800, 1_000_000, 125);
+        let (frames, _, stats) = collect(&data);
+        assert_same(&frames, &rows, "a hole before the first frame");
+        assert_eq!(stats.resumed_gaps[0].iterations, 0);
+    }
+
+    /// The other direction of #183 C: after the hole nothing is taken that
+    /// is not this log going on, and a file that ends in junk still ends
+    /// where its log does.
+    #[test]
+    fn what_follows_a_hole_needs_evidence() {
+        let hole = vec![0u8; 20 * 1024];
+        for (what, iterations, t0, rate) in [
+            ("another time base", 40_000..40_400, 300_000_000, 125),
+            ("another rate", 400..800, 1_000_000, 500),
+            ("an earlier part", 0..300, 1_000_000, 125),
+        ] {
+            for write in [steady, steady_intra_only] {
+                let mut data = HDR.as_bytes().to_vec();
+                let mut rows = write(&mut data, 0..400, 1_000_000, 125);
+                rows.pop();
+                data.extend_from_slice(&hole);
+                let tail = data.len();
+                let _ = write(&mut data, iterations.clone(), t0, rate);
+                let (frames, _, stats) = collect(&data);
+                assert_same(&frames, &rows, what);
+                assert!(stats.resumed_gaps.is_empty(), "{what}");
+                assert!(
+                    stats.trailing_bytes as usize >= data.len() - tail,
+                    "{what}: the rest is trailing bytes"
+                );
+            }
+        }
+        // 2 MiB of junk after a log: all of it is looked through, none taken
+        for seed in [0x1234_5678, 0x0BAD_F00D, 0x9E37_79B9] {
+            let mut data = HDR.as_bytes().to_vec();
+            let rows = steady(&mut data, 0..400, 1_000_000, 125);
+            let good = data.len();
+            data.extend_from_slice(&junk(2 * 1024 * 1024, seed));
+            let (frames, _, stats) = collect(&data);
+            assert_eq!(&frames[..rows.len() - 1], &rows[..rows.len() - 1]);
+            assert!(frames.len() <= rows.len() + 5, "{}", frames.len());
+            assert!(stats.resumed_gaps.is_empty());
+            assert!(stats.trailing_bytes as usize > data.len() - good - 2 * GIVE_UP_BYTES);
+        }
     }
 
     /// Bytes that are not a log do not become one: pseudo-random bytes of

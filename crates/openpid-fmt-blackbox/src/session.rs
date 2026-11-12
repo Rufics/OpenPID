@@ -1,7 +1,7 @@
 //! Turn parsed frames into the canonical [`FlightSession`].
 
 use crate::headers::{HeaderError, Headers};
-use crate::parser::{EventData, Frame, MainKind, ParseStats, Parser};
+use crate::parser::{EventData, Frame, MainKind, ParseStats, Parser, StreamGap};
 use openpid_core::modes::{ModeChange, push_change};
 use openpid_core::session::{AuxRow, AuxTable, Diagnostics, Event, EventKind};
 use openpid_core::{
@@ -218,14 +218,29 @@ pub fn build_session(
             .notes
             .push("no firmware profile matched; channels are raw".into());
     }
-    if let Some(longest) = log.stats.resumed_gaps.iter().max_by_key(|g| g.time_us) {
+    let (holes, gaps): (Vec<&StreamGap>, Vec<&StreamGap>) = log
+        .stats
+        .resumed_gaps
+        .iter()
+        .partition(|g| g.hole_bytes > 0);
+    if let Some(longest) = gaps.iter().max_by_key(|g| g.time_us) {
         diagnostics.notes.push(format!(
             "the log goes on after {} gap(s) that no logging-resume event announces (the \
              longest: {:.1} s, {} loop iterations): frames were lost while logging; the frames \
              after each gap are read",
-            log.stats.resumed_gaps.len(),
+            gaps.len(),
             longest.time_us as f64 / 1.0e6,
             longest.iterations
+        ));
+    }
+    if !holes.is_empty() {
+        diagnostics.notes.push(format!(
+            "{} stretch(es) of bytes that are not blackbox data lie inside the log ({} bytes in \
+             all, {:.1} s of the flight: unwritten or overwritten storage); the frames after \
+             each are read",
+            holes.len(),
+            holes.iter().map(|g| g.hole_bytes).sum::<u64>(),
+            holes.iter().map(|g| g.time_us).sum::<i64>() as f64 / 1.0e6
         ));
     }
     if log.stats.trailing_bytes > 0 {
