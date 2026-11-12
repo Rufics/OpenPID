@@ -1,46 +1,64 @@
 //! Writer of Betaflight Blackbox logs: a canonical session becomes the
-//! bytes a flight controller would have logged for it.
+//! bytes a flight controller of a chosen release would have logged for it.
 //!
-//! This is the inverse of the decoder and of the Betaflight profile: the
-//! channels are turned back into the firmware's integers (gyro and setpoint
-//! in whole deg/s, throttle in tenths of a percent, motors in `DShot` units,
-//! eRPM / 100), the settings into headers, and the frames are packed with the
-//! predictors and encodings Betaflight itself uses, in the order it writes
-//! them: an `I` frame every `I interval` loop iterations and `P` frames
-//! between, the arming beep, a slow frame, and the end-of-log event. A reader
-//! of real logs therefore meets nothing it has not met before.
+//! This is the inverse of the decoder and of the Betaflight profile. The
+//! caller names the release to write for ([`Target`]); everything that
+//! differs between releases (the fields of each frame and the conditions
+//! they are logged on, the header lines, the units of the stick commands)
+//! comes from the description of that release in `version` and `sysinfo`,
+//! which was read from the firmware source at the release's tag.
 //!
-//! It exists for synthetic flights (`openpid gen`, the calibration probes of
-//! `docs/calibration`): a signal whose content is known exactly can be opened
-//! in any tool that reads Blackbox logs. What that tool then sees is the
-//! quantised signal; decoding the written log gives exactly those values.
+//! The channels are turned back into the firmware's integers through the
+//! decoder's own field mapping, the settings into headers, and the frames
+//! are packed with the predictors and encodings of the field definitions,
+//! in the order the firmware writes them: an `I` frame every `I interval`
+//! loop iterations and `P` frames between, slow frames when the flight
+//! modes change (and after a pause, and every 256 `I` intervals), GPS and
+//! GPS home frames, and the events.
+//!
+//! Two kinds of session are written:
+//!
+//! - one **decoded from a Blackbox log** is written back as that log had
+//!   it: its loop counter, its events, its slow and GPS frames, its
+//!   headers. For the release that logged it the frames come out byte for
+//!   byte (`tests/rewrite.rs`);
+//! - any other (a synthetic flight of `openpid gen`, the calibration probes
+//!   of `docs/calibration`) is logged as a flight controller would log the
+//!   flight: the loop counter follows the loop rates, the arming beep, the
+//!   slow frames and the end of the log are added, a sample without a gyro
+//!   value pauses the log. Fields the session has no channel for are not
+//!   logged, and the headers say so.
 //!
 //! No firmware code is copied: the layout follows the format description
-//! ("Blackbox Internals") and the headers of real logs.
+//! ("Blackbox Internals") and the names and numbers of the firmware's
+//! tables.
 
-mod template;
+mod config;
+mod fields;
+mod frames;
+mod sysinfo;
+mod version;
 
-use crate::encoding::{self as enc, encode};
-use crate::predictor;
-use openpid_core::settings::{FilterChain, LoopRates, Lowpass, LowpassKind, PidGains};
-use openpid_core::{Axis, BatteryField, ChannelId, FlightSession, GyroStage, PidTerm, Series};
+pub use version::Target;
 
-/// Lowest motor output of the template (`motorOutput`), `DShot` units.
-const MOTOR_LOW: f64 = 158.0;
-/// Highest motor output of the template.
-const MOTOR_HIGH: f64 = 2047.0;
-/// Rate at full stick of the linear rates the writer logs, deg/s.
-const FULL_STICK_RATE: f64 = 1000.0;
-/// `I` frames between two slow frames, as the firmware spaces them.
+use config::{Lines, Source};
+use fields::Layout;
+use frames::References;
+use openpid_core::modes::{FlightMode, modes_at};
+use openpid_core::session::{AuxRow, AuxTable, Event, EventKind};
+use openpid_core::settings::LoopRates;
+use openpid_core::{
+    Axis, ChannelId, FirmwareInfo, FirmwareVendor, FlightSession, GyroStage, Origin,
+};
+use version::FieldDef;
+
+/// `I` intervals between two slow frames when nothing changes
+/// (`blackboxSInterval = blackboxIInterval * 256`).
 const SLOW_EVERY_INTRA: i64 = 256;
-/// Event: the beep at arming, which marks the start of the log.
-const EVENT_SYNC_BEEP: u8 = 0;
-/// Event: logging resumed after a pause.
-const EVENT_LOGGING_RESUME: u8 = 14;
-/// Event: the craft was disarmed.
-const EVENT_DISARM: u8 = 15;
-/// Event: end of the log.
-const EVENT_LOG_END: u8 = 255;
+/// Reason of the disarm event the writer adds: the arming switch.
+const DISARM_SWITCH: u32 = 4;
+/// Flight mode flags of a session that names no modes: armed, nothing else.
+const ARMED: i64 = 1;
 
 /// What the caller may set beyond the session itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,10 +67,16 @@ pub struct WriteOptions {
     /// it was powered, not since the log began.
     pub time_offset_us: i64,
     /// Headers that replace the written ones by name (or are appended), for
-    /// what the session does not model: rates, the craft name, a debug mode.
+    /// what the session does not model: rates, the craft name, a debug mode,
+    /// `blackbox_high_resolution`, `fields_disabled_mask`. The frames follow
+    /// them as they would on a craft configured so.
     pub headers: Vec<(String, String)>,
-    /// Whether the log ends with a disarm event, as after a normal landing.
+    /// Whether the log ends with a disarm event, as after a normal landing
+    /// (for a session that was not decoded from a log; a decoded one keeps
+    /// the events it has).
     pub disarm: bool,
+    /// The Betaflight release to write the log for.
+    pub target: Target,
 }
 
 impl Default for WriteOptions {
@@ -61,6 +85,7 @@ impl Default for WriteOptions {
             time_offset_us: 0,
             headers: Vec::new(),
             disarm: true,
+            target: Target::default(),
         }
     }
 }
@@ -77,7 +102,7 @@ pub enum WriteError {
     /// The loop rates do not form a schedule the firmware can log.
     #[error(
         "a {log_hz} Hz log of a {pid_hz} Hz PID loop cannot be written: the PID rate must be a \
-         whole multiple of the log rate that divides the I-frame interval"
+         whole multiple of the log rate, of at most one I-frame interval (32 ms)"
     )]
     Rate {
         /// Rate of the logged frames.
@@ -85,8 +110,8 @@ pub enum WriteError {
         /// Rate of the PID loop.
         pid_hz: f64,
     },
-    /// A timestamp is negative or does not fit the 32 bits of the format.
-    #[error("the timestamp {0} µs does not fit a Blackbox log")]
+    /// A timestamp is negative: the firmware's clock starts at zero.
+    #[error("the timestamp {0} µs is before the flight controller was powered")]
     Time(i64),
 }
 
@@ -112,72 +137,27 @@ pub fn typical_rates(log_hz: f64) -> LoopRates {
     }
 }
 
-/// One main-frame field: its name and how the firmware packs it.
-#[derive(Debug, Clone)]
-struct Field {
-    /// Field name as logged.
-    name: String,
-    /// Whether the value is signed.
-    signed: bool,
-    /// Predictor and encoding in an `I` frame.
-    intra: (u8, u8),
-    /// Predictor and encoding in a `P` frame.
-    inter: (u8, u8),
-    /// One value per sample.
-    values: Vec<i64>,
-}
-
-impl Field {
-    /// A signed field that the firmware predicts from the previous frame.
-    fn signed(name: String, inter_encoding: u8, values: Vec<i64>) -> Field {
-        Field {
-            name,
-            signed: true,
-            intra: (predictor::ZERO, enc::SIGNED_VB),
-            inter: (predictor::PREVIOUS, inter_encoding),
-            values,
-        }
-    }
-
-    /// A signed field predicted as the mean of the two previous frames
-    /// (the sensors: they are noisy, and the mean halves the residual).
-    fn sensor(name: String, values: Vec<i64>) -> Field {
-        Field {
-            name,
-            signed: true,
-            intra: (predictor::ZERO, enc::SIGNED_VB),
-            inter: (predictor::AVERAGE_2, enc::SIGNED_VB),
-            values,
-        }
-    }
-
-    /// An unsigned field predicted from the previous frame.
-    fn unsigned(name: String, inter_encoding: u8, values: Vec<i64>) -> Field {
-        Field {
-            name,
-            signed: false,
-            intra: (predictor::ZERO, enc::UNSIGNED_VB),
-            inter: (predictor::PREVIOUS, inter_encoding),
-            values,
-        }
-    }
-}
-
 /// The schedule of the frames: which loop iterations are logged.
-#[derive(Debug, Clone, Copy)]
-struct Schedule {
+///
+/// The firmware (`blackboxAdvanceIterationTimers`, the same in every
+/// release) logs an `I` frame at every multiple of the `I interval` and,
+/// counting anew from each of them, a `P` frame every `P interval`
+/// iterations; with `P interval:0` it logs the `I` frames only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Schedule {
     /// Loop iterations between two `I` frames.
     i_interval: i64,
-    /// Loop iterations between two logged frames.
+    /// Loop iterations between two `P` frames, 0 for none.
     p_interval: i64,
-    /// Gyro loop period, µs.
-    looptime_us: i64,
-    /// Gyro loops per PID loop.
-    pid_denom: i64,
 }
 
 impl Schedule {
-    fn new(rates: &LoopRates, sampled_hz: f64) -> Result<Schedule, WriteError> {
+    /// The schedule of the loop rates, with the header lines that state it,
+    /// by the arithmetic of the firmware (`gyroInitSensor` and
+    /// `blackboxInit`, the same from 4.3 to `master`): the gyro period and
+    /// the PID period are whole microseconds, rounded down, and an `I`
+    /// frame is due every 32 ms of PID loops, rounded down again.
+    fn of_rates(rates: &LoopRates, sampled_hz: f64, lines: &mut Lines) -> Result<Self, WriteError> {
         let log_hz = rates.log_hz.unwrap_or(sampled_hz);
         let pid_hz = rates.pid_hz.unwrap_or(log_hz);
         let gyro_hz = rates.gyro_hz.unwrap_or(pid_hz);
@@ -185,552 +165,84 @@ impl Schedule {
         if !(log_hz > 0.0 && pid_hz >= log_hz && gyro_hz >= pid_hz) {
             return Err(bad);
         }
-        let ratio = pid_hz / log_hz;
-        let p_interval = ratio.round() as i64;
-        let pid_ratio = gyro_hz / pid_hz;
-        let pid_denom = pid_ratio.round() as i64;
-        // the firmware: 32 ms of PID loops between two I frames
-        let i_interval = ((32.0 * pid_hz / 1000.0).floor() as i64).max(1);
-        if (ratio - p_interval as f64).abs() > 1e-6
-            || (pid_ratio - pid_denom as f64).abs() > 1e-6
-            || i_interval % p_interval != 0
-        {
+        let whole = |ratio: f64| {
+            let n = ratio.round();
+            ((ratio - n).abs() <= 1e-6).then_some(n as i64)
+        };
+        let (Some(per_frame), Some(pid_denom)) = (whole(pid_hz / log_hz), whole(gyro_hz / pid_hz))
+        else {
+            return Err(bad);
+        };
+        // 1e6 / 3200 is 312.5: the firmware keeps 312
+        let microseconds = |period: f64| (period + 1e-9).floor() as i64;
+        let looptime = microseconds(1.0e6 / gyro_hz);
+        let pid_looptime = microseconds(pid_denom as f64 * 1.0e6 / gyro_hz).max(1);
+        let i_interval = (32_000 / pid_looptime).max(1);
+        if per_frame > i_interval {
             return Err(bad);
         }
+        // every frame an I frame: the firmware says `P interval:0` unless
+        // the interval is one of its own five (1, 2, 4, 8, 16)
+        let its_own = per_frame <= 16 && (per_frame as u64).is_power_of_two();
+        let p_interval = if per_frame == i_interval && !its_own {
+            0
+        } else {
+            per_frame
+        };
+        lines.replace("I interval", i_interval.to_string());
+        lines.replace("P interval", p_interval.to_string());
+        // `master` defines the ratio of a log without P frames as 0; the
+        // releases before it divide by zero there
+        let ratio = if p_interval == 0 {
+            0
+        } else {
+            i_interval / p_interval
+        };
+        lines.replace("P ratio", ratio.to_string());
+        lines.replace("looptime", looptime.to_string());
+        lines.replace("pid_process_denom", pid_denom.to_string());
         Ok(Schedule {
             i_interval,
             p_interval,
-            looptime_us: (1.0e6 / gyro_hz).round() as i64,
-            pid_denom,
         })
     }
-}
 
-/// Rounds the way the firmware stores a float in a log field.
-fn quantise(v: f64) -> i64 {
-    v.round_ties_even() as i64
-}
-
-/// Values of `id` through `f`, or `fallback` where the channel is absent or
-/// has no value.
-fn column(
-    s: &FlightSession,
-    id: &ChannelId,
-    n: usize,
-    fallback: i64,
-    f: impl Fn(f64) -> f64,
-) -> Vec<i64> {
-    let data = s.channel(id).map(|c| &c.data);
-    (0..n)
-        .map(|i| {
-            data.and_then(|d| d.get(i))
-                .map_or(fallback, |v| quantise(f(v)))
+    /// The schedule the headers state, when the session's own log or the
+    /// caller gave both intervals.
+    fn of_headers(lines: &Lines) -> Option<Self> {
+        let given = lines.is_given("I interval") && lines.is_given("P interval");
+        let number = |key: &str| lines.get(key)?.trim().parse::<i64>().ok();
+        let (i_interval, p_interval) = (number("I interval")?, number("P interval")?);
+        (given && i_interval >= 1 && p_interval >= 0).then_some(Schedule {
+            i_interval,
+            p_interval,
         })
-        .collect()
-}
-
-fn has(s: &FlightSession, id: &ChannelId) -> bool {
-    s.channel(id).is_some()
-}
-
-/// Number of motors the session carries (0 … 8).
-fn motor_count(s: &FlightSession) -> u8 {
-    (0..8u8)
-        .take_while(|idx| has(s, &ChannelId::Motor { idx: *idx }))
-        .count() as u8
-}
-
-/// Whether any motor reports a speed: without one the firmware has no
-/// bidirectional `DShot` and logs no eRPM.
-fn has_rpm(s: &FlightSession, motors: u8) -> bool {
-    (0..motors).any(|idx| {
-        [ChannelId::Erpm { idx }, ChannelId::MotorRpm { idx }]
-            .iter()
-            .filter_map(|id| s.channel(id))
-            .any(|c| c.data.iter().flatten().any(|v| v > 0.0))
-    })
-}
-
-/// Lowest and highest motor output the log declares.
-fn motor_range(s: &FlightSession) -> (f64, f64) {
-    match (s.settings.motor.output_low, s.settings.motor.output_high) {
-        (Some(low), Some(high)) if high > low => (low, high),
-        _ => (MOTOR_LOW, MOTOR_HIGH),
     }
-}
 
-/// The PID terms, sticks and setpoints: what the controller computed.
-fn controller_fields(s: &FlightSession, n: usize, out: &mut Vec<Field>) {
-    // the firmware logs no yaw D term
-    for (term, letter, axes, encoding) in [
-        (PidTerm::P, 'P', 3, enc::SIGNED_VB),
-        (PidTerm::I, 'I', 3, enc::TAG2_3S32),
-        (PidTerm::D, 'D', 2, enc::SIGNED_VB),
-        (PidTerm::F, 'F', 3, enc::SIGNED_VB),
-    ] {
-        for axis in Axis::ALL.into_iter().take(axes) {
-            let id = ChannelId::PidTerm { axis, term };
-            out.push(Field::signed(
-                format!("axis{letter}[{}]", axis.index()),
-                encoding,
-                column(s, &id, n, 0, |v| v),
-            ));
+    /// Whether the firmware logs a main frame at loop iteration `iteration`.
+    fn logs(self, iteration: i64) -> bool {
+        let since_intra = iteration % self.i_interval;
+        since_intra == 0 || (self.p_interval > 0 && since_intra % self.p_interval == 0)
+    }
+
+    /// Whether the frame at `iteration` is an `I` frame.
+    fn is_intra(self, iteration: i64) -> bool {
+        iteration % self.i_interval == 0
+    }
+
+    /// The loop iteration of the `frame`-th logged frame, counting from 0.
+    fn iteration_of(self, frame: i64) -> i64 {
+        if self.p_interval == 0 {
+            return frame * self.i_interval;
         }
-    }
-    let throttle = column(s, &ChannelId::Throttle, n, 0, |v| {
-        v.clamp(0.0, 100.0) * 10.0
-    });
-    for axis in Axis::ALL {
-        let ch = axis.index() as u8;
-        let values = if has(s, &ChannelId::RcCommand { ch }) {
-            column(s, &ChannelId::RcCommand { ch }, n, 0, |v| v)
-        } else {
-            // linear rates: full stick asks for `FULL_STICK_RATE`
-            column(s, &ChannelId::Setpoint { axis }, n, 0, |v| {
-                (v / FULL_STICK_RATE * 500.0).clamp(-500.0, 500.0)
-            })
-        };
-        out.push(Field::signed(
-            format!("rcCommand[{ch}]"),
-            enc::TAG8_4S16,
-            values,
-        ));
-    }
-    let rc_throttle = if has(s, &ChannelId::RcCommand { ch: 3 }) {
-        column(s, &ChannelId::RcCommand { ch: 3 }, n, 1000, |v| v)
-    } else {
-        throttle.iter().map(|t| 1000 + t).collect()
-    };
-    out.push(Field::unsigned(
-        "rcCommand[3]".into(),
-        enc::TAG8_4S16,
-        rc_throttle,
-    ));
-    for axis in Axis::ALL {
-        out.push(Field::signed(
-            format!("setpoint[{}]", axis.index()),
-            enc::TAG8_4S16,
-            column(s, &ChannelId::Setpoint { axis }, n, 0, |v| v),
-        ));
-    }
-    out.push(Field::signed(
-        "setpoint[3]".into(),
-        enc::TAG8_4S16,
-        throttle,
-    ));
-}
-
-/// The battery, the radio link and the inertial sensors.
-fn sensor_fields(s: &FlightSession, n: usize, out: &mut Vec<Field>) {
-    let voltage = ChannelId::Battery(BatteryField::Voltage);
-    out.push(Field {
-        name: "vbatLatest".into(),
-        signed: false,
-        intra: (predictor::VBATREF, enc::NEG_14BIT),
-        inter: (predictor::PREVIOUS, enc::TAG8_8SVB),
-        values: column(s, &voltage, n, 1600, |v| v * 100.0),
-    });
-    let current = ChannelId::Battery(BatteryField::Current);
-    out.push(Field::signed(
-        "amperageLatest".into(),
-        enc::TAG8_8SVB,
-        column(s, &current, n, 0, |v| v * 100.0),
-    ));
-    out.push(Field::unsigned(
-        "rssi".into(),
-        enc::TAG8_8SVB,
-        vec![1000; n],
-    ));
-    for (stage, name) in [
-        (GyroStage::Filtered, "gyroADC"),
-        (GyroStage::Raw, "gyroUnfilt"),
-    ] {
-        if !Axis::ALL
-            .into_iter()
-            .all(|axis| has(s, &ChannelId::Gyro { axis, stage }))
-        {
-            continue;
-        }
-        for axis in Axis::ALL {
-            out.push(Field::sensor(
-                format!("{name}[{}]", axis.index()),
-                column(s, &ChannelId::Gyro { axis, stage }, n, 0, |v| v),
-            ));
-        }
-    }
-    // level and at rest: one g on the vertical axis, the attitude not rotated
-    for (i, g) in [0, 0, 2048].into_iter().enumerate() {
-        out.push(Field::sensor(format!("accSmooth[{i}]"), vec![g; n]));
-    }
-    for i in 0..3 {
-        out.push(Field::sensor(format!("imuQuaternion[{i}]"), vec![0; n]));
+        let per_intra = (self.i_interval + self.p_interval - 1) / self.p_interval;
+        (frame / per_intra) * self.i_interval + (frame % per_intra) * self.p_interval
     }
 }
 
-/// The motor outputs and, when the motors report it, their speed.
-fn motor_fields(s: &FlightSession, n: usize, out: &mut Vec<Field>) {
-    let motors = motor_count(s);
-    let (low, high) = motor_range(s);
-    for idx in 0..motors {
-        let values = column(s, &ChannelId::Motor { idx }, n, low as i64, |v| {
-            low + v.clamp(0.0, 100.0) / 100.0 * (high - low)
-        });
-        // the first motor against the lowest output, the others against the first
-        let intra = if idx == 0 {
-            (predictor::MINMOTOR, enc::UNSIGNED_VB)
-        } else {
-            (predictor::MOTOR_0, enc::SIGNED_VB)
-        };
-        out.push(Field {
-            name: format!("motor[{idx}]"),
-            signed: false,
-            intra,
-            inter: (predictor::AVERAGE_2, enc::SIGNED_VB),
-            values,
-        });
-    }
-    if !has_rpm(s, motors) {
-        return;
-    }
-    let poles = f64::from(s.settings.motor.poles.unwrap_or(14));
-    for idx in 0..motors {
-        let values = if has(s, &ChannelId::Erpm { idx }) {
-            column(s, &ChannelId::Erpm { idx }, n, 0, |v| v.max(0.0))
-        } else {
-            // mechanical rpm → electrical rpm / 100
-            column(s, &ChannelId::MotorRpm { idx }, n, 0, |v| {
-                v.max(0.0) * poles / 200.0
-            })
-        };
-        out.push(Field::unsigned(
-            format!("eRPM[{idx}]"),
-            enc::SIGNED_VB,
-            values,
-        ));
-    }
-}
-
-/// The main-frame fields of the session, in the firmware's order. `first` is
-/// the sample of the first logged frame: the loop counter starts there.
-fn fields(s: &FlightSession, first: usize, schedule: Schedule, time: Vec<i64>) -> Vec<Field> {
-    let n = time.len();
-    let mut out = vec![
-        Field {
-            name: "loopIteration".into(),
-            signed: false,
-            intra: (predictor::ZERO, enc::UNSIGNED_VB),
-            inter: (predictor::INC, enc::NULL),
-            values: (0..n)
-                .map(|k| k.saturating_sub(first) as i64 * schedule.p_interval)
-                .collect(),
-        },
-        Field {
-            name: "time".into(),
-            signed: false,
-            intra: (predictor::ZERO, enc::UNSIGNED_VB),
-            inter: (predictor::STRAIGHT_LINE, enc::SIGNED_VB),
-            values: time,
-        },
-    ];
-    controller_fields(s, n, &mut out);
-    sensor_fields(s, n, &mut out);
-    motor_fields(s, n, &mut out);
-    out
-}
-
-/// What the predictors refer to besides the frames.
-#[derive(Debug, Clone, Copy)]
-struct Constants {
-    /// Index of `motor[0]`.
-    motor0: Option<usize>,
-    /// Lowest motor output (`motorOutput`).
-    motor_low: i64,
-    /// Reference battery voltage (`vbatref`).
-    vbatref: i64,
-}
-
-/// Packs one main frame: the inverse of the decoder's field loop. With no
-/// `history` the frame is an `I` frame.
-fn write_frame(
-    buf: &mut Vec<u8>,
-    fields: &[Field],
-    row: &[i64],
-    history: Option<(&[i64], &[i64])>,
-    constants: Constants,
-) {
-    let intra = history.is_none();
-    buf.push(if intra { b'I' } else { b'P' });
-    let how = |i: usize| {
-        if intra {
-            fields[i].intra
-        } else {
-            fields[i].inter
-        }
-    };
-    let (previous, previous2) = history.unwrap_or((row, row));
-    let residual = |i: usize| -> i32 {
-        let predicted = match how(i).0 {
-            predictor::PREVIOUS => previous[i],
-            predictor::STRAIGHT_LINE => 2 * previous[i] - previous2[i],
-            predictor::AVERAGE_2 => previous[i].midpoint(previous2[i]),
-            predictor::MOTOR_0 => constants.motor0.map_or(0, |m| row[m]),
-            predictor::MINMOTOR => constants.motor_low,
-            predictor::VBATREF => constants.vbatref,
-            _ => 0,
-        };
-        (row[i] - predicted) as i32
-    };
-    let n = fields.len();
-    let mut i = 0;
-    while i < n {
-        let encoding = how(i).1;
-        let run = (i..n).take_while(|j| how(*j).1 == encoding).count();
-        match encoding {
-            enc::TAG8_8SVB => {
-                let count = run.min(8);
-                let values: Vec<i32> = (i..i + count).map(residual).collect();
-                encode::write_tag8_8svb(buf, &values);
-                i += count;
-            }
-            enc::TAG2_3S32 if run >= 3 => {
-                encode::write_tag2_3s32(buf, [residual(i), residual(i + 1), residual(i + 2)]);
-                i += 3;
-            }
-            enc::TAG8_4S16 if run >= 4 => {
-                let group = [
-                    residual(i),
-                    residual(i + 1),
-                    residual(i + 2),
-                    residual(i + 3),
-                ];
-                encode::write_tag8_4s16(buf, group);
-                i += 4;
-            }
-            enc::UNSIGNED_VB => {
-                encode::write_uvb(buf, residual(i) as u32);
-                i += 1;
-            }
-            enc::NEG_14BIT => {
-                encode::write_neg14(buf, residual(i));
-                i += 1;
-            }
-            enc::NULL => i += 1,
-            _ => {
-                encode::write_svb(buf, residual(i));
-                i += 1;
-            }
-        }
-    }
-}
-
-fn write_event(buf: &mut Vec<u8>, code: u8, values: &[i64]) {
-    buf.push(b'E');
-    buf.push(code);
-    for v in values {
-        encode::write_uvb(buf, *v as u32);
-    }
-}
-
-/// Armed, in acro, with a healthy radio link.
-fn write_slow_frame(buf: &mut Vec<u8>) {
-    buf.push(b'S');
-    encode::write_uvb(buf, 1); // flightModeFlags: ARM
-    encode::write_uvb(buf, 0); // stateFlags
-    encode::write_tag2_3s32(buf, [0, 1, 1]); // failsafe phase, rx signal, rx channels valid
-}
-
-/// Replaces the header `key`, or appends it.
-fn set(headers: &mut Vec<(String, String)>, key: &str, value: impl Into<String>) {
-    let value = value.into();
-    match headers.iter_mut().find(|(k, _)| k == key) {
-        Some(entry) => entry.1 = value,
-        None => headers.push((key.to_string(), value)),
-    }
-}
-
-fn number(v: f64) -> String {
-    format!("{}", v.round() as i64)
-}
-
-fn list(values: &[f64]) -> String {
-    values
-        .iter()
-        .map(|v| number(*v))
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn lowpass_code(l: &Lowpass) -> f64 {
-    match l.kind {
-        Some(LowpassKind::Biquad) => 1.0,
-        Some(LowpassKind::Pt2) => 2.0,
-        Some(LowpassKind::Pt3) => 3.0,
-        _ => 0.0,
-    }
-}
-
-/// Headers of one filter chain. A filter the chain does not have is written
-/// as switched off, so the log says exactly what the session says.
-fn filter_headers(headers: &mut Vec<(String, String)>, prefix: &str, chain: &FilterChain) {
-    for (slot, lowpass) in [(1, &chain.lowpass1), (2, &chain.lowpass2)] {
-        let code = lowpass.as_ref().map_or(0.0, lowpass_code);
-        let cutoff = lowpass.as_ref().map_or(0.0, |l| l.cutoff_hz);
-        set(headers, &format!("{prefix}_lpf{slot}_type"), number(code));
-        let key = format!("{prefix}_lpf{slot}_static_hz");
-        set(headers, &key, number(cutoff));
-    }
-    let first = chain.lowpass1.as_ref();
-    let range = [
-        first.and_then(|l| l.dyn_min_hz).unwrap_or(0.0),
-        first.and_then(|l| l.dyn_max_hz).unwrap_or(0.0),
-    ];
-    set(headers, &format!("{prefix}_lpf1_dyn_hz"), list(&range));
-    if let Some(l) = first.filter(|l| l.dyn_min_hz.is_some()) {
-        let key = format!("{prefix}_lpf1_dyn_expo");
-        set(headers, &key, number(l.dyn_expo * 10.0));
-    }
-    // the gyro has two notch slots, the D term one
-    let slots = if prefix == "gyro" { 2 } else { 1 };
-    let padded = |values: Vec<f64>| {
-        let mut v = values;
-        v.resize(v.len().max(slots), 0.0);
-        list(&v)
-    };
-    let centres = chain.notches.iter().map(|n| n.center_hz).collect();
-    let cutoffs = chain.notches.iter().map(|n| n.cutoff_hz).collect();
-    set(headers, &format!("{prefix}_notch_hz"), padded(centres));
-    set(headers, &format!("{prefix}_notch_cutoff"), padded(cutoffs));
-}
-
-fn gains_headers(headers: &mut Vec<(String, String)>, gains: [&PidGains; 3]) {
-    for (key, g) in ["rollPID", "pitchPID", "yawPID"].into_iter().zip(gains) {
-        set(headers, key, list(&[g.p, g.i, g.d]));
-    }
-    let d_max = gains.map(|g| g.d_max.unwrap_or(0.0));
-    set(headers, "d_max", list(&d_max));
-    let feedforward = gains.map(|g| g.f.unwrap_or(0.0));
-    set(headers, "ff_weight", list(&feedforward));
-}
-
-/// Headers of the notches that follow the motors.
-fn notch_headers(out: &mut Vec<(String, String)>, chain: &FilterChain) {
-    let notch = chain.dyn_notch;
-    let count = notch.map_or(0, |d| d.count.unwrap_or(1));
-    set(out, "dyn_notch_count", count.to_string());
-    if let Some(d) = notch {
-        set(out, "dyn_notch_min_hz", number(d.min_hz));
-        set(out, "dyn_notch_max_hz", number(d.max_hz));
-        set(out, "dyn_notch_q", number(d.q * 100.0));
-    }
-    let rpm = chain.rpm_notch.as_ref();
-    let harmonics = rpm.map_or(0, |r| r.harmonics);
-    set(out, "rpm_filter_harmonics", harmonics.to_string());
-    let Some(r) = rpm else {
-        return;
-    };
-    set(out, "rpm_filter_q", number(r.q * 100.0));
-    set(out, "rpm_filter_min_hz", number(r.min_hz));
-    set(out, "rpm_filter_fade_range_hz", number(r.fade_range_hz));
-    if r.lpf_hz > 0.0 {
-        set(out, "rpm_filter_lpf_hz", number(r.lpf_hz));
-    }
-    if !r.weights.is_empty() {
-        let weights: Vec<f64> = r.weights.iter().map(|w| w * 100.0).collect();
-        set(out, "rpm_filter_weights", list(&weights));
-    }
-}
-
-/// The whole header block of the log.
-fn headers(
-    s: &FlightSession,
-    fields: &[Field],
-    schedule: Schedule,
-    options: &WriteOptions,
-) -> Vec<(String, String)> {
-    let join = |f: &dyn Fn(&Field) -> String| fields.iter().map(f).collect::<Vec<_>>().join(",");
-    let field_headers = [
-        (
-            "Product",
-            "Blackbox flight data recorder by Nicholas Sherlock".to_string(),
-        ),
-        ("Data version", "2".to_string()),
-        ("Field I name", join(&|f| f.name.clone())),
-        ("Field I signed", join(&|f| u8::from(f.signed).to_string())),
-        ("Field I predictor", join(&|f| f.intra.0.to_string())),
-        ("Field I encoding", join(&|f| f.intra.1.to_string())),
-        ("Field P predictor", join(&|f| f.inter.0.to_string())),
-        ("Field P encoding", join(&|f| f.inter.1.to_string())),
-        (
-            "Field S name",
-            "flightModeFlags,stateFlags,failsafePhase,rxSignalReceived,rxFlightChannelsValid"
-                .to_string(),
-        ),
-        ("Field S signed", "0,0,0,0,0".to_string()),
-        ("Field S predictor", "0,0,0,0,0".to_string()),
-        ("Field S encoding", "1,1,7,7,7".to_string()),
-    ];
-    let mut out: Vec<(String, String)> = field_headers
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v))
-        .chain(
-            template::HEADERS
-                .iter()
-                .map(|(k, v)| ((*k).to_string(), (*v).to_string())),
-        )
-        .collect();
-    set(&mut out, "I interval", schedule.i_interval.to_string());
-    set(&mut out, "P interval", schedule.p_interval.to_string());
-    let ratio = schedule.i_interval / schedule.p_interval;
-    set(&mut out, "P ratio", ratio.to_string());
-    set(&mut out, "looptime", schedule.looptime_us.to_string());
-    set(
-        &mut out,
-        "pid_process_denom",
-        schedule.pid_denom.to_string(),
-    );
-    let settings = &s.settings;
-    if let Some(pid) = &settings.pid {
-        gains_headers(&mut out, [&pid.roll, &pid.pitch, &pid.yaw]);
-    }
-    filter_headers(&mut out, "gyro", &settings.gyro_filters);
-    filter_headers(&mut out, "dterm", &settings.dterm_filters);
-    notch_headers(&mut out, &settings.gyro_filters);
-    let rpm = fields.iter().any(|f| f.name == "eRPM[0]");
-    set(&mut out, "dshot_bidir", u8::from(rpm).to_string());
-    if let Some(poles) = settings.motor.poles {
-        set(&mut out, "motor_poles", poles.to_string());
-    }
-    let (low, high) = motor_range(s);
-    set(&mut out, "motorOutput", list(&[low, high]));
-    if let Some(mode) = &settings.debug_mode {
-        set(&mut out, "debug_mode", mode.code.to_string());
-    }
-    for (key, value) in [
-        ("Craft name", &settings.craft_name),
-        ("Board information", &settings.board),
-        ("Log start datetime", &settings.log_start),
-    ] {
-        if let Some(v) = value {
-            set(&mut out, key, v.clone());
-        }
-    }
-    for (key, value) in &options.headers {
-        set(&mut out, key, value.clone());
-    }
-    out
-}
-
-/// A header value as an integer, for the constants the predictors use.
-fn header_int(headers: &[(String, String)], key: &str) -> i64 {
-    headers
-        .iter()
-        .find(|(k, _)| k == key)
-        .and_then(|(_, v)| v.split(',').next())
-        .and_then(|v| v.trim().parse().ok())
-        .unwrap_or(0)
-}
-
-/// Timestamps of the session with the offset, checked against the format.
+/// Timestamps of the session with the offset. The firmware's clock is a
+/// 32-bit count of microseconds that wraps after 71.6 minutes; the values
+/// here are not wrapped yet.
 fn timestamps(s: &FlightSession, offset_us: i64) -> Result<Vec<i64>, WriteError> {
     let time = s
         .channel(&ChannelId::Time)
@@ -739,8 +251,8 @@ fn timestamps(s: &FlightSession, offset_us: i64) -> Result<Vec<i64>, WriteError>
         .values()
         .iter()
         .map(|t| {
-            let t = quantise(*t) + offset_us;
-            if (0..=i64::from(u32::MAX)).contains(&t) {
+            let t = (t.round_ties_even() as i64).saturating_add(offset_us);
+            if t >= 0 {
                 Ok(t)
             } else {
                 Err(WriteError::Time(t))
@@ -749,23 +261,24 @@ fn timestamps(s: &FlightSession, offset_us: i64) -> Result<Vec<i64>, WriteError>
         .collect()
 }
 
-/// Samples that can be logged: the gyro has a value on every axis.
-fn loggable(s: &FlightSession, n: usize) -> Result<Vec<bool>, WriteError> {
-    let gyro: Vec<&Series> = Axis::ALL
+/// The 32 bits of a time the firmware logs.
+fn wrapped(time_us: i64) -> i64 {
+    i64::from(time_us as u32)
+}
+
+/// Samples that can be logged: the gyro, where the log has it, has a value
+/// on every axis.
+fn loggable(s: &FlightSession, n: usize) -> Vec<bool> {
+    let gyro: Vec<_> = Axis::ALL
         .into_iter()
-        .map(|axis| {
-            let id = ChannelId::Gyro {
-                axis,
-                stage: GyroStage::Filtered,
-            };
-            s.channel(&id)
-                .map(|c| &c.data)
-                .ok_or(WriteError::MissingChannel("filtered gyro"))
+        .filter_map(|axis| {
+            let stage = GyroStage::Filtered;
+            s.channel(&ChannelId::Gyro { axis, stage }).map(|c| &c.data)
         })
-        .collect::<Result<_, _>>()?;
-    Ok((0..n)
+        .collect();
+    (0..n)
         .map(|i| gyro.iter().all(|g| g.get(i).is_some()))
-        .collect())
+        .collect()
 }
 
 /// Sample rate of the timestamps, Hz (from the median step).
@@ -778,74 +291,634 @@ fn sampled_hz(time: &[i64]) -> f64 {
     }
 }
 
-/// Writes `session` as one Betaflight Blackbox log.
+/// The loop counter of a session decoded from a log, when it is one the
+/// schedule can have produced: then the frames are written at the very
+/// iterations the log had them.
+fn logged_iterations(s: &FlightSession, schedule: Schedule, n: usize) -> Option<Vec<i64>> {
+    let counter = s.channel(&ChannelId::LoopIteration)?;
+    if !matches!(counter.origin, Origin::Logged { .. }) || counter.data.len() != n {
+        return None;
+    }
+    let iterations: Vec<i64> = counter.data.values().iter().map(|v| *v as i64).collect();
+    let in_range = iterations
+        .iter()
+        .all(|it| (0..=i64::from(u32::MAX)).contains(it) && schedule.logs(*it));
+    let rising = iterations.windows(2).all(|w| w[1] > w[0]);
+    (counter.data.all_valid() && in_range && rising).then_some(iterations)
+}
+
+/// The rows of one low-rate table of the session, as rows of the frame the
+/// target release defines.
+#[derive(Debug)]
+struct Rows<'a> {
+    letter: u8,
+    fields: &'a [FieldDef],
+    logged: &'a [AuxRow],
+    /// For each field of the frame, its column in the session's table.
+    columns: Vec<Option<usize>>,
+    next: usize,
+}
+
+impl<'a> Rows<'a> {
+    fn new(letter: u8, fields: &'a [FieldDef], table: Option<&'a AuxTable>) -> Rows<'a> {
+        let columns = fields
+            .iter()
+            .map(|f| table.and_then(|t| t.columns.iter().position(|c| *c == f.name)))
+            .collect();
+        Rows {
+            letter,
+            fields,
+            logged: table.map_or(&[], |t| t.rows.as_slice()),
+            columns,
+            next: 0,
+        }
+    }
+
+    /// The sample the next row is anchored to, when there is one at or
+    /// before `sample`.
+    fn due(&self, sample: usize) -> Option<usize> {
+        self.logged
+            .get(self.next)
+            .map(|r| r.sample_index)
+            .filter(|at| *at <= sample)
+    }
+
+    /// The time the next row was logged at, when the session's table has it.
+    fn time_of_next(&self) -> Option<i64> {
+        let column = self
+            .fields
+            .iter()
+            .zip(&self.columns)
+            .find_map(|(f, c)| c.filter(|_| f.name == "time"))?;
+        self.logged.get(self.next)?.values.get(column).copied()
+    }
+
+    /// The next row as the values of the target's fields. A field the
+    /// session's table has no column for is zero; a missing time is the
+    /// time of the last main frame.
+    fn take(&mut self, time_offset_us: i64, refs: &References) -> Vec<i64> {
+        let row = &self.logged[self.next];
+        self.next += 1;
+        self.fields
+            .iter()
+            .zip(&self.columns)
+            .map(|(f, column)| {
+                let value = column.and_then(|c| row.values.get(c).copied());
+                match (f.name.as_str(), value) {
+                    ("time", Some(v)) => v + time_offset_us,
+                    ("time", None) => refs.last_main_time,
+                    (_, v) => v.unwrap_or(0),
+                }
+            })
+            .collect()
+    }
+}
+
+/// Everything the session carries between its main frames, written at the
+/// samples it is anchored to.
+#[derive(Debug)]
+struct Between<'a> {
+    home: Rows<'a>,
+    gps: Rows<'a>,
+    slow: Rows<'a>,
+    events: &'a [Event],
+    next_event: usize,
+    time_offset_us: i64,
+    /// For a log of another release: the bit of the target's
+    /// `flightModeFlags` for each bit of the source's.
+    modes: Option<Vec<Option<u32>>>,
+}
+
+/// Where each bit of the `flightModeFlags` of the release that logged the
+/// session is in the target's: the mode boxes were renumbered between
+/// releases, so a mask is carried over box by box. `None` when the session
+/// is of the target release or not Betaflight's (the bits stay).
+fn mode_bits(source: &Source, target: Target) -> Option<Vec<Option<u32>>> {
+    if !source.betaflight || source.same_release {
+        return None;
+    }
+    let of_target = boxes_of(target);
+    let bits = crate::profiles::betaflight::box_names(&source.firmware)
+        .into_iter()
+        .map(|name| of_target.iter().position(|n| *n == name).map(|b| b as u32))
+        .collect();
+    Some(bits)
+}
+
+/// The mode boxes of the target release, in the bit order of
+/// `flightModeFlags`.
+fn boxes_of(target: Target) -> Vec<&'static str> {
+    let firmware = FirmwareInfo {
+        vendor: FirmwareVendor::Betaflight,
+        version: Some(target.version()),
+        ..FirmwareInfo::unknown()
+    };
+    crate::profiles::betaflight::box_names(&firmware)
+}
+
+impl Between<'_> {
+    /// A mask of mode boxes in the bit order of the target release.
+    fn flags(&self, flags: i64) -> i64 {
+        let Some(bits) = &self.modes else {
+            return flags;
+        };
+        bits.iter()
+            .enumerate()
+            .filter(|(from, _)| flags >> from & 1 == 1)
+            .filter_map(|(_, to)| *to)
+            .fold(0, |mask, to| mask | (1 << to))
+    }
+
+    /// Writes what is anchored at or before `sample`.
+    ///
+    /// The session keeps the events, the GPS frames and the slow frames
+    /// apart, each anchored to the main frame that followed; the order among
+    /// them is the one the firmware's loop gives them (`blackboxLogIteration`):
+    /// on every iteration the events first, then the slow frame straight
+    /// before the main frame, then the GPS frames (a home frame always with
+    /// the fix after it). So between two main frames the GPS frames come
+    /// first, as the frames of the earlier iterations, then the events, then
+    /// the slow frame. One event is placed more exactly: the arming beep
+    /// carries its time, and it is logged before a fix that is not older
+    /// (at arming the beep and the home point arrive within one iteration).
+    fn write(&mut self, buf: &mut Vec<u8>, sample: usize, refs: &mut References) {
+        loop {
+            let (home, fix) = (self.home.due(sample), self.gps.due(sample));
+            if home.is_none() && fix.is_none() {
+                break;
+            }
+            let fix_time = self.gps.time_of_next();
+            while let Some(e) = self.events.get(self.next_event) {
+                match e.kind {
+                    EventKind::SyncBeep { time_us }
+                        if e.sample_index <= sample && fix_time.is_none_or(|t| time_us <= t) =>
+                    {
+                        self.event(buf);
+                    }
+                    _ => break,
+                }
+            }
+            match (home, fix) {
+                (Some(h), g) if g.is_none_or(|g| h <= g) => {
+                    let row = self.home.take(self.time_offset_us, refs);
+                    frames::aux_frame(buf, self.home.letter, self.home.fields, &row, refs);
+                    refs.home = [
+                        row.first().copied().unwrap_or(0),
+                        row.get(1).copied().unwrap_or(0),
+                    ];
+                }
+                _ => {
+                    let row = self.gps.take(self.time_offset_us, refs);
+                    frames::aux_frame(buf, self.gps.letter, self.gps.fields, &row, refs);
+                }
+            }
+        }
+        while self
+            .events
+            .get(self.next_event)
+            .is_some_and(|e| e.sample_index <= sample)
+        {
+            self.event(buf);
+        }
+        while self.slow.due(sample).is_some() {
+            let mut row = self.slow.take(self.time_offset_us, refs);
+            row[0] = self.flags(row[0]);
+            frames::aux_frame(buf, self.slow.letter, self.slow.fields, &row, refs);
+        }
+    }
+
+    /// Writes the next event of the session, its times on the clock of the
+    /// log written.
+    fn event(&mut self, buf: &mut Vec<u8>) {
+        let e = &self.events[self.next_event];
+        self.next_event += 1;
+        let offset = self.time_offset_us;
+        let kind = match &e.kind {
+            EventKind::SyncBeep { time_us } => EventKind::SyncBeep {
+                time_us: time_us + offset,
+            },
+            EventKind::LoggingResume { iteration, time_us } => EventKind::LoggingResume {
+                iteration: *iteration,
+                time_us: time_us + offset,
+            },
+            EventKind::FlightMode { flags, last_flags } => EventKind::FlightMode {
+                flags: self.flags(i64::from(*flags)) as u32,
+                last_flags: self.flags(i64::from(*last_flags)) as u32,
+            },
+            other => other.clone(),
+        };
+        frames::event(buf, &kind);
+    }
+}
+
+/// The slow frames and flight-mode events of a session that was not decoded
+/// from a log, by the rules of the firmware (`writeSlowFrameIfNeeded`,
+/// `blackboxCheckAndLogFlightMode`, the same in every release).
+#[derive(Debug)]
+struct SlowLog<'a> {
+    session: &'a FlightSession,
+    /// The mode of each bit of `flightModeFlags` in the target release.
+    boxes: Vec<FlightMode>,
+    /// The session has slow frames of its own: none are made up.
+    own_frames: bool,
+    /// The session has flight-mode events of its own.
+    own_events: bool,
+    /// Loop iterations after which a slow frame is repeated.
+    interval: i64,
+    /// The state last logged and the iteration it was logged at; `None`
+    /// forces a frame (at the start and after a pause).
+    logged: Option<([i64; 5], i64)>,
+    /// The flags the last flight-mode event (or the start of the log) had.
+    flags: i64,
+}
+
+impl<'a> SlowLog<'a> {
+    fn new(session: &'a FlightSession, target: Target, schedule: Schedule, first: usize) -> Self {
+        let boxes = boxes_of(target)
+            .into_iter()
+            .map(FlightMode::from_name)
+            .collect();
+        let has_event =
+            |wanted: fn(&EventKind) -> bool| session.events.iter().any(|e| wanted(&e.kind));
+        let mut log = SlowLog {
+            session,
+            boxes,
+            own_frames: fields::table(session, fields::SLOW_TABLE)
+                .is_some_and(|t| !t.rows.is_empty()),
+            own_events: has_event(|k| matches!(k, EventKind::FlightMode { .. })),
+            interval: schedule.i_interval * SLOW_EVERY_INTRA,
+            logged: None,
+            flags: 0,
+        };
+        log.flags = log.flags_at(first);
+        log
+    }
+
+    /// `flightModeFlags` at `sample`: the bits of the modes the session
+    /// names there, in the bit order of the target release.
+    fn flags_at(&self, sample: usize) -> i64 {
+        if self.session.flight_modes.is_empty() {
+            return ARMED;
+        }
+        let active = modes_at(&self.session.flight_modes, sample);
+        self.boxes
+            .iter()
+            .enumerate()
+            .filter(|(_, mode)| active.contains(mode))
+            .fold(0, |flags, (bit, _)| flags | (1 << bit))
+    }
+
+    /// The event the firmware logs on a loop iteration without an `I` frame
+    /// when the modes are not the ones it last logged.
+    fn mode_event(&mut self, buf: &mut Vec<u8>, sample: usize) {
+        let flags = self.flags_at(sample);
+        if self.own_events || self.own_frames || flags == self.flags {
+            return;
+        }
+        let kind = EventKind::FlightMode {
+            flags: flags as u32,
+            last_flags: self.flags as u32,
+        };
+        frames::event(buf, &kind);
+        self.flags = flags;
+    }
+
+    /// The slow frame the firmware logs before a main frame when the state
+    /// changed, or was last logged [`SlowLog::interval`] iterations ago, or
+    /// the log has just started or resumed. A healthy radio link, no
+    /// failsafe: the session says nothing else.
+    fn frame(&mut self, buf: &mut Vec<u8>, layout: &Layout, sample: usize, iteration: i64) {
+        if self.own_frames {
+            return;
+        }
+        let state = [self.flags_at(sample), 0, 0, 1, 1];
+        let due = self
+            .logged
+            .is_none_or(|(last, at)| last != state || iteration - at >= self.interval);
+        if due {
+            frames::aux_frame(buf, b'S', &layout.slow, &state, &References::default());
+            self.logged = Some((state, iteration));
+        }
+    }
+
+    /// The log paused: the firmware logs a slow frame when it resumes.
+    fn force(&mut self) {
+        self.logged = None;
+    }
+}
+
+/// The header block: the field definitions of every frame, then the
+/// system information.
+fn header_block(layout: &Layout, lines: Lines) -> Vec<u8> {
+    let join = |fields: &[FieldDef], f: &dyn Fn(&FieldDef) -> String| {
+        fields.iter().map(f).collect::<Vec<_>>().join(",")
+    };
+    let mut out: Vec<(String, String)> = vec![
+        (
+            "Product".into(),
+            "Blackbox flight data recorder by Nicholas Sherlock".into(),
+        ),
+        ("Data version".into(), "2".into()),
+    ];
+    let mut define = |letter: char, fields: &[FieldDef], deltas: bool| {
+        let name = |f: &FieldDef| f.name.clone();
+        let signed = |f: &FieldDef| u8::from(f.signed).to_string();
+        out.push((format!("Field {letter} name"), join(fields, &name)));
+        out.push((format!("Field {letter} signed"), join(fields, &signed)));
+        let predictor = join(fields, &|f| f.intra.0.to_string());
+        out.push((format!("Field {letter} predictor"), predictor));
+        let encoding = join(fields, &|f| f.intra.1.to_string());
+        out.push((format!("Field {letter} encoding"), encoding));
+        if deltas {
+            let predictor = join(fields, &|f| f.inter.0.to_string());
+            out.push(("Field P predictor".into(), predictor));
+            let encoding = join(fields, &|f| f.inter.1.to_string());
+            out.push(("Field P encoding".into(), encoding));
+        }
+    };
+    define('I', &layout.main, true);
+    if let Some((home, fix)) = &layout.gps {
+        define('H', home, false);
+        define('G', fix, false);
+    }
+    define('S', &layout.slow, false);
+    out.extend(lines.into_vec());
+    let mut buf = Vec::new();
+    for (key, value) in out {
+        buf.extend_from_slice(format!("H {key}:{value}\n").as_bytes());
+    }
+    buf
+}
+
+/// Writes `session` as one Betaflight Blackbox log of the release
+/// `options.target`.
 ///
-/// The session needs a time channel and the filtered gyro; everything else
-/// is optional and written as zero (or as a resting sensor) when absent. A
-/// sample without a gyro value is not logged: the log pauses there and
-/// resumes, with the firmware's "logging resumed" event, at the next `I`
-/// frame, as a flight controller does when its storage falls behind.
+/// The session needs a time channel and the filtered gyro (unless the
+/// headers switch the gyro off); everything else is optional. A field the
+/// session has no channel for is not logged and `fields_disabled_mask`, or
+/// the absence of the sensor's header lines, says so; the PID terms alone
+/// are logged as zero when the session has none, which is what the firmware
+/// logs while the controller is idle. In a session that was not decoded
+/// from a log a sample without a gyro value is not logged: the log pauses
+/// there and resumes, with the firmware's "logging resumed" event, at the
+/// next `I` frame, as a flight controller does when its storage falls
+/// behind.
 ///
 /// # Errors
 /// [`WriteError`] when there is nothing to log, a needed channel is absent,
 /// or the loop rates of the settings cannot be scheduled.
 pub fn betaflight(session: &FlightSession, options: &WriteOptions) -> Result<Vec<u8>, WriteError> {
-    let time = timestamps(session, options.time_offset_us)?;
+    let target = options.target;
+    let offset = options.time_offset_us;
+    let source = Source::of(session, target);
+    let time = timestamps(session, offset)?;
     let n = time.len();
-    let valid = loggable(session, n)?;
-    let first = valid.iter().position(|v| *v).ok_or(WriteError::Empty)?;
-    let schedule = Schedule::new(&session.settings.loop_rates, sampled_hz(&time))?;
-    let fields = fields(session, first, schedule, time);
-    let headers = headers(session, &fields, schedule, options);
-    let constants = Constants {
-        motor0: fields.iter().position(|f| f.name == "motor[0]"),
-        motor_low: header_int(&headers, "motorOutput"),
-        vbatref: header_int(&headers, "vbatref"),
+    let carried = fields::carried(session, target);
+    let mut lines = config::lines(session, &source, target, carried, options);
+    let schedule = match Schedule::of_headers(&lines) {
+        Some(schedule) => schedule,
+        None => Schedule::of_rates(&session.settings.loop_rates, sampled_hz(&time), &mut lines)?,
     };
-    let mut buf = Vec::new();
-    for (key, value) in &headers {
-        buf.extend_from_slice(format!("H {key}:{value}\n").as_bytes());
+    let layout = fields::layout(session, &source, target, schedule, &mut lines)?;
+    let gyro_logged = layout.main.iter().any(|f| f.name == "gyroADC[0]");
+    let valid = if gyro_logged {
+        loggable(session, n)
+    } else {
+        vec![true; n]
+    };
+    let first = valid.iter().position(|v| *v).ok_or(WriteError::Empty)?;
+
+    let mut columns = fields::columns(session, &source, &layout, &lines, n);
+    let replayed = logged_iterations(session, schedule, n).filter(|_| source.decoded);
+    columns[0] = replayed.unwrap_or_else(|| {
+        (0..n)
+            .map(|k| schedule.iteration_of(k.saturating_sub(first) as i64))
+            .collect()
+    });
+    columns[1] = time.iter().map(|t| wrapped(*t)).collect();
+    let field = |name: &str| layout.main.iter().position(|f| f.name == name);
+    if let Some(voltage) = field("vbatLatest")
+        && !lines.is_given("vbatref")
+    {
+        // the voltage when the log began
+        lines.replace("vbatref", columns[voltage][first].to_string());
     }
+    if target >= Target::Master && !lines.is_given("debug_mode_name") {
+        let name = match (&session.settings.debug_mode, lines.int("debug_mode")) {
+            (_, 0) => "NONE",
+            (Some(mode), _) => mode.name.as_deref().unwrap_or("UNKNOWN"),
+            _ => "UNKNOWN",
+        };
+        lines.replace("debug_mode_name", name);
+    }
+    let mut refs = References {
+        motor0: field("motor[0]"),
+        motor_low: lines.number("motorOutput", 0),
+        vbatref: lines.int("vbatref"),
+        ..References::default()
+    };
+
+    let no_fields: (Vec<FieldDef>, Vec<FieldDef>) = (Vec::new(), Vec::new());
+    let (home_fields, gps_fields) = layout.gps.as_ref().unwrap_or(&no_fields);
+    let gps_logged = layout.gps.is_some();
+    let table = |kind: &str, logged: bool| fields::table(session, kind).filter(|_| logged);
+    let mut between = Between {
+        home: Rows::new(b'H', home_fields, table(fields::HOME_TABLE, gps_logged)),
+        gps: Rows::new(b'G', gps_fields, table(fields::GPS_TABLE, gps_logged)),
+        slow: Rows::new(b'S', &layout.slow, table(fields::SLOW_TABLE, true)),
+        events: &session.events,
+        next_event: 0,
+        time_offset_us: offset,
+        modes: mode_bits(&source, target),
+    };
+    // a decoded log is written as it was; a flight is logged by the rules
+    let logging = !source.decoded;
+    let mut slow = SlowLog::new(session, target, schedule, first);
+    let intra_only = schedule.p_interval == 0;
+    let has_event = |wanted: fn(&EventKind) -> bool| session.events.iter().any(|e| wanted(&e.kind));
+
+    let mut buf = header_block(&layout, lines);
     // the two frames before the current one; `None` while the log is paused
     let mut history: Option<(Vec<i64>, Vec<i64>)> = None;
-    for (k, logged) in valid.iter().enumerate().skip(first) {
-        if !logged {
+    let mut paused = false;
+    for k in first..n {
+        if !valid[k] {
+            paused = true;
             history = None;
             continue;
         }
-        let current: Vec<i64> = fields.iter().map(|f| f.values[k]).collect();
-        let (iteration, time_us) = (current[0], current[1]);
-        let on_intra = iteration % schedule.i_interval == 0;
-        if history.is_none() && k > first {
-            // the log paused; the firmware resumes it on an I frame only
-            if !on_intra {
-                continue;
-            }
-            write_event(&mut buf, EVENT_LOGGING_RESUME, &[iteration, time_us]);
+        let row: Vec<i64> = columns.iter().map(|c| c[k]).collect();
+        let (iteration, time_us) = (row[0], row[1]);
+        let intra = schedule.is_intra(iteration);
+        if paused && !intra {
+            // the firmware resumes a paused log on an I frame only
+            continue;
+        }
+        between.write(&mut buf, k, &mut refs);
+        if paused {
+            let resume = EventKind::LoggingResume {
+                iteration: iteration as u32,
+                time_us,
+            };
+            frames::event(&mut buf, &resume);
+            slow.force();
+            paused = false;
+        }
+        if logging && !intra {
+            slow.mode_event(&mut buf, k);
+        }
+        if logging && (!intra || intra_only) {
+            slow.frame(&mut buf, &layout, k, iteration);
         }
         let references = history
             .as_ref()
-            .filter(|_| !on_intra)
+            .filter(|_| !intra)
             .map(|(p, p2)| (p.as_slice(), p2.as_slice()));
-        let intra = references.is_none();
-        write_frame(&mut buf, &fields, &current, references, constants);
-        if k == first {
-            write_event(&mut buf, EVENT_SYNC_BEEP, &[time_us]);
+        frames::main_frame(&mut buf, &layout.main, &row, references, &refs);
+        refs.last_main_time = time_us;
+        if logging && k == first && !has_event(|k| matches!(k, EventKind::SyncBeep { .. })) {
+            frames::event(&mut buf, &EventKind::SyncBeep { time_us });
         }
-        if intra && iteration % (schedule.i_interval * SLOW_EVERY_INTRA) == 0 {
-            write_slow_frame(&mut buf);
+        if logging && intra_only {
+            // checked on the iteration after the frame, which logs nothing
+            slow.mode_event(&mut buf, k);
         }
         history = Some(match history.take() {
-            Some((previous, _)) if !intra => (current, previous),
-            _ => (current.clone(), current),
+            Some((previous, _)) if !intra => (row, previous),
+            _ => (row.clone(), row),
         });
     }
-    if options.disarm {
-        // reason 4: the arming switch
-        write_event(&mut buf, EVENT_DISARM, &[4]);
+    between.write(&mut buf, usize::MAX, &mut refs);
+    if logging && !has_event(|k| matches!(k, EventKind::LogEnd)) {
+        if options.disarm && !has_event(|k| matches!(k, EventKind::Disarm { .. })) {
+            let reason = DISARM_SWITCH;
+            frames::event(&mut buf, &EventKind::Disarm { reason });
+        }
+        frames::event(&mut buf, &EventKind::LogEnd);
     }
-    buf.push(b'E');
-    buf.push(EVENT_LOG_END);
-    buf.extend_from_slice(b"End of log\0");
     Ok(buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rates(gyro_hz: f64, pid_hz: f64, log_hz: f64) -> LoopRates {
+        LoopRates {
+            gyro_hz: Some(gyro_hz),
+            pid_hz: Some(pid_hz),
+            log_hz: Some(log_hz),
+        }
+    }
+
+    /// The lines of the default release, to see what a schedule writes.
+    fn lines() -> Lines {
+        let session = FlightSession {
+            index: 0,
+            offset_bytes: 0,
+            firmware: FirmwareInfo::unknown(),
+            profile_id: "synthetic".into(),
+            settings: openpid_core::Settings::default(),
+            raw_headers: Vec::new(),
+            timebase: openpid_core::Timebase::default(),
+            channels: openpid_core::ChannelSet::new(),
+            events: Vec::new(),
+            aux: Vec::new(),
+            flight_modes: Vec::new(),
+            diagnostics: openpid_core::session::Diagnostics::default(),
+        };
+        let source = Source::of(&session, Target::default());
+        let carried = config::Carried::default();
+        config::lines(
+            &session,
+            &source,
+            Target::default(),
+            carried,
+            &WriteOptions::default(),
+        )
+    }
+
+    /// `I interval`, `P interval`, `P ratio`, `looptime` and
+    /// `pid_process_denom` for a gyro, PID and log rate.
+    fn headers(gyro_hz: f64, pid_hz: f64, log_hz: f64) -> [i64; 5] {
+        let mut lines = lines();
+        let schedule =
+            Schedule::of_rates(&rates(gyro_hz, pid_hz, log_hz), 0.0, &mut lines).unwrap();
+        assert_eq!(schedule.i_interval, lines.int("I interval"));
+        assert_eq!(schedule.p_interval, lines.int("P interval"));
+        [
+            "I interval",
+            "P interval",
+            "P ratio",
+            "looptime",
+            "pid_process_denom",
+        ]
+        .map(|key| lines.int(key))
+    }
+
+    /// The firmware's arithmetic: whole microseconds, rounded down, and
+    /// 32 ms of them, rounded down (`gyro_init.c`, `blackboxInit`).
+    #[test]
+    fn rates_are_rounded_as_the_firmware_rounds_them() {
+        assert_eq!(headers(8000.0, 4000.0, 1000.0), [128, 4, 32, 125, 2]);
+        assert_eq!(headers(8000.0, 8000.0, 8000.0), [256, 1, 256, 125, 1]);
+        // 3.2 kHz: 312.5 µs is logged as 312, and 32000 / 312 is 102
+        assert_eq!(headers(3200.0, 3200.0, 800.0), [102, 4, 25, 312, 1]);
+        assert_eq!(headers(3200.0, 3200.0, 1600.0), [102, 2, 51, 312, 1]);
+        // the PID period of 3.2 kHz / 2 is 625 µs exactly
+        assert_eq!(headers(3200.0, 1600.0, 1600.0), [51, 1, 51, 312, 2]);
+        // 6.4 kHz: 156.25 µs is 156, and 32000 / 156 is 205
+        assert_eq!(headers(6400.0, 6400.0, 3200.0), [205, 2, 102, 156, 1]);
+        // every frame an I frame: an interval of the firmware's own, or none
+        assert_eq!(headers(8000.0, 2000.0, 125.0), [64, 16, 4, 125, 4]);
+        assert_eq!(headers(500.0, 500.0, 31.25), [16, 16, 1, 2000, 1]);
+        assert_eq!(headers(8000.0, 4000.0, 31.25), [128, 0, 0, 125, 2]);
+    }
+
+    #[test]
+    fn the_schedule_is_the_firmware_s() {
+        // I 102, P 4: the last P frame of an interval is two iterations
+        // before the next I frame
+        let s = Schedule {
+            i_interval: 102,
+            p_interval: 4,
+        };
+        let logged: Vec<i64> = (0..210).filter(|it| s.logs(*it)).collect();
+        assert_eq!(&logged[..4], [0, 4, 8, 12]);
+        assert_eq!(&logged[24..29], [96, 100, 102, 106, 110]);
+        let by_frame: Vec<i64> = (0..logged.len() as i64)
+            .map(|f| s.iteration_of(f))
+            .collect();
+        assert_eq!(by_frame, logged);
+        assert!(s.is_intra(204) && !s.is_intra(100));
+        // I frames only
+        let s = Schedule {
+            i_interval: 32,
+            p_interval: 0,
+        };
+        assert!(s.logs(64) && !s.logs(16));
+        assert_eq!(s.iteration_of(3), 96);
+    }
+
+    #[test]
+    fn rates_the_firmware_cannot_log() {
+        let refused = |gyro_hz, pid_hz, log_hz| {
+            Schedule::of_rates(&rates(gyro_hz, pid_hz, log_hz), 0.0, &mut lines()).is_err()
+        };
+        assert!(refused(8000.0, 1500.0, 1000.0), "not a whole multiple");
+        assert!(refused(6000.0, 4000.0, 1000.0), "gyro and PID");
+        assert!(refused(8000.0, 500.0, 1000.0), "a log faster than its loop");
+        assert!(
+            refused(8000.0, 4000.0, 25.0),
+            "less than an I frame each time"
+        );
+        assert!(refused(8000.0, 4000.0, 0.0));
+    }
+
+    #[test]
+    fn the_clock_wraps_at_32_bits() {
+        assert_eq!(wrapped(5), 5);
+        assert_eq!(wrapped(i64::from(u32::MAX)), i64::from(u32::MAX));
+        assert_eq!(wrapped(i64::from(u32::MAX) + 3), 2);
+    }
 }

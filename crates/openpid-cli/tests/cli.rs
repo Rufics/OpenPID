@@ -433,14 +433,18 @@ fn gen_command_writes_a_betaflight_log() {
     assert!(v["metrics"]["delay_ms"].is_number());
 
     // what cannot be logged is refused
-    std::fs::write(&spec_path, r#"{"duration_s": 5000}"#).unwrap();
+    let nothing = r#"{"dropouts": [{"start_s": 0.0, "len_s": 100.0}]}"#;
+    std::fs::write(&spec_path, nothing).unwrap();
     let (ok, _, err) = run(&[
         "gen",
         spec_path.to_str().unwrap(),
         "--out",
         log.to_str().unwrap(),
     ]);
-    assert!(!ok && err.contains("does not fit a Blackbox log"), "{err}");
+    assert!(
+        !ok && err.contains("no sample with a gyro reading"),
+        "{err}"
+    );
     let (ok, _, err) = run(&["gen", "--out", "/nonexistent-dir/x.bbl"]);
     assert!(!ok && err.contains("cannot create"), "{err}");
     std::fs::remove_file(&log).ok();

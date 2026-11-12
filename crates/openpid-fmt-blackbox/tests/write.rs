@@ -628,19 +628,45 @@ fn what_cannot_be_logged_is_refused_with_the_reason() {
     s.settings.loop_rates.gyro_hz = Some(6000.0);
     assert!(matches!(write(&s), Err(WriteError::Rate { .. })));
 
-    let late = WriteOptions {
-        time_offset_us: i64::from(u32::MAX),
-        ..WriteOptions::default()
-    };
-    assert_eq!(
-        betaflight(&good, &late),
-        Err(WriteError::Time(i64::from(u32::MAX) + 1000))
-    );
     let early = WriteOptions {
         time_offset_us: -1,
         ..WriteOptions::default()
     };
     assert_eq!(betaflight(&good, &early), Err(WriteError::Time(-1)));
+}
+
+/// The firmware's clock is 32 bits of microseconds: 71.6 minutes after
+/// power-up it starts again from zero, and so does the log.
+#[test]
+fn the_clock_of_a_long_flight_wraps_as_the_firmware_s_does() {
+    let original = flight(&spec(1000.0, false, 4));
+    // armed half a second before the clock wraps
+    let offset = (1i64 << 32) - 500_000;
+    let options = WriteOptions {
+        time_offset_us: offset,
+        ..WriteOptions::default()
+    };
+    let bytes = betaflight(&original, &options).unwrap();
+    let raw = decode(&bytes).unwrap();
+    assert_eq!(raw.len(), original.len());
+    assert_eq!(raw.stats.corrupt_total() + raw.stats.desync_total(), 0);
+    // the decoder follows the clock across the wrap
+    let time = raw.column("time").unwrap();
+    assert_eq!(time[0], offset);
+    assert_eq!(time[499], offset + 499_000);
+    assert_eq!(time[500], 1i64 << 32);
+    assert_eq!(time[1499], offset + 1_499_000);
+    // on the card the 501st frame starts again from zero: its time takes
+    // one byte where the frame before needed five
+    let back = read(&bytes);
+    assert_channel(&original, &back, &ChannelId::Time, |t| t + offset as f64);
+    // a whole flight after the wrap is logged with the times the clock shows
+    let later = WriteOptions {
+        time_offset_us: (1i64 << 32) + 7_000_000,
+        ..WriteOptions::default()
+    };
+    let raw = decode(&betaflight(&original, &later).unwrap()).unwrap();
+    assert_eq!(raw.column("time").unwrap()[0], 7_000_000);
 }
 
 #[test]
