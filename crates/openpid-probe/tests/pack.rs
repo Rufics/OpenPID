@@ -1,7 +1,7 @@
 //! The pack of a round: reproducible, readable, and true to its manifest.
 #![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
-use openpid_core::{Axis, ChannelId, GyroStage, LogFormat, OpenOptions};
+use openpid_core::{Axis, BatteryField, ChannelId, GyroStage, LogFormat, OpenOptions};
 use openpid_fmt_blackbox::BlackboxFormat;
 use openpid_probe::pack::{self, ChannelTruth, PackError, Spectrum};
 use openpid_probe::{Pack, catalogue, model};
@@ -808,4 +808,51 @@ fn round_5_carries_the_step_model_s_predictions() {
         noisy.windows(2).all(|w| w[0] <= w[1]) && noisy[0] + 30 < noisy[3],
         "{noisy:?}"
     );
+}
+
+#[test]
+fn a_probe_log_has_the_columns_the_reference_tool_has_read() {
+    // every log the reference tool has opened from this crate (rounds 0 to
+    // 5) was a Betaflight 2025.12 log with exactly these fields, the last
+    // nine of them a craft at rest on its sensors. The writer logs what a
+    // session has, so the probe flights carry those sensors; a round built
+    // tomorrow must not surprise the tool with other columns.
+    let (name, bytes) = &round_1().logs[0];
+    let text = String::from_utf8_lossy(&bytes[..bytes.len().min(40_000)]).into_owned();
+    let line = |key: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix(key))
+            .unwrap_or_else(|| panic!("{name}: no {key}"))
+            .to_string()
+    };
+    assert_eq!(
+        line("H Firmware revision:"),
+        "Betaflight 2025.12.2 (79065c96b) STM32F7X2"
+    );
+    assert_eq!(
+        line("H Field I name:"),
+        "loopIteration,time,axisP[0],axisP[1],axisP[2],axisI[0],axisI[1],axisI[2],axisD[0],\
+         axisD[1],axisF[0],axisF[1],axisF[2],rcCommand[0],rcCommand[1],rcCommand[2],\
+         rcCommand[3],setpoint[0],setpoint[1],setpoint[2],setpoint[3],vbatLatest,\
+         amperageLatest,rssi,gyroADC[0],gyroADC[1],gyroADC[2],gyroUnfilt[0],gyroUnfilt[1],\
+         gyroUnfilt[2],accSmooth[0],accSmooth[1],accSmooth[2],imuQuaternion[0],\
+         imuQuaternion[1],imuQuaternion[2],motor[0],motor[1],motor[2],motor[3]"
+    );
+    assert_eq!(
+        line("H Field S name:"),
+        "flightModeFlags,stateFlags,failsafePhase,rxSignalReceived,rxFlightChannelsValid"
+    );
+    // ... and the values of the resting sensors: 16 V, no current, a strong
+    // link, one g straight down, no rotation
+    let log = BlackboxFormat::new()
+        .open(bytes, &OpenOptions::default())
+        .unwrap();
+    let session = &log.sessions[0];
+    let first = |id: ChannelId| session.channel(&id).unwrap().data.values()[100];
+    assert_eq!(first(ChannelId::Battery(BatteryField::Voltage)), 16.0);
+    assert_eq!(first(ChannelId::Battery(BatteryField::Current)), 0.0);
+    assert_eq!(first(ChannelId::Rssi), 1000.0);
+    assert_eq!(first(ChannelId::Acc { axis: Axis::Yaw }), 1.0);
+    assert_eq!(first(ChannelId::Acc { axis: Axis::Roll }), 0.0);
+    assert_eq!(first(ChannelId::Custom("imuQuaternion[2]".into())), 0.0);
 }
