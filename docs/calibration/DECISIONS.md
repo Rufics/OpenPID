@@ -88,8 +88,8 @@ Taken by the owner on 2026-11-11:
 | The exact value | the delay: no overshoot, a step at 10 ms. The second-order plant: a peak of 1.2538 (`exp(−π·ζ/√(1−ζ²))` over 1), half way at 18.110 ms. The first-order plant: no overshoot, half way at 18.863 ms |
 | Options | **A.** OpenPID computes the response as the reference tool does (identified on round 4, to be confirmed on rounds 5 and 6): the same curve, peak and window count as the reference tool, and on these probes the truth. **B.** OpenPID keeps its own estimator and it is corrected against the closed-form responses (its smoothing of the spectrum and its regularisation are what bias it); numbers stay close to the reference tool's without being the same. **C.** No change; the bias is documented. |
 | Recommendation | A, if the identified method stays as close to the truth on the confirming and the hold-out rounds as it is here: then matching the reference tool and being right are the same change. To be put to the owner when the method is identified |
-| The owner's decision | open: waits for the confirming and the hold-out round (5 and 6) |
-| Carried out by | — |
+| The owner's decision | **A**, 2026-11-12: OpenPID computes the response as the reference tool does. Decided before rounds 5 and 6: what they correct in the rule is corrected in OpenPID with it |
+| Carried out by | #184 |
 
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's

@@ -29,6 +29,24 @@ nothing was changed.
 The areas are taken in the order the owner set on 2026-11-11: Spectrum, Step
 response, Freq × throttle, Freq × time, the rest.
 
+## What a round is for
+
+The owner, 2026-11-12: the rounds are not there to change code. They check
+the design itself, in three parts, and an area is not done until each has
+been looked at:
+
+1. **The formula**: is the quantity the right one (against the exact
+   content of the probes, where one exists).
+2. **How it is computed**: does OpenPID's code give what the formula says,
+   and what the reference tool shows, for the same log.
+3. **What is drawn**: does the tab show that result correctly — the curve
+   through its points, the axes and units, the numbers in the legend and
+   on the side plots.
+
+The third part is checked on OpenPID's own screen for a probe log, beside
+the reference tool's copy of the same plot, and by tests that read what a
+plot is given to draw.
+
 ## Ledger
 
 | Round | Date | Areas | Pack (commit) | Result | Changes it led to |

@@ -256,6 +256,47 @@ with no reading between two samples.
 | Where the first window starts | two samples after the first second on eight logs, three on the 12 s log | logs of 12, 18 and 26 s |
 | SP-Gyro Delay | setpoint and gyro of the trimmed log brought to 8 kHz along straight lines; the shift with the largest sum of products. Right on 25 of 27 plots; 0.125 and 0.25 ms too high on the axis of small moves and on the noisy one | every plot of round 5; delays above 19 ms |
 
+## OpenPID after decision D-002 (2026-11-12)
+
+The owner chose option A: OpenPID computes the step response as the
+reference tool does. The rule above is now `openpid_analysis::step_windows`
+and the default method of the Step response tab, of `openpid run step` and
+of the advice (#184); the estimator OpenPID had is kept as a second method.
+
+**Computed.** The tests that held the model to the reference tool's
+readings now hold OpenPID's own code to them, and one goes the whole way a
+user does: the log as a file, the reader, an epoch, the analysis with its
+defaults. For the epoch that is the reference tool's stretch of the log
+(1.001 s to one second before the end) the result is its curve to
+0.000002, with its window count, Peak, SR latency and both bars.
+
+**On flown logs** (not probes; the reference tool's numbers are from the
+owner's screenshots for #33, read by eye to two or three digits):
+
+| Log, axis | Reference tool: windows / peak / SR latency | OpenPID, division |
+|---|---|---|
+| `betaflight-2025.12.2-btfl_027`, roll | 78 / 1.15 / 22 ms | 77 / 1.162 / 22.07 ms |
+| the same, pitch | 13 / 1.12 / 22.5 ms | 13 / 1.127 / 22.62 ms |
+| the same, yaw | 30 / 1.18 / 12.3 ms | 30 / 1.179 / 12.30 ms |
+| `betaflight-4.5.1-two-sessions` (21 s), roll and pitch | insufficient data | not enough data |
+| the same, yaw | 32 / 0.87 / 11.7 ms | 31 / 0.875 / 11.29 ms |
+
+These logs run at 997 and 1013 Hz; OpenPID puts a log on an even grid at
+its nominal rate before any analysis, which the reference tool does not:
+the window that differs on two axes and the 0.4 ms on the last row are of
+that size. Nothing was fitted to these logs.
+
+**Drawn.** The Step response tab for `t1-plants-2k` shows a step at 10 ms
+on roll, the first-order rise on pitch and the overshoot of 1.25 on yaw,
+with `n=258`, `255`, `259` in the legends (the tab's automatic epoch
+starts at 1.000 s, one sample before the reference tool's, which costs
+pitch one window), Peak points at 1.00, 0.99 and 1.25 with their bars, and
+latencies of 9.5, 18.6 and 17.9 ms: the reference tool's plots of the same
+log. A test reads what the Peak and Latency plots are given to draw for a
+flown log and holds it to the table above. The Latency plot showed the
+half-way time of the mean curve before; with the division it shows the SR
+latency of the windows, as the reference tool does.
+
 ## Round 2 (round 5 of the ledger): confirm
 
 Seven logs (`catalogue::round(5)`, pack `407c2cd`), every one with stick
