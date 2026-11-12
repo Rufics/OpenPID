@@ -180,11 +180,24 @@ the three log rates) and by the window count in the legend.
   and 17.4 … 18.9 ms for the other plants, in steps of an eighth of a
   millisecond.
 
+### A first model of one window
+
+The "Raw" copies hold every window's response: 259 curves of 1 001 points
+on the yaw axis of `t1-plants-2k`. A plain rule already gives the first of
+them to 0.001 RMS (the curve runs from 0 to 1.25): the setpoint and the
+gyro of a window of 2 s (3 999 samples, starting one sample after the first
+second), each through a Hann window; the gyro's transform divided by the
+setpoint's; back to time; summed up. No regularisation is needed on this
+log, and none of the values tried changes the fit. The difference that is
+left has a shape (it sits between 120 and 250 ms), so this is the family
+and not yet the rule; OpenPID's estimator differs from it by a cut-off at
+25 Hz and a regularisation, which is where its overshoot on a pure delay
+comes from.
+
 ### Not settled yet
 
-- How the response of a window is computed (the 258 single responses of
-  every axis are in the "Raw" copies and have not been analysed yet), and
-  why the mean sinks.
+- The exact rule for one window (above), the step between windows, how
+  the windows are averaged, and why the mean sinks.
 - The rule that takes or drops a window: the stick threshold, the length
   and the step of the windows, what drops a noisy window.
 - What the bar of the Peak plot is, and how the latency of a window is
