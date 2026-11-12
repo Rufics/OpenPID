@@ -1111,7 +1111,11 @@ fn parse_fields(
             enc::TAG8_8SVB => {
                 r.align();
                 let mut count = 1;
-                while count < 8 && i + count < n && def.encodings[i + count] == enc::TAG8_8SVB {
+                while count < 8
+                    && i + count < n
+                    && def.encodings[i + count] == enc::TAG8_8SVB
+                    && !def.group_starts.contains(&(i + count))
+                {
                     count += 1;
                 }
                 let vals = enc::read_tag8_8svb(r, count)?;
@@ -1865,6 +1869,81 @@ H motorOutput:158,2047\n";
                 }
             ]
         );
+    }
+
+    /// Issue #183 F: Betaflight (2025.12 on) writes the optional fields
+    /// `vbatLatest` … `rssi` of a P frame as one group of the 8-value
+    /// encoding and the servos as a second one. With gyro, accelerometer,
+    /// debug and motor logging switched off the two stand next to each
+    /// other, and were read as one group of eight and one of two: the
+    /// servo values landed on the wrong servos, with no error.
+    #[test]
+    fn the_servos_are_a_group_of_their_own() {
+        let header = |firmware: &str| {
+            format!(
+                "H Product:Blackbox flight data recorder by Nicholas Sherlock\n\
+                 H Data version:2\n\
+                 H I interval:32\n\
+                 H P interval:4\n\
+                 H Field I name:loopIteration,time,vbatLatest,rssi,servo[0],servo[1],servo[2],\
+                 servo[3],servo[4],servo[5],servo[6],servo[7]\n\
+                 H Field I signed:0,0,0,0,0,0,0,0,0,0,0,0\n\
+                 H Field I predictor:0,0,9,0,8,8,8,8,8,8,8,8\n\
+                 H Field I encoding:1,1,3,1,6,6,6,6,6,6,6,6\n\
+                 H Field P predictor:6,2,1,1,1,1,1,1,1,1,1,1\n\
+                 H Field P encoding:9,0,6,6,6,6,6,6,6,6,6,6\n\
+                 H Firmware revision:{firmware}\n\
+                 H vbatref:1680\n"
+            )
+        };
+        let mut frames = Vec::new();
+        let mut rows: Vec<Vec<i64>> = Vec::new();
+        let (mut vbat, rssi) = (1680i64, 800i64);
+        let mut servo = [1500i64, 1510, 1490, 1500, 1500, 1500, 1500, 1500];
+        for k in 0..64i64 {
+            let (it, t) = (k * 4, 5_000_000 + k * 4000);
+            if it % 32 == 0 {
+                frames.push(b'I');
+                encode::write_uvb(&mut frames, it as u32);
+                encode::write_uvb(&mut frames, t as u32);
+                encode::write_neg14(&mut frames, (vbat - 1680) as i32);
+                encode::write_uvb(&mut frames, rssi as u32);
+                let centred: Vec<i32> = servo.iter().map(|s| (*s - 1500) as i32).collect();
+                encode::write_tag8_8svb(&mut frames, &centred);
+            } else {
+                let (p, p2) = (&rows[rows.len() - 1], &rows[rows.len().saturating_sub(2)]);
+                let p2 = if (it - 4) % 32 == 0 { p } else { p2 };
+                frames.push(b'P');
+                encode::write_svb(&mut frames, (t - (2 * p[1] - p2[1])) as i32);
+                // the firmware: one group for the optional fields ...
+                encode::write_tag8_8svb(&mut frames, &[-1, 0]);
+                vbat -= 1;
+                // ... and a second one for the servos
+                encode::write_tag8_8svb(&mut frames, &[3, -2, 0, 0, 0, 0, 0, 1]);
+                servo[0] += 3;
+                servo[1] -= 2;
+                servo[7] += 1;
+            }
+            let mut row = vec![it, t, vbat, rssi];
+            row.extend_from_slice(&servo);
+            rows.push(row);
+        }
+        let mut data = header("Betaflight 2025.12.2 (c6b3f0a) STM32F7X2").into_bytes();
+        data.extend_from_slice(&frames);
+        let h = Headers::parse(&data).unwrap();
+        assert!(h.servo_group);
+        assert_eq!(h.def(b'P').unwrap().group_starts, [4]);
+        let (decoded, _, stats) = collect(&data);
+        assert_same(&decoded, &rows, "two groups");
+        assert_eq!((stats.corrupt_total(), stats.desync_total()), (0, 0));
+        // a firmware that is not known to write the servos apart is read as
+        // before: neighbouring fields in groups of eight
+        let mut data = header("INAV 7.0.0 (abcdef0) MATEKF405").into_bytes();
+        data.extend_from_slice(&frames);
+        let h = Headers::parse(&data).unwrap();
+        assert!(!h.servo_group && h.def(b'P').unwrap().group_starts.is_empty());
+        let (decoded, _, _) = collect(&data);
+        assert!(decoded != rows, "read as one group of eight and one of two");
     }
 
     #[test]

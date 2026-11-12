@@ -2,7 +2,7 @@
 
 use crate::encoding;
 use crate::predictor;
-use openpid_core::{FirmwareInfo, RawHeaders};
+use openpid_core::{FirmwareInfo, FirmwareVendor, RawHeaders};
 use std::collections::BTreeMap;
 
 /// Marker line that starts every log written by Cleanflight-family firmware.
@@ -22,6 +22,11 @@ pub struct FrameDef {
     pub predictors: Vec<u8>,
     /// Encoding id per field.
     pub encodings: Vec<u8>,
+    /// Fields a group of the 8-value encoding ([`encoding::TAG8_8SVB`]) ends
+    /// before although the field has that encoding too: the firmware wrote
+    /// it as the first value of a group of its own. Empty when neighbouring
+    /// fields of that encoding always share groups of eight.
+    pub group_starts: Vec<usize>,
 }
 
 impl FrameDef {
@@ -38,6 +43,15 @@ impl FrameDef {
     /// Index of a field by name.
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.names.iter().position(|n| n == name)
+    }
+
+    /// Mark the servo array as a group of its own (see
+    /// [`Headers::servo_group`]).
+    fn split_before_servos(&mut self) {
+        let is_servo = |name: &String| name.starts_with("servo[");
+        self.group_starts = (1..self.len())
+            .filter(|i| is_servo(&self.names[*i]) && !is_servo(&self.names[*i - 1]))
+            .collect();
     }
 
     fn validate(&self, frame_type: u8) -> Result<(), HeaderError> {
@@ -150,6 +164,19 @@ pub struct Headers {
     pub vbatref: i64,
     /// Firmware identity from the `Firmware revision` header.
     pub firmware: FirmwareInfo,
+    /// The firmware writes the servo array of a main frame as one group of
+    /// the 8-value encoding of its own, whatever stands before it.
+    ///
+    /// Betaflight since 2025.12 logs `servo[0..7]` that way (tags 2025.12.2
+    /// and 2026.6.2, `blackbox.c`: `writeInterframe` writes the optional
+    /// fields `vbatLatest` … `rssi` with one call and the servos with a
+    /// second one), and warns in its field table that a decoder which takes
+    /// neighbouring fields of that encoding in eights reads them wrong when
+    /// fewer than eight of the optional fields stand right before the
+    /// servos, which they do with gyro, accelerometer, debug and motor
+    /// logging all switched off. Up to 4.5 it logged one servo, `servo[5]`,
+    /// as a plain number (tags 4.3.2, 4.4.3, 4.5.5).
+    pub servo_group: bool,
     /// Byte offset where frame data begins.
     pub data_start: usize,
 }
@@ -214,6 +241,16 @@ impl Headers {
         if let Some(p) = defs.get_mut(&b'P') {
             p.names.clone_from(&i_def.names);
             p.signed.clone_from(&i_def.signed);
+        }
+        let mut firmware = FirmwareInfo::parse_revision(raw.get("Firmware revision").unwrap_or(""));
+        firmware.build_date = raw.get("Firmware date").map(str::to_string);
+        let servo_group = firmware.vendor == FirmwareVendor::Betaflight;
+        if servo_group {
+            for ft in *b"IP" {
+                if let Some(def) = defs.get_mut(&ft) {
+                    def.split_before_servos();
+                }
+            }
         }
         for (ft, def) in &defs {
             def.validate(*ft)?;
@@ -280,9 +317,6 @@ impl Headers {
             .and_then(|v| v.split(',').next()?.trim().parse::<i64>().ok())
             .unwrap_or(minthrottle);
         let vbatref = raw.get_i64("vbatref").unwrap_or(4095);
-        let mut firmware = FirmwareInfo::parse_revision(raw.get("Firmware revision").unwrap_or(""));
-        firmware.build_date = raw.get("Firmware date").map(str::to_string);
-
         let data_version = raw.get_i64("Data version").map_or(1, |v| v as u32);
         Ok(Headers {
             raw,
@@ -294,6 +328,7 @@ impl Headers {
             motor_output_low,
             vbatref,
             firmware,
+            servo_group,
             data_start: pos,
         })
     }
