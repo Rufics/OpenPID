@@ -12,10 +12,10 @@
 //! Every fact names where it was read: a tag of the firmware source
 //! (`src/main/` of <https://github.com/betaflight/betaflight>) and the file,
 //! or the fixture in `tests/logs/` that shows it. The source was read at the
-//! tags 4.3.2, 4.4.3, 4.5.0, 4.5.5, 2025.12.5, 2026.6.2 and at `master`
-//! `4b1520e` (which calls itself 2026.12). No tag of 4.0, 4.1 or 4.2 was at
-//! hand: what is said about them rests on the 4.2.0, 4.2.8 and 4.2.11
-//! fixtures and, where marked so, on what the reader assumed before.
+//! tags 4.2.11, 4.3.2, 4.4.3, 4.5.0, 4.5.5, 2025.12.5, 2026.6.2 and at
+//! `master` `4b1520e` (which calls itself 2026.12). No tag of 4.0 or 4.1
+//! was at hand: what is said about them is what the reader assumed before,
+//! and is marked so.
 
 use openpid_core::{FirmwareInfo, FirmwareVendor, FirmwareVersion};
 
@@ -84,10 +84,10 @@ pub struct Release {
     pub d_max_scheme: bool,
 }
 
-/// Mode boxes of 4.0 to 4.6 as the reader has had them (from the firmware's
-/// Blackbox Explorer); bits 0 to 30 agree with `boxId_e` of the tags 4.3.2,
-/// 4.4.3 and 4.5.5 (`fc/rc_modes.h`).
-const BOXES_4: [&str; 39] = [
+/// Mode boxes of 4.0 and 4.1 as the reader has had them (from the
+/// firmware's Blackbox Explorer); no tag of these lines was at hand. Bits 0
+/// to 30 are those of 4.2; bit 31 is not verified.
+const BOXES_4_0: [&str; 39] = [
     "ARM",
     "ANGLE",
     "HORIZON",
@@ -127,6 +127,45 @@ const BOXES_4: [&str; 39] = [
     "ACROTRAINER",
     "VTXCONTROLDISABLE",
     "LAUNCHCONTROL",
+];
+
+/// Mode boxes of 4.2 to 4.5: `boxId_e` of the tags 4.2.11, 4.3.2, 4.4.3 and
+/// 4.5.5 (`fc/rc_modes.h`), the 32 boxes a log carries. Box 31 is PARALYZE;
+/// the user boxes come after it and are not logged. (The reader had USER1
+/// at bit 31, as the firmware's Blackbox Explorer names it.)
+const BOXES_4_2: [&str; 32] = [
+    "ARM",
+    "ANGLE",
+    "HORIZON",
+    "MAG",
+    "HEADFREE",
+    "PASSTHRU",
+    "FAILSAFE",
+    "GPSRESCUE",
+    "ANTIGRAVITY",
+    "HEADADJ",
+    "CAMSTAB",
+    "BEEPER",
+    "LEDLOW",
+    "CALIB",
+    "OSD",
+    "TELEMETRY",
+    "SERVO1",
+    "SERVO2",
+    "SERVO3",
+    "BLACKBOX",
+    "AIRMODE",
+    "3D",
+    "FPVANGLEMIX",
+    "BLACKBOXERASE",
+    "CAMERA1",
+    "CAMERA2",
+    "CAMERA3",
+    "FLIPOVERAFTERCRASH",
+    "PREARM",
+    "BEEPGPSCOUNT",
+    "VTXPITMODE",
+    "PARALYZE",
 ];
 
 /// Mode boxes of 2025.12: `boxId_e` of the tag 2025.12.5 (`fc/rc_modes.h`),
@@ -234,15 +273,17 @@ pub const BEFORE_4_0: Release = Release {
 const V4_0: Release = Release {
     name: "4.0",
     since: (4, 0),
-    // `vbatLatest` in 0.01 V and `amperageLatest` in 0.01 A: the 4.2
-    // fixtures (`vbatref` 2277 on a 6S pack in `betaflight-4.2.0.BFL`);
-    // `sensors/voltage.h` and `sensors/current.h` of the tag 4.3.2 say
-    // "0.01V steps" and "centiampere". Assumed for 4.0 and 4.1.
+    // `vbatLatest` in 0.01 V and `amperageLatest` in 0.01 A:
+    // `sensors/voltage.h` and `sensors/current.h` of the tags 4.2.11 and
+    // 4.3.2 say "0.01V steps" and "centiampere"; the 4.2 fixtures show it
+    // (`vbatref` 2277 on a 6S pack in `betaflight-4.2.0.BFL`). Assumed for
+    // 4.0 and 4.1.
     vbat_volts: 0.01,
-    // code 6 is `DEBUG_GYRO_SCALED` in `build/debug.h` of the tags 4.3.2 to
-    // 4.5.5; `betaflight-4.2.0.BFL` flew with it. Assumed for 4.0 and 4.1.
+    // code 6 is `DEBUG_GYRO_SCALED` in `build/debug.h` of the tags 4.2.11
+    // to 4.5.5; `betaflight-4.2.0.BFL` flew with it. Assumed for 4.0 and
+    // 4.1.
     debug_gyro_scaled: Some(6),
-    mode_boxes: &BOXES_4,
+    mode_boxes: &BOXES_4_0,
     ..BEFORE_4_0
 };
 
@@ -253,17 +294,19 @@ const V4_1: Release = Release {
     ..V4_0
 };
 
-/// 4.2. Fixtures `betaflight-4.2.0.BFL`, `betaflight-4.2.8-44-logs.bbl`,
-/// `betaflight-4.2.11-*.bbl`; no tag at hand.
+/// 4.2. Tag 4.2.11; fixtures `betaflight-4.2.0.BFL`,
+/// `betaflight-4.2.8-44-logs.bbl`, `betaflight-4.2.11-*.bbl`.
 const V4_2: Release = Release {
     name: "4.2",
     since: (4, 2),
-    // the dynamic low-pass got its curve in 4.2 with a default of 5, as
-    // the reader assumed before (no tag of 4.2 at hand); the tag 4.3.2 sets
+    // the dynamic low-pass has a curve with a default of 5: `flight/pid.c`
+    // of the tag 4.2.11 (`dyn_lpf_curve_expo = 5`); the tag 4.3.2 sets
     // `gyro_lpf1_dyn_expo = 5` (`sensors/gyro.c`) and `dterm_lpf1_dyn_expo
     // = 5` (`flight/pid.c`). The header came in 4.5 (tag 4.5.5,
-    // `blackbox.c`).
+    // `blackbox.c`). That 4.0 and 4.1 have no curve is what the reader
+    // assumed before.
     dyn_lpf_expo: 5.0,
+    mode_boxes: &BOXES_4_2,
     ..V4_1
 };
 
@@ -546,6 +589,11 @@ mod tests {
         assert!(!line("4.5").servo_group && line("2025.12").servo_group);
         assert!(!line("4.5").gps_speed_3d && line("2025.12").gps_speed_3d);
         assert_eq!(line("4.5").mode_boxes[4], "HEADFREE");
+        // 4.2 to 4.5: the 32nd box is PARALYZE, not the first user box
+        for name in ["4.2", "4.3", "4.4", "4.5"] {
+            assert_eq!(line(name).mode_boxes.len(), 32, "{name}");
+            assert_eq!(line(name).mode_boxes[30..], ["VTXPITMODE", "PARALYZE"]);
+        }
         assert_eq!(line("2025.12").mode_boxes[4], "ALTHOLD");
         assert_eq!(line("2025.12").mode_boxes[9], "POSHOLD");
         // 2026.6: AUTOPILOT after GPSRESCUE

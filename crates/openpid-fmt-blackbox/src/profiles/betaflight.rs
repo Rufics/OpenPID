@@ -251,6 +251,13 @@ mod tests {
             ]
         );
         assert!(!n.contains(&"GTUNE") && n.contains(&"AIRMODE"));
+        // the last bit a log carries is PARALYZE (`fc/rc_modes.h` of the
+        // tags 4.2.11 to 4.5.5), not USER1 as the reader had it
+        let (v, h) = (fw(bf.clone(), 4, 5, 1), RawHeaders::default());
+        assert_eq!(
+            Betaflight.bind(&v, &h).flight_modes(1 << 31),
+            [FlightMode::Other("PARALYZE".into())]
+        );
         // 3.3: no GPSRESCUE yet, RANGEFINDER still there
         let n = box_names(&fw(bf.clone(), 3, 3, 0));
         assert!(!n.contains(&"GPSRESCUE") && n.contains(&"RANGEFINDER"));
