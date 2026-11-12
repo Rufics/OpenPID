@@ -335,3 +335,35 @@ fn a_newer_betaflight_is_read_as_the_newest_known_line_and_says_so() {
             .any(|n| n.contains("read as"))
     );
 }
+
+/// `docs/BLACKBOX-VERSIONS.md` is the readable form of the release
+/// descriptions: it has a row for every line, and says where each was read.
+#[test]
+fn docs_name_every_release_line() {
+    use openpid_fmt_blackbox::releases::LINES;
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/BLACKBOX-VERSIONS.md");
+    let doc = std::fs::read_to_string(path).unwrap();
+    let table = doc.split("## The release lines").nth(1).unwrap();
+    let table = table.split("\n## ").next().unwrap();
+    let rows: Vec<&str> = table.lines().filter(|l| l.starts_with("| ")).collect();
+    for line in &LINES {
+        let row = rows
+            .iter()
+            .find(|r| r.starts_with(&format!("| {} |", line.name)))
+            .unwrap_or_else(|| panic!("no row for the {} line", line.name));
+        let source = row.split('|').nth(2).unwrap();
+        assert!(
+            source.contains("tag") || source.contains("master") || source.contains("previous"),
+            "{}: the row says where it was read: {source}",
+            line.name
+        );
+        assert_eq!(
+            source.contains("not released") || source.contains("working name"),
+            line.provisional,
+            "{}",
+            line.name
+        );
+    }
+    assert_eq!(rows.len(), LINES.len() + 1, "the header and a row per line");
+}
