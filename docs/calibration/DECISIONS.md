@@ -76,6 +76,21 @@ Taken by the owner on 2026-11-11:
 | The owner's decision | **A**, 2026-11-11: the reference tool's curve by default, OpenPID's density as a second mode |
 | Carried out by | #181 |
 
+### D-002 What the Step response curve is
+
+| Field | |
+|---|---|
+| Id | D-002 |
+| Area | Step response: the mean curve, its peak, the time to 50 %, the number of windows |
+| Probe | `t1-plants-2k`, `t2-plants-1k`, `t3-plants-4k`, `t9-short-2k` of round 4 (pack `dad54b3`): random stick moves through a pure delay of 10 ms, a first-order plant (20 ms after 5 ms) and a second-order plant (15 Hz, damping 0.4, after 5 ms), whose step responses are known in closed form |
+| The reference tool shows | the true response to a few thousandths: a peak of 0.9998 on the delay and 1.2511 … 1.2525 on the second-order plant at 1, 2 and 4 kHz; the half-way time within 0.08 ms on the two smooth plants; 256 … 259 windows for 30 s ([step.md](step.md)). How it computes a window's response is not identified yet |
+| OpenPID shows | the same bias on every log: a peak of 1.06 on the pure delay, 1.29 … 1.30 on the second-order plant; the half-way time 0.5 ms early on the second-order plant and 1 ms late on the first-order one; 207 … 209 windows (`openpid run step`) |
+| The exact value | the delay: no overshoot, a step at 10 ms. The second-order plant: a peak of 1.2538 (`exp(−π·ζ/√(1−ζ²))` over 1), half way at 18.110 ms. The first-order plant: no overshoot, half way at 18.863 ms |
+| Options | **A.** OpenPID computes the response as the reference tool does, once that is identified in the next rounds: the same curve, peak and window count as the reference tool, and on these probes the truth. **B.** OpenPID keeps its own estimator and it is corrected against the closed-form responses (its smoothing of the spectrum and its regularisation are what bias it); numbers stay close to the reference tool's without being the same. **C.** No change; the bias is documented. |
+| Recommendation | A, if the identified method stays as close to the truth on the confirming and the hold-out rounds as it is here: then matching the reference tool and being right are the same change. To be put to the owner when the method is identified |
+| The owner's decision | open: waits for the identification (rounds 5 and 6) |
+| Carried out by | — |
+
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
 call.

@@ -177,7 +177,7 @@ the three log rates) and by the window count in the legend.
   at 20.30 and 18.08 ms. For the pure delay of 10 ms it reads 10.0, 9.5
   and 9.25 ms at 1, 2 and 4 kHz.
 - **SP-Gyro Delay** reads 10.000 ms for the pure delay at all three rates,
-  and 18.0 … 18.9 ms for the other plants, in steps of an eighth of a
+  and 17.4 … 18.9 ms for the other plants, in steps of an eighth of a
   millisecond.
 
 ### Not settled yet
