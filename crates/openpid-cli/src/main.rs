@@ -507,6 +507,35 @@ fn parse_axis(s: Option<&str>) -> Result<openpid_core::Axis, String> {
     }
 }
 
+/// The method of `run step`: `--method`, or the project's.
+fn step_method(
+    arg: Option<&str>,
+    default: openpid_analysis::StepMethod,
+) -> Result<openpid_analysis::StepMethod, String> {
+    match arg {
+        None => Ok(default),
+        Some("division") => Ok(openpid_analysis::StepMethod::Division),
+        Some("wiener") => Ok(openpid_analysis::StepMethod::Wiener),
+        Some(other) => Err(format!("unknown method {other}: division or wiener")),
+    }
+}
+
+/// The smoothing level of `run step`: `--smoothing` by its name, or the
+/// project's.
+fn step_smoothing(arg: Option<&str>, default: usize) -> Result<usize, String> {
+    let levels = openpid_analysis::step_windows::SMOOTHING;
+    let Some(name) = arg else {
+        return Ok(default);
+    };
+    levels
+        .iter()
+        .position(|(level, _)| *level == name)
+        .ok_or_else(|| {
+            let names: Vec<&str> = levels.iter().map(|(level, _)| *level).collect();
+            format!("unknown smoothing level {name}: {}", names.join(", "))
+        })
+}
+
 fn cmd_run(args: &Args) -> Result<(), String> {
     use openpid_analysis::{Analysis, AnalysisCtx, Epoch};
     let analysis = args
@@ -592,25 +621,8 @@ fn cmd_run(args: &Args) -> Result<(), String> {
     let mut grid: Option<openpid_core::analysis::Grid2D> = None;
     let json = match analysis {
         "step" => {
-            let method = match args.method.as_deref() {
-                None => base.step.method,
-                Some("division") => openpid_analysis::StepMethod::Division,
-                Some("wiener") => openpid_analysis::StepMethod::Wiener,
-                Some(other) => {
-                    return Err(format!("unknown method {other}: division or wiener"));
-                }
-            };
-            let levels = openpid_analysis::step_windows::SMOOTHING;
-            let smoothing = match args.smoothing.as_deref() {
-                None => base.step.smoothing,
-                Some(name) => levels
-                    .iter()
-                    .position(|(level, _)| *level == name)
-                    .ok_or_else(|| {
-                        let names: Vec<&str> = levels.iter().map(|(level, _)| *level).collect();
-                        format!("unknown smoothing level {name}: {}", names.join(", "))
-                    })?,
-            };
+            let method = step_method(args.method.as_deref(), base.step.method)?;
+            let smoothing = step_smoothing(args.smoothing.as_deref(), base.step.smoothing)?;
             let p = openpid_analysis::StepParams {
                 axis,
                 method,
