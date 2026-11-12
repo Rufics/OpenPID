@@ -12,6 +12,7 @@ use crate::capture;
 use crate::catalogue::{self, Area, Probe};
 use crate::model;
 use crate::signal::{AxisSamples, FlightSpec, Wave, band_bins};
+use crate::step_model;
 use openpid_analysis::{Analysis, AnalysisCtx, Epoch, PsdAnalysis, PsdParams};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, LogFormat, OpenOptions};
 use openpid_dsp::Fft;
@@ -269,6 +270,75 @@ pub struct PredictedProbe {
     pub levels: Vec<PredictedLevel>,
 }
 
+/// The value the model expects at one point of a step response.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PredictedStepPoint {
+    /// Time of the point, ms.
+    pub ms: f64,
+    /// The response there.
+    pub value: f64,
+}
+
+/// What the model expects of the step response of one axis at one
+/// smoothing level. With no window that counts, only the counts are there.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PredictedStepLevel {
+    /// Name of the level in the tool's list.
+    pub smoothing: &'static str,
+    /// Windows that count: the `n` of the tool's legend.
+    pub windows: usize,
+    /// The same if the limit a response has to keep "from 150 ms on" is a
+    /// number of samples (the 300 it is at 2 kHz) and not a time.
+    pub windows_if_from_sample_300: usize,
+    /// "Peak": the highest value of the curve.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak: Option<f64>,
+    /// "Peak" if the tool looks at the first 150, 200, 250 and 300 ms only
+    /// (round 4: it stops somewhere between 137 and 324 ms).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub peak_within: Vec<PredictedStepPoint>,
+    /// The bar of "Peak".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_bar: Option<f64>,
+    /// "SR Latency", ms.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latency_ms: Option<f64>,
+    /// The bar of "SR Latency", ms.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latency_bar_ms: Option<f64>,
+    /// The curve at the times of [`PREDICTED_MS`].
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub curve: Vec<PredictedStepPoint>,
+}
+
+/// What the model expects of the step response of one axis.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PredictedStepAxis {
+    /// `roll`, `pitch` or `yaw`.
+    pub axis: &'static str,
+    /// "SP-Gyro Delay", ms (the part of the model that missed two plots of
+    /// 27 in round 4).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sp_gyro_ms: Option<f64>,
+    /// Without smoothing, and at the levels the round captures.
+    pub levels: Vec<PredictedStepLevel>,
+}
+
+/// What the model expects of the step response window for one probe.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PredictedStepProbe {
+    /// Id of the probe.
+    pub id: &'static str,
+    /// First sample of the first window, counting from 0.
+    pub first_sample: usize,
+    /// Samples in a window and between the starts of two windows.
+    pub window: (usize, usize),
+    /// Windows the log holds, counted or not.
+    pub windows_in_log: usize,
+    /// The three axes.
+    pub axes: Vec<PredictedStepAxis>,
+}
+
 /// `predictions.json`: what the model of the reference tool expects it to
 /// show for the logs of the pack.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -279,8 +349,12 @@ pub struct Predictions {
     pub round: u32,
     /// What the model assumes where the rounds so far leave a choice.
     pub assumes: Vec<&'static str>,
-    /// The probes.
+    /// The spectrum of every probe of a spectrum round.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub probes: Vec<PredictedProbe>,
+    /// The step response of every probe of a step-response round.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub step: Vec<PredictedStepProbe>,
 }
 
 /// The frequencies at which a prediction is written down, Hz (those below
@@ -298,6 +372,29 @@ const ASSUMES: [&str; 3] = [
      the log without its first and last second (round 2; at 8 kHz it was one sample longer)",
     "a realistic flight is treated as the probes were: nothing but the trim, the transform \
      and the smoothing",
+];
+
+/// The times at which a predicted step response is written down, ms.
+pub const PREDICTED_MS: [f64; 18] = [
+    0.0, 5.0, 10.0, 12.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 75.0, 100.0, 150.0, 200.0, 250.0,
+    300.0, 400.0, 500.0,
+];
+
+/// What the predictions of a step-response round rest on beyond what is
+/// measured.
+const STEP_ASSUMES: [&str; 6] = [
+    "the regression windows of the smoothing levels are 5, 11 and 21 samples at every log \
+     rate (found at 2 kHz only)",
+    "a response has to stay between 0.5 and 1.5 from 150 ms on (found at 2 kHz, where it is \
+     sample 294 to 317; windows_if_from_sample_300 is the count if it is a number of samples)",
+    "a window needs a mean stick distance of 20 deg/s or more (round 4: between 19.85 and \
+     20.06); exactly 20 is taken to count",
+    "the first window starts two samples after the first second (for one log of round 4, of \
+     12 s, it was three)",
+    "the peak is the highest value of the whole curve (round 4: the tool stops looking \
+     somewhere between 137 and 324 ms; peak_within gives the other readings)",
+    "the delay between setpoint and gyro is read at 8 kHz from straight lines between the \
+     samples, up to 200 ms (right on 25 of 27 plots of round 4, none of them above 19 ms)",
 ];
 
 /// A built pack.
@@ -571,14 +668,130 @@ fn predicted(
     })
 }
 
+/// The setpoint of an axis as a written log holds it.
+fn logged_setpoint(
+    session: &FlightSession,
+    axis: Axis,
+    probe: &'static str,
+) -> Result<Vec<f64>, PackError> {
+    let id = ChannelId::Setpoint { axis };
+    session
+        .channel(&id)
+        .filter(|c| c.data.all_valid())
+        .map(|c| c.data.values().to_vec())
+        .ok_or_else(|| PackError::Read {
+            probe,
+            message: format!("the written log has no complete {} channel", id.key()),
+        })
+}
+
+/// One smoothing level of one axis as the model expects it.
+fn predicted_step_level(
+    setpoint: &[f64],
+    gyro: &[f64],
+    fs: f64,
+    level: usize,
+) -> Option<PredictedStepLevel> {
+    let (grid, windows) = step_model::candidates(setpoint, gyro, fs, level, step_model::LATE)?;
+    let at = |ms: f64| (ms * fs / 1000.0).round() as usize;
+    // the other reading of the limit: from sample 300 on at every rate
+    let if_samples = windows
+        .iter()
+        .filter(|w| step_model::settled(&w.response, 300))
+        .count();
+    let step = step_model::read(grid, windows, fs, step_model::settled_from(fs));
+    let some = !step.windows.is_empty();
+    let highest = |until: usize| {
+        step.mean[..=until.min(step.mean.len() - 1)]
+            .iter()
+            .copied()
+            .fold(f64::MIN, f64::max)
+    };
+    Some(PredictedStepLevel {
+        smoothing: step_model::SMOOTHING[level].0,
+        windows: step.windows.len(),
+        windows_if_from_sample_300: if_samples,
+        peak: some.then(|| rounded(step.peak)),
+        peak_within: if some {
+            [150.0, 200.0, 250.0, 300.0]
+                .into_iter()
+                .map(|ms| PredictedStepPoint {
+                    ms,
+                    value: rounded(highest(at(ms))),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
+        peak_bar: some.then(|| rounded(step.peak_spread)),
+        latency_ms: some.then(|| rounded(step.latency_ms)),
+        latency_bar_ms: some.then(|| rounded(step.latency_spread_ms)),
+        curve: if some {
+            PREDICTED_MS
+                .into_iter()
+                .map(|ms| PredictedStepPoint {
+                    ms,
+                    value: rounded(step.mean[at(ms)]),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
+    })
+}
+
+/// The step response the model of the reference tool expects for a
+/// written log: without smoothing, and at the three levels when the round
+/// captures them for the probe.
+fn predicted_step(session: &FlightSession, probe: &Probe) -> Result<PredictedStepProbe, PackError> {
+    let id = probe.id;
+    let fs = probe.flight.fs;
+    let too_short = || PackError::Read {
+        probe: id,
+        message: "the log is too short for the reference tool's step response".into(),
+    };
+    let levels = if capture::smoothing_captured(probe) {
+        step_model::SMOOTHING.len()
+    } else {
+        1
+    };
+    let mut axes = Vec::new();
+    let mut grid = None;
+    for axis in Axis::ALL {
+        let setpoint = logged_setpoint(session, axis, id)?;
+        let gyro = logged(session, axis, GyroStage::Filtered, id)?;
+        grid = step_model::grid(setpoint.len().min(gyro.len()), fs, step_model::LATE);
+        let levels = (0..levels)
+            .map(|level| predicted_step_level(&setpoint, &gyro, fs, level))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(too_short)?;
+        axes.push(PredictedStepAxis {
+            axis: axis_name(axis),
+            sp_gyro_ms: step_model::sp_gyro_delay_ms(&setpoint, &gyro, fs).map(rounded),
+            levels,
+        });
+    }
+    let grid = grid.ok_or_else(too_short)?;
+    Ok(PredictedStepProbe {
+        id,
+        first_sample: grid.first,
+        window: (grid.length, grid.hop),
+        windows_in_log: grid.count,
+        axes,
+    })
+}
+
 /// One probe as the pack holds it.
 struct Built {
     /// Its entry in the manifest.
     entry: ProbeEntry,
     /// `OpenPID`'s results.
     ours: OursProbe,
-    /// What the model of the reference tool expects.
-    predicted: PredictedProbe,
+    /// What the model of the reference tool expects of its spectrum, for
+    /// a probe of that window.
+    predicted: Option<PredictedProbe>,
+    /// ... and of its step response, for a probe of that one.
+    predicted_step: Option<PredictedStepProbe>,
     /// The log.
     bytes: Vec<u8>,
 }
@@ -675,7 +888,12 @@ fn build_probe(probe: &Probe) -> Result<Built, PackError> {
     Ok(Built {
         entry,
         ours,
-        predicted: predicted(&session, flight.fs, id)?,
+        predicted: (probe.area == Area::Spectrum)
+            .then(|| predicted(&session, flight.fs, id))
+            .transpose()?,
+        predicted_step: (probe.area == Area::StepResponse)
+            .then(|| predicted_step(&session, probe))
+            .transpose()?,
         bytes,
     })
 }
@@ -701,22 +919,36 @@ pub fn build(round: u32, built_from: &str) -> Result<Pack, PackError> {
     };
     let mut logs = Vec::new();
     let mut expected = Vec::new();
+    let mut expected_step = Vec::new();
     for probe in &probes {
         let built = build_probe(probe)?;
         logs.push((built.entry.file.clone(), built.bytes));
         manifest.probes.push(built.entry);
         ours.probes.push(built.ours);
-        expected.push(built.predicted);
+        expected.extend(built.predicted);
+        expected_step.extend(built.predicted_step);
     }
-    // round 1 was run before there was a model: its pack stays as it was;
-    // the model is of the spectrum, so it predicts for spectrum rounds only
-    let spectrum = probes.iter().any(|p| p.area == Area::Spectrum);
-    let predictions = (round >= 2 && spectrum).then(|| Predictions {
-        format: FORMAT,
-        round,
-        assumes: ASSUMES.to_vec(),
-        probes: expected,
-    });
+    // rounds 1 and 4 were run before there was a model of their window:
+    // their packs stay as they were
+    let predictions = if round >= 2 && !expected.is_empty() {
+        Some(Predictions {
+            format: FORMAT,
+            round,
+            assumes: ASSUMES.to_vec(),
+            probes: expected,
+            step: Vec::new(),
+        })
+    } else if round >= 5 && !expected_step.is_empty() {
+        Some(Predictions {
+            format: FORMAT,
+            round,
+            assumes: STEP_ASSUMES.to_vec(),
+            probes: Vec::new(),
+            step: expected_step,
+        })
+    } else {
+        None
+    };
     Ok(Pack {
         plan: capture::plan(round, &probes),
         manifest,
