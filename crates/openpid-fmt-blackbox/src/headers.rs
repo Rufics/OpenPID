@@ -2,6 +2,7 @@
 
 use crate::encoding;
 use crate::predictor;
+use crate::releases;
 use openpid_core::{FirmwareInfo, FirmwareVendor, RawHeaders};
 use std::collections::BTreeMap;
 
@@ -165,7 +166,8 @@ pub struct Headers {
     /// Firmware identity from the `Firmware revision` header.
     pub firmware: FirmwareInfo,
     /// The firmware writes the servo array of a main frame as one group of
-    /// the 8-value encoding of its own, whatever stands before it.
+    /// the 8-value encoding of its own, whatever stands before it; from the
+    /// release line of the log ([`crate::releases::Release::servo_group`]).
     ///
     /// Betaflight since 2025.12 logs `servo[0..7]` that way (tags 2025.12.2
     /// and 2026.6.2, `blackbox.c`: `writeInterframe` writes the optional
@@ -244,7 +246,8 @@ impl Headers {
         }
         let mut firmware = FirmwareInfo::parse_revision(raw.get("Firmware revision").unwrap_or(""));
         firmware.build_date = raw.get("Firmware date").map(str::to_string);
-        let servo_group = firmware.vendor == FirmwareVendor::Betaflight;
+        let servo_group = firmware.vendor == FirmwareVendor::Betaflight
+            && releases::select(&firmware).release.servo_group;
         if servo_group {
             for ft in *b"IP" {
                 if let Some(def) = defs.get_mut(&ft) {

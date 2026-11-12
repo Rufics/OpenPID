@@ -234,13 +234,13 @@ impl BoundProfile for Bound<'_> {
     }
 
     fn settings(&self) -> Settings {
-        let (fw, h) = (self.0.fw, self.0.h);
+        let (release, h) = (self.0.release, self.0.h);
         let mut s = self.0.settings();
         s.gyro_filters = gyro_filters(h);
         s.dterm_filters = dterm_filters(h);
         // INAV logs none of Betaflight's detail headers: the defaults apply
-        common::filter_details(&mut s.gyro_filters, "gyro", fw, h);
-        common::filter_details(&mut s.dterm_filters, "dterm", fw, h);
+        common::filter_details(&mut s.gyro_filters, "gyro", release, h);
+        common::filter_details(&mut s.dterm_filters, "dterm", release, h);
         for key in [
             "gyro_lpf_hz",
             "gyro_lpf_type",

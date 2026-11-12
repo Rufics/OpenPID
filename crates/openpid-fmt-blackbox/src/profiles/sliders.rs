@@ -8,6 +8,7 @@
 //! the model is selected by firmware version. Verified against real logs in
 //! the tests; gains set by a preset or by hand can of course differ.
 
+use crate::releases::Release;
 use openpid_core::settings::{PerAxis, PidGains};
 use openpid_core::{
     FirmwareInfo, FirmwareVersion, RawHeaders, SliderDef, SliderModel, SliderResult, SliderValues,
@@ -34,8 +35,7 @@ struct Defaults {
 }
 
 fn defaults_for(version: Option<FirmwareVersion>) -> Defaults {
-    let modern = version.is_some_and(|v| v >= FirmwareVersion::new(2025, 12, 0));
-    if modern {
+    if Release::of_number(version).d_max_scheme {
         Defaults {
             pid: [
                 [45.0, 80.0, 30.0, 120.0],
@@ -183,7 +183,7 @@ impl BetaflightSliders {
             "simplified_gyro_filter".into(),
             h.get_f64("simplified_gyro_filter").unwrap_or(1.0),
         );
-        let logged = super::common::settings(firmware, h).pid;
+        let logged = super::common::settings(Release::of_number(firmware.version), h).pid;
         let list = |k: &str| h.get_list(k).unwrap_or_default();
         let gyro_dyn_hz = list("gyro_lpf1_dyn_hz");
         let dterm_dyn_hz = list("dterm_lpf1_dyn_hz");

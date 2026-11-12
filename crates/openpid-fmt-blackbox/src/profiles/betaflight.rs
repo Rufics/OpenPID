@@ -2,6 +2,7 @@
 
 use super::common::{self, Log};
 use crate::cli::BetaflightCli;
+use crate::releases::{self, Release, Selection};
 use openpid_core::{
     BoundProfile, Exporter, FieldMapping, FirmwareInfo, FirmwareProfile, FirmwareVendor,
     FirmwareVersion, FlightMode, FlightSession, RawHeaders, Settings, SliderModel,
@@ -48,7 +49,8 @@ const BOXES_PRE_3_3: [&str; 37] = [
     "PREARM",
 ];
 
-/// Mode boxes of Betaflight 3.3 to 2025.12, before the removals of later versions.
+/// Mode boxes of Betaflight 3.3 to 3.5, before the removals of its later
+/// versions.
 const BOXES_BF_3_3: [&str; 48] = [
     "ARM",
     "ANGLE",
@@ -100,55 +102,14 @@ const BOXES_BF_3_3: [&str; 48] = [
     "LAUNCHCONTROL",
 ];
 
-/// Mode boxes of Betaflight 2025.12 on.
-const BOXES_BF_2025_12: [&str; 42] = [
-    "ARM",
-    "ANGLE",
-    "HORIZON",
-    "MAG",
-    "ALTHOLD",
-    "HEADFREE",
-    "CHIRP",
-    "PASSTHRU",
-    "FAILSAFE",
-    "POSHOLD",
-    "GPSRESCUE",
-    "ANTIGRAVITY",
-    "HEADADJ",
-    "CAMSTAB",
-    "BEEPER",
-    "LEDLOW",
-    "CALIB",
-    "OSD",
-    "TELEMETRY",
-    "SERVO1",
-    "SERVO2",
-    "SERVO3",
-    "BLACKBOX",
-    "AIRMODE",
-    "3D",
-    "FPVANGLEMIX",
-    "BLACKBOXERASE",
-    "CAMERA1",
-    "CAMERA2",
-    "CAMERA3",
-    "FLIPOVERAFTERCRASH",
-    "PREARM",
-    "BEEPGPSCOUNT",
-    "VTXPITMODE",
-    "USER1",
-    "USER2",
-    "USER3",
-    "USER4",
-    "PIDAUDIO",
-    "ACROTRAINER",
-    "VTXCONTROLDISABLE",
-    "LAUNCHCONTROL",
-];
-
-/// The mode boxes of `fw` in the bit order of `flightModeFlags`, as the
-/// firmware and its Blackbox Explorer name them.
-fn box_names(fw: &FirmwareInfo) -> Vec<&'static str> {
+/// The mode boxes of `fw` in the bit order of `flightModeFlags`. From 4.0
+/// on they are a fact of the release line ([`Release::mode_boxes`]); for
+/// Betaflight before 4.0 and for Cleanflight, which have no release line
+/// here, they are the lists the firmware's Blackbox Explorer names.
+fn box_names(fw: &FirmwareInfo, release: &Release) -> Vec<&'static str> {
+    if fw.vendor == FirmwareVendor::Betaflight && !release.is_before_4_0() {
+        return release.mode_boxes.to_vec();
+    }
     let v = fw.version.unwrap_or(FirmwareVersion::new(0, 0, 0));
     let at_least = |major, minor, patch| v >= FirmwareVersion::new(major, minor, patch);
     if fw.vendor != FirmwareVendor::Betaflight || !at_least(3, 3, 0) {
@@ -160,38 +121,25 @@ fn box_names(fw: &FirmwareInfo) -> Vec<&'static str> {
             .filter(|n| !(without && *n == "ANTIGRAVITY"))
             .collect();
     }
-    let mut names: Vec<&'static str> = if at_least(2025, 12, 0) {
-        BOXES_BF_2025_12.to_vec()
-    } else {
-        let mut removed: Vec<&str> = Vec::new();
-        if !at_least(3, 4, 0) {
-            removed.push("GPSRESCUE");
-        }
-        if at_least(3, 5, 0) {
-            removed.extend([
-                "RANGEFINDER",
-                "CAMTRIG",
-                "LEDMAX",
-                "LLIGHTS",
-                "GOV",
-                "GTUNE",
-            ]);
-        }
-        if at_least(4, 0, 0) {
-            removed.extend(["BARO", "GPSHOME", "GPSHOLD"]);
-        }
-        BOXES_BF_3_3
-            .iter()
-            .copied()
-            .filter(|n| !removed.contains(n))
-            .collect()
-    };
-    if at_least(2026, 6, 0)
-        && let Some(i) = names.iter().position(|n| *n == "GPSRESCUE")
-    {
-        names.insert(i + 1, "AUTOPILOT");
+    let mut removed: Vec<&str> = Vec::new();
+    if !at_least(3, 4, 0) {
+        removed.push("GPSRESCUE");
     }
-    names
+    if at_least(3, 5, 0) {
+        removed.extend([
+            "RANGEFINDER",
+            "CAMTRIG",
+            "LEDMAX",
+            "LLIGHTS",
+            "GOV",
+            "GTUNE",
+        ]);
+    }
+    BOXES_BF_3_3
+        .iter()
+        .copied()
+        .filter(|n| !removed.contains(n))
+        .collect()
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -212,51 +160,65 @@ impl FirmwareProfile for Betaflight {
     }
 
     fn bind<'a>(&self, fw: &'a FirmwareInfo, h: &'a RawHeaders) -> Box<dyn BoundProfile + 'a> {
-        Box::new(Bound(Log::new(fw, h, box_names(fw))))
+        // the release line of the log: everything that depends on the
+        // version is read from it
+        let Selection { release, note } = releases::select(fw);
+        let log = Log::new(fw, h, box_names(fw, release));
+        debug_assert!(std::ptr::eq(log.release, release));
+        Box::new(Bound { log, note })
     }
 }
 
 /// The profile of one Betaflight log.
-struct Bound<'a>(Log<'a>);
+struct Bound<'a> {
+    log: Log<'a>,
+    /// What there is to say about the release line the log is read as.
+    note: Option<String>,
+}
 
 impl BoundProfile for Bound<'_> {
     fn map_field(&self, field: &str) -> Option<FieldMapping> {
-        self.0.map_field(field)
+        self.log.map_field(field)
     }
 
     fn settings(&self) -> Settings {
-        let mut s = self.0.settings();
+        let mut s = self.log.settings();
         // Cleanflight is read with this profile too; the words are Betaflight's
-        if self.0.fw.vendor == FirmwareVendor::Betaflight {
-            s.details = super::details::betaflight(self.0.fw, self.0.h);
+        if self.log.fw.vendor == FirmwareVendor::Betaflight {
+            s.details = super::details::betaflight(self.log.fw, self.log.h);
         }
         s
     }
 
     fn derive(&self, session: &mut FlightSession) {
         common::derive(session);
+        session.diagnostics.notes.extend(self.note.clone());
     }
 
     fn flight_modes(&self, word: i64) -> Vec<FlightMode> {
-        self.0.flight_modes(word)
+        self.log.flight_modes(word)
     }
 
     fn slider_model(&self) -> Option<Box<dyn SliderModel>> {
-        super::sliders::BetaflightSliders::from_headers(self.0.fw, self.0.h)
+        super::sliders::BetaflightSliders::from_headers(self.log.fw, self.log.h)
             .map(|m| Box::new(m) as Box<dyn SliderModel>)
     }
 
     fn exporter(&self) -> Option<Box<dyn Exporter>> {
         // Cleanflight is read with this profile too, but its CLI has other
         // setting names
-        (self.0.fw.vendor == FirmwareVendor::Betaflight)
-            .then(|| Box::new(BetaflightCli::for_log(self.0.fw, self.0.h)) as Box<dyn Exporter>)
+        (self.log.fw.vendor == FirmwareVendor::Betaflight)
+            .then(|| Box::new(BetaflightCli::for_log(self.log.fw, self.log.h)) as Box<dyn Exporter>)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn box_names(fw: &FirmwareInfo) -> Vec<&'static str> {
+        super::box_names(fw, releases::select(fw).release)
+    }
 
     fn fw(vendor: FirmwareVendor, major: u32, minor: u32, patch: u32) -> FirmwareInfo {
         FirmwareInfo {

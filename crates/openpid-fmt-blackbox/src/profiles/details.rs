@@ -8,6 +8,7 @@
 //! other units, Rotorflight's rate types are its own), so only the
 //! Betaflight profile calls this.
 
+use crate::releases::Release;
 use openpid_core::settings::Detail;
 use openpid_core::{FirmwareInfo, RawHeaders};
 use std::fmt::Write as _;
@@ -244,7 +245,7 @@ fn battery(h: &RawHeaders) -> Option<Detail> {
 /// The settings of a Betaflight log in words, in the order to show them.
 /// Nothing for Betaflight before 4.0, whose headers had other units.
 pub fn betaflight(fw: &FirmwareInfo, h: &RawHeaders) -> Vec<Detail> {
-    if !fw.is_at_least(4, 0) {
+    if Release::of_number(fw.version).is_before_4_0() {
         return Vec::new();
     }
     let mut out = Vec::new();

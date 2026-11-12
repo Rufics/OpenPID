@@ -2,14 +2,14 @@
 //! Cleanflight-descended firmwares. Each concrete profile only adjusts the
 //! [`Scales`] and overrides the few fields that differ.
 
+use crate::releases::Release;
 use openpid_core::settings::{
     DebugMode, DynNotch, FilterChain, LoopRates, Lowpass, LowpassKind, MotorConfig, Notch, PerAxis,
     PidGains, RpmNotch,
 };
 use openpid_core::{
     Axis, BatteryField, Channel, ChannelId, FieldMapping, FirmwareInfo, FirmwareVendor,
-    FirmwareVersion, FlightSession, GyroStage, Origin, PidTerm, RawHeaders, Series, Settings,
-    StickAxis, Unit,
+    FlightSession, GyroStage, Origin, PidTerm, RawHeaders, Series, Settings, StickAxis, Unit,
 };
 
 /// `gyroADC[2]` -> (`gyroADC`, Some(2)).
@@ -48,8 +48,11 @@ pub struct Scales {
 }
 
 impl Scales {
-    /// Betaflight 4.x conventions (centivolts, high-resolution flag, `rc_command_scale`).
-    pub fn betaflight(fw: &FirmwareInfo, h: &RawHeaders) -> Scales {
+    /// The scales of a log of the release line `release`. The headers of
+    /// the log win where they state a scale (`blackbox_high_resolution`,
+    /// `rc_command_scale`, `gyro_scale`, `acc_1G`, `motorOutput`); the
+    /// release says what holds without them.
+    pub fn of(release: &Release, h: &RawHeaders) -> Scales {
         let hires = if h.get_i64("blackbox_high_resolution") == Some(1) {
             10.0
         } else {
@@ -62,6 +65,7 @@ impl Scales {
         let rc_fraction = h
             .get_f64("rc_command_scale")
             .filter(|s| *s > 0.0)
+            .or(release.rc_command_scale)
             .map(|s| s * hires);
         let (rc, rc_throttle) = match rc_fraction {
             Some(one) => (RC_FULL / one, (RC_THROTTLE_SPAN / one, one)),
@@ -74,8 +78,8 @@ impl Scales {
             rc,
             rc_throttle,
             acc: h.get_f64("acc_1G").filter(|g| *g > 0.0).map(|g| 1.0 / g),
-            vbat: if fw.is_at_least(4, 0) { 0.01 } else { 0.1 },
-            amperage: 0.01,
+            vbat: release.vbat_volts,
+            amperage: release.amperage_amps,
             motor_low,
             motor_high,
         }
@@ -91,6 +95,10 @@ pub struct Log<'a> {
     pub fw: &'a FirmwareInfo,
     /// The log's headers.
     pub h: &'a RawHeaders,
+    /// The Betaflight release line the log is read as: the line of its
+    /// version for Betaflight, the line of the same number for a fork (see
+    /// [`Release::of_number`]).
+    pub release: &'static Release,
     /// Raw-to-physical scale factors of the log.
     pub scales: Scales,
     /// The mode boxes of `flightModeFlags`, in bit order.
@@ -104,10 +112,12 @@ impl<'a> Log<'a> {
         h: &'a RawHeaders,
         boxes: impl Into<std::borrow::Cow<'static, [&'static str]>>,
     ) -> Self {
+        let release = Release::of_number(fw.version);
         Log {
             fw,
             h,
-            scales: Scales::betaflight(fw, h),
+            release,
+            scales: Scales::of(release, h),
             boxes: boxes.into(),
         }
     }
@@ -119,7 +129,7 @@ impl<'a> Log<'a> {
 
     /// The settings the whole family logs alike.
     pub fn settings(&self) -> Settings {
-        settings(self.fw, self.h)
+        settings(self.release, self.h)
     }
 
     /// The modes whose boxes are set in `word`.
@@ -302,15 +312,15 @@ fn lowpass(
 /// curve of the dynamic low-pass, the fade-in, weights and motor-speed
 /// smoothing of the RPM notches, the number of dynamic notches. From
 /// Betaflight's headers and, where one is missing, Betaflight's default of
-/// that version: the expo curve since 4.2 (5), the fade-in (50 Hz) and three
-/// dynamic notches since 4.3. The forks that log none of these headers get
-/// the defaults of their own version number, as the filter model has always
-/// assumed. `prefix` is `gyro` or `dterm`.
-pub fn filter_details(chain: &mut FilterChain, prefix: &str, fw: &FirmwareInfo, h: &RawHeaders) {
+/// that release line: the expo curve since 4.2 (5), the fade-in (50 Hz) and
+/// three dynamic notches since 4.3. The forks that log none of these
+/// headers get the defaults of the line of their own version number, as
+/// the filter model has always assumed. `prefix` is `gyro` or `dterm`.
+pub fn filter_details(chain: &mut FilterChain, prefix: &str, release: &Release, h: &RawHeaders) {
     let expo = h
         .get_f64(&format!("{prefix}_lpf1_dyn_expo"))
         .or_else(|| h.get_f64(&format!("{prefix}_lowpass_dyn_expo")))
-        .unwrap_or(if fw.is_at_least(4, 2) { 5.0 } else { 0.0 })
+        .unwrap_or(release.dyn_lpf_expo)
         / 10.0;
     for l in [&mut chain.lowpass1, &mut chain.lowpass2]
         .into_iter()
@@ -327,7 +337,7 @@ pub fn filter_details(chain: &mut FilterChain, prefix: &str, fw: &FirmwareInfo, 
             .collect();
         r.fade_range_hz = h
             .get_f64("rpm_filter_fade_range_hz")
-            .unwrap_or(if fw.is_at_least(4, 3) { 50.0 } else { 0.0 });
+            .unwrap_or(release.rpm_fade_range_hz);
         r.lpf_hz = h
             .get_f64("rpm_filter_lpf_hz")
             .or_else(|| h.get_f64("gyro_rpm_notch_lpf_hz"))
@@ -336,7 +346,7 @@ pub fn filter_details(chain: &mut FilterChain, prefix: &str, fw: &FirmwareInfo, 
     if let Some(d) = &mut chain.dyn_notch
         && d.count.is_none()
     {
-        d.count = Some(if fw.is_at_least(4, 3) { 3 } else { 1 });
+        d.count = Some(release.dyn_notch_count);
     }
 }
 
@@ -425,7 +435,7 @@ fn protocol_name(code: f64) -> String {
 }
 
 /// Settings common to Betaflight-like header layouts (old and new key names).
-pub fn settings(fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
+pub fn settings(release: &Release, h: &RawHeaders) -> Settings {
     let pid = match (
         pid_axis(h, "rollPID", 0),
         pid_axis(h, "pitchPID", 1),
@@ -485,7 +495,7 @@ pub fn settings(fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
             }),
     };
     let mut gyro_filters = gyro_filters;
-    filter_details(&mut gyro_filters, "gyro", fw, h);
+    filter_details(&mut gyro_filters, "gyro", release, h);
     let dterm_filters = FilterChain {
         lowpass1: lowpass(
             h,
@@ -504,7 +514,7 @@ pub fn settings(fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
         rpm_notch: None,
     };
     let mut dterm_filters = dterm_filters;
-    filter_details(&mut dterm_filters, "dterm", fw, h);
+    filter_details(&mut dterm_filters, "dterm", release, h);
     let extra =
         h.0.iter()
             .filter(|(k, _)| !k.starts_with("Field "))
@@ -578,23 +588,16 @@ fn derived(
     }
 }
 
-/// Betaflight 4.0–4.5 `debug_mode` code of `GYRO_SCALED`: `debug[0..3]` carry the
-/// scaled gyro before the software filters, in deg/s.
-const DEBUG_GYRO_SCALED: u32 = 6;
-
-/// `gyro.raw.*` from `debug[0..3]` when the log flew with `debug_mode GYRO_SCALED`
-/// and did not log `gyroUnfilt` itself.
+/// `gyro.raw.*` from `debug[0..3]` when the log flew with `debug_mode
+/// GYRO_SCALED` (Betaflight 4.0 to 4.5, code 6: the gyro before the
+/// software filters, in deg/s; [`Release::debug_gyro_scaled`]) and did not
+/// log `gyroUnfilt` itself.
 fn derive_gyro_raw_from_debug(s: &mut FlightSession) {
-    let is_betaflight = s.firmware.vendor == FirmwareVendor::Betaflight
-        && s.firmware.version.is_some_and(|v| {
-            v >= FirmwareVersion::new(4, 0, 0) && v < FirmwareVersion::new(4, 6, 0)
-        });
-    let scaled = s
-        .settings
-        .debug_mode
-        .as_ref()
-        .is_some_and(|d| d.code == DEBUG_GYRO_SCALED);
-    if !is_betaflight || !scaled {
+    let gyro_scaled = (s.firmware.vendor == FirmwareVendor::Betaflight)
+        .then(|| Release::of_number(s.firmware.version).debug_gyro_scaled)
+        .flatten();
+    let code = s.settings.debug_mode.as_ref().map(|d| d.code);
+    if gyro_scaled.is_none() || code != gyro_scaled {
         return;
     }
     for axis in Axis::ALL {
@@ -807,14 +810,11 @@ pub fn derive(s: &mut FlightSession) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use openpid_core::FirmwareVersion;
 
     #[test]
     fn rc_command_comes_out_in_one_set_of_units() {
-        let fw = FirmwareInfo {
-            vendor: FirmwareVendor::Betaflight,
-            version: Some(FirmwareVersion::new(2026, 12, 0)),
-            ..FirmwareInfo::unknown()
-        };
+        let line = |major, minor| Release::of_number(Some(FirmwareVersion::new(major, minor, 0)));
         let headers = |pairs: &[(&str, &str)]| {
             RawHeaders(
                 pairs
@@ -823,9 +823,18 @@ mod tests {
                     .collect(),
             )
         };
-        let value = |h: &RawHeaders, field: &str, raw: f64| {
-            let m = map_field(field, &Scales::betaflight(&fw, h)).unwrap();
+        let value_of = |release: &Release, h: &RawHeaders, field: &str, raw: f64| {
+            let m = map_field(field, &Scales::of(release, h)).unwrap();
             (raw + m.offset) * m.scale
+        };
+        // the header states the scale, whatever the version
+        let value = |h: &RawHeaders, field: &str, raw: f64| {
+            let (old, new) = (
+                value_of(line(2026, 6), h, field, raw),
+                value_of(line(2025, 12), h, field, raw),
+            );
+            assert_eq!(old, new, "{field}");
+            old
         };
         // up to 2026.6: ±500 and 1000 … 2000 as logged, ten times that in a
         // high-resolution log
@@ -850,15 +859,22 @@ mod tests {
         // a scale of nothing is no scale
         let broken = headers(&[("rc_command_scale", "0")]);
         assert_eq!(value(&broken, "rcCommand[0]", 500.0), 500.0);
+        // without the header the release line says what rcCommand is: a
+        // fraction times 1000 after 2026.6
+        let after = line(2026, 12);
+        for h in [&old, &broken] {
+            assert_eq!(value_of(after, h, "rcCommand[0]", 1000.0), 500.0);
+            assert_eq!(value_of(after, h, "rcCommand[3]", 500.0), 1500.0);
+        }
+        assert_eq!(value_of(after, &old_fine, "rcCommand[1]", 5000.0), 250.0);
+        // and the header still wins there
+        let other = headers(&[("rc_command_scale", "500")]);
+        assert_eq!(value_of(after, &other, "rcCommand[0]", 500.0), 500.0);
     }
 
     #[test]
     fn filter_details_come_from_the_headers_or_the_version() {
-        let fw = |major, minor| FirmwareInfo {
-            vendor: FirmwareVendor::Betaflight,
-            version: Some(FirmwareVersion::new(major, minor, 0)),
-            ..FirmwareInfo::unknown()
-        };
+        let fw = |major, minor| Release::of_number(Some(FirmwareVersion::new(major, minor, 0)));
         let base = |extra: &[(&str, &str)]| {
             let mut v: Vec<(String, String)> = [
                 ("gyro_lpf1_dyn_hz", "250,500"),
@@ -876,7 +892,7 @@ mod tests {
         };
         // the headers win
         let s = settings(
-            &fw(2025, 12),
+            fw(2025, 12),
             &base(&[
                 ("gyro_lpf1_dyn_expo", "7"),
                 ("dterm_lpf1_dyn_expo", "3"),
@@ -899,7 +915,7 @@ mod tests {
         assert_eq!(r.weights, [1.0, 0.5, 0.0]);
         assert_eq!(s.gyro_filters.dyn_notch.and_then(|d| d.count), Some(2));
         // 4.3 without them: expo 5, a 50 Hz fade, three dynamic notches
-        let s = settings(&fw(4, 3), &base(&[]));
+        let s = settings(fw(4, 3), &base(&[]));
         assert_eq!(
             s.gyro_filters.lowpass1.as_ref().map(|l| l.dyn_expo),
             Some(0.5)
@@ -909,7 +925,7 @@ mod tests {
         assert!(r.weights.is_empty(), "every harmonic at full weight");
         assert_eq!(s.gyro_filters.dyn_notch.and_then(|d| d.count), Some(3));
         // 4.1: a linear curve, no fade, one dynamic notch
-        let s = settings(&fw(4, 1), &base(&[]));
+        let s = settings(fw(4, 1), &base(&[]));
         assert_eq!(
             s.gyro_filters.lowpass1.as_ref().map(|l| l.dyn_expo),
             Some(0.0)
