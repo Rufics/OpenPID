@@ -16,7 +16,7 @@ USAGE:
     openpid decode <file> [--session N] [--out <path>] [--scaled]
     openpid run <analysis> [<file>] [--project <p.openpid.json>] [--session N] [--epoch A..B]
                 [--axis roll|pitch|yaw] [--channel KEY] [--out <path>] [--png <path>]
-                [--method curve|density] [--smoothing LEVEL]
+                [--method curve|density|division|wiener] [--smoothing LEVEL]
     openpid sliders <file> [--session N] [--set KEY=VALUE,...] [--json]
     openpid diff <fileA> <fileB> [--session N] [--session-b M] [--json] [--cli]
     openpid gen [<spec.json>] [--out synthetic.csv | synthetic.bbl] | gen --example
@@ -83,7 +83,11 @@ OPTIONS:
     --method M    psd: `curve` is one transform of the whole analysis window with its
                   decibels smoothed, as the reference tool draws it; `density` is
                   Welch's averaged power density
+                  step: `division` (the default) is the gyro's spectrum divided by
+                  the setpoint's in windows of 2 s, as the reference tool computes it;
+                  `wiener` is OpenPID's former estimate with a cut-off
     --smoothing L psd, curve: low, low-med, medium (default), med-high or high
+                  step, division: off (default), low, medium or high, of the gyro
     --json        Machine-readable output
     --session-b M diff: session index in the second file (default: --session)
     --cli         diff / run recommend: the firmware's commands instead of the table / JSON
@@ -588,7 +592,31 @@ fn cmd_run(args: &Args) -> Result<(), String> {
     let mut grid: Option<openpid_core::analysis::Grid2D> = None;
     let json = match analysis {
         "step" => {
-            let p = openpid_analysis::StepParams { axis, ..base.step };
+            let method = match args.method.as_deref() {
+                None => base.step.method,
+                Some("division") => openpid_analysis::StepMethod::Division,
+                Some("wiener") => openpid_analysis::StepMethod::Wiener,
+                Some(other) => {
+                    return Err(format!("unknown method {other}: division or wiener"));
+                }
+            };
+            let levels = openpid_analysis::step_windows::SMOOTHING;
+            let smoothing = match args.smoothing.as_deref() {
+                None => base.step.smoothing,
+                Some(name) => levels
+                    .iter()
+                    .position(|(level, _)| *level == name)
+                    .ok_or_else(|| {
+                        let names: Vec<&str> = levels.iter().map(|(level, _)| *level).collect();
+                        format!("unknown smoothing level {name}: {}", names.join(", "))
+                    })?,
+            };
+            let p = openpid_analysis::StepParams {
+                axis,
+                method,
+                smoothing,
+                ..base.step
+            };
             let out = openpid_analysis::StepAnalysis
                 .run(&ctx, &p)
                 .map_err(|e| e.to_string())?;

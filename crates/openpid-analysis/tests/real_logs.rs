@@ -3,7 +3,7 @@
 
 use openpid_analysis::{
     Analysis, AnalysisCtx, AnalysisError, Epoch, PsdAnalysis, PsdParams, RpmEstimateParams,
-    RpmEstimator, StepAnalysis, StepParams, StftAnalysis, StftParams, ThrottleHeatmap,
+    RpmEstimator, StepAnalysis, StepMethod, StepParams, StftAnalysis, StftParams, ThrottleHeatmap,
     ThrottleHeatmapParams,
 };
 use openpid_core::{Axis, ChannelId, GyroStage, LogFormat, OpenOptions};
@@ -50,6 +50,7 @@ fn step_response_of_a_real_flight() {
                 &ctx,
                 &StepParams {
                     axis,
+                    method: StepMethod::Wiener,
                     min_input: GENTLE,
                     ..Default::default()
                 },
@@ -99,6 +100,7 @@ fn step_response_of_a_real_flight() {
         .run(
             &ctx,
             &StepParams {
+                method: StepMethod::Wiener,
                 min_input: GENTLE,
                 ..Default::default()
             },
@@ -391,6 +393,7 @@ fn verdicts_of_the_real_logs() {
                 &ctx,
                 &StepParams {
                     axis,
+                    method: StepMethod::Wiener,
                     min_input,
                     ..Default::default()
                 },
@@ -533,6 +536,10 @@ fn step_response_matches_the_reference_tool() {
                 end_s: len_s - 1.0,
             }),
         };
+        // the division, OpenPID's default, is what the reference tool
+        // computes: on these flown logs it takes the same windows to one
+        // and reads the peak and the latency as the reference does (the logs
+        // run at 997 and 1013 Hz; OpenPID puts them on an even 1 kHz grid)
         let out = StepAnalysis.run(
             &ctx,
             &StepParams {
@@ -540,15 +547,43 @@ fn step_response_matches_the_reference_tool() {
                 ..Default::default()
             },
         );
+        let wiener = StepAnalysis.run(
+            &ctx,
+            &StepParams {
+                axis,
+                method: StepMethod::Wiener,
+                ..Default::default()
+            },
+        );
         let Some((n, peak, latency)) = reference else {
-            assert!(
-                matches!(out, Err(AnalysisError::NotEnoughData(_))),
-                "{name} {axis:?}: the reference has insufficient data, we have {:?}",
-                out.map(|o| o.windows_used)
-            );
+            for out in [out, wiener] {
+                assert!(
+                    matches!(out, Err(AnalysisError::NotEnoughData(_))),
+                    "{name} {axis:?}: the reference has insufficient data, we have {:?}",
+                    out.map(|o| o.windows_used)
+                );
+            }
             continue;
         };
         let out = out.unwrap();
+        assert_eq!(out.method, StepMethod::Division);
+        let ours_peak = out.mean.iter().copied().fold(f64::MIN, f64::max);
+        assert!(
+            out.windows_used.abs_diff(n) <= 1,
+            "{name} {axis:?}: {} windows, reference {n}",
+            out.windows_used
+        );
+        assert!(
+            (ours_peak - peak).abs() <= 0.015,
+            "{name} {axis:?}: peak {ours_peak:.3}, reference {peak}"
+        );
+        let ours_latency = out.spread.half_ms_mean;
+        assert!(
+            (ours_latency - latency).abs() <= 0.5,
+            "{name} {axis:?}: SR latency {ours_latency:.2} ms, reference {latency}"
+        );
+        // the former estimate on the same logs: near, not the same
+        let out = wiener.unwrap();
         let ours_peak = out.mean.iter().copied().fold(f64::MIN, f64::max);
         let half = out.mean.iter().position(|v| *v >= 0.5).unwrap();
         let ours_latency = out.time_ms[half];

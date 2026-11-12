@@ -217,6 +217,7 @@ static UA: &[(&str, &str)] = &[
     ("Max", "Макс"),
     ("Max frequency", "Макс. частота"),
     ("Menu", "Меню"),
+    ("Method", "Метод"),
     ("Min", "Мін"),
     ("Min input", "Мін. вхід"),
     ("Min segments", "Мін. сегментів"),
@@ -399,6 +400,7 @@ static UA: &[(&str, &str)] = &[
     ),
     ("Unmapped fields", "Незіставлені поля"),
     ("User guide", "Посібник користувача"),
+    ("Wiener with cut-off", "Вінер із частотою зрізу"),
     ("Window", "Вікно"),
     ("Y correction", "Корекція Y"),
     ("Y max", "Y макс."),
@@ -424,6 +426,10 @@ static UA: &[(&str, &str)] = &[
     (
         "a fresh install starts the seven-step tour when its first log opens",
         "після встановлення тур із семи кроків починається, щойно відкрито перший лог",
+    ),
+    (
+        "a local regression of the gyro before the response is computed: off, 5, 11 or 21 samples; it brings back windows that noise had dropped, and blurs a sharp step",
+        "локальна регресія гіроскопа перед обчисленням відгуку: вимк., 5, 11 або 21 відлік; повертає вікна, відкинуті через шум, і розмиває різку сходинку",
     ),
     (
         "a logarithmic frequency axis on the full spectrum",
@@ -478,6 +484,7 @@ static UA: &[(&str, &str)] = &[
         "back to the filters the log flew with",
         "повернутися до фільтрів, з якими літав лог",
     ),
+    ("below 100 Hz", "нижче 100 Гц"),
     ("below 100 Hz (1 s segments)", "нижче 100 Гц (сегменти 1 с)"),
     ("changes proposed", "змін запропоновано"),
     ("channel", "канал"),
@@ -1055,6 +1062,11 @@ static UA: &[(&str, &str)] = &[
     ),
     ("whole log", "весь лог"),
     ("whole log, every slot", "весь лог, усі слоти"),
+    ("windowed division", "ділення у вікнах"),
+    (
+        "windowed division: windows of 2 s every 0.1 s, the gyro's spectrum divided by the setpoint's; a window counts when the stick was 20 °/s from its centre on average and its response stays between 0.5 and 1.5 after 150 ms; the plain mean of those, as the reference tool computes it. Wiener with cut-off: OpenPID's former estimate, which rounds a sharp response and reads a peak a little high",
+        "ділення у вікнах: вікна по 2 с кожні 0,1 с, спектр гіроскопа ділиться на спектр setpoint; вікно зараховується, якщо стік у середньому був за 20 °/с від центру, а відгук після 150 мс лишається між 0,5 та 1,5; звичайне середнє таких вікон, як рахує еталонний інструмент. Вінер із частотою зрізу: попередня оцінка OpenPID, яка заокруглює різкий відгук і трохи завищує пік",
+    ),
     ("windows", "вікна"),
     (
         "windows above this rate form the \"high input\" group, drawn apart from the low one",

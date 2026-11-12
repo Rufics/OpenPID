@@ -2,7 +2,10 @@
 //! drew for the probes of round 4 (`tests/calibration/step/`).
 #![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
-use openpid_core::Axis;
+use openpid_analysis::{Analysis, AnalysisCtx, Epoch, StepAnalysis, StepMethod, StepParams};
+use openpid_core::{Axis, LogFormat, OpenOptions};
+use openpid_fmt_blackbox::BlackboxFormat;
+use openpid_fmt_blackbox::write::{WriteOptions, betaflight};
 use openpid_probe::catalogue;
 use openpid_probe::step_model::{self, Step};
 use std::collections::HashMap;
@@ -216,4 +219,74 @@ fn the_model_gives_the_peak_and_latency_plots() {
     }
     assert_eq!(rows, 26);
     assert_eq!((delays[&true], delays[&false]), (24, 2));
+}
+
+#[test]
+fn the_step_analysis_of_a_log_is_the_curve_the_reference_tool_drew() {
+    // the whole way a user goes: the log as a file, read back, an epoch,
+    // the analysis of the Step tab with its defaults. The epoch that is the
+    // tool's own stretch of the log: from two samples after the first
+    // second to the end of the 29th.
+    let probes = catalogue::round(4).unwrap();
+    let flight = &probes
+        .iter()
+        .find(|p| p.id == "t1-plants-2k")
+        .unwrap()
+        .flight;
+    let bytes = betaflight(&flight.build(), &WriteOptions::default()).unwrap();
+    let log = BlackboxFormat::new()
+        .open(&bytes, &OpenOptions::default())
+        .unwrap();
+    let ctx = AnalysisCtx {
+        session: &log.sessions[0],
+        epoch: Some(Epoch {
+            start_s: 1.001,
+            end_s: 29.0,
+        }),
+    };
+    assert_eq!(StepParams::default().method, StepMethod::Division);
+    for (name, windows) in [("roll", 258), ("pitch", 256), ("yaw", 259)] {
+        let params = StepParams {
+            axis: axis(name),
+            ..StepParams::default()
+        };
+        let out = StepAnalysis.run(&ctx, &params).unwrap();
+        assert_eq!(out.method, StepMethod::Division);
+        assert_eq!(
+            (out.windows_total, out.windows_used),
+            (259, windows),
+            "{name}"
+        );
+        assert_eq!(out.windows_rejected, 259 - windows, "{name}");
+        assert_eq!((out.mean.len(), out.time_ms[1000]), (1001, 500.0));
+        let drawn = reading(&format!("r4-t1-plants-2k-{name}-mean.csv"));
+        let off = worst(&out.mean, &drawn);
+        assert!(off < COPY_PRECISION, "{name}: {off} off");
+        // the Peak and SR Latency plots of the tool, value and bar
+        let row = file("r4-points.csv")
+            .lines()
+            .find(|l| l.starts_with(&format!("t1-plants-2k,{name},")))
+            .unwrap()
+            .to_string();
+        let cells: Vec<f64> = row.split(',').skip(2).map(|c| c.parse().unwrap()).collect();
+        let peak = out.mean.iter().copied().fold(f64::MIN, f64::max);
+        assert!((peak - cells[1]).abs() < 2.0e-6, "{row}");
+        assert!((out.spread.peak_sd - cells[2]).abs() < 2.0e-6, "{row}");
+        assert!((out.spread.half_ms_mean - cells[3]).abs() < 2.0e-5, "{row}");
+        assert!((out.spread.half_ms_sd - cells[4]).abs() < 2.0e-5, "{row}");
+        assert!(
+            (out.metrics.latency_ms.unwrap() - cells[5]).abs() < 1.0e-3,
+            "{row}"
+        );
+        assert!(out.low.is_none() && out.high.is_none());
+    }
+    // smoothing is of the gyro, before the windows: the tool's "high"
+    let params = StepParams {
+        axis: Axis::Roll,
+        smoothing: 3,
+        ..StepParams::default()
+    };
+    let out = StepAnalysis.run(&ctx, &params).unwrap();
+    let drawn = reading("r4-t1-plants-2k-roll-mean-high.csv");
+    assert!(worst(&out.mean, &drawn) < COPY_PRECISION);
 }

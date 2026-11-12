@@ -500,11 +500,12 @@ fn legend(app: &App, ui: &mut Ui, q: Quantity, d: &SpectrumDisplay, full_w: f32)
         if low_x > used {
             ui.add_space(low_x - used);
         }
-        ui.label(
-            RichText::new(tr("below 100 Hz (1 s segments)"))
-                .size(12.0)
-                .color(crate::colormap::MUTED),
-        );
+        // the density is of one-second segments there; the curve has none
+        let low = match app.tools.psd.method {
+            PsdMethod::Density => tr("below 100 Hz (1 s segments)"),
+            PsdMethod::Curve => tr("below 100 Hz"),
+        };
+        ui.label(RichText::new(low).size(12.0).color(crate::colormap::MUTED));
     });
 }
 

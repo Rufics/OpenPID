@@ -38,8 +38,12 @@ const QUIET_FRAMES: usize = 3;
 const TOOLTIP_FRAMES: usize = 6;
 
 /// Step-response input threshold for the tests. The main fixture
-/// (`betaflight-4.2.0.BFL`) has only gentle stick inputs, none above the
-/// default 80 deg/s, so the default would give "not enough data" on it.
+/// (`betaflight-4.2.0.BFL`) has only gentle stick inputs: no window has the
+/// stick 20 deg/s from its centre on average, which the default method
+/// asks for, and none reaches the 80 deg/s the Wiener estimate asks for by
+/// default. Either would give "not enough data" on it, as the reference
+/// tool does, so the tests run the Wiener estimate at this threshold unless
+/// a test asks for the app as it ships ([`Setup::shipped`]).
 pub const GENTLE_STEP_INPUT: f64 = 20.0;
 
 /// A window to run a test in.
@@ -107,9 +111,17 @@ pub struct Setup {
     prefs: Option<PathBuf>,
     screen: Screen,
     tour: bool,
+    shipped: bool,
 }
 
 impl Setup {
+    /// Leaves the step response as the app ships it (the windowed
+    /// division), for logs with enough stick movement.
+    pub fn shipped(mut self) -> Self {
+        self.shipped = true;
+        self
+    }
+
     /// Files given on the command line: logs or a project.
     pub fn files<P: Into<PathBuf>>(mut self, files: impl IntoIterator<Item = P>) -> Self {
         self.files = files.into_iter().map(Into::into).collect();
@@ -148,6 +160,7 @@ impl Setup {
             prefs,
             screen,
             tour,
+            shipped,
         } = self;
         let mut init = Some((files, prefs));
         let h = Harness::builder()
@@ -164,8 +177,12 @@ impl Setup {
                         if screen.touch {
                             app.touch_mode = true;
                         }
-                        app.tools.step.min_input = GENTLE_STEP_INPUT;
-                        app.tools.recommend.step.min_input = GENTLE_STEP_INPUT;
+                        if !shipped {
+                            for step in [&mut app.tools.step, &mut app.tools.recommend.step] {
+                                step.method = openpid_analysis::StepMethod::Wiener;
+                                step.min_input = GENTLE_STEP_INPUT;
+                            }
+                        }
                         app
                     });
                     app.frame(ui);
@@ -206,6 +223,7 @@ impl Ui {
             prefs: None,
             screen: default_screen(),
             tour: false,
+            shipped: false,
         }
     }
 

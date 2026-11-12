@@ -1,13 +1,17 @@
-//! Step response of one axis by Wiener deconvolution of setpoint → gyro.
+//! Step response of one axis from setpoint → gyro.
 //!
 //! The epoch is cut into overlapping windows; each window yields a step
-//! response; windows with too little stick input are discarded; the rest are
-//! averaged with weights proportional to their input amplitude, separately
-//! for low and high inputs, and summarised into rise time, overshoot and
-//! settling metrics. The latency of the axis is measured independently of the
-//! deconvolution as the lag of the setpoint ↔ gyro cross-correlation peak.
+//! response; windows with too little stick input or a response that does
+//! not settle are discarded; the rest are averaged and summarised into rise
+//! time, overshoot and settling metrics. Two estimators do this
+//! ([`StepMethod`]): the spectral division of [`crate::step_windows`], which
+//! is the default and what the reference tool computes, and the Wiener
+//! deconvolution with a cut-off this crate started with. The latency of the
+//! axis is measured independently of either, from the setpoint and the gyro
+//! themselves.
 
-use crate::prepare::prepare;
+use crate::prepare::{Prepared, prepare};
+use crate::step_windows::{self, Windows};
 use openpid_core::analysis::{Analysis, AnalysisCtx, AnalysisError, Grid2D, Requirement};
 use openpid_core::{Axis, ChannelId, GyroStage, Unit};
 use openpid_dsp::deconv::{DeconvParams, impulse_response, step_from_impulse};
@@ -16,12 +20,39 @@ use openpid_dsp::xcorr::lag_of_max;
 use openpid_dsp::{Fft, Window};
 use serde::{Deserialize, Serialize};
 
+/// How the response of a window is estimated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepMethod {
+    /// Windows of 2 s every 0.1 s; in each the gyro's transform divided by
+    /// the setpoint's after a Hann window ([`crate::step_windows`]); a
+    /// window counts when the stick was 20 deg/s from its centre on average
+    /// and its response stays between 0.5 and 1.5 after 150 ms; the plain
+    /// mean of those. What the reference tool computes
+    /// (`docs/calibration/step.md`, decision D-002); on plants of known
+    /// response it is the true response to a few thousandths.
+    #[default]
+    Division,
+    /// Wiener deconvolution with a low-pass at `cutoff_hz`, windows chosen
+    /// by their peak input and weighted by it. It rounds a sharp response
+    /// (6 % of overshoot on a pure delay) and reads the peak of an
+    /// underdamped one 0.04 too high; kept for comparison.
+    Wiener,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/// Parameters of [`StepAnalysis`].
+/// Parameters of [`StepAnalysis`]. With [`StepMethod::Division`] only
+/// `axis`, `smoothing` and the histogram fields are used: the windows and
+/// their limits are those of [`crate::step_windows`].
 #[serde(default)]
 pub struct StepParams {
     /// Axis to analyse.
     pub axis: Axis,
+    /// The estimator.
+    pub method: StepMethod,
+    /// Smoothing of the gyro before [`StepMethod::Division`]: 0 ("off") …
+    /// 3 ("high"), see [`crate::step_windows::SMOOTHING`].
+    pub smoothing: usize,
     /// Window length in seconds (2 s).
     pub window_s: f64,
     /// Number of sub-windows per window (hop = window / superpos; PID-Analyzer: 16).
@@ -57,6 +88,8 @@ impl Default for StepParams {
     fn default() -> Self {
         StepParams {
             axis: Axis::Roll,
+            method: StepMethod::default(),
+            smoothing: 0,
             window_s: 2.0,
             superpos: 16,
             cutoff_hz: 25.0,
@@ -90,6 +123,8 @@ impl std::hash::Hash for StepParams {
         self.superpos.hash(state);
         self.hist_bins.hash(state);
         self.y_offset.hash(state);
+        self.method.hash(state);
+        self.smoothing.hash(state);
     }
 }
 
@@ -119,6 +154,9 @@ pub struct StepMetrics {
 pub struct StepOutput {
     /// Analysed axis.
     pub axis: Axis,
+    /// The estimator that gave it.
+    #[serde(default)]
+    pub method: StepMethod,
     /// Sample rate used.
     pub fs: f64,
     /// Response time axis in milliseconds.
@@ -149,6 +187,11 @@ pub struct StepOutput {
 /// Mean and standard deviation over the used windows of each window's own
 /// peak and time to 50 % (the error bars of the Peak / Latency plots,
 /// docs/design/axis-layout).
+///
+/// With [`StepMethod::Division`] they are what the reference tool shows:
+/// the peak of a window is the highest of its first 150 samples, its time
+/// to 50 % that of the first sample above 0.5, counted from one and less a
+/// millisecond, and the deviations are sample deviations (`n − 1`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct StepSpread {
     /// Mean of the windows' peaks.
@@ -193,11 +236,17 @@ fn spread(rows: &[(f64, Vec<f64>)], fs: f64) -> StepSpread {
     }
 }
 
+/// Whether at least 95 % of the samples `at` of both channels are valid.
+fn mostly_valid(sp: &Prepared, gy: &Prepared, at: std::ops::Range<usize>) -> bool {
+    let valid = |p: &Prepared| p.data.valid[at.clone()].iter().filter(|v| **v).count();
+    valid(sp) * 20 >= at.len() * 19 && valid(gy) * 20 >= at.len() * 19
+}
+
 /// How many step windows `axis` would contribute with `p`: `(used, total)`.
-/// The same input selection as [`StepAnalysis::run`] (peak input at or above
-/// `min_input`, at least 95 % valid samples) without the deconvolution, so
-/// a fitness check can judge the stick activity cheaply; the settle check
-/// of `run` can still drop some of these.
+/// The same input selection as [`StepAnalysis::run`] (enough stick input,
+/// at least 95 % valid samples) without the responses, so a fitness check
+/// can judge the stick activity cheaply; the settle check of `run` can
+/// still drop some of these.
 pub fn count_windows(
     ctx: &AnalysisCtx<'_>,
     axis: Axis,
@@ -217,9 +266,19 @@ pub fn count_windows(
         Some(&Unit::DegreesPerSecond),
     )?;
     let fs = sp.fs;
+    let input = sp.filled();
+    if p.method == StepMethod::Division {
+        let windows = Windows::over(0, input.len(), fs);
+        let used = (0..windows.count)
+            .filter(|index| {
+                let at = windows.start(*index)..windows.start(*index) + windows.length;
+                mostly_valid(&sp, &gy, at.clone()) && step_windows::stick_moved(&input[at])
+            })
+            .count();
+        return Ok((used, windows.count));
+    }
     let win = ((p.window_s * fs).round() as usize).max(1);
     let hop = (win / p.superpos.max(1)).max(1);
-    let input = sp.filled();
     let (mut used, mut total) = (0, 0);
     let mut start = 0;
     while start + win <= input.len() {
@@ -227,15 +286,7 @@ pub fn count_windows(
         let peak = input[start..start + win]
             .iter()
             .fold(0.0f64, |m, v| m.max(v.abs()));
-        let valid_in = sp.data.valid[start..start + win]
-            .iter()
-            .filter(|v| **v)
-            .count();
-        let valid_out = gy.data.valid[start..start + win]
-            .iter()
-            .filter(|v| **v)
-            .count();
-        if peak >= p.min_input && valid_in * 20 >= win * 19 && valid_out * 20 >= win * 19 {
+        if peak >= p.min_input && mostly_valid(&sp, &gy, start..start + win) {
             used += 1;
         }
         start += hop;
@@ -339,6 +390,115 @@ pub fn metrics(step: &[f64], fs: f64) -> StepMetrics {
     }
 }
 
+/// The histogram of the responses `rows`, each with its weight: x = time,
+/// y = amplitude, z = the share of the weight.
+fn histogram(rows: &[(f64, &[f64])], time_ms: &[f64], p: &StepParams) -> Grid2D {
+    let (ylo, yhi) = p.hist_range;
+    let nb = p.hist_bins;
+    let len = time_ms.len();
+    let mut z = vec![0.0; nb * len];
+    let wsum: f64 = rows.iter().map(|(w, _)| w).sum();
+    for (w, r) in rows {
+        for (ti, v) in r.iter().enumerate().take(len) {
+            let f = (v - ylo) / (yhi - ylo);
+            if (0.0..1.0).contains(&f) {
+                let bi = (f * nb as f64) as usize;
+                z[bi * len + ti] += w / wsum;
+            }
+        }
+    }
+    Grid2D {
+        x: time_ms.to_vec(),
+        y: (0..nb)
+            .map(|i| ylo + (i as f64 + 0.5) * (yhi - ylo) / nb as f64)
+            .collect(),
+        z,
+        x_label: "time (ms)".into(),
+        y_label: "response".into(),
+        z_label: "weight".into(),
+    }
+}
+
+/// [`StepMethod::Division`] on the prepared setpoint and gyro of the epoch.
+fn division(p: &StepParams, sp: &Prepared, gy: &Prepared) -> Result<StepOutput, AnalysisError> {
+    let fs = sp.fs;
+    let input = sp.filled();
+    let output = gy.filled();
+    let windows = Windows::over(0, input.len().min(output.len()), fs);
+    if windows.count == 0 {
+        return Err(AnalysisError::NotEnoughData(format!(
+            "{} samples: a window needs {} and another {} after it",
+            input.len(),
+            windows.length,
+            windows.hop
+        )));
+    }
+    let candidates = step_windows::candidates(&input, &output, fs, p.smoothing, windows, |at| {
+        mostly_valid(sp, gy, at)
+    });
+    let with_stick = candidates.len();
+    let read = step_windows::read(candidates, fs, step_windows::settled_from(fs));
+    let used = read.windows.len();
+    if used == 0 {
+        let (lo, hi) = step_windows::SETTLED;
+        return Err(AnalysisError::NotEnoughData(if with_stick > 0 {
+            format!(
+                "{with_stick} of {} windows had the stick {} deg/s from its centre on average, \
+                 but no response stayed between {lo} and {hi}",
+                windows.count,
+                step_windows::STICK_MEAN
+            )
+        } else {
+            format!(
+                "in none of {} windows was the stick {} deg/s from its centre on average",
+                windows.count,
+                step_windows::STICK_MEAN
+            )
+        }));
+    }
+    let time_ms: Vec<f64> = (0..read.mean.len())
+        .map(|i| i as f64 * 1000.0 / fs)
+        .collect();
+    let rows: Vec<(f64, &[f64])> = read
+        .windows
+        .iter()
+        .map(|w| (1.0, w.response.as_slice()))
+        .collect();
+    let early: Vec<f64> = read
+        .windows
+        .iter()
+        .map(|w| {
+            w.response
+                .iter()
+                .take(150)
+                .copied()
+                .fold(f64::MIN, f64::max)
+        })
+        .collect();
+    let mut metrics = metrics(&read.mean, fs);
+    metrics.latency_ms = step_windows::delay_ms(&input, &output, fs);
+    Ok(StepOutput {
+        axis: p.axis,
+        method: StepMethod::Division,
+        fs,
+        histogram: histogram(&rows, &time_ms, p),
+        time_ms,
+        low: None,
+        high: None,
+        metrics,
+        windows_total: windows.count,
+        windows_used: used,
+        windows_rejected: with_stick - used,
+        spread: StepSpread {
+            peak_mean: early.iter().sum::<f64>() / used as f64,
+            peak_sd: read.peak_spread,
+            half_ms_mean: read.latency_ms,
+            half_ms_sd: read.latency_spread_ms,
+        },
+        mean: read.mean,
+    })
+}
+
 impl Analysis for StepAnalysis {
     type Params = StepParams;
     type Output = StepOutput;
@@ -385,6 +545,9 @@ impl Analysis for StepAnalysis {
             Some(&Unit::DegreesPerSecond),
         )?;
         let fs = sp.fs;
+        if p.method == StepMethod::Division {
+            return division(p, &sp, &gy);
+        }
         let win = (p.window_s * fs).round() as usize;
         let hop = (win / p.superpos).max(1);
         let resp_len = (p.response_s * fs).round() as usize;
@@ -410,16 +573,8 @@ impl Analysis for StepAnalysis {
             total += 1;
             let seg_in = &input[start..start + win];
             let seg_out = &output[start..start + win];
-            let valid_in = sp.data.valid[start..start + win]
-                .iter()
-                .filter(|v| **v)
-                .count();
-            let valid_out = gy.data.valid[start..start + win]
-                .iter()
-                .filter(|v| **v)
-                .count();
             let peak = seg_in.iter().fold(0.0f64, |m, v| m.max(v.abs()));
-            if peak >= p.min_input && valid_in * 20 >= win * 19 && valid_out * 20 >= win * 19 {
+            if peak >= p.min_input && mostly_valid(&sp, &gy, start..start + win) {
                 let h = impulse_response(&fft, seg_in, seg_out, fs, resp_len, &dp)
                     .map_err(|e| AnalysisError::InvalidParams(e.to_string()))?;
                 match settled(step_from_impulse(&h), p) {
@@ -464,33 +619,13 @@ impl Analysis for StepAnalysis {
         let mut metrics = metrics(&mean, fs);
         let max_lag = ((LATENCY_MAX_LAG_S * fs).round() as usize).max(1);
         metrics.latency_ms = lag_of_max(&input, &output, max_lag).map(|lag| lag * 1000.0 / fs);
-        // histogram of all responses, weighted by input amplitude
-        let (ylo, yhi) = p.hist_range;
-        let nb = p.hist_bins;
-        let mut z = vec![0.0; nb * resp_len];
-        let wsum: f64 = rows.iter().map(|(w, _)| w).sum();
-        for (w, r) in &rows {
-            for (ti, v) in r.iter().enumerate() {
-                let f = (v - ylo) / (yhi - ylo);
-                if (0.0..1.0).contains(&f) {
-                    let bi = (f * nb as f64) as usize;
-                    z[bi * resp_len + ti] += w / wsum;
-                }
-            }
-        }
         let time_ms: Vec<f64> = (0..resp_len).map(|i| i as f64 * 1000.0 / fs).collect();
-        let histogram = Grid2D {
-            x: time_ms.clone(),
-            y: (0..nb)
-                .map(|i| ylo + (i as f64 + 0.5) * (yhi - ylo) / nb as f64)
-                .collect(),
-            z,
-            x_label: "time (ms)".into(),
-            y_label: "response".into(),
-            z_label: "weight".into(),
-        };
+        // histogram of all responses, weighted by input amplitude
+        let weighted: Vec<(f64, &[f64])> = rows.iter().map(|(w, r)| (*w, r.as_slice())).collect();
+        let histogram = histogram(&weighted, &time_ms, p);
         Ok(StepOutput {
             axis: p.axis,
+            method: StepMethod::Wiener,
             fs,
             time_ms,
             mean,

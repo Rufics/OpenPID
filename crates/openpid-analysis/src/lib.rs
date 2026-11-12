@@ -14,6 +14,7 @@ pub mod recommend;
 pub mod render;
 pub mod rpm;
 pub mod step;
+pub mod step_windows;
 pub mod stft;
 pub mod targets;
 pub mod throttle;
@@ -37,7 +38,7 @@ pub use psd::{
 };
 pub use recommend::{Finding, FindingStatus, Recommend, RecommendOutput, RecommendParams};
 pub use rpm::{RpmEstimateOutput, RpmEstimateParams, RpmEstimator};
-pub use step::{StepAnalysis, StepMetrics, StepOutput, StepParams, StepSpread};
+pub use step::{StepAnalysis, StepMethod, StepMetrics, StepOutput, StepParams, StepSpread};
 pub use stft::{StftAnalysis, StftOutput, StftParams};
 pub use targets::{StepTargets, TargetPreset, Verdict, VerdictLevel, verdicts};
 pub use throttle::{RpmOverlay, ThrottleHeatmap, ThrottleHeatmapOutput, ThrottleHeatmapParams};
