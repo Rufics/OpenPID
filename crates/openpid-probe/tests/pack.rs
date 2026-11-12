@@ -386,7 +386,7 @@ fn an_unknown_round_is_refused() {
             catalogue::ROUNDS
         )
     );
-    assert_eq!(catalogue::ROUNDS, [1, 2, 3, 4]);
+    assert_eq!(catalogue::ROUNDS, [1, 2, 3, 4, 5]);
 }
 
 #[test]
@@ -702,4 +702,110 @@ fn round_2_carries_the_model_s_predictions() {
             }
         }
     }
+}
+
+#[test]
+fn round_5_carries_the_step_model_s_predictions() {
+    let pack = pack::build(5, "test").unwrap();
+    let names: Vec<String> = pack.files().into_iter().map(|(name, _)| name).collect();
+    assert_eq!(
+        names,
+        [
+            "u1-plants-2k.bbl",
+            "u2-rates-1k.bbl",
+            "u3-rates-4k.bbl",
+            "u4-slow-2k.bbl",
+            "u5-stick-2k.bbl",
+            "u6-short-2k.bbl",
+            "u7-mid-2k.bbl",
+            "manifest.json",
+            "ours.json",
+            "predictions.json",
+            "steps.json",
+            "capture.ps1",
+            "run.cmd",
+            "README.txt",
+        ]
+    );
+    let predictions = pack.predictions.as_ref().unwrap();
+    assert_eq!((predictions.round, predictions.assumes.len()), (5, 6));
+    // a step-response round predicts that window and nothing of the spectrum
+    assert!(predictions.probes.is_empty());
+    let text = String::from_utf8(pack.files()[9].1.clone()).unwrap();
+    assert!(text.contains("\"step\"") && !text.contains("\"probes\""));
+    let grids: Vec<(&str, usize, usize)> = predictions
+        .step
+        .iter()
+        .map(|p| (p.id, p.first_sample, p.windows_in_log))
+        .collect();
+    assert_eq!(
+        grids,
+        [
+            ("u1-plants-2k", 2002, 219),
+            ("u2-rates-1k", 1002, 259),
+            ("u3-rates-4k", 4002, 259),
+            ("u4-slow-2k", 2002, 259),
+            ("u5-stick-2k", 2002, 259),
+            ("u6-short-2k", 2002, 79),
+            ("u7-mid-2k", 2002, 139),
+        ]
+    );
+    let probe = |id: &str| predictions.step.iter().find(|p| p.id == id).unwrap();
+    // the smoothing levels where the script captures them, "off" elsewhere
+    for p in &predictions.step {
+        let levels = if p.id.contains("rates") { 4 } else { 1 };
+        assert_eq!(p.axes.len(), 3);
+        assert!(p.axes.iter().all(|a| a.levels.len() == levels), "{}", p.id);
+        assert!(p.axes.iter().all(|a| a.levels[0].smoothing == "off"));
+    }
+
+    // the three plants: the truth to a few thousandths
+    let plants = probe("u1-plants-2k");
+    let off = |axis: usize| &plants.axes[axis].levels[0];
+    assert!((off(0).peak.unwrap() - 1.0).abs() < 0.005);
+    assert_eq!(off(0).latency_ms, Some(9.5));
+    assert_eq!(plants.axes[0].sp_gyro_ms, Some(10.0));
+    assert!((off(2).peak.unwrap() - 1.2538).abs() < 0.005);
+    assert_eq!(off(2).curve.len(), pack::PREDICTED_MS.len());
+    assert!(off(2).curve[0].value.abs() < 0.01 && off(2).curve[0].ms == 0.0);
+
+    // the stick always 19, 21 and 20 deg/s from its centre: none, all, all
+    let stick = probe("u5-stick-2k");
+    let windows: Vec<usize> = stick.axes.iter().map(|a| a.levels[0].windows).collect();
+    assert_eq!(windows[0], 0);
+    assert!(windows[1] > 250 && windows[2] > 250, "{windows:?}");
+    let none = &stick.axes[0].levels[0];
+    assert!(none.peak.is_none() && none.curve.is_empty() && none.peak_within.is_empty());
+
+    // the creeping plant has no peak before its end: where the tool stops
+    // looking shows in the value
+    let slow = &probe("u4-slow-2k").axes[0].levels[0];
+    let within: Vec<f64> = slow.peak_within.iter().map(|p| p.value).collect();
+    assert!(within.windows(2).all(|w| w[0] + 0.01 < w[1]), "{within:?}");
+    assert!(within[3] + 0.005 < slow.peak.unwrap());
+    assert!((within[0] - 0.78).abs() < 0.02, "{within:?}");
+
+    // a limit in samples would take other windows than one in milliseconds:
+    // at 4 kHz the creeping plant is below 0.5 at sample 300 (75 ms) ...
+    let creeping_4k = &probe("u3-rates-4k").axes[1].levels[0];
+    assert!(creeping_4k.windows > 230 && creeping_4k.windows_if_from_sample_300 < 200);
+    // ... and at 1 kHz the noisy axis has 150 ms more to leave the limits in
+    let noisy_1k = &probe("u2-rates-1k").axes[2].levels[0];
+    assert!(noisy_1k.windows + 10 < noisy_1k.windows_if_from_sample_300);
+    // at 2 kHz both readings are the same
+    for id in ["u1-plants-2k", "u4-slow-2k", "u6-short-2k"] {
+        for a in &probe(id).axes {
+            assert_eq!(a.levels[0].windows, a.levels[0].windows_if_from_sample_300);
+        }
+    }
+    // smoothing brings windows of the noisy axis back
+    let noisy: Vec<usize> = probe("u2-rates-1k").axes[2]
+        .levels
+        .iter()
+        .map(|l| l.windows)
+        .collect();
+    assert!(
+        noisy.windows(2).all(|w| w[0] <= w[1]) && noisy[0] + 30 < noisy[3],
+        "{noisy:?}"
+    );
 }

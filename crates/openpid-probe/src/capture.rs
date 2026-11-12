@@ -330,9 +330,10 @@ pub fn step_file(round: u32, probe: &str, what: &str, plot: &str) -> String {
 
 /// Whether the smoothing levels of the step response are captured for a
 /// probe: for the plants at 2 kHz and for the probe with noise, where
-/// smoothing has something to do.
-fn smoothing_captured(probe: &Probe) -> bool {
-    probe.id == "t1-plants-2k" || probe.id.contains("noise")
+/// smoothing has something to do, and for the probes that ask what follows
+/// the log rate.
+pub fn smoothing_captured(probe: &Probe) -> bool {
+    probe.id == "t1-plants-2k" || probe.id.contains("noise") || probe.id.contains("rates")
 }
 
 /// The steps of the step response window for the probes of a round: for
@@ -584,8 +585,9 @@ pub fn files(round: u32, shots: usize, copies: usize, predicted: bool) -> Vec<(S
     let saves = if copies == 0 {
         format!("saves {shots} pictures of the\n   tool's windows")
     } else {
-        // a picture with its Run takes about five seconds, a copy four
-        let minutes = (shots * 5 + copies * 4).div_ceil(60) + 1;
+        // a picture with its Run takes about five seconds, a copy six
+        // (round 4: 20 pictures and 153 copies in 17.5 minutes)
+        let minutes = (shots * 5 + copies * 6).div_ceil(60) + 1;
         format!(
             "saves {shots} pictures of the\n   \
              tool's windows and {copies} plots copied as vector graphics, in about\n   \
@@ -960,7 +962,7 @@ mod tests {
             note.contains("108 plots copied as vector graphics"),
             "{note}"
         );
-        assert!(note.contains("11 minutes") && note.contains("predictions.json"));
+        assert!(note.contains("15 minutes") && note.contains("predictions.json"));
         assert!(note.is_ascii());
         // a round without a model says nothing of predictions
         let step =

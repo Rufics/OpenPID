@@ -27,3 +27,19 @@ The first two were taken on 2026-11-11 in the second trial of the capture
 script, with the log loaded alone; the others the same day in rounds 2 and
 3, with the logs of the round loaded together. A point where a curve
 leaves its plot is not a point of the curve and is left out.
+
+## step/
+
+The step response window, from plots copied as vector graphics in round 4
+(2026-11-11). A curve file is `sample,value`: the index of the point (one
+per sample of the log, from 0 at 0 ms to half a second) and the response
+drawn there. A point within 0.0005 of the plot's limits (0 and 1.5) is left
+out: where a curve leaves its plot, the copy holds the limit and not the
+curve.
+
+| File | Probe | What |
+|---|---|---|
+| `r4-<probe>-<axis>-mean.csv`, twelve files | nine probes of round 4 | the mean curve of the axis (the newest "test" of the plot), smoothing off |
+| `r4-t1-plants-2k-roll-mean-<level>.csv`, `r4-t5-noise-2k-yaw-mean-<level>.csv` | a pure delay; the second-order plant under 20 deg/s RMS of gyro noise | the mean curve at "low", "medium" and "high" smoothing |
+| `r4-t1-plants-2k-yaw-window-0.csv`, `…-window-116.csv` | `t1-plants-2k`, yaw | two of the 259 single-window responses the tool draws with "Raw" on: the first and the 117th |
+| `r4-points.csv` | all nine probes, three axes | the number of windows in the legend, the point and the bar of the "Peak" plot, of "SR Latency" and the point of "SP-Gyro Delay"; no Peak where the point is outside its plot |

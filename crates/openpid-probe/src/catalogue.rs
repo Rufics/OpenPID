@@ -470,6 +470,17 @@ fn moved(seed: u64, amplitude: f64, hold_ms: (u32, u32), plant: Plant, noise: f6
 /// The plant probe at a log rate and a length: three plants whose step
 /// responses are known in closed form.
 fn plants(id: &'static str, title: &'static str, fs: f64, duration_s: f64) -> Probe {
+    plants_moved(id, title, fs, duration_s, 101)
+}
+
+/// [`plants`] with the stick moves of another seed.
+fn plants_moved(
+    id: &'static str,
+    title: &'static str,
+    fs: f64,
+    duration_s: f64,
+    seed: u64,
+) -> Probe {
     Probe {
         id,
         area: Area::StepResponse,
@@ -482,9 +493,15 @@ fn plants(id: &'static str, title: &'static str, fs: f64, duration_s: f64) -> Pr
             "a second-order response (15 Hz, damping 0.4) after 5 ms: a peak of 1.254",
         ],
         flight: FlightSpec {
-            roll: moved(101, 200.0, (150, 700), Plant::Delay { delay_ms: 10.0 }, 0.0),
+            roll: moved(
+                seed,
+                200.0,
+                (150, 700),
+                Plant::Delay { delay_ms: 10.0 },
+                0.0,
+            ),
             pitch: moved(
-                102,
+                seed + 1,
                 200.0,
                 (150, 700),
                 Plant::FirstOrder {
@@ -494,7 +511,7 @@ fn plants(id: &'static str, title: &'static str, fs: f64, duration_s: f64) -> Pr
                 },
                 0.0,
             ),
-            yaw: moved(103, 200.0, (150, 700), UNDERDAMPED, 0.0),
+            yaw: moved(seed + 2, 200.0, (150, 700), UNDERDAMPED, 0.0),
             ..FlightSpec::quiet(fs, duration_s)
         },
     }
@@ -661,6 +678,130 @@ fn round_4() -> Vec<Probe> {
     ]
 }
 
+/// A plant that creeps to its level: a first-order response with a time
+/// constant of 100 ms. Its curve has no peak before its end, so the "Peak"
+/// a tool reads from it tells how far along the curve the tool looks.
+const CREEPING: Plant = Plant::FirstOrder {
+    tau_ms: 100.0,
+    delay_ms: 5.0,
+    gain: 1.0,
+};
+
+/// A stick that takes a new level every quarter of a second, always
+/// `size` deg/s from its centre, to one side or the other.
+fn off_centre(seed: u64, size: f64, duration_s: f64) -> Stick {
+    let mut state = seed;
+    let levels = (0..(duration_s * 4.0) as usize)
+        .map(|_| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            if (state >> 40) & 1 == 0 { size } else { -size }
+        })
+        .collect();
+    Stick::Steps {
+        start_s: 0.0,
+        every_s: 0.25,
+        levels,
+    }
+}
+
+/// The probe that asks what follows the log rate: a pure delay for the
+/// smoothing levels, the creeping plant for the peak, and a noisy axis
+/// whose windows lie near the limits a window has to keep.
+fn rates(id: &'static str, title: &'static str, fs: f64, seed: u64) -> Probe {
+    let hold = (150, 700);
+    Probe {
+        id,
+        area: Area::StepResponse,
+        title,
+        purpose: [
+            "a pure delay of 10 ms: how wide each smoothing level blurs the step at this rate",
+            "a first-order response with a time constant of 100 ms: the curve rises to its \
+             end, so the peak a tool reads tells where it stops looking",
+            "the second-order plant under gyro noise of 20 deg/s RMS: windows near the limits \
+             a window has to keep, to tell a limit in milliseconds from one in samples",
+        ],
+        flight: FlightSpec {
+            roll: moved(seed, 200.0, hold, Plant::Delay { delay_ms: 10.0 }, 0.0),
+            pitch: moved(seed + 1, 200.0, hold, CREEPING, 0.0),
+            yaw: moved(seed + 2, 200.0, hold, UNDERDAMPED, 20.0),
+            ..FlightSpec::quiet(fs, STEP_S)
+        },
+    }
+}
+
+/// Round 5, the second of the step response: the model of round 4
+/// (`step_model`) predicts every plot of these logs before they are run.
+/// New stick moves throughout, and probes for what round 4 left open: what
+/// follows the log rate, how far the peak is looked for, the stick a
+/// window needs, and where the first window starts.
+fn round_5() -> Vec<Probe> {
+    let quiet = FlightSpec::quiet(2000.0, STEP_S);
+    let slow = |natural_hz: f64| Plant::SecondOrder {
+        natural_hz,
+        damping: 0.5,
+        delay_ms: 5.0,
+        gain: 1.0,
+    };
+    vec![
+        plants_moved(
+            "u1-plants-2k",
+            "The three plants again, with other stick moves, in 26 s",
+            2000.0,
+            26.0,
+            201,
+        ),
+        rates(
+            "u2-rates-1k",
+            "At 1 kHz: a delay, a creeping plant and a noisy axis",
+            1000.0,
+            211,
+        ),
+        rates("u3-rates-4k", "The same at 4 kHz", 4000.0, 221),
+        Probe {
+            id: "u4-slow-2k",
+            area: Area::StepResponse,
+            title: "Slow plants: how far along the curve the peak is looked for",
+            purpose: [
+                "a first-order response with a time constant of 100 ms: no peak before the end",
+                "a second-order response of 2.5 Hz, damping 0.5: a peak of 1.163 at 236 ms",
+                "a second-order response of 4 Hz, damping 0.5: a peak of 1.163 at 149 ms",
+            ],
+            flight: FlightSpec {
+                roll: moved(231, 200.0, (150, 700), CREEPING, 0.0),
+                pitch: moved(232, 200.0, (150, 700), slow(2.5), 0.0),
+                yaw: moved(233, 200.0, (150, 700), slow(4.0), 0.0),
+                ..quiet.clone()
+            },
+        },
+        Probe {
+            id: "u5-stick-2k",
+            area: Area::StepResponse,
+            title: "A stick always the same distance from its centre: what a window needs",
+            purpose: [
+                "always 19 deg/s from the centre: the mean of every window is 19",
+                "always 21 deg/s from the centre",
+                "always 20 deg/s from the centre: exactly the value round 4 points to",
+            ],
+            flight: FlightSpec {
+                roll: AxisSpec::following(off_centre(241, 19.0, STEP_S), UNDERDAMPED),
+                pitch: AxisSpec::following(off_centre(242, 21.0, STEP_S), UNDERDAMPED),
+                yaw: AxisSpec::following(off_centre(243, 20.0, STEP_S), UNDERDAMPED),
+                ..quiet
+            },
+        },
+        plants_moved(
+            "u6-short-2k",
+            "The three plants in 12 s: where the first window starts",
+            2000.0,
+            12.0,
+            251,
+        ),
+        plants_moved("u7-mid-2k", "The three plants in 18 s", 2000.0, 18.0, 261),
+    ]
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
@@ -668,12 +809,13 @@ pub fn round(round: u32) -> Option<Vec<Probe>> {
         2 => Some(round_2()),
         3 => Some(round_3()),
         4 => Some(round_4()),
+        5 => Some(round_5()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2, 3, 4];
+pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5];
 
 #[cfg(test)]
 mod tests {
