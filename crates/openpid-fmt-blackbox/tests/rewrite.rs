@@ -120,9 +120,8 @@ fn the_fixtures_have_every_kind_of_frame() {
     let session = session(&data);
     let mine = written(&session, Target::V2025_12);
     let count = |letter: u8| frames(&mine).iter().filter(|f| f[0] == letter).count();
-    assert!(count(b'I') > 1000 && count(b'P') > 30_000);
-    assert!(count(b'G') > 300, "{} GPS frames", count(b'G'));
-    assert!(count(b'H') >= 1 && count(b'S') >= 5 && count(b'E') >= 3);
+    let counts = (*b"IPSGHE").map(count);
+    assert_eq!(counts, [1234, 38_247, 7, 398, 1, 5]);
 }
 
 /// `betaflight-4.5.0-gps-rescue.bbl` calls itself 4.5.0 but was built from

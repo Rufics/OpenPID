@@ -293,6 +293,26 @@ mod tests {
         assert_eq!(logged("betaflight-4.5.0-gps-rescue.bbl"), before);
     }
 
+    /// The numbers of `docs/BLACKBOX-VERSIONS.md`: every line a release
+    /// can write, and those of the stock build with a battery.
+    #[test]
+    fn the_size_of_the_tables() {
+        let counts = Target::ALL.map(|t| {
+            let mut build = stock_build(t);
+            build.extend([Build::Vbat, Build::CurrentAdc]);
+            (lines(t).len(), written_by(t, &build).len())
+        });
+        let expected = [
+            (136, 136),
+            (172, 172),
+            (191, 191),
+            (242, 174),
+            (233, 176),
+            (275, 180),
+        ];
+        assert_eq!(counts, expected);
+    }
+
     #[test]
     fn what_differs_between_the_releases() {
         let has = |t: Target, name: &str| lines(t).iter().any(|l| l.name == name);

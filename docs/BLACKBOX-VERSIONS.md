@@ -18,13 +18,86 @@ not in the decoder.
 | 4.2 | the base set: `axisP/I/D/F`, `rcCommand`, `setpoint`, `vbatLatest`, `amperageLatest`, `BaroAlt`, `rssi`, `gyroADC`, `accSmooth`, `debug`, `motor`, `servo`, GPS, slow | `motorOutput`, `gyro_scale`, `vbatref` (centivolts) | the base profile |
 | 4.3 | — | `fields_disabled_mask`, `gyro_lpf1_*`/`dterm_lpf1_*` (renamed from `*_lowpass_*`), `ff_weight`, `dyn_notch_count`, `rpm_filter_*` | the profile reads both spellings |
 | 4.4 | `BaroAlt` → `baroAlt` | `blackbox_high_resolution` (×10 for gyro, setpoint, rcCommand), `sample_rate` | the scale is divided by 10 when `blackbox_high_resolution:1` |
-| 4.5 | `gyroUnfilt[0..2]`, `eRPM[0..7]` | `gyro_lpf1_dyn_expo`, `dterm_lpf1_dyn_expo`, `rc_smoothing_rx_smoothed`, `motor_poles`, `rc_command_scale` (the configurator divides rcCommand by it) | `gyroUnfilt` → `Gyro{Raw}`, `eRPM` → `Erpm` and the derived `MotorRpm` through `motor_poles` |
+| 4.5 | `gyroUnfilt[0..2]`, `eRPM[0..7]`, `debug[4..7]` | `gyro_lpf1_dyn_expo`, `dterm_lpf1_dyn_expo`, `rc_smoothing_rx_smoothed`, `motor_poles` | `gyroUnfilt` → `Gyro{Raw}`, `eRPM` → `Erpm` and the derived `MotorRpm` through `motor_poles` |
 | 4.0–4.5, `debug_mode 6` (`GYRO_SCALED`) | `debug[0..2]` = the gyro before the software filters, deg/s | — | a derived `Gyro{Raw}` from `debug[0..2]` when `gyroUnfilt` is not logged (fixtures 4.2.0, 4.5.0, 4.5.1) |
 | 2025.12 | `axisS` (wing), `imuQuaternion[0..2]` (int16 × 1/32767), `GPS_velned` | versions of the form `2025.12.x`; `d_max` instead of `d_min`; `minthrottle` no longer written (only `motorOutput`); `DeviceUID`, `motor_kv`, `gyro_debug_axis`; `fields_disabled_mask` gained the ATTITUDE bit (8) and ACC moved | the version parser accepts year.month; `FirmwareVersion` compares lexicographically, so `2025.12 > 4.5` |
 | 2026.6 | `GPS_time`, `GPS_home_epoch` (G/H frames) | — | aux tables only |
+| `master` (2026.12-dev, 4b1520e) | `pitot[0..1]`; `rcCommand` as thousandths of full deflection (throttle 0…1000) | `rc_command_scale` (the reader divides `rcCommand` by it), `debug_mode_name`, `Build key`, `Release name` | `rcCommand` channels of such a log are fractions of full deflection |
 
 The events (`E` frames) are stable too: `SYNC_BEEP=0`, `INFLIGHT_ADJUSTMENT=13`,
 `LOGGING_RESUME=14`, `DISARM=15`, `FLIGHTMODE=30`, `LOG_END=255`.
+
+## Writing: what differs between the target releases
+
+The writer (`openpid_fmt_blackbox::write`, `docs/DESIGN.md` §5) writes a log
+for one of six targets. This is everything that depends on the target, with
+where it was read. All paths are in the Betaflight repository; "the tag" is
+`4.3.2`, `4.4.3`, `4.5.0`…`4.5.5`, `2025.12.1`…`2025.12.5`, `2026.6.1`,
+`2026.6.2`, and `master` at `4b1520e`. The patch releases of one version were
+compared and do not differ in any of it, so a target is a version.
+
+| | 4.3 | 4.4 | 4.5 | 2025.12 | 2026.6 | master (2026.12-dev) | Read from |
+|---|---|---|---|---|---|---|---|
+| `Firmware type` | Cleanflight | Cleanflight | Cleanflight | Betaflight | Betaflight | Betaflight | `blackbox.c`, `blackboxWriteSysinfo` |
+| Version in `Firmware revision` | `4.3.2` | `4.4.3` | `4.5.5` | `2025.12.2` | `2026.6.2` | `2026.12.0` | `build/version.h` |
+| System-information lines (all options / stock quad build with a battery) | 136 / 136 | 172 / 172 | 191 / 191 | 242 / 174 | 233 / 176 | 275 / 180 | `blackboxWriteSysinfo`, `fc/parameter_names.h` |
+| `minthrottle` line | yes | yes | yes | — | — | — | the same |
+| `DeviceUID`, `motor_kv` lines | — | — | — | yes | yes | yes | the same |
+| D range line | `d_min` | `d_min` | `d_min` | `d_max` | `d_max` | `d_max` | the same |
+| `blackbox_high_resolution` (×10 on gyro, setpoint, rcCommand) | — | yes | yes | yes | yes | yes | `blackboxInit`, `loadMainState` |
+| `rcCommand` units | ±500, 1000…2000 | the same | the same | the same | the same | fraction × 1000, with `rc_command_scale:1000` | `loadMainState`, `BLACKBOX_RC_COMMAND_SCALE` |
+| `debug_mode_name` line | — | — | — | — | — | yes | `blackboxWriteSysinfo` |
+| Main-frame fields (all conditions true) | 49 | 49 | 64 | 77 | 77 | 79 | `blackboxMainFields` |
+| Barometer field | `BaroAlt` | `baroAlt` | `baroAlt` | `baroAlt` | `baroAlt` | `baroAlt` | the same |
+| `gyroUnfilt[0..2]`, `eRPM[0..7]` | — | — | yes | yes | yes | yes | the same |
+| `debug[]` slots | 4 | 4 | 8 | 8 | 8 | 8 | `DEBUG16_VALUE_COUNT` |
+| `axisS[0..2]` (wing, S gain ≠ 0), `imuQuaternion[0..2]` | — | — | — | yes | yes | yes | `blackboxMainFields` |
+| Servos | `servo[5]` of a tricopter, signed VB | the same | the same | `servo[0..7]`, TAG8_8SVB, predictor 1500 | the same | the same | the same, `writeIntraframe` |
+| Servo fields obey their mask bit | (no bit) | (no bit) | (no bit) | no: `hasServos() && (FIELD_SELECT(SERVO))` tests the number of the bit | no | yes | `testBlackboxConditionUncached` |
+| `pitot[0..1]` | — | — | — | — | — | yes | `blackboxMainFields` |
+| `fields_disabled_mask` bits | PID 0, RC 1, SETPOINT 2, BATTERY 3, MAG 4, ALTITUDE 5, RSSI 6, GYRO 7, ACC 8, DEBUG 9, MOTOR 10, GPS 11 | the same | + RPM 12, GYROUNFILT 13 | ATTITUDE 8 inserted (ACC 9, DEBUG 10, MOTOR 11, GPS 12, RPM 13, GYROUNFILT 14), + SERVO 15 | the same | + PITOT 16 | `blackbox.h` (to 4.5), `blackbox_fielddefs.h` |
+| `G` frame fields | 7 | 7 | 7 | 10 (+ `GPS_velned[0..2]`) | 11 (+ `GPS_time`) | 11 | `blackboxGpsGFields` |
+| `GPS_altitude` | unsigned VB | unsigned VB | signed VB | signed VB | signed VB | signed VB | the same, `writeGPSFrame` |
+| `H` frame fields | 2 | 2 | 2 | 3 (+ `GPS_home[2]`) | 4 (+ `GPS_home_epoch`) | 4 | `blackboxGpsHFields` |
+| `P ratio` of a log without P frames | undefined (a division by zero; the writer writes 0) | the same | the same | the same | the same | 0 | `blackboxGetPRatio` |
+
+The same in every target, and so not in the table: the encodings and
+predictors; the `S` frame (five fields); the events and their layout
+(`blackboxLogEvent`); the schedule of the frames (`blackboxAdvanceIterationTimers`,
+`blackboxShouldLogPFrame`, `blackboxShouldLogIFrame`: an `I` frame at every
+multiple of the `I interval`, `P` frames every `P interval` counted from it,
+`P interval` one of 1, 2, 4, 8, 16, or 0 when that is longer than the `I`
+interval); the rounding of the rates (`sensors/gyro_init.c`: the gyro and PID
+periods are whole microseconds, rounded down; `blackboxInit`:
+`I interval = 32000 / PID period`, rounded down, so 102 at 3.2 kHz and 205 at
+6.4 kHz); the slow-frame rules (`writeSlowFrameIfNeeded`: before a `P` frame
+when the state changed or 256 `I` intervals passed, forced at the start and
+after a resume; before `I` frames only with `P interval:0`); the `G` frame's
+`time` field (present unless `P interval` equals `I interval`); the home
+frame before the fix when the home point moved (`blackboxShouldLogGpsHomeFrame`).
+
+How the tables were verified against bytes a flight controller wrote:
+
+| Target | Field tables | Header lines | Frames |
+|---|---|---|---|
+| 4.3, 4.4 | the firmware source only (no fixture with an MIT-compatible licence) | source only | round trips through our reader and the independent decoder |
+| 4.5 | source, and the 4.5.1 fixture | the 4.5.1 fixture has exactly the 191 lines of the table, in order (an official build with every option) | both sessions of the 4.5.1 fixture come back byte for byte |
+| 2025.12 | source, and the 2025.12.2 fixture | the 2025.12.2 fixture has exactly the lines the table gives a wing build with GPS, compass, barometer and chirp | the 2025.12.2 fixture (39 481 main frames, 398 GPS frames, 7 slow frames, 5 events) comes back byte for byte |
+| 2026.6, master | source only (no log exists yet) | source only | round trips through our reader |
+
+`betaflight-4.5.0-gps-rescue.bbl` names itself 4.5.0 but was built from the
+development branch before the release: it lacks `ez_landing_speed` and logs
+`GPS_altitude` unsigned. Written for 4.5 it comes back with exactly those
+differences (`tests/rewrite.rs`). Betaflight 4.2 is not a target: its logs
+are read, and can be written for 4.3 and later.
+
+The values of the example craft in `write/sysinfo/` are a configuration, not
+facts of a version: those of the fixture's craft where it logs the line
+(linear rates of 1000 deg/s, no debug mode, no GPS feature), the firmware's
+defaults (`pg/autopilot*.c`, `flight/pid.c`, `sensors/barometer.c`) for lines
+no fixture has. Lines of options the stock build does not have and no fixture
+logs (GPS rescue, altitude and position hold, optical flow, the build key)
+are listed without a value and written only for a session that brings them.
 
 ## Test-log coverage
 

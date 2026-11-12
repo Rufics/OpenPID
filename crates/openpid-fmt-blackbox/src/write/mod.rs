@@ -734,7 +734,11 @@ pub fn betaflight(session: &FlightSession, options: &WriteOptions) -> Result<Vec
     // a decoded log is written as it was; a flight is logged by the rules
     let logging = !source.decoded;
     let mut slow = SlowLog::new(session, target, schedule, first);
+    // `P interval:0` logs the slow frames with the I frames; a P interval
+    // as long as the I interval logs no P frame either, and no slow frame
+    // at all: the firmware writes one only before a P frame
     let intra_only = schedule.p_interval == 0;
+    let no_inter = intra_only || schedule.p_interval >= schedule.i_interval;
     let has_event = |wanted: fn(&EventKind) -> bool| session.events.iter().any(|e| wanted(&e.kind));
 
     let mut buf = header_block(&layout, lines);
@@ -779,7 +783,7 @@ pub fn betaflight(session: &FlightSession, options: &WriteOptions) -> Result<Vec
         if logging && k == first && !has_event(|k| matches!(k, EventKind::SyncBeep { .. })) {
             frames::event(&mut buf, &EventKind::SyncBeep { time_us });
         }
-        if logging && intra_only {
+        if logging && no_inter {
             // checked on the iteration after the frame, which logs nothing
             slow.mode_event(&mut buf, k);
         }
