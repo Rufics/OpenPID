@@ -136,14 +136,13 @@ the three log rates) and by the window count in the legend.
   two seconds. OpenPID takes 209 and 65 (one every 0.125 s).
 - **Stick size (`t4`).** Moves within 25 deg/s give 2 windows; within 100
   and 400 deg/s give 257 and 259, and the same curve (peaks 1.2489 and
-  1.2504): the response does not depend on how hard the stick moves, and a
-  window needs a stick move of more than about 25 deg/s. OpenPID refuses
-  the 25 deg/s axis (its threshold is 80 deg/s) and keeps half the windows
-  of the 100 deg/s one.
+  1.2504): the response does not depend on how hard the stick moves. What
+  a window needs is a mean stick distance from the centre, not a move of
+  some size (the rule below). OpenPID refuses the 25 deg/s axis (its
+  threshold is 80 deg/s) and keeps half the windows of the 100 deg/s one.
 - **Where the sticks move (`t8`).** Moves during 5 s of the flight give 55
   windows, during 2 s give 31, one move every 2 s gives 233. Windows come
-  only from where the stick moves; the exact rule needs single steps at
-  known times (round 2).
+  only from where the stick moves (the rule below gives all three counts).
 - **Hold time (`t6`).** A new level every 40 … 120 ms or 300 … 900 ms: 259
   and 257 windows, peaks 1.2518 and 1.2532. Every 1.5 … 3 s: 216 windows,
   peak 1.2079 ± 0.18 and a curve that sinks to 0.94: long rests make it
@@ -164,13 +163,14 @@ the three log rates) and by the window count in the legend.
   the Spectral Analyzer.
 - **The curve sinks**: to 0.985 … 0.989 at 500 ms on the 30 s logs with
   holds of 150 … 700 ms, to 0.99 … 1.00 on the 12 s log and with short
-  holds. Its cause is not known.
+  holds. It is a property of the rule below (the model sinks the same
+  way), not of the plants.
 
 ### The Peak and Latency plots
 
-- **Peak** is the highest point of the mean curve (equal to four decimals
-  on 25 of 26 rows; on one it is 0.0004 lower). The bar is not yet
-  understood.
+Read by eye in the first pass; the rule is in the next section.
+
+- **Peak** is the highest point of the mean curve.
 - **SR Latency** is taken per window at the level 0.5, not at half of
   where the curve settles: with a gain of 0.8 it reads 20.06 ms where the
   same plant at a gain of 1 reads 17.84 ms, and the mean curves cross 0.5
@@ -180,27 +180,96 @@ the three log rates) and by the window count in the legend.
   and 17.4 … 18.9 ms for the other plants, in steps of an eighth of a
   millisecond.
 
-### A first model of one window
+## The rule (2026-11-12, from the copies of round 4)
 
-The "Raw" copies hold every window's response: 259 curves of 1 001 points
-on the yaw axis of `t1-plants-2k`. A plain rule already gives the first of
-them to 0.001 RMS (the curve runs from 0 to 1.25): the setpoint and the
-gyro of a window of 2 s (3 999 samples, starting one sample after the first
-second), each through a Hann window; the gyro's transform divided by the
-setpoint's; back to time; summed up. No regularisation is needed on this
-log, and none of the values tried changes the fit. The difference that is
-left has a shape (it sits between 120 and 250 ms), so this is the family
-and not yet the rule; OpenPID's estimator differs from it by a cut-off at
-25 Hz and a regularisation, which is where its overshoot on a pure delay
-comes from.
+With "Raw" on, the tool draws the response of every window it used: 5 610
+curves on the 27 plots of the round. One rule gives every one of them, the
+45 mean curves (27 without smoothing, 18 at the three levels), the window
+counts of all 45 legends, and the Peak and SR Latency plots, to the
+precision of the copies (0.0000004 on a curve that runs from 0 to 1.25).
+It is in `crates/openpid-probe/src/step_model.rs`, with the readings it is
+tested against in `tests/calibration/step/`.
 
-### Not settled yet
+1. **Smoothing** works on the filtered gyro only, before anything else: a
+   local regression with tricube weights (the one of the Spectral
+   Analyzer) over 5, 11 and 21 samples for "low", "medium" and "high" at
+   2 kHz. The setpoint is not smoothed. The logged setpoint is used, not
+   one computed from the sticks.
+2. **Windows**: the log without its first and last second, starting two
+   samples after the first second (as the spectrum does), is cut into
+   windows of 2 s, a tenth of a second apart: 259 for 30 s, 79 for 12 s,
+   at every log rate.
+3. **One window**: the setpoint and the gyro each go through a Hann window
+   and are followed by 200 zeros (200 at 1, 2 and 4 kHz alike). Their
+   transforms `X` and `Y`, divided by their length, give
+   `H = Y·conj(X) / (|X|² + 0.0001)`. Back in time this is the impulse
+   response; its running sum is the window's step response, of which the
+   first 500 ms are kept, at the log's own rate.
+4. **A window counts** when the stick was off its centre by 20 deg/s or
+   more on average (the mean of `|setpoint|` over the window), and when
+   its response stays between 0.5 and 1.5 from 150 ms to 500 ms.
+5. **The curve** is the mean of the windows that count; the `n` of the
+   legend is their number.
+6. **Peak** is the highest value of the curve; its bar is the spread
+   (standard deviation) over the windows of each window's highest value
+   among its first 150 samples (150 samples at every rate: 150, 75 and
+   37.5 ms).
+7. **SR Latency** is, per window, the time of the first sample above 0.5,
+   counted from one and less a millisecond (`(i + 1) / fs − 1 ms` for
+   sample `i` counted from zero): a pure delay of 10 ms reads 10.0, 9.5 and
+   9.25 ms at 1, 2 and 4 kHz. The plot shows the mean over the windows and
+   their spread.
 
-- The exact rule for one window (above), the step between windows, how
-  the windows are averaged, and why the mean sinks.
-- The rule that takes or drops a window: the stick threshold, the length
-  and the step of the windows, what drops a noisy window.
-- What the bar of the Peak plot is, and how the latency of a window is
-  read to the fraction of a sample.
-- The kernels of "medium" and "high" smoothing, and whether they follow
-  the log rate.
+What this explains of the round:
+
+- **Why the windows' count follows the stick.** 25 deg/s moves give a mean
+  distance of 12 deg/s: two windows of 259 reach 20.06 and 20.08 and are
+  the two the tool drew. Moves in 5 s of the flight: the 55 windows that
+  hold enough of them.
+- **Why noise drops windows and smoothing brings them back.** A noisy
+  response leaves 0.5 … 1.5 somewhere after 150 ms: 58 of 259 windows at
+  20 deg/s RMS. Smoothing the gyro keeps 231, 249 and 256 of them inside.
+- **Why long holds are worse.** A window with one stick move divides by a
+  setpoint with little in it: its response wanders (the bar of 0.18).
+- **Why a gain of 1.25 has a curve at all**: its tail stays below 1.5.
+  A gain above 1.5 or below 0.5 would leave no window.
+- **Why the curve sinks.** The Hann window weighs the setpoint and the
+  gyro by where they are in the window, not by where the response to a
+  move is: the division of the two is slightly off for the late part of a
+  response. The zeros and the constant in the denominator keep single
+  windows from going far wrong (without them the same windows are up to
+  0.4 off).
+
+Three details differ from what a reader might assume, and each is as the
+tool does it: the 200 zeros and the first 150 samples are numbers of
+samples, the same at every rate; and the first sample above 0.5 is taken,
+with no reading between two samples.
+
+### What is still open
+
+| Open | What is known | Round 5 asks |
+|---|---|---|
+| The smoothing windows at other log rates | 5, 11, 21 samples at 2 kHz | the three levels on a pure delay at 1 and 4 kHz |
+| "From 150 ms on": a time or a number of samples | sample 294 … 317 at 2 kHz; no window was near the limit at 1 and 4 kHz | a noisy axis at 1 kHz and a creeping plant at 4 kHz, where the two readings take different windows (192 or 211; 241 or 168) |
+| Where the Peak stops looking | on two plots of plants that never overshoot the tool's value was the highest of the first 137 … 324 ms only | a plant that creeps to its level (time constant 100 ms): its curve rises to its end, so the Peak tells where the tool stops; and peaks at 149 and 236 ms |
+| "20 deg/s or more": is exactly 20 enough | between 19.85 (left out) and 20.06 (taken) | a stick always 19, 21 and 20 deg/s from its centre |
+| Where the first window starts | two samples after the first second on eight logs, three on the 12 s log | logs of 12, 18 and 26 s |
+| SP-Gyro Delay | setpoint and gyro of the trimmed log brought to 8 kHz along straight lines; the shift with the largest sum of products. Right on 25 of 27 plots; 0.125 and 0.25 ms too high on the axis of small moves and on the noisy one | every plot of round 5; delays above 19 ms |
+
+## Round 2 (round 5 of the ledger): confirm
+
+Seven logs (`catalogue::round(5)`, pack `407c2cd`), every one with stick
+moves the model has not seen. Its predictions for every plot are in the pack
+(`predictions.json`): the window count, the curve at 18 times, the Peak
+and the latency with their bars, the delay; where the table above leaves a
+choice, both readings.
+
+| Probe | What differs between its axes | Asks |
+|---|---|---|
+| `u1-plants-2k` (26 s) | the three plants of round 1, other stick moves | the rule as it stands |
+| `u2-rates-1k`, `u3-rates-4k` | a pure delay, a creeping plant, the second-order plant under 20 deg/s RMS of noise; the three smoothing levels | what follows the log rate: the smoothing windows, the limit at 150 ms |
+| `u4-slow-2k` | a creeping plant; second-order plants of 2.5 and 4 Hz | where the Peak stops looking |
+| `u5-stick-2k` | a stick always 19, 21, 20 deg/s from its centre | what a window needs: predicted 0, 257 and 257 windows |
+| `u6-short-2k` (12 s), `u7-mid-2k` (18 s) | the three plants | where the first window starts |
+
+The script takes 123 copies and 16 pictures, in about 15 minutes.
