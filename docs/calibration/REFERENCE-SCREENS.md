@@ -149,7 +149,11 @@ order; "Show Differences Only"; a selector of the log.
   it off. The smoothing list shows "smoothing…" whatever level is chosen
   (the names are cut by the width of the list). Every plot of the window
   has the toolbar of the spectrum's plots and copies as a vector graphic
-  (trial of 2026-11-11). "BF sliders" replaces
+  (trial of 2026-11-11).
+- Every Run adds a "test" to the plots: another curve and another point
+  per axis, in the next colour (red, orange, yellow, green, cyan), with its
+  own line in the legend. The earlier ones stay until the tool clears the
+  plots; the newest is the last. "BF sliders" replaces
   the right half by "Betaflight PID Sliders": Damping, Tracking, Stick Resp.,
   Dynamic D., Drift-Wobble, Pitch D., Pitch T., Master on 0 … 2, with "MODE:
   RPY".
