@@ -11,10 +11,18 @@
 //! experiments.
 
 use openpid_core::session::{Channel, ChannelSet, Diagnostics, FirmwareInfo, Origin, Timebase};
-use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, Series, Settings, Unit};
+use openpid_core::{
+    Axis, BatteryField, ChannelId, FlightSession, GyroStage, Series, Settings, Unit,
+};
 use openpid_dsp::{Complex, Fft};
 use serde::{Deserialize, Serialize};
 use std::f64::consts::{PI, TAU};
+
+/// Battery voltage every probe flight logs, V.
+const RESTING_VOLTS: f64 = 16.0;
+/// Signal strength every probe flight logs, in the firmware's units
+/// (0 … 1023).
+const RESTING_RSSI: f64 = 1000.0;
 
 /// Times closer than this count as equal, seconds: sample times and step
 /// times are both whole microseconds in every probe.
@@ -775,6 +783,46 @@ impl FlightSpec {
             Unit::Percent,
             throttle,
         );
+        // a craft at rest on its sensors: a full battery with no load, a
+        // strong radio link, one g straight down and no rotation. A log
+        // has these columns on every real craft, and every log the
+        // reference tool has opened from this crate had them with these
+        // values; a tool that reads them must go on finding them.
+        let still = |value: f64| vec![value; n];
+        add(
+            ChannelId::Battery(BatteryField::Voltage),
+            "vbatLatest".into(),
+            Unit::Volts,
+            still(RESTING_VOLTS),
+        );
+        add(
+            ChannelId::Battery(BatteryField::Current),
+            "amperageLatest".into(),
+            Unit::Amperes,
+            still(0.0),
+        );
+        add(
+            ChannelId::Rssi,
+            "rssi".into(),
+            Unit::Raw,
+            still(RESTING_RSSI),
+        );
+        for axis in Axis::ALL {
+            let i = axis.index();
+            let g = if axis == Axis::Yaw { 1.0 } else { 0.0 };
+            add(
+                ChannelId::Acc { axis },
+                format!("accSmooth[{i}]"),
+                Unit::Gs,
+                still(g),
+            );
+            add(
+                ChannelId::Custom(format!("imuQuaternion[{i}]")),
+                format!("imuQuaternion[{i}]"),
+                Unit::Unitless,
+                still(0.0),
+            );
+        }
         let mut settings = Settings {
             loop_rates: openpid_fmt_blackbox::write::typical_rates(self.fs),
             ..Settings::default()
