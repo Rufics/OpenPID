@@ -1,12 +1,13 @@
-//! The step response the reference tool draws for an axis, as the first
-//! round on that window found it (`docs/calibration/step.md`).
+//! The step response the reference tool draws for an axis, as the rounds
+//! on that window found it (`docs/calibration/step.md`).
 //!
 //! Like [`crate::model`] it is a model of observed behaviour: what the tool
 //! showed for probe logs of known content, read from plots it copies as
-//! vector graphics. On the readings of `tests/calibration/step/` it is
-//! exact to the precision of those copies. It has been fitted to one round
-//! only; the next round's predictions are made with it, so that the round
-//! confirms it or corrects it.
+//! vector graphics. During rounds 4 and 5 it was held to those copies, and
+//! on the curves of round 4 it was exact to their precision (0.000002): a
+//! one-off comparison whose material is not in the repository. A round's
+//! predictions are made with it before the owner runs the round, so that
+//! the round confirms it or corrects it.
 //!
 //! The steps:
 //! 1. the filtered gyro is smoothed by a local regression over 1, 5, 11 or

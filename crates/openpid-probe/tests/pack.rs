@@ -4,7 +4,7 @@
 use openpid_core::{Axis, BatteryField, ChannelId, GyroStage, LogFormat, OpenOptions};
 use openpid_fmt_blackbox::BlackboxFormat;
 use openpid_probe::pack::{self, ChannelTruth, PackError, Spectrum};
-use openpid_probe::{Pack, catalogue, model};
+use openpid_probe::{Pack, catalogue};
 use std::sync::OnceLock;
 
 /// Round 1, built once for every test.
@@ -443,170 +443,10 @@ fn the_command_line() {
     }
 }
 
-/// The points of a curve read from the reference tool: index in the
-/// transform, level in dB.
-fn reading(file: &str) -> Vec<(usize, f64)> {
-    let path = format!(
-        "{}/../../tests/calibration/spectrum/{file}",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    std::fs::read_to_string(&path)
-        .unwrap()
-        .lines()
-        .skip(1)
-        .map(|line| {
-            let (bin, db) = line.split_once(',').unwrap();
-            (bin.parse().unwrap(), db.parse().unwrap())
-        })
-        .collect()
-}
-
-/// The filtered gyro of `axis` as the log `name` of `pack` holds it.
-fn logged(pack: &Pack, name: &str, axis: Axis) -> Vec<f64> {
-    let (_, bytes) = pack.logs.iter().find(|(n, _)| n == name).unwrap();
-    let log = BlackboxFormat::new()
-        .open(bytes, &OpenOptions::default())
-        .unwrap();
-    let id = ChannelId::Gyro {
-        axis,
-        stage: GyroStage::Filtered,
-    };
-    log.sessions[0].channel(&id).unwrap().data.values().to_vec()
-}
-
-/// The largest difference between a curve and the points read from the
-/// reference tool, dB.
-fn worst(curve: &model::Curve, drawn: &[(usize, f64)]) -> f64 {
-    drawn
-        .iter()
-        .map(|(bin, db)| (curve.db[*bin] - db).abs())
-        .fold(0.0, f64::max)
-}
-
-/// The copies hold single-precision coordinates: 0.00002 dB.
-const COPY_PRECISION_DB: f64 = 5.0e-5;
-
-#[test]
-fn the_model_gives_the_points_the_reference_tool_drew() {
-    // the "medium" curves of s9-bands-2k, copied from the tool as vector
-    // graphics: yaw below 100 Hz point by point, pitch over the whole range.
-    // The log was loaded alone, and the analysed span was one sample later
-    // than in round 2 (not understood; see `model::span`).
-    let pack = round_1();
-    assert_eq!(model::LEVELS[2], "medium");
-    for (axis, file, points) in [
-        (Axis::Yaw, "r1-s9-bands-2k-medium-yaw-sub100.csv", 2801),
-        (Axis::Pitch, "r1-s9-bands-2k-medium-pitch-full.csv", 3636),
-    ] {
-        let values = logged(pack, "s9-bands-2k.bbl", axis);
-        let curve = model::curve_of(&values, 2000.0, 2003..58_002, 2).unwrap();
-        assert_eq!(curve.db.len(), 28_000);
-        let drawn = reading(file);
-        assert_eq!(drawn.len(), points, "{file}");
-        let off = worst(&curve, &drawn);
-        assert!(off < COPY_PRECISION_DB, "{file}: {off} dB off");
-    }
-    // the pitch copy runs from 0 Hz to the last point of the transform
-    let pitch = reading("r1-s9-bands-2k-medium-pitch-full.csv");
-    assert_eq!((pitch[0].0, pitch[pitch.len() - 1].0), (0, 27_999));
-}
-
 /// Round 2, built once for every test.
 fn round_2() -> &'static Pack {
     static PACK: OnceLock<Pack> = OnceLock::new();
     PACK.get_or_init(|| pack::build(2, "test").unwrap())
-}
-
-#[test]
-fn the_model_gives_the_curves_of_round_2() {
-    // yaw below 100 Hz of the six logs at "medium": 20 000 to 112 000
-    // samples, four log rates, three lengths
-    let pack = round_2();
-    for (id, fs, points) in [
-        ("c1-mixed-2k", 2000.0, 2801),
-        ("c2-mixed-1k", 1000.0, 2801),
-        ("c3-mixed-4k", 4000.0, 2801),
-        ("c4-short-2k", 2000.0, 1001),
-        ("c5-long-2k", 2000.0, 3192),
-        ("c6-short-8k", 8000.0, 1001),
-    ] {
-        let values = logged(pack, &format!("{id}.bbl"), Axis::Yaw);
-        let curve = if id == "c6-short-8k" {
-            // at 8 kHz the tool took one sample more at the end
-            model::curve_of(&values, fs, 8002..88_002, 2).unwrap()
-        } else {
-            model::curve(&values, fs, 2).unwrap()
-        };
-        let drawn = reading(&format!("r2-{id}-medium-yaw-sub100.csv"));
-        assert_eq!(drawn.len(), points, "{id}");
-        let off = worst(&curve, &drawn);
-        assert!(off < COPY_PRECISION_DB, "{id}: {off} dB off");
-    }
-    // ... and one log at the other four levels
-    let values = logged(pack, "c1-mixed-2k.bbl", Axis::Yaw);
-    for (level, name) in model::LEVELS.into_iter().enumerate() {
-        if name == "medium" {
-            continue;
-        }
-        let curve = model::curve(&values, 2000.0, level).unwrap();
-        let drawn = reading(&format!("r2-c1-mixed-2k-{name}-yaw-sub100.csv"));
-        // one point of the "low" curve leaves the plot and is not in its copy
-        assert_eq!(
-            drawn.len(),
-            if name == "low" { 2800 } else { 2801 },
-            "{name}"
-        );
-        let off = worst(&curve, &drawn);
-        assert!(off < COPY_PRECISION_DB, "{name}: {off} dB off");
-    }
-}
-
-#[test]
-fn the_model_gives_the_flown_flight_of_round_3() {
-    // the hold-out: a flight with stick moves, motor noise and a resonance
-    // at four rates and lengths, read from the tool after the model was
-    // fixed. The filtered gyro of a log is the rounded flight (the test of
-    // round 1 above shows it), so no log has to be written here.
-    let probes = catalogue::round(3).unwrap();
-    let logged = |id: &str, axis: Axis| -> (f64, Vec<f64>) {
-        let flight = &probes.iter().find(|p| p.id == id).unwrap().flight;
-        let samples = flight.samples(axis).filtered;
-        (
-            flight.fs,
-            samples.iter().map(|v| v.round_ties_even()).collect(),
-        )
-    };
-    for (id, level, points, window) in [
-        ("h1-flight-2k", 2, 2301, 117),
-        ("h2-flight-1k", 2, 1601, 105),
-        ("h3-flight-4k", 2, 3170, 131),
-        ("h4-flight-8k", 2, 1901, 131),
-        // 8000 points: the window of "low" is three points there
-        ("h2-flight-1k", 0, 917, 3),
-    ] {
-        let (fs, values) = logged(id, Axis::Roll);
-        let curve = model::curve(&values, fs, level).unwrap();
-        assert_eq!(model::window(level, curve.db.len()), window, "{id}");
-        let name = model::LEVELS[level];
-        let drawn = reading(&format!("r3-{id}-{name}-roll-sub100.csv"));
-        assert_eq!(drawn.len(), points, "{id} {name}");
-        let off = worst(&curve, &drawn);
-        assert!(off < COPY_PRECISION_DB, "{id} {name}: {off} dB off");
-        // stick moves stand far above the tool's default upper limit
-        if level == 2 {
-            let top = drawn.iter().map(|p| p.1).fold(f64::MIN, f64::max);
-            assert!(top > 30.0, "{id}: {top}");
-        }
-    }
-    // the probe of round 1 again, in company this time: its span starts one
-    // sample later than every other log's, as it did when loaded alone
-    let (fs, values) = logged("h5-bands-2k", Axis::Yaw);
-    let drawn = reading("r3-h5-bands-2k-medium-yaw-sub100.csv");
-    let later = model::curve_of(&values, fs, 2003..58_002, 2).unwrap();
-    assert!(worst(&later, &drawn) < COPY_PRECISION_DB);
-    let as_the_others = model::curve(&values, fs, 2).unwrap();
-    let off = worst(&as_the_others, &drawn);
-    assert!(off > COPY_PRECISION_DB && off < 0.001, "{off}");
 }
 
 #[test]

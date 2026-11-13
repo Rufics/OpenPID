@@ -2,10 +2,12 @@
 //! calibration rounds found it (`docs/calibration/spectrum.md`).
 //!
 //! It is a model of observed behaviour: what the tool showed for probe logs
-//! of known content, read from plots it copies as vector graphics. On the
-//! points of `tests/calibration/spectrum/` it is exact to the precision of
-//! those copies. A round's predictions are made with it before the owner
-//! runs the round, so that the round confirms the model or corrects it.
+//! of known content, read from plots it copies as vector graphics. During
+//! rounds 1 to 3 it was held to those copies, point by point, and was exact
+//! to their precision (0.00005 dB): a one-off comparison whose material is
+//! not in the repository. A round's predictions are made with it before the
+//! owner runs the round, so that the round confirms the model or corrects
+//! it.
 //!
 //! The steps:
 //! 1. the log without its first and last second, one sample short and
@@ -273,6 +275,18 @@ mod tests {
                     "{points} points, level {level}"
                 );
             }
+        }
+        // the hold-out of round 3, a flown flight at four rates and lengths:
+        // the points of each curve and the window of its level
+        for (points, level, want) in [
+            (23_000, 2, 117),
+            (8000, 2, 105),
+            (68_000, 2, 131),
+            (76_000, 2, 131),
+            // 8000 points: the window of "low" is three points there
+            (8000, 0, 3),
+        ] {
+            assert_eq!(window(level, points), want, "{points} points");
         }
         // a level beyond the list is the last one; no points is still a window
         assert_eq!(window(9, 28_000), 555);
