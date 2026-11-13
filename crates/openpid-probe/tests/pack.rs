@@ -568,7 +568,7 @@ fn round_5_carries_the_step_model_s_predictions() {
         ]
     );
     let predictions = pack.predictions.as_ref().unwrap();
-    assert_eq!((predictions.round, predictions.assumes.len()), (5, 2));
+    assert_eq!((predictions.round, predictions.assumes.len()), (5, 3));
     // a step-response round predicts that window and nothing of the spectrum
     assert!(predictions.probes.is_empty());
     let text = String::from_utf8(pack.files()[9].1.clone()).unwrap();
@@ -581,13 +581,13 @@ fn round_5_carries_the_step_model_s_predictions() {
     assert_eq!(
         grids,
         [
-            ("u1-plants-2k", 2002, 219),
-            ("u2-rates-1k", 1002, 259),
-            ("u3-rates-4k", 4002, 259),
-            ("u4-slow-2k", 2002, 259),
-            ("u5-stick-2k", 2002, 259),
-            ("u6-short-2k", 2002, 79),
-            ("u7-mid-2k", 2002, 139),
+            ("u1-plants-2k", 2002, 439),
+            ("u2-rates-1k", 1002, 519),
+            ("u3-rates-4k", 4002, 519),
+            ("u4-slow-2k", 2002, 519),
+            ("u5-stick-2k", 2002, 519),
+            ("u6-short-2k", 2002, 159),
+            ("u7-mid-2k", 2002, 279),
         ]
     );
     let probe = |id: &str| predictions.step.iter().find(|p| p.id == id).unwrap();
@@ -613,7 +613,7 @@ fn round_5_carries_the_step_model_s_predictions() {
     let stick = probe("u5-stick-2k");
     let windows: Vec<usize> = stick.axes.iter().map(|a| a.levels[0].windows).collect();
     assert_eq!(windows[0], 0);
-    assert!(windows[1] > 250 && windows[2] > 250, "{windows:?}");
+    assert!(windows[1] > 500 && windows[2] > 500, "{windows:?}");
     let none = &stick.axes[0].levels[0];
     assert!(none.peak.is_none() && none.curve.is_empty() && none.latency_ms.is_none());
 
@@ -634,7 +634,7 @@ fn round_5_carries_the_step_model_s_predictions() {
     // "from 150 ms on" is a time: at 4 kHz the creeping plant, still below
     // 0.5 at sample 300 (75 ms), keeps nearly all of its windows
     let creeping_4k = &probe("u3-rates-4k").axes[1].levels[0];
-    assert!(creeping_4k.windows > 230, "{}", creeping_4k.windows);
+    assert!(creeping_4k.windows > 460, "{}", creeping_4k.windows);
     // smoothing brings windows of the noisy axis back
     let noisy: Vec<usize> = probe("u2-rates-1k").axes[2]
         .levels
@@ -642,7 +642,7 @@ fn round_5_carries_the_step_model_s_predictions() {
         .map(|l| l.windows)
         .collect();
     assert!(
-        noisy.windows(2).all(|w| w[0] <= w[1]) && noisy[0] + 30 < noisy[3],
+        noisy.windows(2).all(|w| w[0] <= w[1]) && noisy[0] + 60 < noisy[3],
         "{noisy:?}"
     );
 }
@@ -679,7 +679,8 @@ fn round_6_carries_predictions_for_every_axis() {
     );
     assert_eq!(names[7], "predictions.json");
     let predictions = pack.predictions.as_ref().unwrap();
-    assert_eq!((predictions.round, predictions.assumes.len()), (6, 2));
+    assert_eq!((predictions.round, predictions.assumes.len()), (6, 3));
+    assert!(predictions.assumes[0].contains("0.05 s"));
     assert!(predictions.probes.is_empty());
     let grids: Vec<(&str, usize, (usize, usize), usize)> = predictions
         .step
@@ -689,11 +690,11 @@ fn round_6_carries_predictions_for_every_axis() {
     assert_eq!(
         grids,
         [
-            ("w1-flight-2k", 2002, (4000, 200), 299),
-            ("w2-flight-1k", 1002, (2000, 100), 179),
-            ("w3-flight-4k", 4002, (8000, 400), 119),
-            ("w4-flight-8k", 8002, (16_000, 800), 99),
-            ("w5-mixed-2k", 2002, (4000, 200), 369),
+            ("w1-flight-2k", 2002, (4000, 100), 599),
+            ("w2-flight-1k", 1002, (2000, 50), 359),
+            ("w3-flight-4k", 4002, (8000, 200), 239),
+            ("w4-flight-8k", 8002, (16_000, 400), 199),
+            ("w5-mixed-2k", 2002, (4000, 100), 739),
         ]
     );
     let probes = catalogue::round(6).unwrap();
@@ -737,6 +738,14 @@ fn round_6_carries_predictions_for_every_axis() {
             assert!((delay - half).abs() < 3.0, "{at}: {delay} for {half}");
         }
     }
+    // the windows of the first log, as version 0.94 of the tool counted
+    // them in the one picture of it
+    let first: Vec<usize> = predictions.step[0]
+        .axes
+        .iter()
+        .map(|a| a.levels[0].windows)
+        .collect();
+    assert_eq!(first, [595, 593, 586]);
     // smoothing takes no window away
     let mixed = &predictions.step[4];
     for a in &mixed.axes {

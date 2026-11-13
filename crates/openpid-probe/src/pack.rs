@@ -379,7 +379,10 @@ pub const PREDICTED_MS: [f64; 18] = [
 
 /// What the predictions of a step-response round rest on beyond what is
 /// measured.
-const STEP_ASSUMES: [&str; 2] = [
+const STEP_ASSUMES: [&str; 3] = [
+    "version 0.94 of the tool moves its windows by 0.05 s where version 0.9 moved them by \
+     0.1 s (one picture: n = 595, 593, 586 for w1-flight-2k, which this gives exactly); \
+     everything else of the rule is carried over from 0.9 unchecked",
     "the first window starts two samples after the first second (on two short logs, one of \
      12 s and one of 18 s, it was three; on another of 12 s two; the curve moves by less \
      than 0.001)",

@@ -9,12 +9,18 @@
 //! predictions are made with it before the owner runs the round, so that
 //! the round confirms it or corrects it.
 //!
+//! Rounds 4 and 5 were run on version 0.9 of the tool. The model is that
+//! of version 0.94, which moves its windows by 0.05 s where 0.9 moved them
+//! by 0.1 s (seen in one picture of the first log of round 6); everything
+//! else of the rule is carried over from 0.9 and has not been checked on
+//! 0.94.
+//!
 //! The steps:
 //! 1. the filtered gyro is smoothed by a local regression over 1, 5, 11 or
 //!    21 samples, the same at every log rate ([`SMOOTHING`]); the setpoint
 //!    is not;
 //! 2. the log without its first and last second is cut into windows of two
-//!    seconds, a tenth of a second apart ([`grid`]);
+//!    seconds, a twentieth of a second apart ([`grid`]);
 //! 3. in every window the setpoint and the gyro go through a Hann window
 //!    and are followed by 200 zeros; the gyro's transform is divided by the
 //!    setpoint's with a small constant in the denominator; the result, back
@@ -39,8 +45,11 @@ pub const SMOOTHING: [(&str, usize); 4] = [("off", 1), ("low", 5), ("medium", 11
 
 /// Length of a window, seconds.
 const WINDOW_S: f64 = 2.0;
-/// Distance between the starts of two windows, seconds.
-const HOP_S: f64 = 0.1;
+/// Distance between the starts of two windows, seconds: 0.05 s in version
+/// 0.94 of the tool, where version 0.9 had 0.1 s. Seen in one picture of
+/// the first log of round 6: its three axes show 595, 593 and 586 windows,
+/// which this distance gives exactly (0.1 s gives 295, 297 and 293).
+const HOP_S: f64 = 0.05;
 /// Zeros that follow a window before its transform: the same number at 1,
 /// 2 and 4 kHz.
 const PAD: usize = 200;
@@ -392,20 +401,24 @@ mod tests {
 
     #[test]
     fn the_windows_of_a_log() {
-        // 30 s at 2 kHz: 259 windows of 4000 samples, 200 apart, from 2002
+        // 30 s at 2 kHz: 519 windows of 4000 samples, 100 apart, from 2002
         let g = grid(60_000, 2000.0, LATE).unwrap();
-        assert_eq!((g.first, g.length, g.hop, g.count), (2002, 4000, 200, 259));
-        assert_eq!(g.start(258), 53_602);
-        // 12 s: 79
-        assert_eq!(grid(24_000, 2000.0, 3).unwrap().count, 79);
+        assert_eq!((g.first, g.length, g.hop, g.count), (2002, 4000, 100, 519));
+        assert_eq!(g.start(518), 53_802);
+        // 12 s: 159
+        assert_eq!(grid(24_000, 2000.0, 3).unwrap().count, 159);
         // the same seconds at other rates give the same number of windows
-        assert_eq!(grid(30_000, 1000.0, LATE).unwrap().count, 259);
-        assert_eq!(grid(120_000, 4000.0, LATE).unwrap().count, 259);
+        assert_eq!(grid(30_000, 1000.0, LATE).unwrap().count, 519);
+        assert_eq!(grid(120_000, 4000.0, LATE).unwrap().count, 519);
+        // 34 s, the first log of round 6: the 599 windows of which the tool
+        // counted 595, 593 and 586
+        assert_eq!(grid(68_000, 2000.0, LATE).unwrap().count, 599);
         // four seconds hold no window: two are cut off, and the two that
         // are left are one sample short
         assert_eq!(grid(8000, 2000.0, LATE), None);
         assert_eq!(grid(100, 2000.0, LATE), None);
-        assert_eq!(grid(8201, 2000.0, LATE).unwrap().count, 1);
+        assert_eq!(grid(8101, 2000.0, LATE).unwrap().count, 1);
+        assert_eq!(grid(8201, 2000.0, LATE).unwrap().count, 2);
     }
 
     /// A stick that moves to a new level within 200 deg/s every 150 …
@@ -462,8 +475,8 @@ mod tests {
     fn the_step_of_a_delayed_axis() {
         let (setpoint, gyro) = delayed(24_000, 20);
         let s = step(&setpoint, &gyro, 2000.0, 0).unwrap();
-        assert_eq!(s.grid.count, 79);
-        assert_eq!(s.windows.len(), 79);
+        assert_eq!(s.grid.count, 159);
+        assert_eq!(s.windows.len(), 159);
         assert_eq!(s.mean.len(), 1001);
         assert!((s.peak - 1.0).abs() < 0.03, "{}", s.peak);
         // the first sample above 0.5 is the 20th: 21 samples of 0.5 ms
@@ -513,8 +526,8 @@ mod tests {
         // 15 Hz behind 5 ms: the curve is the plant's, overshoot and all
         let (setpoint, gyro) = flown(plant(15.0));
         let s = step(&setpoint, &gyro, fs, 0).unwrap();
-        assert_eq!(s.grid.count, 199);
-        assert!(s.windows.len() > 190, "{}", s.windows.len());
+        assert_eq!(s.grid.count, 399);
+        assert!(s.windows.len() > 380, "{}", s.windows.len());
         for i in (0..=1000).step_by(10) {
             let truth = plant(15.0).step_response(i as f64 / fs);
             assert!(
@@ -539,7 +552,7 @@ mod tests {
         // 150 ms, where the curve is still rising
         let (setpoint, gyro) = flown(plant(2.5));
         let s = step(&setpoint, &gyro, fs, 0).unwrap();
-        assert!(s.windows.len() > 150, "{}", s.windows.len());
+        assert!(s.windows.len() > 300, "{}", s.windows.len());
         let top = s.mean.iter().copied().fold(f64::MIN, f64::max);
         assert!(top > 1.15 && top < 1.2538, "{top}");
         assert_eq!(s.peak, s.mean[299]);
@@ -578,15 +591,15 @@ mod tests {
             .map(|i| if i < 29 { 0.0 } else { setpoint[i - 29] })
             .collect();
         assert_eq!(sp_gyro_delay_ms(&setpoint, &gyro, fs), Some(3.625));
-        // one window of 16 000 samples, 800 apart, from two samples after
-        // the first second; 150 ms are 1200 samples
+        // windows of 16 000 samples, 400 apart, from two samples after the
+        // first second; 150 ms are 1200 samples
         let s = step(&setpoint, &gyro, fs, 0).unwrap();
         assert_eq!(
             (s.grid.first, s.grid.length, s.grid.hop, s.grid.count),
-            (8002, 16_000, 800, 9)
+            (8002, 16_000, 400, 19)
         );
         assert_eq!((s.mean.len(), settled_from(fs)), (4001, 1200));
-        assert_eq!(s.windows.len(), 9);
+        assert_eq!(s.windows.len(), 19);
         // the first sample above 0.5 is the 29th: 30 samples of 0.125 ms
         // less a millisecond
         assert!((s.latency_ms - 2.75).abs() < 1.0e-9, "{}", s.latency_ms);
