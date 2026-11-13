@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/Rufics/OpenPID/compare/v0.1.2...v0.1.3) - 2026-11-13
+
+### Added
+
+- *(app)* interface rework — ten tabs in the panel layout, canonical session model ([#160](https://github.com/Rufics/OpenPID/pull/160))
+
+### Fixed
+
+- *(blackbox)* rcCommand of Betaflight after 2026.6 in the same units ([#185](https://github.com/Rufics/OpenPID/pull/185))
+- *(app)* text can be copied from the desktop program and its link opens ([#192](https://github.com/Rufics/OpenPID/pull/192))
+- *(app)* the desktop program opens no terminal on Windows ([#190](https://github.com/Rufics/OpenPID/pull/190))
+- *(app)* the tabs keep their place in the top bar whatever the number of logs ([#163](https://github.com/Rufics/OpenPID/pull/163))
+
+### Other
+
+- *(blackbox)* Blackbox Explorer as the decoder's regression reference ([#138](https://github.com/Rufics/OpenPID/pull/138))
+- *(core)* a firmware profile is bound to a log once ([#161](https://github.com/Rufics/OpenPID/pull/161))
+- *(fuzz)* fold the cargo-fuzz decision into ADR-0013 and retire the own mutation harness ([#135](https://github.com/Rufics/OpenPID/pull/135))
+- *(fuzz)* move decoder fuzzing to cargo-fuzz in a separate fuzz/ package (ADR-0015) ([#132](https://github.com/Rufics/OpenPID/pull/132))
+
 ## [0.1.2](https://github.com/Rufics/OpenPID/compare/v0.1.1...v0.1.2) - 2026-11-06
 
 ### Added
