@@ -93,7 +93,7 @@ Taken by the owner on 2026-11-11:
 | Options | **A.** OpenPID computes the response as the reference tool does (identified on round 4, to be confirmed on rounds 5 and 6): the same curve, peak and window count as the reference tool, and on these probes the truth. **B.** OpenPID keeps its own estimator and it is corrected against the closed-form responses (its smoothing of the spectrum and its regularisation are what bias it); numbers stay close to the reference tool's without being the same. **C.** No change; the bias is documented. |
 | Recommendation | A, if the identified method stays as close to the truth on the confirming and the hold-out rounds as it is here: then matching the reference tool and being right are the same change. To be put to the owner when the method is identified |
 | The owner's decision | **A**, 2026-11-12: OpenPID computes the response as the reference tool does. Decided before rounds 5 and 6: what they correct in the rule is corrected in OpenPID with it |
-| Carried out by | #188 (on its own from `master`; it replaces #184), with the Peak of round 5 |
+| Carried out by | #188 (on its own from `master`; it replaces #184), with the Peak of round 5 and the distance between windows of version 0.94 (0.05 s; round 6) |
 
 ### D-003 Where the Peak of a step response is read
 
@@ -103,7 +103,7 @@ Taken by the owner on 2026-11-11:
 | Area | Step response: the Peak plot and its bar |
 | Probe | `u4-slow-2k` of round 5 (pack `407c2cd`): second-order plants of 2.5 Hz and of 4 Hz, damping 0.5, after 5 ms; and the plants of 15 Hz of rounds 4 and 5 at 1, 2 and 4 kHz |
 | The reference tool shows | Peak 0.953 for the plant of 2.5 Hz: the value of its curve just before 150 ms, where it stops looking; the curve it draws goes on to 1.122 at 226 ms. Peak 1.137 for the plant of 4 Hz, which tops before 150 ms. The bar is the spread over the windows of each window's highest value among its first 150 samples, whatever the log rate: 150 ms at 1 kHz, 75 ms at 2 kHz, 37.5 ms at 4 kHz, where it ends before the top of a response that peaks at 40 ms |
-| OpenPID shows | the same, since D-002 (#188) |
+| OpenPID shows | the same, since D-002 (#188). Version 0.94 of the reference tool reads both as 0.9 did (round 6, at 8 kHz too, where the 150 samples are 19 ms) |
 | The exact value | both plants overshoot to 1.163, at 236 and at 149 ms |
 | Options | **A.** As the reference tool (what OpenPID does now): a craft whose response tops after 150 ms shows a Peak below the overshoot its own curve draws, and the bar covers a stretch that depends on the log rate. **B.** Peak is the highest value of the whole curve (500 ms) and the bar the spread of the windows' highest values over the same stretch: 1.122 for the plant of 2.5 Hz (the method itself reads a slow plant low; the truth is 1.163); the same point as now for every response that tops before 150 ms; the bar differs from the reference tool's at every rate. **C.** The point as the reference tool, the bar over 150 ms instead of 150 samples: the reference tool's Peak, and a bar that means the same at every log rate |
 | Recommendation | B. The number is called Peak and is read as the overshoot; on a slow craft the reference tool's reading is not the overshoot, and its bar is over a stretch nobody chose. The point changes on slow crafts only, where the reference tool's value misleads |

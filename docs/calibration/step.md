@@ -369,3 +369,68 @@ axes without smoothing and for one log at the three levels: 95 … 369
 windows, peaks between 0.96 and 1.37, SR latencies between 10 and 35 ms.
 The rule is not changed for this round: what the copies show is either
 what it predicted or a finding.
+
+### The reference tool is version 0.94 from here on (2026-11-13)
+
+The owner moved from version 0.9 to 0.94 before this round was run. Its
+list of changes names nothing of the step response but new numbers; the
+copies show three changes:
+
+| | 0.9 | 0.94 |
+|---|---|---|
+| Distance between two windows | 0.1 s | a fortieth of the window: 0.05 s for the default of 2 s. Twice the windows, the same curve to the third decimal |
+| Length of a window | 2 s | a list of 1 … 5 s, 2 s by default. Everything else of the rule is as for 2 s: the 200 zeros, the first window, the limit at 150 ms, the first 500 ms kept |
+| What the two right columns of plots show | Peak and one of two latencies | a list of five pairs: SR Peak and SR Latency; SR Latency and SP-Gyro Delay; Rise Time and Bandwidth; Sensitivity Peak and Sensitivity Freq; Phase Margin and Crossover Freq |
+
+The window, the toolbar of a plot and the place of the controls changed
+too (a newer MATLAB); the capture script was moved to them (#180). A
+tick label of a copied plot no longer sits on its tick: the axes are read
+from their grid lines.
+
+### What came back (2026-11-13, version 0.94)
+
+2 952 steps of the script, six failed; 186 of 192 vector copies and 29
+pictures in 17.5 minutes. The six are "Raw" copies: a plot of 600 curves
+takes longer to copy than the script waited.
+
+- **The hold-out.** With the windows 0.05 s apart, which one picture had
+  shown before the run, every plot of the four logs at 2, 1, 4 and 8 kHz
+  is the predicted one: the twelve mean curves to 0.0000007, the window
+  counts (196 … 595), Peak, SR Latency and both bars to the last digit
+  read, and the SP-Gyro Delay on eleven of twelve plots (one step of
+  0.125 ms off on the twelfth). 8 kHz had not been in a round before.
+- **The fifth log** (41 s) is the predicted one too, to 0.0000005, when
+  its first window starts three samples after the first second, not two:
+  the late start of rounds 4 and 5 again, on four logs of 21 now (12, 18
+  and 41 s here, and one of 30 s in the spectrum rounds). Its cause is
+  still not found; a log of the same length and rate can start either
+  way.
+- **The smoothing levels** on that log: curves and counts as the rule
+  gives them with that start.
+- **Windows of 1 s and of 3 s** on the first log: 1 163 / 1 188 / 1 067
+  and 385 / 386 / 381 windows, their curves, Peak, latency and bars, all
+  as the rule gives them with the window that long and a fortieth of it
+  between two windows. Nothing else of the rule follows the length.
+- **Peak** is still read before 150 ms and its bar from the first 150
+  samples of every window, at 8 kHz too (19 ms): entry D-003 stands for
+  0.94.
+
+**The rule is settled** for the mean curve, the window count, Peak and SR
+Latency with their bars, at 1 to 8 kHz, for windows of 1 to 3 s and the
+four smoothing levels. Open: the late start (below 0.001 on a curve) and
+the SP-Gyro Delay on a few plots.
+
+### The new numbers of 0.94
+
+Read from the copies for all fifteen axes; one value per axis, no bar.
+The plants are known, so each has a true value to be held to.
+
+| Number | What it is, as far as found |
+|---|---|
+| Rise Time (ms) | the time the mean curve takes from 0.1 to 0.9, read between two samples along a straight line. Exact on all fifteen axes (15.3703 ms for a second-order plant of 22 Hz, damping 0.7, whose closed form gives 15.4) |
+| Bandwidth (Hz) | near the frequency at which the response of the mean curve has fallen by 3 dB (22.34 Hz read, 22.31 by that definition; 5.56 for a first-order plant of 30 ms, whose true value is 5.31). The exact rule is not found |
+| Sensitivity Peak (dB), Sensitivity Freq (Hz) | near the highest value of `|1 − H|` and its frequency, on a grid of 0.977 Hz at every log rate (a transform of the next power of two above the log rate). Within 0.2 dB and a grid step; not exact. Where the peak is small the plot shows no point |
+| Phase Margin (deg), Crossover Freq (Hz) | near the margin of `H / (1 − H)` where its gain crosses 1. Within 2 … 4 degrees and 0.4 Hz; not exact |
+
+Whether OpenPID shows these numbers is the owner's to say; they would be
+a round of their own to identify (the last three rows).
