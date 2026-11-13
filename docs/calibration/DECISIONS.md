@@ -125,6 +125,21 @@ Taken by the owner on 2026-11-11:
 | The owner's decision | **A**, 2026-11-13: the plain, documented computation, with the phase margin read between grid points |
 | Carried out by | #194 (on top of #188) |
 
+### D-005 How the map of frequency against throttle is computed
+
+| Field | |
+|---|---|
+| Id | D-005 |
+| Area | Freq × throttle, T1–T4: the cells of the map, its smoothing, its colour scale, the numbers printed on it |
+| Probe | the eight logs of round 8 (pack `7038aac`): a throttle that climbs stairs, rises evenly, is held and climbs stairs a few tenths of a percent apart, with tones and noise of known size on both gyro channels |
+| The reference tool shows | a map whose rule was found and holds on 156 copied maps to one colour step ([throttle.md](throttle.md)): segments of 0.3 s that overlap; a tone of amplitude `A` reads `A / 4`; 100 columns, each the mean of the segments within ±1 % of throttle; a Gaussian over 15 × 3 cells by default, with five levels to choose from; a second map in decibels; "mean=" and "peak=" printed on every map; the colour scale 0 … 0.5 unless typed. For a tone of 10 deg/s at a held throttle: a peak of 0.35 in a spot 16 columns wide; white noise of 5 deg/s RMS: a mean of 0.064 |
+| OpenPID shows | another quantity on another grid: segments of 0.2 s side by side; a tone reads `A`; 101 columns, each the mean of the segments within ±6 %; a fixed box of 9 columns; no decibels, no printed numbers; the colour scale from the map itself. The same tone: a peak of 4.03 in a spot 21 columns wide; the same noise: about 0.5 |
+| The exact value | the tone has an amplitude of 10 deg/s at one throttle and one frequency; neither map shows that number, and neither claims to: both smooth it over cells. The reference tool's is a quarter of the amplitude before smoothing because nothing makes up for its window |
+| Options | **A.** As the reference tool, all of it: its segments, columns, value (`A / 4`), the five smoothing levels with "medium" as the default, the map in decibels as a second view, mean and peak printed on the map, and its colour scale of 0 … 0.5 as the default with OpenPID's automatic scale as a choice. A user sees the picture and the numbers the reference tool shows, and can compare a log in both; the user guide says that a cell is not a tone's amplitude. **B.** Keep OpenPID's map as it is and say in the user guide how it differs. Nothing to compare with the reference tool: neither the picture nor a number. **C.** The reference tool's grid and smoothing, but a cell multiplied by 4 so that a tone on a bin reads its amplitude before smoothing; the decibel view and the printed numbers follow. The picture is the reference tool's with a colour scale four times as long; its printed mean and peak are four times the tool's |
+| Recommendation | A. The printed mean and peak are what people quote when they compare noise between flights and between crafts, and they are only worth quoting if they are the tool's numbers; after the smoothing a cell is not an amplitude in either unit, so the factor of C buys little. Two parts of the rule are not settled and need round 9 before the code: the distance between segments in logs of other lengths, and which throttle the tool reads. The RPM lines and the notch bands OpenPID draws over the map (T5, T6) stay |
+| The owner's decision | — |
+| Carried out by | — |
+
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
 call.
