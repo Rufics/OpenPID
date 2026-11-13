@@ -165,12 +165,15 @@ The response to a unit step, setpoint → gyro (DESIGN §6.2). The epoch is cut
 into windows of 2 s, one every 0.05 s; in each the gyro's spectrum is divided
 by the setpoint's; a window counts when the stick was 20 °/s from its centre
 on average and its response stays between 0.5 and 1.5 after 150 ms; the curve
-is the mean of those windows, and `n` in the legend is their number. The Peak
-is the highest point of the curve in its first 150 ms. This is
+is the mean of those windows, and `n` in the legend is their number. This is
 what the reference tool computes, and the same numbers come out: on logs of
-known content the curve, the window count, the Peak and the SR latency agree
-with it to the last digit it draws. To compare with it on a log, set the
-epoch to what it analyses: from 1.001 s to one second before the end.
+known content the curve, the window count and the SR latency agree with it
+to the last digit it draws. The Peak is the highest point of the whole curve,
+and its bar the spread of the windows' own highest points. The reference tool
+looks for both in the first 150 ms only, so the two agree for a response that
+tops before that, and for a slower one OpenPID shows the real top where the
+reference tool shows the value at 150 ms. To compare with it on a log, set
+the epoch to what it analyses: from 1.001 s to one second before the end.
 
 The control panel on the right (hover any field for its explanation):
 

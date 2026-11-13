@@ -17,9 +17,14 @@
 //! 4. a window counts when the stick was off its centre by 20 deg/s or more
 //!    on average ([`stick_moved`]), and when its response stays between 0.5
 //!    and 1.5 from 150 ms on ([`settled`]);
-//! 5. the curve is the mean of the windows that count; the peak is its
-//!    highest value in the first 150 ms, and the latency is read from the
-//!    windows ([`read`]).
+//! 5. the curve is the mean of the windows that count, and the latency is
+//!    read from the windows ([`read`]).
+//!
+//! The peak is this program's own (decision D-003): the highest value of the
+//! whole curve, with the spread of the windows' highest values as its bar.
+//! The reference tool reads the peak in the first 150 ms of the curve and
+//! the bar among the first 150 samples of each window, so a response that
+//! tops later than that reads lower than it gets.
 //!
 //! On plants whose step response is known in closed form the curve is the
 //! true response to a few thousandths.
@@ -54,9 +59,6 @@ const FLOOR: f64 = 1.0e-4;
 const SETTLED_FROM_S: f64 = 0.15;
 /// The level at which the latency of a window is read.
 const LATENCY_LEVEL: f64 = 0.5;
-/// The samples of a window's response whose highest value goes into the
-/// spread of the peak: the same number at every log rate.
-const PEAK_SAMPLES: usize = 150;
 /// The rate the setpoint and the gyro are brought to before their delay is
 /// read, Hz.
 const DELAY_RATE: f64 = 8000.0;
@@ -233,12 +235,10 @@ pub struct Reading {
     pub windows: Vec<WindowResponse>,
     /// The curve: their mean, one value per sample.
     pub mean: Vec<f64>,
-    /// The highest value of the curve before the sample from which a
-    /// response has to stay settled (in the first 150 ms): a response that
-    /// is still rising there reads lower than its final overshoot.
+    /// The highest value of the curve, over all of its half second.
     pub peak: f64,
     /// The spread (sample standard deviation) over the windows of the
-    /// highest value among the first 150 samples of each.
+    /// highest value of each, over the same half second.
     pub peak_spread: f64,
     /// The mean over the windows of the time of the first sample above 0.5,
     /// counted from one and less a millisecond, ms.
@@ -267,14 +267,10 @@ pub fn read(mut windows: Vec<WindowResponse>, fs: f64, from: usize) -> Reading {
     let mean: Vec<f64> = (0..points)
         .map(|i| windows.iter().map(|w| w.response[i]).sum::<f64>() / n)
         .collect();
-    let early = &mean[..from.min(mean.len())];
-    let peak = early.iter().copied().fold(f64::NAN, f64::max);
+    let peak = mean.iter().copied().fold(f64::NAN, f64::max);
     let highest: Vec<f64> = windows
         .iter()
-        .map(|w| {
-            let early = &w.response[..PEAK_SAMPLES.min(points)];
-            early.iter().copied().fold(f64::MIN, f64::max)
-        })
+        .map(|w| w.response.iter().copied().fold(f64::MIN, f64::max))
         .collect();
     let times: Vec<f64> = windows
         .iter()
@@ -474,8 +470,8 @@ mod tests {
             r.peak_spread
         );
         assert!(r.latency_spread_ms < 1.0, "{}", r.latency_spread_ms);
-        // 2.5 Hz: the curve tops at 223 ms, and the peak is read before
-        // 150 ms, where the curve is still rising
+        // 2.5 Hz: the plant tops at 223.7 ms, and the peak is read at the
+        // curve's top, not in the first 150 ms, where it is still rising
         let gyro = second_order(&setpoint, fs, 2.5, 10);
         let all = candidates(&setpoint, &gyro, fs, 0, windows, |_| true);
         let r = read(all, fs, settled_from(fs));
@@ -484,9 +480,18 @@ mod tests {
         // a response this slow is read low by the method: 1.19 where the
         // plant overshoots to 1.25
         assert!(top > 1.15 && top < 1.2538, "{top}");
-        assert!((r.peak - r.mean[299]).abs() < 1.0e-12 && r.peak < top - 0.1);
-        let truth = second_order_step(2.5, 0.1445);
-        assert!((r.peak - truth).abs() < 0.03, "{} {truth}", r.peak);
+        assert_eq!(r.peak, top);
+        let at = r.mean.iter().position(|v| *v == top).unwrap_or(0);
+        // the curve of a response this slow tops some 10 ms early
+        assert!((427..=447).contains(&at), "{at}");
+        assert!(r.peak > r.mean[299] + 0.1, "{} {}", r.peak, r.mean[299]);
+        // the windows of a response this slow differ more than those of a
+        // quick one: their highest values spread by 0.14
+        assert!(
+            r.peak_spread > 0.1 && r.peak_spread < 0.2,
+            "{}",
+            r.peak_spread
+        );
     }
 
     #[test]

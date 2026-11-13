@@ -878,8 +878,7 @@ fn per_log_points(pu: &mut egui_plot::PlotUi<'_>, values: &[(Slot, f64, Option<f
 }
 
 /// What the Peak plot draws for every log: the highest point of its mean
-/// response (with the windowed division, in its first 150 ms, as the
-/// reference tool reads it), and the spread of the windows' peaks as the bar.
+/// response, and the spread of the windows' own highest points as the bar.
 pub fn peak_values(outputs: &[(Slot, Arc<Output>)]) -> Vec<(Slot, f64, Option<f64>)> {
     outputs
         .iter()
