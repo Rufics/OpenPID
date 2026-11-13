@@ -377,16 +377,16 @@ fn a_pack_is_written_as_files() {
 
 #[test]
 fn an_unknown_round_is_refused() {
-    let error = pack::build(7, "x").unwrap_err();
-    assert!(matches!(error, PackError::UnknownRound(7)));
+    let error = pack::build(8, "x").unwrap_err();
+    assert!(matches!(error, PackError::UnknownRound(8)));
     assert_eq!(
         error.to_string(),
         format!(
-            "there is no round 7; the rounds are {:?}",
+            "there is no round 8; the rounds are {:?}",
             catalogue::ROUNDS
         )
     );
-    assert_eq!(catalogue::ROUNDS, [1, 2, 3, 4, 5, 6]);
+    assert_eq!(catalogue::ROUNDS, [1, 2, 3, 4, 5, 6, 7]);
 }
 
 #[test]
@@ -752,12 +752,186 @@ fn round_6_carries_predictions_for_every_axis() {
         let windows: Vec<usize> = a.levels.iter().map(|l| l.windows).collect();
         assert!(windows.windows(2).all(|w| w[0] <= w[1]), "{windows:?}");
     }
-    // the script: 29 pictures and 192 copies, in about 23 minutes
+    // the script: 24 pictures and 177 copies, in about 21 minutes
     let note = String::from_utf8(pack.files().pop().unwrap().1).unwrap();
     assert!(note.contains("Calibration round 6"), "{note}");
     assert!(
-        note.contains("192 plots") && note.contains("23 minutes"),
+        note.contains("177 plots") && note.contains("21 minutes"),
         "{note}"
+    );
+}
+
+/// Round 7, built once for every test.
+fn round_7() -> &'static Pack {
+    static PACK: OnceLock<Pack> = OnceLock::new();
+    PACK.get_or_init(|| pack::build(7, "test").unwrap())
+}
+
+#[test]
+fn round_7_predicts_the_step_response_at_every_setting_it_captures() {
+    let pack = round_7();
+    let predictions = pack.predictions.as_ref().unwrap();
+    assert_eq!((predictions.round, predictions.assumes.len()), (7, 3));
+    assert!(predictions.assumes[0].contains("a fortieth of their length"));
+    let logs: Vec<(&str, usize)> = predictions
+        .step
+        .iter()
+        .map(|p| (p.id, p.first_sample))
+        .collect();
+    assert_eq!(
+        logs,
+        [
+            ("y1-delays-2k", 2002),
+            ("y2-first-2k", 2002),
+            ("y3-gain-2k", 2002),
+            ("y4-damping-2k", 2002),
+            ("y5-rate-1k", 1002),
+            ("y6-rate-4k", 4002),
+            ("y7-rate-8k", 8002),
+            ("y8-noise-2k", 2002),
+        ]
+    );
+    for p in &predictions.step {
+        // thirty seconds at any rate: 519 windows, and enough of them
+        // count on every axis, the noisiest included
+        assert_eq!(p.windows_in_log, 519, "{}", p.id);
+        let settings = if p.id == "y4-damping-2k" { 4 } else { 1 };
+        for a in &p.axes {
+            assert_eq!(a.levels.len(), settings, "{} {}", p.id, a.axis);
+            let asked = &a.levels[0];
+            assert_eq!((asked.smoothing, asked.window_s), ("off", 2.0));
+            assert!(
+                asked.windows > 400,
+                "{} {}: {}",
+                p.id,
+                a.axis,
+                asked.windows
+            );
+            assert!(asked.peak.is_some() && !asked.curve.is_empty());
+        }
+    }
+    let probe = |id: &str| predictions.step.iter().find(|p| p.id == id).unwrap();
+    // a pure delay: a step at the delay, half a millisecond counted off
+    let delays = probe("y1-delays-2k");
+    for (a, delay_ms) in delays.axes.iter().zip([10.0, 20.0, 5.0]) {
+        let asked = &a.levels[0];
+        assert_eq!(asked.latency_ms, Some(delay_ms - 0.5), "{}", a.axis);
+        assert!((asked.peak.unwrap() - 1.0).abs() < 0.005, "{}", a.axis);
+    }
+    // the plant at three gains: the peak follows the gain
+    let peaks: Vec<f64> = probe("y3-gain-2k")
+        .axes
+        .iter()
+        .map(|a| a.levels[0].peak.unwrap())
+        .collect();
+    for (peak, gain) in peaks.iter().zip([0.8, 1.0, 1.2]) {
+        assert!((peak / gain - 1.163).abs() < 0.01, "{peaks:?}");
+    }
+    // the probe that is captured at other settings: windows of one second
+    // are twice as many and more, of three seconds fewer, and neither the
+    // length of the window nor the smoothing moves the peak by much
+    for a in &probe("y4-damping-2k").axes {
+        let settings: Vec<(&str, f64)> =
+            a.levels.iter().map(|l| (l.smoothing, l.window_s)).collect();
+        assert_eq!(
+            settings,
+            [("off", 2.0), ("off", 1.0), ("off", 3.0), ("high", 2.0)]
+        );
+        let n: Vec<usize> = a.levels.iter().map(|l| l.windows).collect();
+        assert!(n[1] > 2 * n[0] && n[2] < n[0] && n[2] > 300, "{n:?}");
+        let peak = a.levels[0].peak.unwrap();
+        for level in &a.levels[1..] {
+            assert!((level.peak.unwrap() - peak).abs() < 0.02, "{}", a.axis);
+        }
+    }
+    // the same plants at four log rates read the same
+    let at_2k = probe("y4-damping-2k");
+    for id in ["y5-rate-1k", "y6-rate-4k", "y7-rate-8k"] {
+        for (a, base) in probe(id).axes.iter().zip(&at_2k.axes) {
+            let (here, there) = (a.levels[0].peak.unwrap(), base.levels[0].peak.unwrap());
+            assert!(
+                (here - there).abs() < 0.005,
+                "{id} {}: {here} {there}",
+                a.axis
+            );
+        }
+    }
+    // the script: 46 pictures and 297 copies, in about 35 minutes
+    let note = String::from_utf8(pack.files().pop().unwrap().1).unwrap();
+    assert!(
+        note.contains("Calibration round 7, for version 0.94"),
+        "{note}"
+    );
+    assert!(note.contains("saves 46 pictures"), "{note}");
+    assert!(
+        note.contains("297 plots") && note.contains("35 minutes"),
+        "{note}"
+    );
+}
+
+#[test]
+fn the_manifest_of_round_7_says_what_is_true_about_the_plants() {
+    let manifest = &round_7().manifest;
+    let truth = |probe: usize, axis: usize| {
+        let entry = &manifest.probes[probe].axes[axis];
+        entry.response.as_ref().unwrap()
+    };
+    let near = |got: Option<f64>, want: f64| got.is_some_and(|v| (v - want).abs() < 1.0e-4);
+    // the pure delays of 10, 20 and 5 ms, in closed form
+    for (axis, delay_s) in [0.010, 0.020, 0.005].into_iter().enumerate() {
+        let t = truth(0, axis);
+        assert_eq!((t.gain, t.bandwidth_hz), (1.0, None));
+        assert!(near(t.sensitivity_peak_db, 6.0206), "{t:?}");
+        assert!(near(t.sensitivity_peak_hz, 1.0 / (2.0 * delay_s)), "{t:?}");
+        assert!(near(t.crossover_hz, 1.0 / (6.0 * delay_s)), "{t:?}");
+        assert!(near(t.phase_margin_deg, 60.0), "{t:?}");
+    }
+    // the first-order plants: a bandwidth of 1 / (2·pi·tau)
+    for (axis, tau_s) in [0.010, 0.030, 0.080].into_iter().enumerate() {
+        let t = truth(1, axis);
+        assert!(
+            near(t.bandwidth_hz, 1.0 / (std::f64::consts::TAU * tau_s)),
+            "{t:?}"
+        );
+        assert_eq!(t.sensitivity_peak_db, None);
+    }
+    // one plant at three gains: the same bandwidth, counted from the gain
+    // at 0 Hz, and another crossover for each
+    let gains: Vec<f64> = (0..3).map(|axis| truth(2, axis).gain).collect();
+    assert_eq!(gains, [0.8, 1.0, 1.2]);
+    assert_eq!(truth(2, 0).bandwidth_hz, truth(2, 1).bandwidth_hz);
+    assert_eq!(truth(2, 1).bandwidth_hz, truth(2, 2).bandwidth_hz);
+    assert!(truth(2, 0).crossover_hz < truth(2, 1).crossover_hz);
+    assert!(truth(2, 1).crossover_hz < truth(2, 2).crossover_hz);
+    // less damping: a higher sensitivity peak and a smaller phase margin
+    let peaks: Vec<f64> = (0..3)
+        .map(|axis| truth(3, axis).sensitivity_peak_db.unwrap())
+        .collect();
+    assert!(peaks[0] > peaks[1] && peaks[1] > peaks[2] && peaks[2] > 0.0);
+    assert!(truth(3, 0).phase_margin_deg < truth(3, 2).phase_margin_deg);
+    // the truth of a plant does not depend on the log rate or on the noise
+    for probe in 4..7 {
+        for axis in 0..3 {
+            assert_eq!(truth(probe, axis), truth(3, axis));
+        }
+    }
+    for axis in 0..3 {
+        assert_eq!(truth(7, axis), truth(3, 1));
+    }
+    // it is written into the manifest of this round, and into none of the
+    // rounds that were run without it
+    let text = String::from_utf8(round_7().files()[8].1.clone()).unwrap();
+    assert!(text.contains("\"response\"") && text.contains("\"phase_margin_deg\": 60.0"));
+    let earlier = serde_json::to_string(&round_6().manifest).unwrap();
+    assert!(!earlier.contains("\"response\""));
+    assert!(round_6().manifest.probes[0].axes[0].response.is_none());
+    // the logs are those of the catalogue, the largest at 8 kHz
+    let samples: Vec<usize> = manifest.probes.iter().map(|p| p.samples).collect();
+    assert_eq!(
+        samples,
+        [
+            60_000, 60_000, 60_000, 60_000, 30_000, 120_000, 240_000, 60_000
+        ]
     );
 }
 

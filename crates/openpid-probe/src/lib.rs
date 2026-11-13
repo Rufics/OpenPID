@@ -8,7 +8,8 @@
 //! - [`catalogue`]: the probes of every round, as data: one log per probe,
 //!   one experiment per axis. Rounds 1 to 3 are about the spectrum, 4 to 6
 //!   about the step response; the last of each (3 and 6) is a hold-out,
-//!   flights the model of the reference tool was not fitted to.
+//!   flights the model of the reference tool was not fitted to. Round 7 is
+//!   about the numbers the tool reads off a step response.
 //! - [`pack`]: a round as files: the logs, `manifest.json` with what is true
 //!   about each, `ours.json` with what `OpenPID` computes for the same logs,
 //!   `predictions.json` with what the model expects the reference tool to
@@ -20,6 +21,8 @@
 //!   the tool's own copies of its plots during the rounds, a one-off
 //!   comparison whose material is not in the repository.
 //! - [`step_model`]: the step response of the reference tool, likewise.
+//! - [`truth`]: what is true about a plant in the frequency domain, for the
+//!   rounds that ask a tool what it reads off a step response.
 //! - [`cli`]: the command line of the `openpid-probe` binary.
 
 pub mod capture;
@@ -29,6 +32,7 @@ pub mod model;
 pub mod pack;
 pub mod signal;
 pub mod step_model;
+pub mod truth;
 
 pub use catalogue::{Area, Probe};
 pub use pack::{Manifest, Ours, Pack, PackError};

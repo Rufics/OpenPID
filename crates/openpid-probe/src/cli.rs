@@ -29,6 +29,9 @@ ROUNDS:
              the model of the reference tool was not fitted to.
     4 to 6   The step response. Round 6 is the hold-out: five flights with a plant of
              its own on every axis, one of them at 8 kHz.
+    7        The numbers version 0.94 of the reference tool reads off a step response
+             (rise time, bandwidth, sensitivity peak, phase margin, crossover), asked
+             with plants whose answers are known; the manifest carries the answers.
 ";
 
 /// Runs the tool with `args` (without the program name), printing to `out`.

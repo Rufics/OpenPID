@@ -62,7 +62,6 @@ mod step_at {
         ("Sensitivity Peak | Sensitivity Freq", (3515, 1278)),
         ("Phase Margin | Crossover Freq", (3515, 1326)),
     ];
-    pub const RAW: (u32, u32) = (3599, 1295);
     /// The list, below "Y max", of the length of the window a response is
     /// computed from.
     pub const WINDOW_LIST: (u32, u32) = (3553, 1563);
@@ -81,9 +80,64 @@ mod step_at {
 }
 
 /// The lengths of the window, seconds, the first step-response log of a
-/// round is captured with beyond the one the tool comes up with: to learn
-/// how the length enters. The model predicts nothing for them.
+/// round up to [`RULE_ROUNDS`] is captured with beyond the one the tool
+/// comes up with: to learn how the length enters. The model predicted
+/// nothing for them.
 const WINDOW_LENGTHS_S: [u32; 2] = [1, 3];
+
+/// The last of the rounds that settled the rule of the step response
+/// itself. Up to it a round captures the delay between setpoint and gyro,
+/// the response at every smoothing level for some logs and the window
+/// lengths of its first log; the later rounds are about the numbers the
+/// tool reads off the response, and capture the pairs of plots only.
+///
+/// Every window's response (the "Raw" plots) was captured up to round 6
+/// and is captured no more: the rule does not need them, and a plot of
+/// 600 curves takes longer to copy than the script waits.
+pub const RULE_ROUNDS: u32 = 6;
+
+/// A setting of the step response window: the smoothing level (its place
+/// in the tool's list, 0 for "off") and the seconds of the window.
+pub type Setting = (usize, u32);
+
+/// The setting the window comes up with: no smoothing, two seconds.
+pub const DEFAULT_SETTING: Setting = (0, step_at::WINDOW_DEFAULT_S);
+
+/// The settings, beyond the one the window comes up with, at which every
+/// plot of a probe is captured again: for one probe of round 7 windows of
+/// one and of three seconds and the smoothing level "high", to see whether
+/// the numbers read off the response follow them as the response does.
+pub fn settings_captured(probe: &Probe) -> &'static [Setting] {
+    if probe.id == "y4-damping-2k" {
+        &[(0, 1), (0, 3), (3, step_at::WINDOW_DEFAULT_S)]
+    } else {
+        &[]
+    }
+}
+
+/// The name of a setting in the names of its files: "window-1s",
+/// "smoothing-high"; nothing for the setting the window comes up with.
+fn setting_name((level, seconds): Setting) -> String {
+    let mut name = String::new();
+    if seconds != DEFAULT_SETTING.1 {
+        name = format!("window-{seconds}s");
+    }
+    if level != DEFAULT_SETTING.0 {
+        let (smoothing, _) = step_at::SMOOTHING[level % step_at::SMOOTHING.len()];
+        name = joined(&name, &format!("smoothing-{smoothing}"));
+    }
+    name
+}
+
+/// Two parts of a file name with a hyphen between them, or the one that is
+/// not empty.
+fn joined(first: &str, second: &str) -> String {
+    match (first.is_empty(), second.is_empty()) {
+        (true, _) => second.to_string(),
+        (_, true) => first.to_string(),
+        _ => format!("{first}-{second}"),
+    }
+}
 
 /// The pairs of [`step_at::PAIRS`] a round captures beyond the first two:
 /// the place of the pair in that list, the name of the picture, and what
@@ -434,14 +488,19 @@ pub fn step_file(round: u32, probe: &str, what: &str, plot: &str) -> String {
     name
 }
 
-/// Whether the smoothing levels of the step response are captured for a
-/// probe: for the plants at 2 kHz and for the probe with noise, where
-/// smoothing has something to do, for the probes that ask what follows
-/// the log rate, and for one flight of the hold-out.
+/// Whether the response at the three smoothing levels is captured for a
+/// probe: in round 4 for the plants at 2 kHz and for the probe with noise,
+/// where smoothing has something to do, in round 5 for the probes that ask
+/// what follows the log rate, and for one flight of the hold-out.
 pub fn smoothing_captured(probe: &Probe) -> bool {
-    ["t1-plants-2k", "w5-mixed-2k"].contains(&probe.id)
-        || probe.id.contains("noise")
-        || probe.id.contains("rates")
+    [
+        "t1-plants-2k",
+        "t5-noise-2k",
+        "u2-rates-1k",
+        "u3-rates-4k",
+        "w5-mixed-2k",
+    ]
+    .contains(&probe.id)
 }
 
 /// A click in the step response window, at a position of a picture of it.
@@ -462,6 +521,23 @@ fn step_pick(steps: &mut Vec<Step>, list: (u32, u32), name: &str, item: (u32, u3
 fn step_pair(steps: &mut Vec<Step>, index: usize) {
     let (name, item) = step_at::PAIRS[index % step_at::PAIRS.len()];
     step_pick(steps, step_at::PAIR_LIST, name, item);
+}
+
+/// The window brought from the setting `from` to the setting `to`: the
+/// length of the window first, then the smoothing level, each only when it
+/// changes.
+fn step_set(steps: &mut Vec<Step>, from: Setting, to: Setting) {
+    if from.1 != to.1 {
+        let item = step_at::WINDOWS.iter().find(|w| w.0 == to.1);
+        let (seconds, item) = item.copied().unwrap_or(step_at::WINDOWS[1]);
+        let name = format!("{seconds}sec deconv. window");
+        step_pick(steps, step_at::WINDOW_LIST, &name, item);
+    }
+    if from.0 != to.0 {
+        let (level, item) = step_at::SMOOTHING[to.0 % step_at::SMOOTHING.len()];
+        let name = format!("smoothing {level}");
+        step_pick(steps, step_at::SMOOTHING_LIST, &name, item);
+    }
 }
 
 /// The log of a round whose plots are being captured.
@@ -500,33 +576,46 @@ impl StepLog<'_> {
         }
     }
 
-    /// What every log is captured with: its nine plots as they come up,
-    /// every window's response ("Raw"), the delay between setpoint and
+    /// Every plot of the log at the setting the window is at, whose name
+    /// in the files is `setting` (nothing as the window comes up): the
+    /// nine plots, up to [`RULE_ROUNDS`] the delay between setpoint and
     /// gyro, and the three other pairs of plots ([`PARAMETERS`]). The
     /// first pair is chosen again at the end.
-    fn plots(self, steps: &mut Vec<Step>) {
-        let [response, _, latency] = STEP_COLUMNS.map(|(name, _, _)| name);
-        self.run(steps, Some(""));
-        self.copies(steps, "", &NINE);
-
-        steps.push(step_click("Raw", step_at::RAW));
-        steps.push(pause(400));
-        self.run(steps, Some("raw"));
-        self.copies(steps, "raw", &[(0, response)]);
-        steps.push(step_click("Raw (off)", step_at::RAW));
-        steps.push(pause(400));
-
-        // the delay between setpoint and gyro: the right column of the
-        // second pair, where the first pair has the latency
-        step_pair(steps, 1);
-        self.run(steps, None);
-        self.copies(steps, "spgyro", &[(2, latency)]);
+    fn plots(self, steps: &mut Vec<Step>, setting: &str) {
+        self.run(steps, Some(setting));
+        self.copies(steps, setting, &NINE);
+        if self.round <= RULE_ROUNDS {
+            // the right column of the second pair, where the first pair
+            // has the latency
+            let (latency, _, _) = STEP_COLUMNS[2];
+            step_pair(steps, 1);
+            self.run(steps, None);
+            self.copies(steps, "spgyro", &[(2, latency)]);
+        }
         for (index, picture, [middle, right]) in PARAMETERS {
             step_pair(steps, index);
-            self.run(steps, Some(picture));
-            self.copies(steps, "params", &[(1, middle), (2, right)]);
+            self.run(steps, Some(&joined(setting, picture)));
+            let what = joined(setting, "params");
+            self.copies(steps, &what, &[(1, middle), (2, right)]);
         }
         step_pair(steps, 0);
+    }
+
+    /// Every plot of the log again at each of `settings`
+    /// ([`settings_captured`]), and the window as it came up at the end.
+    /// The plots are drawn anew by the next Run; `run` asks for one here,
+    /// for a log after which no other follows.
+    fn settings(self, steps: &mut Vec<Step>, settings: &[Setting], run: bool) {
+        let mut now = DEFAULT_SETTING;
+        for setting in settings {
+            step_set(steps, now, *setting);
+            now = *setting;
+            self.plots(steps, &setting_name(now));
+        }
+        step_set(steps, now, DEFAULT_SETTING);
+        if run {
+            self.run(steps, None);
+        }
     }
 
     /// The nine plots from windows of other lengths
@@ -534,19 +623,15 @@ impl StepLog<'_> {
     /// again. The plots are drawn anew by the next Run; `run` asks for one
     /// here, for a log after which no other follows.
     fn window_lengths(self, steps: &mut Vec<Step>, run: bool) {
-        let window = |steps: &mut Vec<Step>, seconds: u32| {
-            let item = step_at::WINDOWS.iter().find(|w| w.0 == seconds);
-            let (_, item) = item.copied().unwrap_or(step_at::WINDOWS[1]);
-            let name = format!("{seconds}sec deconv. window");
-            step_pick(steps, step_at::WINDOW_LIST, &name, item);
-        };
+        let mut now = DEFAULT_SETTING;
         for seconds in WINDOW_LENGTHS_S {
-            let what = format!("window-{seconds}s");
-            window(steps, seconds);
+            step_set(steps, now, (now.0, seconds));
+            now.1 = seconds;
+            let what = setting_name(now);
             self.run(steps, Some(&what));
             self.copies(steps, &what, &NINE);
         }
-        window(steps, step_at::WINDOW_DEFAULT_S);
+        step_set(steps, now, DEFAULT_SETTING);
         if run {
             self.run(steps, None);
         }
@@ -575,11 +660,12 @@ const NINE: [(usize, &str); 3] = [
 ];
 
 /// The steps of the step response window for the probes of a round: for
-/// every log its nine plots as they come up, every window's response
-/// ("Raw"), the delay between setpoint and gyro and the three other pairs
-/// of plots the window offers; for the first log the nine plots from
-/// windows of other lengths; and for the logs of [`smoothing_captured`]
-/// the smoothing levels.
+/// every log its nine plots as they come up and the three other pairs of
+/// plots the window offers. Up to [`RULE_ROUNDS`] also the delay between
+/// setpoint and gyro, for the first log the nine plots from windows of
+/// other lengths, and for the logs of [`smoothing_captured`] the response
+/// at the smoothing levels; after it, for the logs of
+/// [`settings_captured`], all of it again at other settings.
 fn step_response(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
     let is_step = |p: &Probe| p.area == Area::StepResponse;
     let first = probes.iter().position(is_step);
@@ -602,17 +688,54 @@ fn step_response(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
             (step_at::LOG.0, y),
         ));
         steps.push(pause(300));
-        log.plots(steps);
+        log.plots(steps, "");
+        // where the window is set back to how it came up, the Run of what
+        // follows draws the plots anew; where nothing follows, one is
+        // asked for
+        let is_last = last == Some(row);
         let smoothed = smoothing_captured(probe);
-        if first == Some(row) {
-            // the Run of the smoothing levels or of the next log draws the
-            // plots anew; where neither follows, one is asked for
-            log.window_lengths(steps, last == Some(row) && !smoothed);
+        if round <= RULE_ROUNDS && first == Some(row) {
+            log.window_lengths(steps, is_last && !smoothed);
         }
         if smoothed {
             log.smoothing_levels(steps);
         }
+        let again = settings_captured(probe);
+        if !again.is_empty() {
+            log.settings(steps, again, is_last);
+        }
     }
+}
+
+/// What the plan of a round of the step response does, for the reader of
+/// `steps.json`.
+fn step_about(round: u32, probes: &[Probe]) -> String {
+    let logs = |count: usize| match count {
+        1 => "one log".to_string(),
+        2 => "two logs".to_string(),
+        n => format!("{n} logs"),
+    };
+    let pairs = "the three other pairs of plots the window offers (rise time and bandwidth, \
+                 sensitivity, phase margin and crossover)";
+    let more = if round <= RULE_ROUNDS {
+        let smoothed = probes.iter().filter(|p| smoothing_captured(p)).count();
+        format!(
+            "the delay between setpoint and gyro, {pairs}, for the first log its nine plots \
+             from windows of one and of three seconds, and for {} the smoothing levels",
+            logs(smoothed)
+        )
+    } else {
+        let again = probes.iter().filter(|p| !settings_captured(p).is_empty());
+        format!(
+            "{pairs}, and for {} all of them again from windows of one and of three seconds \
+             and at the smoothing level high",
+            logs(again.count())
+        )
+    };
+    format!(
+        "Round {round}: every log through one open dialog, then the step response of each: \
+         its nine plots, {more}, all copied as vector graphics."
+    )
 }
 
 /// Name of the picture of `probe` on the spectrum at a smoothing level.
@@ -710,21 +833,9 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
         action: "windows",
         ..Step::default()
     });
-    let smoothed = match probes.iter().filter(|p| smoothing_captured(p)).count() {
-        1 => "one log".to_string(),
-        2 => "two logs".to_string(),
-        n => format!("{n} logs"),
-    };
     Plan {
         about: if probes.iter().all(|p| p.area == Area::StepResponse) {
-            format!(
-                "Round {round}: every log through one open dialog, then the step response of \
-                 each: its nine plots, every window's response, the delay between setpoint \
-                 and gyro, the three other pairs of plots the window offers (rise time and \
-                 bandwidth, sensitivity, phase margin and crossover), for the first log its \
-                 nine plots from windows of one and of three seconds, and for {smoothed} the \
-                 smoothing levels, all copied as vector graphics."
-            )
+            step_about(round, probes)
         } else if round < 2 {
             format!(
                 "Round {round}: every log through one open dialog, then the spectrum of each \
@@ -1089,31 +1200,31 @@ mod tests {
                 .collect()
         };
         let copies = names("clip_save");
-        // a log: nine plots, three raw responses, three delays and three
-        // pairs of six plots; nine plots twice more for the first log; and
-        // nine smoothed responses for two logs
-        assert_eq!(copies.len(), 9 * 33 + 2 * 9 + 2 * 9);
+        // a log: nine plots, three delays and three pairs of six plots;
+        // nine plots twice more for the first log; and nine smoothed
+        // responses for two logs
+        assert_eq!(copies.len(), 9 * 30 + 2 * 9 + 2 * 9);
         let of_the_first_log = [
             (0, "roll-response"),
             (3, "roll-peak"),
             (8, "yaw-latency"),
-            (9, "raw-roll-response"),
-            (12, "spgyro-roll-latency"),
-            (15, "params-roll-risetime"),
-            (18, "params-roll-bandwidth"),
-            (21, "params-roll-sensitivity-peak"),
-            (24, "params-roll-sensitivity-freq"),
-            (27, "params-roll-phase-margin"),
-            (32, "params-yaw-crossover"),
-            (33, "window-1s-roll-response"),
-            (41, "window-1s-yaw-latency"),
-            (42, "window-3s-roll-response"),
-            (51, "smoothing-low-roll-response"),
+            (9, "spgyro-roll-latency"),
+            (12, "params-roll-risetime"),
+            (15, "params-roll-bandwidth"),
+            (18, "params-roll-sensitivity-peak"),
+            (21, "params-roll-sensitivity-freq"),
+            (24, "params-roll-phase-margin"),
+            (29, "params-yaw-crossover"),
+            (30, "window-1s-roll-response"),
+            (38, "window-1s-yaw-latency"),
+            (39, "window-3s-roll-response"),
+            (48, "smoothing-low-roll-response"),
         ];
         for (k, name) in of_the_first_log {
             assert_eq!(copies[k], format!("r4-t1-plants-2k-step-{name}"));
         }
-        assert_eq!(copies[60], "r4-t2-plants-1k-step-roll-response");
+        assert_eq!(copies[57], "r4-t2-plants-1k-step-roll-response");
+        assert!(!copies.iter().any(|c| c.contains("-raw-")));
         let windows = |c: &&&str| c.contains("-window-");
         assert!(copies.iter().filter(windows).all(|c| c.contains("t1")));
         assert!(copies.contains(&"r4-t5-noise-2k-step-smoothing-high-yaw-response"));
@@ -1122,15 +1233,14 @@ mod tests {
                 .iter()
                 .any(|c| c.starts_with("r4-t2") && c.contains("smoothing"))
         );
-        // a picture of the window as it opens, five a log, and two more
+        // a picture of the window as it opens, four a log, and two more
         // of the first log
         let shots = names("shot");
-        assert_eq!(shots.len(), 2 + 9 * 5 + 2);
+        assert_eq!(shots.len(), 2 + 9 * 4 + 2);
         assert_eq!(
-            shots[2..10],
+            shots[2..9],
             [
                 "r4-t1-plants-2k-step",
-                "r4-t1-plants-2k-step-raw",
                 "r4-t1-plants-2k-step-rise-bandwidth",
                 "r4-t1-plants-2k-step-sensitivity",
                 "r4-t1-plants-2k-step-phase-crossover",
@@ -1191,7 +1301,7 @@ mod tests {
             .iter()
             .filter(|s| s.name.as_deref() == Some("Run"))
             .count();
-        assert_eq!(runs, 9 * 6 + 2 + 2 * 3);
+        assert_eq!(runs, 9 * 5 + 2 + 2 * 3);
         assert!(
             plan.steps
                 .iter()
@@ -1209,7 +1319,8 @@ mod tests {
         };
         assert_eq!(at("Step Resp Tool"), Some((3556, 962)));
         assert_eq!(at("Run"), Some((3466, 821)));
-        assert_eq!(at("Raw"), Some((3599, 1295)));
+        // the plots of every window ("Raw") are captured no more
+        assert_eq!(at("Raw"), None);
         assert_eq!(at("smoothing low (the list)"), Some((3464, 1093)));
         assert_eq!(at("smoothing low"), Some((3464, 1184)));
         assert_eq!(at("smoothing high"), Some((3464, 1278)));
@@ -1283,33 +1394,33 @@ mod tests {
                 .filter_map(|s| s.file.as_deref())
                 .collect()
         };
-        // 33 plots a log (nine as the window comes up, three raw
-        // responses, three delays, three pairs of six); the nine plots of
-        // the first log from windows of one and of three seconds; nine
-        // smoothed responses for the last log only
+        // 30 plots a log (nine as the window comes up, three delays,
+        // three pairs of six); the nine plots of the first log from
+        // windows of one and of three seconds; nine smoothed responses for
+        // the last log only
         let copies = names("clip_save");
-        assert_eq!(copies.len(), 5 * 33 + 2 * 9 + 9);
+        assert_eq!(copies.len(), 5 * 30 + 2 * 9 + 9);
         for (k, name) in [
             (0, "w1-flight-2k-step-roll-response"),
-            (14, "w1-flight-2k-step-spgyro-yaw-latency"),
-            (32, "w1-flight-2k-step-params-yaw-crossover"),
-            (33, "w1-flight-2k-step-window-1s-roll-response"),
-            (50, "w1-flight-2k-step-window-3s-yaw-latency"),
-            (51, "w2-flight-1k-step-roll-response"),
-            (183, "w5-mixed-2k-step-smoothing-low-roll-response"),
-            (191, "w5-mixed-2k-step-smoothing-high-yaw-response"),
+            (11, "w1-flight-2k-step-spgyro-yaw-latency"),
+            (29, "w1-flight-2k-step-params-yaw-crossover"),
+            (30, "w1-flight-2k-step-window-1s-roll-response"),
+            (47, "w1-flight-2k-step-window-3s-yaw-latency"),
+            (48, "w2-flight-1k-step-roll-response"),
+            (168, "w5-mixed-2k-step-smoothing-low-roll-response"),
+            (176, "w5-mixed-2k-step-smoothing-high-yaw-response"),
         ] {
             assert_eq!(copies[k], format!("r6-{name}"));
         }
         let smoothed = copies.iter().filter(|c| c.contains("smoothing"));
         assert!(smoothed.clone().all(|c| c.contains("w5")));
         assert_eq!(smoothed.count(), 9);
-        // the window as it opens, five pictures a log, two more of the
+        // the window as it opens, four pictures a log, two more of the
         // first log
         let shots = names("shot");
-        assert_eq!(shots.len(), 2 + 5 * 5 + 2);
+        assert_eq!(shots.len(), 2 + 5 * 4 + 2);
         assert!(shots.contains(&"r6-w1-flight-2k-step-window-3s"));
-        assert_eq!(plan.steps.len(), 2952);
+        assert_eq!(plan.steps.len(), 2707);
         // the window is two seconds again before the second log is run
         let position = |name: &str| {
             let wanted = |s: &Step| s.name.as_deref() == Some(name);
@@ -1328,9 +1439,9 @@ mod tests {
         // the script's own estimate of the time
         let note = files(6, shots.len(), copies.len(), true).remove(2).1;
         let note = String::from_utf8(note).unwrap_or_default();
-        assert!(note.contains("saves 29 pictures"), "{note}");
+        assert!(note.contains("saves 24 pictures"), "{note}");
         assert!(
-            note.contains("192 plots") && note.contains("23 minutes"),
+            note.contains("177 plots") && note.contains("21 minutes"),
             "{note}"
         );
         // a round of one log, without smoothing levels: nothing runs after
@@ -1340,13 +1451,163 @@ mod tests {
             let run = |s: &&Step| s.name.as_deref() == Some("Run");
             plan.steps.iter().filter(run).count()
         };
-        assert_eq!(runs(&alone), 6 + 2 + 1);
-        assert_eq!(runs(&plan), 5 * 6 + 2 + 3);
+        assert_eq!(runs(&alone), 5 + 2 + 1);
+        assert_eq!(runs(&plan), 5 * 5 + 2 + 3);
         // the earlier step-response rounds capture the levels of two logs
         for round in [4, 5] {
             let earlier = super::plan(round, &catalogue::round(round).unwrap_or_default());
             assert!(earlier.about.contains("for two logs the smoothing levels"));
         }
+    }
+
+    #[test]
+    fn round_7_copies_the_pairs_of_plots_and_one_log_at_other_settings() {
+        let probes = catalogue::round(7).unwrap_or_default();
+        let plan = plan(7, &probes);
+        assert!(plan.about.contains("for one log all of them again"));
+        let names = |action: &str| -> Vec<&str> {
+            plan.steps
+                .iter()
+                .filter(|s| s.action == action)
+                .filter_map(|s| s.file.as_deref())
+                .collect()
+        };
+        // 27 plots a log (nine as the window comes up, three pairs of
+        // six), and as many again at each of three settings for one log
+        let copies = names("clip_save");
+        assert_eq!(copies.len(), 8 * 27 + 3 * 27);
+        for (k, name) in [
+            (0, "y1-delays-2k-step-roll-response"),
+            (9, "y1-delays-2k-step-params-roll-risetime"),
+            (26, "y1-delays-2k-step-params-yaw-crossover"),
+            (27, "y2-first-2k-step-roll-response"),
+            (81, "y4-damping-2k-step-roll-response"),
+            (108, "y4-damping-2k-step-window-1s-roll-response"),
+            (117, "y4-damping-2k-step-window-1s-params-roll-risetime"),
+            (135, "y4-damping-2k-step-window-3s-roll-response"),
+            (162, "y4-damping-2k-step-smoothing-high-roll-response"),
+            (
+                188,
+                "y4-damping-2k-step-smoothing-high-params-yaw-crossover",
+            ),
+            (189, "y5-rate-1k-step-roll-response"),
+            (296, "y8-noise-2k-step-params-yaw-crossover"),
+        ] {
+            assert_eq!(copies[k], format!("r7-{name}"));
+        }
+        // neither every window's response nor the delay between setpoint
+        // and gyro, and no smoothing level but the one of that log
+        let no = ["-raw-", "-spgyro-", "smoothing-low", "smoothing-medium"];
+        assert!(!copies.iter().any(|c| no.iter().any(|n| c.contains(n))));
+        let settings = |c: &&&str| c.contains("-window-") || c.contains("-smoothing-");
+        let again: Vec<&&str> = copies.iter().filter(settings).collect();
+        assert_eq!(again.len(), 3 * 27);
+        assert!(again.iter().all(|c| c.contains("y4-damping-2k")));
+        // four pictures a log and at each of the settings
+        let shots = names("shot");
+        assert_eq!(shots.len(), 2 + 8 * 4 + 3 * 4);
+        assert_eq!(
+            shots[18..22],
+            [
+                "r7-y4-damping-2k-step-window-1s",
+                "r7-y4-damping-2k-step-window-1s-rise-bandwidth",
+                "r7-y4-damping-2k-step-window-1s-sensitivity",
+                "r7-y4-damping-2k-step-window-1s-phase-crossover",
+            ]
+        );
+        let mut unique: Vec<&str> = shots.iter().chain(&copies).copied().collect();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), shots.len() + copies.len());
+        assert_eq!(plan.steps.len(), 4511);
+        for (i, step) in plan.steps.iter().enumerate() {
+            if step.action == "clip_save" {
+                assert_copy(&plan.steps, i);
+            }
+        }
+
+        // the lists: three pairs a log and the first one again; and for the
+        // one log the window of one second, of three, of two again, then
+        // the smoothing level and no smoothing again
+        let picked = |part: &str| -> Vec<&str> {
+            plan.steps
+                .iter()
+                .filter_map(|s| s.name.as_deref())
+                .filter(|n| n.contains(part) && !n.ends_with("(the list)"))
+                .collect()
+        };
+        let pairs = picked(" | ");
+        assert_eq!(pairs.len(), (8 + 3) * 4);
+        assert_eq!(
+            pairs[..4],
+            [
+                "Rise Time | Bandwidth",
+                "Sensitivity Peak | Sensitivity Freq",
+                "Phase Margin | Crossover Freq",
+                "SR Peak | SR Latency",
+            ]
+        );
+        let lengths = picked("deconv.");
+        assert_eq!(
+            lengths,
+            [
+                "1sec deconv. window",
+                "3sec deconv. window",
+                "2sec deconv. window"
+            ]
+        );
+        assert_eq!(picked("smoothing "), ["smoothing high", "smoothing off"]);
+        let position = |name: &str| {
+            let wanted = |s: &Step| s.name.as_deref() == Some(name);
+            plan.steps.iter().position(wanted)
+        };
+        assert!(position("2sec deconv. window") < position("smoothing high"));
+        assert!(position("smoothing off") < position("log y5-rate-1k"));
+        assert_eq!(
+            plan.steps[position("smoothing high").unwrap_or(0)].at,
+            Some((3464, 1278))
+        );
+        // a Run for every picture but the first two, each against a mark
+        let runs: Vec<&Step> = plan
+            .steps
+            .iter()
+            .filter(|s| s.name.as_deref() == Some("Run"))
+            .collect();
+        assert_eq!(runs.len(), shots.len() - 2);
+        assert!(runs.iter().all(|s| s.mark == Some(true)));
+        // the eight logs of the list
+        let rows: Vec<u32> = plan
+            .steps
+            .iter()
+            .filter(|s| s.name.as_deref().is_some_and(|n| n.starts_with("log y")))
+            .filter_map(|s| s.at.map(|a| a.1))
+            .collect();
+        assert_eq!(rows, [177, 214, 252, 290, 328, 366, 404, 442]);
+        // the script's own estimate of the time
+        let note = files(7, shots.len(), copies.len(), true).remove(2).1;
+        let note = String::from_utf8(note).unwrap_or_default();
+        assert!(note.contains("saves 46 pictures"), "{note}");
+        assert!(
+            note.contains("297 plots") && note.contains("35 minutes"),
+            "{note}"
+        );
+        // the settings of a probe in the names of its files
+        assert_eq!(setting_name(DEFAULT_SETTING), "");
+        assert_eq!(setting_name((2, 5)), "window-5s-smoothing-medium");
+        assert_eq!(joined("", ""), "");
+        assert!(settings_captured(&probes[0]).is_empty());
+        // one log alone at other settings: a Run after the window is as it
+        // came up again, since nothing follows that would draw the plots
+        let alone = super::plan(7, &probes[3..4]);
+        let last_run = alone
+            .steps
+            .iter()
+            .rposition(|s| s.name.as_deref() == Some("Run"));
+        let back = alone
+            .steps
+            .iter()
+            .position(|s| s.name.as_deref() == Some("smoothing off"));
+        assert!(back < last_run);
     }
 
     #[test]

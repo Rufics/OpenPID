@@ -955,6 +955,163 @@ fn round_6() -> Vec<Probe> {
     ]
 }
 
+/// A probe of round 7: at 200 deg/s of random stick moves, each axis
+/// follows a plant of its own (roll, pitch, yaw) under gyro noise of the
+/// given RMS, deg/s. The axes take the seeds `seed`, `seed + 1` and
+/// `seed + 2`.
+fn answered(
+    id: &'static str,
+    title: &'static str,
+    purpose: [&'static str; 3],
+    fs: f64,
+    seed: u64,
+    axes: [(Plant, f64); 3],
+) -> Probe {
+    let [roll, pitch, yaw] = [0, 1, 2].map(|k: usize| {
+        let (plant, noise) = axes[k];
+        moved(seed + k as u64, 200.0, (150, 700), plant, noise)
+    });
+    Probe {
+        id,
+        area: Area::StepResponse,
+        title,
+        purpose,
+        flight: FlightSpec {
+            roll,
+            pitch,
+            yaw,
+            ..FlightSpec::quiet(fs, STEP_S)
+        },
+    }
+}
+
+/// The probe of round 7 with one natural frequency at three dampings, at a
+/// log rate: the same plants and the same stick moves at every rate.
+fn dampings(id: &'static str, title: &'static str, fs: f64) -> Probe {
+    let plant = |damping: f64| Plant::SecondOrder {
+        natural_hz: 20.0,
+        damping,
+        delay_ms: 4.0,
+        gain: 1.0,
+    };
+    answered(
+        id,
+        title,
+        [
+            "a second-order response of 20 Hz, damping 0.3, after 4 ms: it overshoots by 37 %",
+            "the same with damping 0.5: it overshoots by 16 %",
+            "the same with damping 0.9: it all but does not overshoot",
+        ],
+        fs,
+        431,
+        [(plant(0.3), 0.0), (plant(0.5), 0.0), (plant(0.9), 0.0)],
+    )
+}
+
+/// Round 7, the first about the numbers version 0.94 of the reference tool
+/// reads off a step response besides its peak and its latency: rise time,
+/// bandwidth, the peak of the sensitivity and its frequency, phase margin
+/// and crossover. The plants are those whose answers are known in closed
+/// form (`crate::truth`; the manifest carries them), flown without gyro
+/// noise so that the mean curve is as clean as a log allows. The round
+/// identifies: the pack predicts the step response as before and nothing
+/// of the new numbers.
+fn round_7() -> Vec<Probe> {
+    let delay = |delay_ms: f64| (Plant::Delay { delay_ms }, 0.0);
+    let first = |tau_ms: f64| {
+        let plant = Plant::FirstOrder {
+            tau_ms,
+            delay_ms: 0.0,
+            gain: 1.0,
+        };
+        (plant, 0.0)
+    };
+    let second = |natural_hz: f64, delay_ms: f64, gain: f64, noise: f64| {
+        let plant = Plant::SecondOrder {
+            natural_hz,
+            damping: 0.5,
+            delay_ms,
+            gain,
+        };
+        (plant, noise)
+    };
+    vec![
+        answered(
+            "y1-delays-2k",
+            "Pure delays: the sensitivity peak, the crossover and the phase margin in closed form",
+            [
+                "a pure delay of 10 ms: the sensitivity peaks at 6.02 dB at 50 Hz, the open loop \
+                 crosses 1 at 16.67 Hz with a phase margin of 60 degrees, the gain never falls",
+                "a pure delay of 20 ms: the same peak at 25 Hz, the crossover at 8.33 Hz, the \
+                 same phase margin",
+                "a pure delay of 5 ms: the same peak at 100 Hz, the crossover at 33.33 Hz, the \
+                 same phase margin",
+            ],
+            2000.0,
+            401,
+            [delay(10.0), delay(20.0), delay(5.0)],
+        ),
+        answered(
+            "y2-first-2k",
+            "First-order plants without a delay: the bandwidth in closed form",
+            [
+                "a first-order response with a time constant of 10 ms: a bandwidth of 15.92 Hz",
+                "a first-order response with a time constant of 30 ms: a bandwidth of 5.31 Hz",
+                "a first-order response with a time constant of 80 ms: a bandwidth of 1.99 Hz",
+            ],
+            2000.0,
+            411,
+            [first(10.0), first(30.0), first(80.0)],
+        ),
+        answered(
+            "y3-gain-2k",
+            "One plant at three gains: whether -3 dB is counted from the gain at 0 Hz or from 1",
+            [
+                "a second-order response of 15 Hz, damping 0.5, after 5 ms, that reaches 0.8 of \
+                 the rate asked for",
+                "the same plant reaching the rate asked for",
+                "the same plant reaching 1.2 of the rate asked for",
+            ],
+            2000.0,
+            421,
+            [
+                second(15.0, 5.0, 0.8, 0.0),
+                second(15.0, 5.0, 1.0, 0.0),
+                second(15.0, 5.0, 1.2, 0.0),
+            ],
+        ),
+        dampings(
+            "y4-damping-2k",
+            "One natural frequency at three dampings; also from windows of 1 s and 3 s, and \
+             smoothed",
+            2000.0,
+        ),
+        dampings(
+            "y5-rate-1k",
+            "The plants and stick moves of y4-damping-2k at 1 kHz",
+            1000.0,
+        ),
+        dampings("y6-rate-4k", "The same at 4 kHz", 4000.0),
+        dampings("y7-rate-8k", "The same at 8 kHz", 8000.0),
+        answered(
+            "y8-noise-2k",
+            "One plant under gyro noise of three levels: what the noise does to the numbers",
+            [
+                "a second-order response of 20 Hz, damping 0.5, after 4 ms, without gyro noise",
+                "the same plant under gyro noise of 5 deg/s RMS",
+                "the same plant under gyro noise of 20 deg/s RMS",
+            ],
+            2000.0,
+            441,
+            [
+                second(20.0, 4.0, 1.0, 0.0),
+                second(20.0, 4.0, 1.0, 5.0),
+                second(20.0, 4.0, 1.0, 20.0),
+            ],
+        ),
+    ]
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
@@ -964,12 +1121,13 @@ pub fn round(round: u32) -> Option<Vec<Probe>> {
         4 => Some(round_4()),
         5 => Some(round_5()),
         6 => Some(round_6()),
+        7 => Some(round_7()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6];
+pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7];
 
 #[cfg(test)]
 mod tests {
@@ -1292,6 +1450,108 @@ mod tests {
                 assert!(peak > 80.0 && peak < 2000.0, "{at}: {peak}");
                 // the setpoint is whole deg/s, as a log keeps it
                 assert!(s.setpoint.iter().all(|v| v.fract() == 0.0), "{at}");
+            }
+        }
+    }
+
+    #[test]
+    fn round_7_flies_plants_whose_answers_are_known() {
+        let probes = round(7).unwrap();
+        let shape: Vec<(&str, f64, f64)> = probes
+            .iter()
+            .map(|p| (p.id, p.flight.fs, p.flight.duration_s))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("y1-delays-2k", 2000.0, 30.0),
+                ("y2-first-2k", 2000.0, 30.0),
+                ("y3-gain-2k", 2000.0, 30.0),
+                ("y4-damping-2k", 2000.0, 30.0),
+                ("y5-rate-1k", 1000.0, 30.0),
+                ("y6-rate-4k", 4000.0, 30.0),
+                ("y7-rate-8k", 8000.0, 30.0),
+                ("y8-noise-2k", 2000.0, 30.0),
+            ]
+        );
+        // stick moves no earlier round had
+        let earlier: Vec<Probe> = (1..=6).flat_map(|r| round(r).unwrap()).collect();
+        let (_, old_seeds) = flown_in(&earlier);
+        let (plants, seeds) = flown_in(&probes);
+        assert!(seeds.is_disjoint(&old_seeds));
+        // every axis follows random stick moves through a plant, and only
+        // the last probe has gyro noise
+        for p in &probes {
+            assert_eq!(p.area, Area::StepResponse);
+            assert_eq!(p.flight.throttle, Throttle::Constant { percent: 50.0 });
+            for axis in Axis::ALL {
+                let spec = p.flight.axis(axis);
+                let at = format!("{} {axis:?}", p.id);
+                assert!(matches!(spec.stick, Stick::Random { .. }), "{at}");
+                assert_ne!(spec.plant, Plant::None, "{at}");
+                assert_eq!(spec.filtered, Filtered::Same, "{at}");
+                let noisy = p.id == "y8-noise-2k" && axis != Axis::Roll;
+                assert_eq!(spec.waves.is_empty(), !noisy, "{at}");
+                let s = p.flight.samples(axis);
+                let peak = s.unfiltered.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+                assert!(peak > 150.0 && peak < 2000.0, "{at}: {peak}");
+                assert!(s.setpoint.iter().all(|v| v.fract() == 0.0), "{at}");
+            }
+        }
+        // what the titles promise about the plants
+        let delays: Vec<Plant> = [10.0, 20.0, 5.0]
+            .map(|delay_ms| Plant::Delay { delay_ms })
+            .to_vec();
+        assert_eq!(plants[..3], delays);
+        let second = |natural_hz: f64, damping: f64, delay_ms: f64, gain: f64| Plant::SecondOrder {
+            natural_hz,
+            damping,
+            delay_ms,
+            gain,
+        };
+        for (plant, tau) in plants[3..6].iter().zip([10.0, 30.0, 80.0]) {
+            let first = Plant::FirstOrder {
+                tau_ms: tau,
+                delay_ms: 0.0,
+                gain: 1.0,
+            };
+            assert_eq!(*plant, first);
+        }
+        for (plant, gain) in plants[6..9].iter().zip([0.8, 1.0, 1.2]) {
+            assert_eq!(*plant, second(15.0, 0.5, 5.0, gain));
+        }
+        for (plant, damping) in plants[9..12].iter().zip([0.3, 0.5, 0.9]) {
+            assert_eq!(*plant, second(20.0, damping, 4.0, 1.0));
+        }
+        assert!(
+            plants[21..]
+                .iter()
+                .all(|p| *p == second(20.0, 0.5, 4.0, 1.0))
+        );
+        let noise: Vec<f64> = [&probes[7].flight.pitch, &probes[7].flight.yaw]
+            .iter()
+            .map(|spec| match spec.waves[..] {
+                [Wave::Noise { rms, .. }] => rms,
+                _ => 0.0,
+            })
+            .collect();
+        assert_eq!(noise, [5.0, 20.0]);
+        // the three probes of the log rate are the fourth probe at another
+        // rate: the same plants, and the stick moves at the same moments
+        let base = &probes[3].flight;
+        let moves = base.samples(Axis::Roll).setpoint;
+        for p in &probes[4..7] {
+            let same = FlightSpec {
+                fs: base.fs,
+                ..p.flight.clone()
+            };
+            assert_eq!(&same, base, "{}", p.id);
+            let setpoint = p.flight.samples(Axis::Roll).setpoint;
+            let at = |seconds: f64, x: &[f64], fs: f64| x[(seconds * fs) as usize];
+            for tenth in 0..290 {
+                let t = f64::from(tenth) / 10.0 + 0.0125;
+                let (here, there) = (at(t, &setpoint, p.flight.fs), at(t, &moves, base.fs));
+                assert_eq!(here, there, "{} at {t} s", p.id);
             }
         }
     }

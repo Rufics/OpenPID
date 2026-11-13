@@ -13,6 +13,7 @@ use crate::catalogue::{self, Area, Probe};
 use crate::model;
 use crate::signal::{AxisSamples, FlightSpec, Wave, band_bins};
 use crate::step_model;
+use crate::truth::ResponseTruth;
 use openpid_analysis::{Analysis, AnalysisCtx, Epoch, PsdAnalysis, PsdParams};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, LogFormat, OpenOptions};
 use openpid_dsp::Fft;
@@ -31,6 +32,10 @@ const TIME_OFFSET_US: i64 = 30_000_000;
 /// the reference tool reads. Every log it has opened from this crate was
 /// one of that release.
 pub const TARGET: Target = Target::V2025_12;
+/// The first round whose manifest says what is true about the plants in the
+/// frequency domain. The manifests of the rounds before it stay as they
+/// were when the rounds were run.
+const TRUTH_FROM_ROUND: u32 = 7;
 /// Seconds left out at each end of a log before `OpenPID`'s own analysis, as
 /// the reference tool leaves them out (`docs/DESIGN.md` §6.7).
 const TRIM_S: f64 = 1.0;
@@ -137,6 +142,10 @@ pub struct AxisEntry {
     pub unfiltered: ChannelTruth,
     /// The gyro after the filters.
     pub filtered: ChannelTruth,
+    /// What is true about the plant of the axis in the frequency domain:
+    /// from round 7 on, for an axis that follows its stick.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response: Option<ResponseTruth>,
 }
 
 /// One probe in the manifest.
@@ -284,11 +293,14 @@ pub struct PredictedStepPoint {
 }
 
 /// What the model expects of the step response of one axis at one
-/// smoothing level. With no window that counts, only the counts are there.
+/// setting of the window: a smoothing level and a length of the window.
+/// With no window that counts, only the counts are there.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PredictedStepLevel {
     /// Name of the level in the tool's list.
     pub smoothing: &'static str,
+    /// Length of the window, seconds: two as the tool comes up.
+    pub window_s: f64,
     /// Windows that count: the `n` of the tool's legend.
     pub windows: usize,
     /// "Peak": the highest value of the curve in its first 150 ms.
@@ -317,7 +329,8 @@ pub struct PredictedStepAxis {
     /// of 47 in rounds 4 and 5).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sp_gyro_ms: Option<f64>,
-    /// Without smoothing, and at the levels the round captures.
+    /// As the window comes up (no smoothing, windows of two seconds), and
+    /// at the other settings the round captures.
     pub levels: Vec<PredictedStepLevel>,
 }
 
@@ -685,13 +698,14 @@ fn predicted_step_level(
     setpoint: &[f64],
     gyro: &[f64],
     fs: f64,
-    level: usize,
+    (level, window_s): (usize, f64),
 ) -> Option<PredictedStepLevel> {
-    let step = step_model::step(setpoint, gyro, fs, level)?;
+    let step = step_model::step_of(setpoint, gyro, fs, level, window_s)?;
     let some = !step.windows.is_empty();
     let at = |ms: f64| (ms * fs / 1000.0).round() as usize;
     Some(PredictedStepLevel {
-        smoothing: step_model::SMOOTHING[level].0,
+        smoothing: step_model::SMOOTHING[level % step_model::SMOOTHING.len()].0,
+        window_s,
         windows: step.windows.len(),
         peak: some.then(|| rounded(step.peak)),
         peak_bar: some.then(|| rounded(step.peak_spread)),
@@ -711,9 +725,27 @@ fn predicted_step_level(
     })
 }
 
+/// The settings of the step response window the model's expectation is
+/// written down for: as the window comes up, the three smoothing levels
+/// when the round captures them for the probe, and the settings at which
+/// the round captures every plot of the probe again. Each is a smoothing
+/// level and the seconds of the window.
+fn predicted_settings(probe: &Probe) -> Vec<(usize, f64)> {
+    let smoothed = if capture::smoothing_captured(probe) {
+        1..step_model::SMOOTHING.len()
+    } else {
+        0..0
+    };
+    let again = capture::settings_captured(probe);
+    std::iter::once(capture::DEFAULT_SETTING)
+        .chain(smoothed.map(|level| (level, capture::DEFAULT_SETTING.1)))
+        .chain(again.iter().copied())
+        .map(|(level, seconds)| (level, f64::from(seconds)))
+        .collect()
+}
+
 /// The step response the model of the reference tool expects for a
-/// written log: without smoothing, and at the three levels when the round
-/// captures them for the probe.
+/// written log, at the settings of [`predicted_settings`].
 fn predicted_step(session: &FlightSession, probe: &Probe) -> Result<PredictedStepProbe, PackError> {
     let id = probe.id;
     let fs = probe.flight.fs;
@@ -721,11 +753,7 @@ fn predicted_step(session: &FlightSession, probe: &Probe) -> Result<PredictedSte
         probe: id,
         message: "the log is too short for the reference tool's step response".into(),
     };
-    let levels = if capture::smoothing_captured(probe) {
-        step_model::SMOOTHING.len()
-    } else {
-        1
-    };
+    let settings = predicted_settings(probe);
     let mut axes = Vec::new();
     let mut grid = None;
     for axis in Axis::ALL {
@@ -737,8 +765,9 @@ fn predicted_step(session: &FlightSession, probe: &Probe) -> Result<PredictedSte
             step_model::LATE,
             step_model::WINDOW_S,
         );
-        let levels = (0..levels)
-            .map(|level| predicted_step_level(&setpoint, &gyro, fs, level))
+        let levels = settings
+            .iter()
+            .map(|setting| predicted_step_level(&setpoint, &gyro, fs, *setting))
             .collect::<Option<Vec<_>>>()
             .ok_or_else(too_short)?;
         axes.push(PredictedStepAxis {
@@ -795,7 +824,7 @@ pub fn craft_headers(id: &str) -> Vec<(String, String)> {
 
 /// One probe: its log, its manifest entry, `OpenPID`'s results and the
 /// model's predictions.
-fn build_probe(probe: &Probe) -> Result<Built, PackError> {
+fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
     let id = probe.id;
     let flight = &probe.flight;
     let options = WriteOptions {
@@ -858,6 +887,9 @@ fn build_probe(probe: &Probe) -> Result<Built, PackError> {
                 &filtered,
                 &logged(&session, axis, GyroStage::Filtered, id)?,
             ),
+            response: (round >= TRUTH_FROM_ROUND)
+                .then(|| ResponseTruth::of(spec.plant))
+                .flatten(),
         });
         ours.push(OursAxis {
             axis: axis_name(axis),
@@ -918,7 +950,7 @@ pub fn build(round: u32, built_from: &str) -> Result<Pack, PackError> {
     let mut expected = Vec::new();
     let mut expected_step = Vec::new();
     for probe in &probes {
-        let built = build_probe(probe)?;
+        let built = build_probe(probe, round)?;
         logs.push((built.entry.file.clone(), built.bytes));
         manifest.probes.push(built.entry);
         ours.probes.push(built.ours);
