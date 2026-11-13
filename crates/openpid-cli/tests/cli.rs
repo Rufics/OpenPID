@@ -31,6 +31,7 @@ fn run(args: &[&str]) -> (bool, String, String) {
 fn help_and_version() {
     let (ok, out, _) = run(&["--help"]);
     assert!(ok && out.contains("USAGE"));
+    assert!(out.contains("`performance`: rise time"), "{out}");
     let (ok, out, _) = run(&["--version"]);
     assert!(ok && out.starts_with("openpid "));
     let (ok, _, err) = run(&[]);
@@ -185,6 +186,32 @@ fn run_analyses() {
     let v: serde_json::Value = serde_json::from_str(&out).expect("json");
     let verdicts = v["verdicts"].as_array().expect("verdicts in the step JSON");
     assert_eq!(verdicts.len(), 7);
+    // the performance numbers of the mean curve, by their names
+    let performance = v["performance"].as_object().expect("performance");
+    let mut keys: Vec<&str> = performance.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "bandwidth_hz",
+            "crossover_hz",
+            "phase_margin_deg",
+            "rise_ms",
+            "sensitivity_db",
+            "sensitivity_hz",
+        ]
+    );
+    let number = |key: &str| performance[key].as_f64().unwrap_or_else(|| panic!("{key}"));
+    // yaw of this flight: 0.1 to 0.9 of 1 in 13.6 ms, the loop follows to
+    // 21.7 Hz and amplifies a disturbance by 3.6 dB at most
+    assert!((10.0..20.0).contains(&number("rise_ms")), "{performance:?}");
+    assert!((15.0..30.0).contains(&number("bandwidth_hz")));
+    assert!((2.0..6.0).contains(&number("sensitivity_db")));
+    assert!(number("sensitivity_hz") < 150.0);
+    assert!((30.0..70.0).contains(&number("phase_margin_deg")));
+    assert!(number("crossover_hz") < number("bandwidth_hz"));
+    // the rise time of the verdicts is another reading, in whole samples
+    assert!(v["metrics"]["rise_time_ms"].is_number());
     // the division by default; smoothing of the gyro changes the windows
     assert_eq!(v["method"], "division");
     let used = |extra: &[&str]| {
@@ -202,6 +229,14 @@ fn run_analyses() {
     let (method, wiener) = used(&["--method", "wiener"]);
     assert_eq!(method, "\"wiener\"");
     assert!(wiener > 0 && wiener != plain, "{wiener} and {plain}");
+    // the other estimate carries the numbers of its own curve
+    let (ok, out, err) = run(&[
+        "run", "step", sharp, "--epoch", "auto", "--axis", "yaw", "--method", "wiener",
+    ]);
+    assert!(ok, "{err}");
+    let w: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert!(w["performance"]["bandwidth_hz"].is_number());
+    assert_ne!(w["performance"], v["performance"]);
     assert!(
         verdicts
             .iter()

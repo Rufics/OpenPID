@@ -29,7 +29,11 @@ COMMANDS:
              --scaled writes the canonical channels in physical units instead.
 
     run      Run an analysis and print its result as JSON. Analyses:
-             step            step response (needs --axis, default roll)
+             step            step response (needs --axis, default roll): the mean curve,
+                             its `metrics` with the `verdicts` on them, and its
+                             `performance`: rise time (10 % to 90 % of 1), bandwidth,
+                             sensitivity peak and its frequency, phase margin and
+                             crossover frequency (null where the curve gives none)
              psd             Welch power spectral density of --channel
              thr-heatmap     frequency x throttle heatmap of --channel
              stft            frequency x time heatmap of --channel

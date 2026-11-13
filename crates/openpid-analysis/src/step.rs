@@ -11,6 +11,7 @@
 //! themselves.
 
 use crate::prepare::{Prepared, prepare};
+use crate::step_performance::{self, StepPerformance};
 use crate::step_windows::{self, Windows};
 use openpid_core::analysis::{Analysis, AnalysisCtx, AnalysisError, Grid2D, Requirement};
 use openpid_core::{Axis, ChannelId, GyroStage, Unit};
@@ -131,7 +132,10 @@ impl std::hash::Hash for StepParams {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 /// Scalar characteristics of a normalised step response.
 pub struct StepMetrics {
-    /// Time to go from 10 % to 90 % of the final value, ms.
+    /// Time to go from 10 % to 90 % of the final value, ms, in whole
+    /// samples; the verdicts judge this one.
+    /// [`StepPerformance::rise_ms`] reads the same curve against 1 instead
+    /// of against where it settles, and between the samples.
     pub rise_time_ms: Option<f64>,
     /// Time at which the response first crosses 50 %, ms.
     pub delay_ms: Option<f64>,
@@ -182,6 +186,11 @@ pub struct StepOutput {
     /// Spread of the peak and of the time to 50 % over the used windows.
     #[serde(default)]
     pub spread: StepSpread,
+    /// The performance numbers of `mean`: rise time, bandwidth, sensitivity
+    /// peak and its frequency, phase margin and crossover frequency
+    /// ([`crate::step_performance`]).
+    #[serde(default)]
+    pub performance: StepPerformance,
 }
 
 /// Mean and standard deviation over the used windows of each window's own
@@ -487,6 +496,7 @@ fn division(p: &StepParams, sp: &Prepared, gy: &Prepared) -> Result<StepOutput, 
             half_ms_mean: read.latency_ms,
             half_ms_sd: read.latency_spread_ms,
         },
+        performance: step_performance::performance(&read.mean, fs),
         mean: read.mean,
     })
 }
@@ -620,6 +630,7 @@ impl Analysis for StepAnalysis {
             method: StepMethod::Wiener,
             fs,
             time_ms,
+            performance: step_performance::performance(&mean, fs),
             mean,
             low: weighted_mean(&low, resp_len).map(smooth),
             high: weighted_mean(&high, resp_len).map(smooth),

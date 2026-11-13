@@ -137,7 +137,8 @@ parameters is computed once on the worker thread, so switching tabs is instant.
 
 ## 3. Step response
 
-Roll, pitch and yaw are stacked, each with its Peak and Latency plots; the
+Roll, pitch and yaw are stacked, each with two narrow plots to its right
+(Peak and Latency, or another pair chosen with **Plots** in the panel); the
 controls are in the panel on the right. Under the plots, one line: **Details**,
 a pill per log ("A 3/3 axes" with its worst mark; hover for the axes without
 enough data) and the Advice line. **Details** opens the **verdict table** (closed
@@ -177,7 +178,7 @@ The control panel on the right (hover any field for its explanation):
 | Field | What it does | Default |
 |---|---|---|
 | Smoothing | of the gyro, before the response is computed: off / low / medium / high (a local regression over 1 / 5 / 11 / 21 samples). It brings back windows that noise had dropped and blurs a sharp step | off |
-| Latency | what the Latency plots show: SR latency (the mean over the windows of each window's time to 0.5) or SP-gyro delay (cross-correlation) | SR latency |
+| Plots | the pair of numbers the two narrow plots beside each response show, one point per log (below) | Peak \| Latency |
 | Y max | upper end of the response axis | 1.5 |
 | Raw responses | the individual windows behind the mean, as a density | off |
 | Method | windowed division (above), or Wiener with cut-off: OpenPID's former estimate, which rounds a sharp response and reads a peak a little high | windowed division |
@@ -187,6 +188,22 @@ over the mean (0 / 10 / 20 / 40 ms), Y correction (normalise every window on
 its settled tail), Window (2 s), Cut-off (25 Hz), Min input (the setpoint
 peak a window needs, 80 °/s) and High input (500 °/s: windows above it are
 drawn as a separate "high input" curve).
+
+The pairs of **Plots** (hover the list or an entry for the same in short;
+DESIGN §6.2, "Performance numbers"):
+
+| Pair | What the two plots show |
+|---|---|
+| Peak \| Latency | the peak of the mean response and the SR latency (the mean over the windows of each window's time to 0.5), each with its spread over the windows as a bar |
+| Latency \| SP-gyro delay | the SR latency and the delay from setpoint to gyro by cross-correlation |
+| Rise time \| Bandwidth | the time the mean response takes from 10 % to 90 % of 1 (of the setpoint, not of where the curve settles), and the frequency at which the closed loop falls to −3 dB: up to there the gyro follows the stick. A faster quad has a shorter rise and a wider bandwidth |
+| Sensitivity peak \| freq | the most the loop amplifies a disturbance (a gust, prop wash) and the frequency at which it does. Below 4 dB (the amber line) is comfortable; from 6 dB (the red line) a disturbance comes out doubled and the stability margin is too small: too much gain for the delay in the loop |
+| Phase margin \| Crossover | how far the open loop's phase is from −180° at the frequency where its gain is 0 dB, and that frequency. The smaller the margin, the nearer the loop is to oscillating; as a rule of thumb 45° and more is comfortable, and under 30° the response rings |
+
+These five numbers and the rise time are read from the mean curve alone, so
+they move with it (smoothing, the epoch), and a log with too few windows
+gives unsteady ones. A number the curve does not give (a response that never
+reaches 0.9, a loop gain that never comes down) has no point.
 
 The metrics: `rise` 10–90 %, `delay (50 %)` the first crossing of half the
 settled value, `latency (xcorr)` the lag of the setpoint ↔ gyro
@@ -521,7 +538,7 @@ with a new log.
 |---|---|
 | Log viewer | `openpid info <log>`, `openpid decode <log> --scaled` |
 | Log check | `openpid info <log>`: the `fitness` block (the `fitness` field with `--json`) |
-| Step response | `openpid run step <log> --axis pitch --epoch 2..12` (`--json` carries `verdicts` against the project's targets, or the defaults) |
+| Step response | `openpid run step <log> --axis pitch --epoch 2..12` (`--json` carries `verdicts` against the project's targets, or the defaults, and `performance`: `rise_ms`, `bandwidth_hz`, `sensitivity_db`, `sensitivity_hz`, `phase_margin_deg`, `crossover_hz`) |
 | Spectrum | `openpid run psd <log> --channel gyro.raw.roll` |
 | Freq × throttle | `openpid run thr-heatmap <log> [--png out.png]` |
 | Freq × time | `openpid run stft <log> --channel motor.0` |
