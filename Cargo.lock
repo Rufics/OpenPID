@@ -1765,6 +1765,7 @@ version = "0.1.2"
 dependencies = [
  "blackbox-log",
  "openpid-core",
+ "openpid-sim",
  "serde_json",
  "thiserror 2.0.21",
 ]

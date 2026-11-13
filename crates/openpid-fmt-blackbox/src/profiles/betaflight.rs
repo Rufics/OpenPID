@@ -148,7 +148,7 @@ const BOXES_BF_2025_12: [&str; 42] = [
 
 /// The mode boxes of `fw` in the bit order of `flightModeFlags`, as the
 /// firmware and its Blackbox Explorer name them.
-fn box_names(fw: &FirmwareInfo) -> Vec<&'static str> {
+pub(crate) fn box_names(fw: &FirmwareInfo) -> Vec<&'static str> {
     let v = fw.version.unwrap_or(FirmwareVersion::new(0, 0, 0));
     let at_least = |major, minor, patch| v >= FirmwareVersion::new(major, minor, patch);
     if fw.vendor != FirmwareVendor::Betaflight || !at_least(3, 3, 0) {

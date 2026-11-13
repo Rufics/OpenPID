@@ -424,6 +424,14 @@ fn protocol_name(code: f64) -> String {
     .to_string()
 }
 
+/// The `motor_pwm_protocol` code of a protocol name, the inverse of the
+/// names the settings carry.
+pub(crate) fn protocol_code(name: &str) -> Option<i64> {
+    (0..=9i32)
+        .find(|code| protocol_name(f64::from(*code)) == name)
+        .map(i64::from)
+}
+
 /// Settings common to Betaflight-like header layouts (old and new key names).
 pub fn settings(fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
     let pid = match (
@@ -463,7 +471,9 @@ pub fn settings(fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
                 max_hz,
                 q: h.get_f64("dyn_notch_q").map_or(0.0, |q| q / 100.0),
                 count: h.get_f64("dyn_notch_count").map(|c| c as u32),
-            }),
+            })
+            // a count of zero is how the firmware switches the dynamic notch off
+            .filter(|d| d.count != Some(0)),
             _ => None,
         },
         rpm_notch: h

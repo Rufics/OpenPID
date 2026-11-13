@@ -524,7 +524,7 @@ with a new log.
 | PID sliders | `openpid sliders <log> --set …` |
 | Settings diff of two logs | `openpid diff <logA> <logB> [--session N --session-b M] [--cli \| --json]` |
 | Advice | `openpid run recommend <log> [--epoch A..B] [--cli]` |
-| Synthetic log | `openpid gen --example > spec.json; openpid gen spec.json --out synthetic.csv` |
+| Synthetic log | `openpid gen --example > spec.json; openpid gen spec.json --out synthetic.csv` (a CSV for OpenPID), or `--out synthetic.bbl` (a Betaflight Blackbox log with the firmware's frames and the header lines the spec defines, for tools that read them; `--firmware 4.5` writes the format of that release instead of 2025.12: 4.2, 4.3, 4.4, 4.5, 2025.12, 2026.6 or 2026.12-dev) |
 
 `--session N` picks the session, `--epoch A..B` the seconds, `--epoch auto`
 trims the take-off and landing, `--epoch active` takes the most active 20 s
