@@ -7,8 +7,8 @@
 //!
 //! 1. the filtered gyro is smoothed by a local regression over 1, 5, 11 or
 //!    21 samples ([`SMOOTHING`]); the setpoint is not;
-//! 2. the samples are cut into windows of two seconds, a tenth of a second
-//!    apart ([`Windows`]);
+//! 2. the samples are cut into windows of two seconds, a fortieth of a
+//!    window (0.05 s) apart ([`Windows`]);
 //! 3. in every window the setpoint and the gyro go through a Hann window
 //!    and are followed by 200 zeros; the gyro's transform is divided by the
 //!    setpoint's with a small constant in the denominator; the result, back
@@ -34,8 +34,10 @@ pub const SMOOTHING: [(&str, usize); 4] = [("off", 1), ("low", 5), ("medium", 11
 
 /// Length of a window, seconds.
 pub const WINDOW_S: f64 = 2.0;
-/// Distance between the starts of two windows, seconds.
-pub const HOP_S: f64 = 0.1;
+/// Distance between the starts of two windows, seconds: a fortieth of a
+/// window, as version 0.94 of the reference tool has it (0.9 had a
+/// twentieth, and half the windows).
+pub const HOP_S: f64 = 0.05;
 /// Length of the response that is kept, seconds.
 pub const SHOWN_S: f64 = 0.5;
 /// The mean distance of the stick from its centre a window needs, deg/s.
@@ -354,15 +356,15 @@ mod tests {
     fn the_windows_of_a_stretch() {
         // 30 s at 2 kHz less its first and last second and one sample
         let w = Windows::over(2002, 55_999, 2000.0);
-        assert_eq!((w.first, w.length, w.hop, w.count), (2002, 4000, 200, 259));
-        assert_eq!(w.start(258), 53_602);
+        assert_eq!((w.first, w.length, w.hop, w.count), (2002, 4000, 100, 519));
+        assert_eq!(w.start(518), 53_802);
         // the same seconds at other rates give the same number of windows
-        assert_eq!(Windows::over(1002, 27_999, 1000.0).count, 259);
-        assert_eq!(Windows::over(4002, 111_999, 4000.0).count, 259);
+        assert_eq!(Windows::over(1002, 27_999, 1000.0).count, 519);
+        assert_eq!(Windows::over(4002, 111_999, 4000.0).count, 519);
         // exactly one window, or less, holds none
         assert_eq!(Windows::over(0, 4000, 2000.0).count, 0);
         assert_eq!(Windows::over(0, 100, 2000.0).count, 0);
-        assert_eq!(Windows::over(0, 4200, 2000.0).count, 1);
+        assert_eq!(Windows::over(0, 4100, 2000.0).count, 1);
     }
 
     /// A stick that moves to a new level within 200 deg/s every 150 …
@@ -492,11 +494,11 @@ mod tests {
         let (setpoint, gyro) = delayed(20_000, 20);
         let fs = 2000.0;
         let windows = Windows::over(2, 19_998, fs);
-        assert_eq!(windows.count, 79);
+        assert_eq!(windows.count, 159);
         let all = candidates(&setpoint, &gyro, fs, 0, windows, |_| true);
-        assert_eq!(all.len(), 79);
+        assert_eq!(all.len(), 159);
         let r = read(all.clone(), fs, settled_from(fs));
-        assert_eq!((r.windows.len(), r.mean.len()), (79, 1001));
+        assert_eq!((r.windows.len(), r.mean.len()), (159, 1001));
         assert!((r.peak - 1.0).abs() < 0.03, "{}", r.peak);
         // the first sample above 0.5 is the 20th: 21 samples of 0.5 ms
         // less a millisecond
@@ -515,9 +517,9 @@ mod tests {
         // windows that may not be taken are left out, and so are windows
         // that reach beyond the samples
         let half = candidates(&setpoint, &gyro, fs, 0, windows, |at| at.start < 8000);
-        assert_eq!(half.len(), 40);
+        assert_eq!(half.len(), 80);
         let short = candidates(&setpoint[..10_000], &gyro, fs, 0, windows, |_| true);
-        assert_eq!(short.len(), 30);
+        assert_eq!(short.len(), 60);
         // no window: no curve
         let none = read(Vec::new(), fs, 300);
         assert!(none.peak.is_nan() && none.latency_ms.is_nan());

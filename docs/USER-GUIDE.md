@@ -162,7 +162,7 @@ lines. When Advice has a PID proposal for this axis, a line "Advice: A roll D
 ![Step response](screenshots/step.png)
 
 The response to a unit step, setpoint → gyro (DESIGN §6.2). The epoch is cut
-into windows of 2 s, one every 0.1 s; in each the gyro's spectrum is divided
+into windows of 2 s, one every 0.05 s; in each the gyro's spectrum is divided
 by the setpoint's; a window counts when the stick was 20 °/s from its centre
 on average and its response stays between 0.5 and 1.5 after 150 ms; the curve
 is the mean of those windows, and `n` in the legend is their number. The Peak

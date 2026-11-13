@@ -130,7 +130,8 @@ fn latency_equals_the_plant_delay_for_a_white_input() {
         out.windows_total,
         "a white input always has the stick far enough from its centre"
     );
-    assert!(out.windows_rejected <= 1, "{}", out.windows_rejected);
+    // one window in a hundred, of the 200 this flight has
+    assert!(out.windows_rejected <= 2, "{}", out.windows_rejected);
     // the Wiener estimate takes every window
     let wiener = StepParams {
         method: StepMethod::Wiener,

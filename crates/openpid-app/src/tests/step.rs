@@ -218,7 +218,9 @@ fn the_step_tab_ships_with_the_division_and_draws_what_the_reference_tool_reads(
             panic!("a step result");
         };
         assert_eq!(step.method, StepMethod::Division);
-        assert!(step.windows_used.abs_diff(windows) <= 1, "{axis:?}");
+        // the screenshots are of version 0.9, whose windows were 0.1 s
+        // apart; ours follow 0.94: 0.05 s, twice the windows
+        assert!(step.windows_used.abs_diff(2 * windows) <= 3, "{axis:?}");
         // the Peak plot: the point and its bar
         let drawn = peak_values(&shown);
         assert_eq!(drawn.len(), 1);

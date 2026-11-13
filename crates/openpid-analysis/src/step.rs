@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StepMethod {
-    /// Windows of 2 s every 0.1 s; in each the gyro's transform divided by
+    /// Windows of 2 s every 0.05 s; in each the gyro's transform divided by
     /// the setpoint's after a Hann window ([`crate::step_windows`]); a
     /// window counts when the stick was 20 deg/s from its centre on average
     /// and its response stays between 0.5 and 1.5 after 150 ms; the plain

@@ -1054,8 +1054,8 @@ static UA: &[(&str, &str)] = &[
     ("whole log, every slot", "весь лог, усі слоти"),
     ("windowed division", "ділення у вікнах"),
     (
-        "windowed division: windows of 2 s every 0.1 s, the gyro's spectrum divided by the setpoint's; a window counts when the stick was 20 °/s from its centre on average and its response stays between 0.5 and 1.5 after 150 ms; the plain mean of those, as the reference tool computes it. Wiener with cut-off: OpenPID's former estimate, which rounds a sharp response and reads a peak a little high",
-        "ділення у вікнах: вікна по 2 с кожні 0,1 с, спектр гіроскопа ділиться на спектр setpoint; вікно зараховується, якщо стік у середньому був за 20 °/с від центру, а відгук після 150 мс лишається між 0,5 та 1,5; звичайне середнє таких вікон, як рахує еталонний інструмент. Вінер із частотою зрізу: попередня оцінка OpenPID, яка заокруглює різкий відгук і трохи завищує пік",
+        "windowed division: windows of 2 s every 0.05 s, the gyro's spectrum divided by the setpoint's; a window counts when the stick was 20 °/s from its centre on average and its response stays between 0.5 and 1.5 after 150 ms; the plain mean of those, as the reference tool computes it. Wiener with cut-off: OpenPID's former estimate, which rounds a sharp response and reads a peak a little high",
+        "ділення у вікнах: вікна по 2 с кожні 0,05 с, спектр гіроскопа ділиться на спектр setpoint; вікно зараховується, якщо стік у середньому був за 20 °/с від центру, а відгук після 150 мс лишається між 0,5 та 1,5; звичайне середнє таких вікон, як рахує еталонний інструмент. Вінер із частотою зрізу: попередня оцінка OpenPID, яка заокруглює різкий відгук і трохи завищує пік",
     ),
     ("windows", "вікна"),
     (

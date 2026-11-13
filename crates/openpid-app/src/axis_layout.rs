@@ -282,7 +282,7 @@ fn step_controls(app: &mut App, ui: &mut Ui) {
         "step-method",
         tr("Method"),
         tr(
-            "windowed division: windows of 2 s every 0.1 s, the gyro's spectrum divided by the setpoint's; a window counts when the stick was 20 °/s from its centre on average and its response stays between 0.5 and 1.5 after 150 ms; the plain mean of those, as the reference tool computes it. Wiener with cut-off: OpenPID's former estimate, which rounds a sharp response and reads a peak a little high",
+            "windowed division: windows of 2 s every 0.05 s, the gyro's spectrum divided by the setpoint's; a window counts when the stick was 20 °/s from its centre on average and its response stays between 0.5 and 1.5 after 150 ms; the plain mean of those, as the reference tool computes it. Wiener with cut-off: OpenPID's former estimate, which rounds a sharp response and reads a peak a little high",
         ),
         &mut app.tools.step.method,
         &[

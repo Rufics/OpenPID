@@ -568,9 +568,12 @@ fn step_response_matches_the_reference_tool() {
         let out = out.unwrap();
         assert_eq!(out.method, StepMethod::Division);
         let ours_peak = out.spread.peak_mean;
+        // the reference numbers are of version 0.9 of the tool, whose
+        // windows were 0.1 s apart; since 0.94 they are 0.05 s apart, and
+        // so are ours: twice the windows
         assert!(
-            out.windows_used.abs_diff(n) <= 1,
-            "{name} {axis:?}: {} windows, reference {n}",
+            out.windows_used.abs_diff(2 * n) <= 3,
+            "{name} {axis:?}: {} windows, twice the reference's {n}",
             out.windows_used
         );
         assert!(
