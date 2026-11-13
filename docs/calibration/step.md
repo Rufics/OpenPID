@@ -432,5 +432,64 @@ The plants are known, so each has a true value to be held to.
 | Sensitivity Peak (dB), Sensitivity Freq (Hz) | near the highest value of `|1 − H|` and its frequency, on a grid of 0.977 Hz at every log rate (a transform of the next power of two above the log rate). Within 0.2 dB and a grid step; not exact. Where the peak is small the plot shows no point |
 | Phase Margin (deg), Crossover Freq (Hz) | near the margin of `H / (1 − H)` where its gain crosses 1. Within 2 … 4 degrees and 0.4 Hz; not exact |
 
-Whether OpenPID shows these numbers is the owner's to say; they would be
-a round of their own to identify (the last three rows).
+The owner decided on 2026-11-13 that OpenPID shows these numbers.
+
+## Round 7 (2026-11-13): the numbers of 0.94, identify
+
+Eight logs of plants whose answers are known analytically (`catalogue::round(7)`,
+pack `7066f96`): pure delays, first-order plants, one plant at three
+gains, three dampings at 2 kHz and again at 1, 4 and 8 kHz, one plant
+under three noise levels; for one log also windows of 1 s and 3 s and
+smoothing "high". 4 511 steps, none failed; all 297 copies, 46 pictures,
+21 minutes. The step-response rule gave every one of the 24 mean curves
+again, to 0.0000005, with their counts and Peaks.
+
+The tool describes the numbers in a hover text: rise time "from 10 % to
+90 % of the 1 value"; bandwidth "the frequency response range of the
+drone, above which the drone has minimal response"; sensitivity peak with
+a caution line at 4 dB and a red line at 6 dB; phase margin "phase lag
+difference from 180"; crossover "where open-loop gain = 0 dB".
+
+What the round shows:
+
+- **The response is brought to a gain of 1 first.** The plant at gains
+  0.8, 1.0 and 1.2 reads the same bandwidth (19.08 / 19.09 / 19.07 Hz),
+  sensitivity (4.66 / 4.67 / 4.66 dB at 16.6 Hz), margin (51.0°) and
+  crossover (9.68 Hz). The rise time is not: it is taken against 1, as
+  the hover text says (26.2 / 17.4 / 14.2 ms).
+- **The frequencies are on a grid of 0.977 Hz at every log rate**; the
+  sensitivity peak is the highest grid point, the bandwidth and the
+  crossover are read between two grid points, and the phase margin is the
+  phase **at the first grid point after the crossover**, not between two:
+  the same plant reads 32.7°, 33.3°, 32.5° and 35.4° at 2, 1, 4 and 8 kHz
+  (true: 35.6°), a step of the grid apart.
+- **They follow the mean curve**: with windows of 1 s and 3 s and with
+  smoothing they move as the curve does (bandwidth 29.16 / 29.01 / 28.96
+  Hz for 1, 2, 3 s; 28.40 with smoothing "high").
+- **Against the truth** the tool is good where the response is over
+  quickly and off where it is slow or sharp: a first-order plant of 80 ms
+  reads a bandwidth of 2.80 Hz (true 1.99); a pure delay of 10 ms a
+  crossover of 17.6 Hz (true 16.7) and a sensitivity peak of 5.90 dB at
+  51.8 Hz (true 6.02 at 50).
+
+**Not found: the tool's exact arithmetic for the last five numbers.** Some
+2 000 plain definitions were tried on the 39 axes of rounds 6 and 7 (the
+impulse response as differences of the mean curve or of more of it, its
+gain taken from the last value or the tail, magnitudes read in decibels or
+not, frequencies between grid points straight or on a logarithmic axis).
+The nearest is within these of the tool, and none is exact:
+
+| Number | A plain computation against the tool (median, worst) | against the truth | the tool against the truth |
+|---|---|---|---|
+| Bandwidth, Hz | 0.13, 0.56 | 0.09, 0.46 | 0.10, 1.02 |
+| Sensitivity peak, dB | 0.03, 0.11 | 0.04, 0.22 | 0.06, 0.27 |
+| Phase margin, degrees (phase read between grid points) | 1.4, 6.3 | 0.6, 2.9 | 1.0, 9.2 |
+| Crossover, Hz | 0.03, 0.32 | 0.21, 0.41 | 0.19, 0.57 |
+
+The plain computation: the impulse response is the differences of the
+mean curve divided by its last value; its transform on the tool's grid;
+bandwidth where the gain has fallen by 3 dB; sensitivity the highest
+`|1 − T|`; the crossover and the margin of `T / (1 − T)` where its gain
+falls through 1. It is as near the truth as the tool is, and nearer on
+the phase margin. What OpenPID computes is entry D-004 of
+[DECISIONS.md](DECISIONS.md).

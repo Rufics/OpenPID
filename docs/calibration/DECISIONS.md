@@ -110,6 +110,21 @@ Taken by the owner on 2026-11-11:
 | The owner's decision | — |
 | Carried out by | — |
 
+### D-004 The performance numbers of a step response
+
+| Field | |
+|---|---|
+| Id | D-004 |
+| Area | Step response: rise time, bandwidth, sensitivity peak and its frequency, phase margin, crossover frequency (new in version 0.94 of the reference tool; the owner decided on 2026-11-13 that OpenPID shows them) |
+| Probe | the eight logs of round 7 (pack `7066f96`) and the five of round 6: plants with analytic answers |
+| The reference tool shows | six numbers per axis, read off the mean curve after it is brought to a gain of 1 (the rise time excepted). Its arithmetic for five of them is not found: some 2 000 plain definitions come near and none is exact. It reads the phase margin at a grid point of 0.977 Hz, so the same plant shows 32.5° … 35.4° at different log rates |
+| OpenPID shows | the rise time only (10 % → 90 % of the mean curve; the tool's value exactly) |
+| The exact value | known for every plant of round 7. The tool is within 0.10 Hz (bandwidth), 0.06 dB (sensitivity), 1.0° (margin) and 0.19 Hz (crossover) of it in the median, and up to 1.0 Hz, 0.27 dB, 9.2° and 0.57 Hz off on slow or sharp responses |
+| Options | **A.** A plain, documented computation on the same mean curve: differences of the curve over its last value, the tool's frequency grid, bandwidth at −3 dB, the highest `\|1 − T\|`, crossover and margin of `T / (1 − T)` with the phase read between grid points. Within 0.13 Hz, 0.03 dB, 0.03 Hz and 1.4° of the tool in the median, and as near the truth as the tool or nearer. A user comparing the two programs sees the same numbers to the first decimal on an ordinary craft. **B.** The same, but the phase margin read at the grid point as the tool reads it: within 0.3° of the tool in the median, and its jump of up to 3° between log rates with it. **C.** Wait until the tool's arithmetic is found exactly (more rounds, with no promise that it can be), and show nothing until then |
+| Recommendation | A. The numbers are engineering estimates with a spread larger than the difference between the two programs; A has a definition one can write down and test against the analytic plants, and no artefact of the grid. If the tool's arithmetic is found later, the difference is a small change |
+| The owner's decision | — |
+| Carried out by | — |
+
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
 call.
