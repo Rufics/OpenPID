@@ -763,6 +763,27 @@ struct Built {
     bytes: Vec<u8>,
 }
 
+/// The header lines of the craft the probes are flown by, `name:value`
+/// each: the settings of a 2025.12 quad that the writer cannot know from a
+/// synthetic flight (rates, gains, battery, the firmware's features). Every
+/// log the reference tool has opened from this crate carried them, so a
+/// probe log keeps them: whether the tool opens a log without them has not
+/// been tried. One value differs from those logs: `features` has no GPS
+/// bit, since a probe logs no GPS frames.
+const CRAFT: &str = include_str!("craft.txt");
+
+/// The header lines of the probes' craft (`craft.txt`) and the name of the
+/// probe, as the writer takes them.
+pub fn craft_headers(id: &str) -> Vec<(String, String)> {
+    // the name a tool shows for the log, so a screenshot says which probe it is
+    let name = ("Craft name".to_string(), id.to_string());
+    let craft = CRAFT
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .map(|(key, value)| (key.to_string(), value.to_string()));
+    std::iter::once(name).chain(craft).collect()
+}
+
 /// One probe: its log, its manifest entry, `OpenPID`'s results and the
 /// model's predictions.
 fn build_probe(probe: &Probe) -> Result<Built, PackError> {
@@ -770,8 +791,7 @@ fn build_probe(probe: &Probe) -> Result<Built, PackError> {
     let flight = &probe.flight;
     let options = WriteOptions {
         time_offset_us: TIME_OFFSET_US,
-        // the name a tool shows for the log, so a screenshot says which probe it is
-        headers: vec![("Craft name".into(), id.into())],
+        headers: craft_headers(id),
         target: TARGET,
         ..WriteOptions::default()
     };

@@ -830,6 +830,15 @@ fn a_probe_log_has_the_columns_the_reference_tool_has_read() {
         line("H Field S name:"),
         "flightModeFlags,stateFlags,failsafePhase,rxSignalReceived,rxFlightChannelsValid"
     );
+    // ... and the header block: the 212 lines of those logs, with every
+    // line of the probes' craft at its value
+    assert_eq!(text.lines().filter(|l| l.starts_with("H ")).count(), 212);
+    let craft = pack::craft_headers(name.trim_end_matches(".bbl"));
+    assert_eq!(craft.len(), 169);
+    for (key, value) in &craft {
+        assert_eq!(&line(&format!("H {key}:")), value, "{key}");
+    }
+    assert_eq!(line("H vbatref:"), "1680");
     // ... and the values of the resting sensors: 16 V, no current, a strong
     // link, one g straight down, no rotation
     let log = BlackboxFormat::new()
