@@ -45,6 +45,7 @@ fn worker_loads_and_analyses_off_thread() {
     assert_eq!(file.source.path.as_deref(), Some(Path::new(LOG_4_2)));
     let session = Arc::new(file.sessions[0].clone());
     let kind = Kind::Step(StepParams {
+        method: openpid_analysis::StepMethod::Wiener,
         min_input: GENTLE_STEP_INPUT,
         ..StepParams::default()
     });

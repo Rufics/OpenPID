@@ -16,6 +16,7 @@ USAGE:
     openpid decode <file> [--session N] [--out <path>] [--scaled]
     openpid run <analysis> [<file>] [--project <p.openpid.json>] [--session N] [--epoch A..B]
                 [--axis roll|pitch|yaw] [--channel KEY] [--out <path>] [--png <path>]
+                [--method division|wiener] [--smoothing LEVEL]
     openpid sliders <file> [--session N] [--set KEY=VALUE,...] [--json]
     openpid diff <fileA> <fileB> [--session N] [--session-b M] [--json] [--cli]
     openpid gen [<spec.json>] [--out synthetic.csv] | gen --example
@@ -74,6 +75,10 @@ OPTIONS:
                   take-off and landing (throttle / motor rpm), `active` takes
                   the most active 20 s (stick input)
     --axis AXIS   roll, pitch or yaw
+    --method M    step: `division` (the default) is the gyro's spectrum divided by
+                  the setpoint's in windows of 2 s, as the reference tool computes it;
+                  `wiener` is OpenPID's former estimate with a cut-off
+    --smoothing L step, division: off (default), low, medium or high, of the gyro
     --json        Machine-readable output
     --session-b M diff: session index in the second file (default: --session)
     --cli         diff / run recommend: the firmware's commands instead of the table / JSON
@@ -95,6 +100,8 @@ struct Args {
     epoch_mode: Option<String>,
     set: Vec<(String, f64)>,
     axis: Option<String>,
+    method: Option<String>,
+    smoothing: Option<String>,
     channel: Option<String>,
     session: Option<usize>,
     json: bool,
@@ -156,6 +163,10 @@ fn parse_args() -> Result<Args, String> {
                 args.epoch = Some((a, b));
             }
             "--axis" => args.axis = Some(it.next().ok_or("--axis needs a value")?),
+            "--method" => args.method = Some(it.next().ok_or("--method needs a value")?),
+            "--smoothing" => {
+                args.smoothing = Some(it.next().ok_or("--smoothing needs a level")?);
+            }
             "--set" => {
                 let v = it.next().ok_or("--set needs KEY=VALUE[,KEY=VALUE]")?;
                 for pair in v.split(',').filter(|p| !p.trim().is_empty()) {
@@ -468,6 +479,35 @@ fn parse_axis(s: Option<&str>) -> Result<openpid_core::Axis, String> {
     }
 }
 
+/// The method of `run step`: `--method`, or the project's.
+fn step_method(
+    arg: Option<&str>,
+    default: openpid_analysis::StepMethod,
+) -> Result<openpid_analysis::StepMethod, String> {
+    match arg {
+        None => Ok(default),
+        Some("division") => Ok(openpid_analysis::StepMethod::Division),
+        Some("wiener") => Ok(openpid_analysis::StepMethod::Wiener),
+        Some(other) => Err(format!("unknown method {other}: division or wiener")),
+    }
+}
+
+/// The smoothing level of `run step`: `--smoothing` by its name, or the
+/// project's.
+fn step_smoothing(arg: Option<&str>, default: usize) -> Result<usize, String> {
+    let levels = openpid_analysis::step_windows::SMOOTHING;
+    let Some(name) = arg else {
+        return Ok(default);
+    };
+    levels
+        .iter()
+        .position(|(level, _)| *level == name)
+        .ok_or_else(|| {
+            let names: Vec<&str> = levels.iter().map(|(level, _)| *level).collect();
+            format!("unknown smoothing level {name}: {}", names.join(", "))
+        })
+}
+
 fn cmd_run(args: &Args) -> Result<(), String> {
     use openpid_analysis::{Analysis, AnalysisCtx, Epoch};
     let analysis = args
@@ -553,7 +593,14 @@ fn cmd_run(args: &Args) -> Result<(), String> {
     let mut grid: Option<openpid_core::analysis::Grid2D> = None;
     let json = match analysis {
         "step" => {
-            let p = openpid_analysis::StepParams { axis, ..base.step };
+            let method = step_method(args.method.as_deref(), base.step.method)?;
+            let smoothing = step_smoothing(args.smoothing.as_deref(), base.step.smoothing)?;
+            let p = openpid_analysis::StepParams {
+                axis,
+                method,
+                smoothing,
+                ..base.step
+            };
             let out = openpid_analysis::StepAnalysis
                 .run(&ctx, &p)
                 .map_err(|e| e.to_string())?;
