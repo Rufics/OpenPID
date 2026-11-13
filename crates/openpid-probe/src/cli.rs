@@ -35,6 +35,9 @@ ROUNDS:
     8        The map of frequency against throttle, identify: stairs, a ramp and a hold
              of the throttle with tones and noise of known size, an experiment on each
              gyro channel of every axis.
+    9        The same map: flights of six other lengths (how far apart its segments
+             are), the motors going against the throttle (which of the two it reads),
+             and a flight made for no question, to hold the rule of round 8 against.
 ";
 
 /// Runs the tool with `args` (without the program name), printing to `out`.

@@ -819,15 +819,20 @@ pub fn throttle_file(round: u32, probe: &str, what: &str, plot: &str) -> String 
 /// a column next to its neighbours, and the held throttle, for the spread
 /// of one column alone.
 pub fn throttle_smoothing_captured(probe: &Probe) -> bool {
-    ["z1-stairs-2k", "z3-hold-2k"].contains(&probe.id)
+    ["z1-stairs-2k", "z3-hold-2k", "a9-flight-2k"].contains(&probe.id)
 }
 
 /// Whether the maps of `probe` are also captured on a wider colour scale
 /// and below 100 Hz: the held throttle, whose one spot is then inside the
 /// scale, and drawn large.
 pub fn throttle_views_captured(probe: &Probe) -> bool {
-    probe.id == "z3-hold-2k"
+    ["z3-hold-2k", "a9-flight-2k"].contains(&probe.id)
 }
+
+/// The last round that captured the "2D" lines and typed a colour scale:
+/// the lines turned out to be a spectrum of the whole log, not a cut
+/// through the map, and the typed scale did not hold.
+pub const THROTTLE_FIRST_LOOK: u32 = 8;
 
 /// A click in the window of frequency against throttle, at a position of a
 /// picture of it.
@@ -895,8 +900,9 @@ impl ThrottleLog<'_> {
         pick(steps, THROTTLE_MEDIUM);
     }
 
-    /// The maps on the colour scale [`THROTTLE_SCALE`], then below 100 Hz,
-    /// and both as the window came up again.
+    /// The maps on the colour scale [`THROTTLE_SCALE`] (up to
+    /// [`THROTTLE_FIRST_LOOK`]), then below 100 Hz, and both as the window
+    /// came up again.
     fn views(self, steps: &mut Vec<Step>) {
         let scale = |steps: &mut Vec<Step>, text: &str| {
             for (k, at) in throttle_at::SCALES.into_iter().enumerate() {
@@ -908,9 +914,11 @@ impl ThrottleLog<'_> {
                 steps.push(pause(300));
             }
         };
-        scale(steps, THROTTLE_SCALE);
-        self.capture(steps, "scale-5");
-        scale(steps, THROTTLE_SCALE_DEFAULT);
+        if self.round <= THROTTLE_FIRST_LOOK {
+            scale(steps, THROTTLE_SCALE);
+            self.capture(steps, "scale-5");
+            scale(steps, THROTTLE_SCALE_DEFAULT);
+        }
         let below = |steps: &mut Vec<Step>, state: &str| {
             for (k, at) in throttle_at::BELOW_100.into_iter().enumerate() {
                 let name = format!("<100Hz of column {} {state}", k + 1);
@@ -928,10 +936,11 @@ impl ThrottleLog<'_> {
 /// a round. The window is opened from the spectrum window, after a Run
 /// there. For every log: the log chosen in the first two columns ("Gyro
 /// prefilt" and "Gyro"), then a Run, a picture and copies of the six plots
-/// as the window comes up, the same with "PSD" on and with "2D" on; for
-/// the logs of [`throttle_smoothing_captured`] also at the other smoothing
-/// levels, and for those of [`throttle_views_captured`] on a wider colour
-/// scale and below 100 Hz.
+/// as the window comes up, the same with "PSD" on and, up to
+/// [`THROTTLE_FIRST_LOOK`], with "2D" on; for the logs of
+/// [`throttle_smoothing_captured`] also at the other smoothing levels, and
+/// for those of [`throttle_views_captured`] below 100 Hz (and, up to that
+/// round, on a wider colour scale).
 fn throttle_maps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
     steps.push(click(
         LOG_VIEWER,
@@ -972,7 +981,9 @@ fn throttle_maps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
         }
         log.capture(steps, "");
         log.switched(steps, "PSD", throttle_at::PSD, "psd");
-        log.switched(steps, "2D", throttle_at::TWO_D, "2d");
+        if round <= THROTTLE_FIRST_LOOK {
+            log.switched(steps, "2D", throttle_at::TWO_D, "2d");
+        }
         if throttle_smoothing_captured(probe) {
             log.smoothing_levels(steps);
         }
@@ -989,12 +1000,28 @@ fn throttle_about(round: u32, probes: &[Probe]) -> String {
         .iter()
         .filter(|p| throttle_smoothing_captured(p))
         .count();
+    let first_look = round <= THROTTLE_FIRST_LOOK;
+    let lines = if first_look {
+        " and as lines (\"2D\")"
+    } else {
+        ""
+    };
+    let logs = if levels == 1 {
+        "one log".to_string()
+    } else {
+        format!("{levels} logs")
+    };
+    let views = if first_look {
+        "on a wider colour scale and below 100 Hz"
+    } else {
+        "below 100 Hz"
+    };
     format!(
         "Round {round}: every log through one open dialog, then the window of frequency \
          against throttle for each: the maps of the unfiltered and of the filtered gyro as \
-         the window comes up, in decibels (\"PSD\") and as lines (\"2D\"), for {levels} logs \
-         at the other smoothing levels, and for one on a wider colour scale and below 100 Hz; \
-         a picture of the window and a vector copy of every plot each time."
+         the window comes up and in decibels (\"PSD\"){lines}, for {logs} at the other \
+         smoothing levels, and for one {views}; a picture of the window and a vector copy of \
+         every plot each time."
     )
 }
 
@@ -2045,6 +2072,72 @@ mod tests {
         assert!(!earlier.give_up);
         let json = serde_json::to_value(&earlier).unwrap_or_default();
         assert!(json.get("give_up").is_none());
+    }
+
+    #[test]
+    fn round_9_copies_the_maps_without_the_lines() {
+        let probes = catalogue::round(9).unwrap_or_default();
+        let plan = plan(9, &probes);
+        assert!(plan.give_up);
+        assert!(
+            plan.about
+                .contains("for one log at the other smoothing levels")
+        );
+        assert!(plan.about.contains("for one below 100 Hz") && !plan.about.contains("2D"));
+        let names = |action: &str| -> Vec<&str> {
+            plan.steps
+                .iter()
+                .filter(|s| s.action == action)
+                .filter_map(|s| s.file.as_deref())
+                .collect()
+        };
+        // six plots at a setting: two settings a log, and for the flight
+        // four smoothing levels and the view below 100 Hz
+        let copies = names("clip_save");
+        assert_eq!(copies.len(), 6 * (9 * 2 + 4 + 1));
+        assert!(
+            !copies
+                .iter()
+                .any(|c| c.contains("-2d-") || c.contains("scale"))
+        );
+        for (k, name) in [
+            (0, "a1-len7-2k-throttle-roll-prefilt"),
+            (6, "a1-len7-2k-throttle-psd-roll-prefilt"),
+            (12, "a2-len16-2k-throttle-roll-prefilt"),
+            (96, "a9-flight-2k-throttle-roll-prefilt"),
+            (108, "a9-flight-2k-throttle-smoothing-low-roll-prefilt"),
+            (132, "a9-flight-2k-throttle-sub100-roll-prefilt"),
+            (137, "a9-flight-2k-throttle-sub100-yaw-gyro"),
+        ] {
+            assert_eq!(copies[k], format!("r9-{name}"));
+        }
+        let shots = names("shot");
+        assert_eq!(shots.len(), 3 + copies.len() / 6);
+        assert!(plan.steps.iter().all(|s| s.action != "type"));
+        assert!(
+            !plan
+                .steps
+                .iter()
+                .any(|s| s.name.as_deref() == Some("2D on"))
+        );
+        // the nine logs of the list, in both columns
+        let rows: Vec<u32> = plan
+            .steps
+            .iter()
+            .filter(|s| {
+                s.name
+                    .as_deref()
+                    .is_some_and(|n| n.starts_with("log a") && n.ends_with("in column 1"))
+            })
+            .filter_map(|s| s.at.map(|a| a.1))
+            .collect();
+        assert_eq!(rows, [152, 199, 247, 294, 342, 389, 437, 484, 532]);
+        let note = files(9, shots.len(), copies.len(), false).remove(2).1;
+        let note = String::from_utf8(note).unwrap_or_default();
+        assert!(
+            note.contains("138 plots") && note.contains("saves 26 pictures"),
+            "{note}"
+        );
     }
 
     #[test]

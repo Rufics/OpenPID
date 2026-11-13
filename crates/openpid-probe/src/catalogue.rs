@@ -402,6 +402,7 @@ fn flight(id: &'static str, title: &'static str, fs: f64, duration_s: f64) -> Pr
                     (55.0, 3.0),
                 ],
             },
+            motors: None,
         },
     }
 }
@@ -1359,6 +1360,109 @@ fn round_8() -> Vec<Probe> {
     ]
 }
 
+/// The stairs probe in a flight of another length: nine stairs of
+/// `stair_s` between two stretches of 1.5 s at half throttle.
+fn stairs_of(id: &'static str, fs: f64, stair_s: f64) -> Probe {
+    Probe {
+        title: "The stairs of the throttle in a flight of another length: how far apart the \
+                segments of the map are",
+        ..throttle_stairs(id, fs, stair_s, 9.0 * stair_s + 3.0)
+    }
+}
+
+/// Round 9: the map of frequency against throttle, what round 8 left open
+/// and a flight to hold the rule against.
+fn round_9() -> Vec<Probe> {
+    // a flight as a craft flies it: the throttle moves between levels of
+    // its own choosing and stays on each for a time of its own
+    let flown: [(f64, f64); 12] = [
+        (35.0, 2.0),
+        (62.0, 1.5),
+        (48.0, 3.0),
+        (80.0, 1.0),
+        (22.0, 2.5),
+        (55.0, 4.0),
+        (70.0, 2.0),
+        (30.0, 3.0),
+        (90.0, 1.5),
+        (45.0, 2.5),
+        (65.0, 3.0),
+        (40.0, 4.0),
+    ];
+    let noise = |rms: f64, seed: u64| Wave::Noise { rms, seed };
+    let stairs_down = {
+        let mut steps = vec![(50.0, 1.5)];
+        steps.extend((1..=9).rev().map(|k| (10.0 * f64::from(k), 3.0)));
+        steps.push((50.0, 1.5));
+        Throttle::Stairs { steps }
+    };
+    let sources = throttle_stairs("a8-sources-2k", 2000.0, 3.0, 30.0);
+    vec![
+        stairs_of("a1-len7-2k", 2000.0, 0.5),
+        stairs_of("a2-len16-2k", 2000.0, 1.5),
+        stairs_of("a3-len21-2k", 2000.0, 2.0),
+        stairs_of("a4-len39-2k", 2000.0, 4.0),
+        stairs_of("a5-len57-2k", 2000.0, 6.0),
+        stairs_of("a6-len84-2k", 2000.0, 9.0),
+        stairs_of("a7-len16-4k", 4000.0, 1.5),
+        Probe {
+            title: "The stairs of round 8 with the motors going the other way: which of the two \
+                    the map takes for the throttle",
+            flight: FlightSpec {
+                motors: Some(stairs_down),
+                ..sources.flight
+            },
+            ..sources
+        },
+        Probe {
+            id: "a9-flight-2k",
+            area: Area::Throttle,
+            title: "A flight made for no question in particular: the throttle moves as it likes, \
+                    motor noise follows it; the rule of round 8 says what the map shows",
+            purpose: [
+                "unfiltered: a tone of 8 deg/s at 80 Hz + 3 Hz per percent with its second \
+                 harmonic at 3 deg/s, over noise of 2 deg/s RMS; filtered: the same at 3 and \
+                 1 deg/s over noise of 1 deg/s",
+                "unfiltered: a tone of 5 deg/s at 150 Hz over noise of 3 deg/s RMS; filtered: \
+                 noise of 1 deg/s RMS",
+                "unfiltered: noise between 50 and 400 Hz with a density of 0.02 (deg/s)²/Hz and \
+                 a tone of 4 deg/s at 60 Hz + 2 Hz per percent; filtered: that tone at 1 deg/s",
+            ],
+            flight: FlightSpec {
+                roll: AxisSpec {
+                    filtered: Filtered::Separate {
+                        waves: vec![
+                            throttle_tone(80.0, 3.0, 3.0),
+                            throttle_tone(160.0, 6.0, 1.0),
+                            noise(1.0, 902),
+                        ],
+                    },
+                    ..AxisSpec::of(vec![
+                        throttle_tone(80.0, 3.0, 8.0),
+                        throttle_tone(160.0, 6.0, 3.0),
+                        noise(2.0, 901),
+                    ])
+                },
+                pitch: AxisSpec {
+                    filtered: Filtered::Separate {
+                        waves: vec![noise(1.0, 904)],
+                    },
+                    ..AxisSpec::of(vec![Wave::tone(150.0, 5.0), noise(3.0, 903)])
+                },
+                yaw: two_channels(
+                    905,
+                    vec![band(50.0, 400.0, 0.02, 907), throttle_tone(60.0, 2.0, 4.0)],
+                    vec![throttle_tone(60.0, 2.0, 1.0)],
+                ),
+                throttle: Throttle::Stairs {
+                    steps: flown.to_vec(),
+                },
+                ..FlightSpec::quiet(2000.0, 30.0)
+            },
+        },
+    ]
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
@@ -1370,12 +1474,13 @@ pub fn round(round: u32) -> Option<Vec<Probe>> {
         6 => Some(round_6()),
         7 => Some(round_7()),
         8 => Some(round_8()),
+        9 => Some(round_9()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8];
+pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 #[cfg(test)]
 mod tests {
@@ -1922,5 +2027,98 @@ mod tests {
             fine.iter()
                 .all(|t| ((t * 10.0).round() - t * 10.0).abs() < 1.0e-9)
         );
+    }
+
+    #[test]
+    fn round_9_changes_the_length_of_the_flight_and_parts_the_motors() {
+        let probes = round(9).unwrap();
+        let shape: Vec<(&str, f64, f64)> = probes
+            .iter()
+            .map(|p| (p.id, p.flight.fs, p.flight.duration_s))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("a1-len7-2k", 2000.0, 7.5),
+                ("a2-len16-2k", 2000.0, 16.5),
+                ("a3-len21-2k", 2000.0, 21.0),
+                ("a4-len39-2k", 2000.0, 39.0),
+                ("a5-len57-2k", 2000.0, 57.0),
+                ("a6-len84-2k", 2000.0, 84.0),
+                ("a7-len16-4k", 4000.0, 16.5),
+                ("a8-sources-2k", 2000.0, 30.0),
+                ("a9-flight-2k", 2000.0, 30.0),
+            ]
+        );
+        let stairs = round(8).unwrap().remove(0).flight;
+        for p in &probes {
+            assert_eq!(p.area, Area::Throttle);
+            for axis in Axis::ALL {
+                assert_eq!(p.flight.axis(axis).stick, Stick::Silence, "{}", p.id);
+            }
+        }
+        // the flights of other lengths are the stairs of round 8 but for
+        // the time on a stair; the motors follow the throttle
+        for p in &probes[..7] {
+            let same = FlightSpec {
+                fs: stairs.fs,
+                duration_s: stairs.duration_s,
+                throttle: stairs.throttle.clone(),
+                ..p.flight.clone()
+            };
+            assert_eq!(same, stairs, "{}", p.id);
+            let throttle = p.flight.throttle_samples();
+            assert_eq!(p.flight.motor_samples(), throttle, "{}", p.id);
+            let levels: BTreeSet<i64> = throttle.iter().map(|t| t.round() as i64).collect();
+            assert_eq!(levels.len(), 9, "{}", p.id);
+            // a stretch at half throttle of a second and a half at either end
+            let end = (1.5 * p.flight.fs) as usize;
+            assert!(throttle[..end].iter().all(|t| *t == 50.0), "{}", p.id);
+            assert_eq!(throttle[end], 10.0, "{}", p.id);
+            assert!(throttle[throttle.len() - end..].iter().all(|t| *t == 50.0));
+        }
+        // the stairs again with the motors going down while the throttle
+        // goes up
+        let sources = &probes[7].flight;
+        assert_eq!(
+            FlightSpec {
+                motors: None,
+                ..sources.clone()
+            },
+            stairs
+        );
+        let (throttle, motors) = (sources.throttle_samples(), sources.motor_samples());
+        assert_eq!((throttle[4000], motors[4000]), (10.0, 90.0));
+        assert_eq!((throttle[30_000], motors[30_000]), (50.0, 50.0));
+        assert_eq!((throttle[56_000], motors[56_000]), (90.0, 10.0));
+        // the flight: twelve levels of the throttle over all of its 30 s,
+        // with tones below the Nyquist frequency at any throttle
+        let flight = &probes[8].flight;
+        let throttle = flight.throttle_samples();
+        let levels: BTreeSet<i64> = throttle.iter().map(|t| t.round() as i64).collect();
+        assert_eq!(levels.len(), 12);
+        assert_eq!((throttle[0], throttle[59_999]), (35.0, 40.0));
+        for axis in Axis::ALL {
+            let spec = flight.axis(axis);
+            let filtered: &[Wave] = match &spec.filtered {
+                Filtered::Same => &[],
+                Filtered::Separate { waves } => waves,
+            };
+            for wave in spec.waves.iter().chain(filtered) {
+                if let Wave::ThrottleTone {
+                    hz_at_zero,
+                    hz_per_percent,
+                    ..
+                } = wave
+                {
+                    assert!(hz_at_zero + 100.0 * hz_per_percent < 1000.0);
+                }
+            }
+        }
+        // a flight written before the motors could go their own way says
+        // nothing of them
+        let text = serde_json::to_string(&stairs).unwrap();
+        assert!(!text.contains("motors"));
+        assert!(serde_json::to_string(sources).unwrap().contains("motors"));
     }
 }

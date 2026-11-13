@@ -594,6 +594,10 @@ pub struct FlightSpec {
     pub yaw: AxisSpec,
     /// Throttle; the four motors follow it.
     pub throttle: Throttle,
+    /// What the four motors do when they do not follow the throttle: to
+    /// tell which of the two a tool reads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motors: Option<Throttle>,
 }
 
 /// The samples of one axis.
@@ -620,6 +624,7 @@ impl FlightSpec {
             pitch: AxisSpec::quiet(),
             yaw: AxisSpec::quiet(),
             throttle: Throttle::Constant { percent: 50.0 },
+            motors: None,
         }
     }
 
@@ -645,6 +650,13 @@ impl FlightSpec {
     /// Throttle at every sample, percent.
     pub fn throttle_samples(&self) -> Vec<f64> {
         self.throttle.render(self.fs, self.len(), self.duration_s)
+    }
+
+    /// The output of the motors at every sample, percent: the throttle
+    /// unless the flight says otherwise.
+    pub fn motor_samples(&self) -> Vec<f64> {
+        let motors = self.motors.as_ref().unwrap_or(&self.throttle);
+        motors.render(self.fs, self.len(), self.duration_s)
     }
 
     /// The exact samples of `axis`, before anything is rounded for a log.
@@ -769,12 +781,13 @@ impl FlightSpec {
             );
         }
         let throttle = self.throttle_samples();
+        let motors = self.motor_samples();
         for idx in 0..4u8 {
             add(
                 ChannelId::Motor { idx },
                 format!("motor[{idx}]"),
                 Unit::Percent,
-                throttle.clone(),
+                motors.clone(),
             );
         }
         add(
