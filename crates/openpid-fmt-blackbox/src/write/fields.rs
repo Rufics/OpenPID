@@ -320,11 +320,14 @@ fn series(c: &Channel, n: usize, fallback: i64, f: impl Fn(f64) -> f64) -> Vec<i
         .collect()
 }
 
-/// `rcCommand[ch]`. From the session's stick channel, converted when the
-/// log it came from counted in other units than the target; without one,
+/// `rcCommand[ch]`. From the session's stick channel, which is in the
+/// firmware's old units whatever log it came from (±500, the throttle
+/// 1000 … 2000: the reader brings a log with `rc_command_scale` back to
+/// them), as a fraction of full deflection for a target that logs one;
+/// without a stick channel,
 /// from the setpoint through linear rates (full stick asks for
 /// [`FULL_STICK_RATE`]) and from the throttle.
-fn rc_command(s: &FlightSession, source: &Source, ch: u8, n: usize, units: &Units) -> Vec<i64> {
+fn rc_command(s: &FlightSession, ch: u8, n: usize, units: &Units) -> Vec<i64> {
     let hires = units.high_resolution;
     // a fraction of full deflection in the units of the target
     let scaled = |fraction: f64| match units.rc_scale {
@@ -333,12 +336,11 @@ fn rc_command(s: &FlightSession, source: &Source, ch: u8, n: usize, units: &Unit
         None => fraction * 500.0 * hires,
     };
     if let Some(c) = primary(s, &ChannelId::RcCommand { ch }) {
-        return match (source.rc_is_normalised(), units.rc_scale.is_some()) {
-            (true, false) => series(c, n, 0, scaled),
-            (false, true) if ch == 3 => series(c, n, 0, |v| scaled((v - 1000.0) / 1000.0)),
-            (false, true) => series(c, n, 0, |v| scaled(v / 500.0)),
+        return match units.rc_scale {
+            Some(_) if ch == 3 => series(c, n, 0, |v| scaled((v - 1000.0) / 1000.0)),
+            Some(_) => series(c, n, 0, |v| scaled(v / 500.0)),
             // the same units: the inverse of the decoder's scale
-            _ => series(c, n, 0, |v| v * (1.0 / units.scales.rc)),
+            None => series(c, n, 0, |v| v * (1.0 / units.scales.rc)),
         };
     }
     if ch == 3 {
@@ -363,10 +365,10 @@ fn rc_command(s: &FlightSession, source: &Source, ch: u8, n: usize, units: &Unit
 }
 
 /// The values of one field for every sample of the session.
-fn values(s: &FlightSession, source: &Source, def: &FieldDef, n: usize, units: &Units) -> Vec<i64> {
+fn values(s: &FlightSession, def: &FieldDef, n: usize, units: &Units) -> Vec<i64> {
     let (base, index) = common::split_indexed(&def.name);
     let column = match (base, index) {
-        ("rcCommand", Some(ch)) => rc_command(s, source, ch as u8, n, units),
+        ("rcCommand", Some(ch)) => rc_command(s, ch as u8, n, units),
         ("setpoint", Some(3)) if !has(s, &custom("setpoint[3]")) => {
             // the mixer throttle in tenths of a percent
             match s.channel(&ChannelId::Throttle) {
@@ -427,7 +429,6 @@ fn values(s: &FlightSession, source: &Source, def: &FieldDef, n: usize, units: &
 /// schedule.
 pub(super) fn columns(
     s: &FlightSession,
-    source: &Source,
     layout: &Layout,
     lines: &Lines,
     n: usize,
@@ -453,7 +454,7 @@ pub(super) fn columns(
             if i < 2 {
                 vec![0; n]
             } else {
-                values(s, source, def, n, &units)
+                values(s, def, n, &units)
             }
         })
         .collect()

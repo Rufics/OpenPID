@@ -753,7 +753,7 @@ fn plan(
     };
     let layout = fields::layout(session, source, target, schedule, &mut lines)?;
     let (valid, first) = logged_samples(session, source, &layout, n)?;
-    let mut columns = fields::columns(session, source, &layout, &lines, n);
+    let mut columns = fields::columns(session, &layout, &lines, n);
     let replayed = logged_iterations(session, schedule, n).filter(|_| source.decoded);
     columns[0] = replayed.unwrap_or_else(|| {
         (0..n)

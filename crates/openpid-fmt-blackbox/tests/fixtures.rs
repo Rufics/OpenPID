@@ -330,6 +330,43 @@ fn sticks_are_mapped_per_firmware() {
     // INAV logs rcCommand as Betaflight does
     let s = open("inav-9.0.1-truncated.TXT");
     assert!(s.sticks_at(0.0).is_some());
+
+    // Betaflight after 2026.6 logs rcCommand as a fraction of full
+    // deflection times 1000 (the throttle from 0) and says so in a header.
+    // No log of such a build is among the fixtures, so the 2025.12 log is
+    // read once more with that header added: its numbers then stand for
+    // fractions, and come out in the same units as before.
+    let path = common::logs_dir().join("betaflight-2025.12.2-btfl_027.bbl");
+    let bytes = std::fs::read(path).unwrap();
+    let line = b"H looptime:";
+    let at = bytes.windows(line.len()).position(|w| w == line).unwrap();
+    let mut newer = bytes[..at].to_vec();
+    newer.extend_from_slice(b"H rc_command_scale:1000\n");
+    newer.extend_from_slice(&bytes[at..]);
+    let old = open("betaflight-2025.12.2-btfl_027.bbl");
+    let new = format
+        .open(&newer, &OpenOptions::default())
+        .unwrap()
+        .sessions
+        .remove(0);
+    assert_eq!(new.len(), old.len());
+    let i = (0..old.len())
+        .max_by(|a, b| rc(&old, 0, *a).abs().total_cmp(&rc(&old, 0, *b).abs()))
+        .unwrap();
+    assert!(rc(&old, 0, i).abs() > 100.0, "a roll input in this flight");
+    for ch in 0..3 {
+        // a logged 300 was 300 of ±500; now it is 0.3 of full: 150 of ±500
+        assert!(
+            (rc(&new, ch, i) - rc(&old, ch, i) / 2.0).abs() < 1e-9,
+            "{ch}"
+        );
+    }
+    // a logged 1400 is 1.4 of the throttle's range above its start
+    assert!((rc(&new, 3, i) - (rc(&old, 3, i) + 1000.0)).abs() < 1e-9);
+    assert!((stick(&new, StickAxis::Roll, i) - stick(&old, StickAxis::Roll, i) / 2.0).abs() < 1e-9);
+    assert!((stick(&new, StickAxis::Yaw, i) + rc(&new, 2, i) / 5.0).abs() < 1e-9);
+    // the throttle stick is there, and full where the fraction passes one
+    assert_eq!(stick(&new, StickAxis::Throttle, i), 100.0);
 }
 
 /// The exporter and the slider model of a log come from its firmware

@@ -357,15 +357,15 @@ fn assert_fields(case: &Case, original: &FlightSession, back: &FlightSession) {
     for ch in 0..4u8 {
         let id = ChannelId::RcCommand { ch };
         if t == Target::Master {
-            // a fraction of full deflection, in thousandths
+            // logged as a fraction of full deflection, in thousandths, and
+            // read back in the old units
             let per_unit = 1000.0 * fine;
             assert_channel(name, original, back, &id, |v| {
-                let fraction = if ch == 3 {
-                    (v - 1000.0) / 1000.0
+                if ch == 3 {
+                    1000.0 + whole((v - 1000.0) / 1000.0 * per_unit) / per_unit * 1000.0
                 } else {
-                    v / 500.0
-                };
-                whole(fraction * per_unit) / per_unit
+                    whole(v / 500.0 * per_unit) / per_unit * 500.0
+                }
             });
         } else {
             assert_channel(name, original, back, &id, steps(fine));
@@ -1058,8 +1058,9 @@ fn the_slow_frames_of_a_real_log_follow_the_rules_the_writer_applies() {
     assert!(changed >= 2 && repeated >= 2, "{changed} / {repeated}");
 }
 
-/// The stick commands of a log of `master` (fractions of full deflection)
-/// written for a release that counts in the old units, and back.
+/// The stick commands of a log of `master` (logged as fractions of full
+/// deflection, read in the old units like every log) written for a release
+/// that logs the old units, and back.
 #[test]
 fn stick_commands_change_their_units_with_the_release() {
     let mut original = everything(1000.0, 0.3);
@@ -1075,7 +1076,17 @@ fn stick_commands_change_their_units_with_the_release() {
         let values = s.channel(id).unwrap().data.values();
         values.iter().fold(0.0f64, |m, v| m.max(v.abs()))
     };
-    assert!(peak(&on_master, &roll) < 1.0 && peak(&on_master, &throttle) <= 1.0);
+    assert_eq!(on_master.header("rc_command_scale"), Some("1000"));
+    assert!(peak(&on_master, &roll) > 100.0 && peak(&on_master, &throttle) > 1600.0);
+    for ch in 0..4u8 {
+        let id = ChannelId::RcCommand { ch };
+        let wrote = original.channel(&id).unwrap().data.values();
+        let read = on_master.channel(&id).unwrap().data.values();
+        for (a, b) in wrote.iter().zip(read) {
+            // a thousandth of the deflection is half a unit, one of the throttle
+            assert!((a - b).abs() <= 0.5, "channel {ch}: {a} became {b}");
+        }
+    }
     // and from that log to 2025.12: ±500 and 1000 … 2000 again
     let again = read(&betaflight(&on_master, &options(Target::V2025_12)).unwrap());
     assert_eq!(again.header("rc_command_scale"), None);
@@ -1107,11 +1118,11 @@ fn stick_commands_change_their_units_with_the_release() {
         .values();
     let stick = derived.channel(&roll).unwrap().data.values();
     for (sp, st) in setpoint.iter().zip(stick) {
-        let want = whole((sp / 1000.0).clamp(-1.0, 1.0) * 1000.0) / 1000.0;
+        let want = whole((sp / 1000.0).clamp(-1.0, 1.0) * 1000.0) / 1000.0 * 500.0;
         assert!((want - st).abs() < 1e-9, "{sp} -> {st}");
     }
     let stick = derived.channel(&throttle).unwrap().data.values();
-    assert!(stick.iter().all(|v| (0.0..=1.0).contains(v)));
+    assert!(stick.iter().all(|v| (1000.0..=2000.0).contains(v)));
 }
 
 /// The independent decoder (ADR-0005) on the full flight for the releases it

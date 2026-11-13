@@ -95,17 +95,6 @@ impl Source {
             same_release,
         }
     }
-
-    /// `rcCommand` of the session's channels: as a fraction of full
-    /// deflection when the log it was decoded from declared a scale, in the
-    /// firmware's old units (±500, throttle 1000 … 2000) otherwise.
-    pub(super) fn rc_is_normalised(&self) -> bool {
-        self.betaflight
-            && self
-                .raw
-                .get_f64("rc_command_scale")
-                .is_some_and(|s| s > 0.0)
-    }
 }
 
 /// The header lines after the field definitions, in order.
@@ -513,9 +502,9 @@ mod tests {
             ("Firmware revision", "Betaflight 4.5.1 (x) STM32F7X2"),
             ("rc_command_scale", "1000"),
         ]);
-        assert!(older.betaflight && !older.same_release && older.rc_is_normalised());
+        assert!(older.betaflight && !older.same_release);
         let other = source(&[PRODUCT, ("Firmware revision", "INAV 7.0.0 (x) MATEKF405")]);
-        assert!(other.decoded && !other.betaflight && !other.rc_is_normalised());
+        assert!(other.decoded && !other.betaflight);
     }
 
     #[test]
