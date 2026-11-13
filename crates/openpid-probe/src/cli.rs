@@ -23,6 +23,12 @@ COMMANDS:
            reference tool through the round on Windows. The same round always gives
            the same bytes.
            --built-from records the commit in the manifest.
+
+ROUNDS:
+    1 to 3   The spectrum. Round 3 is the hold-out: a flight as a craft flies it, which
+             the model of the reference tool was not fitted to.
+    4 to 6   The step response. Round 6 is the hold-out: five flights with a plant of
+             its own on every axis, one of them at 8 kHz.
 ";
 
 /// Runs the tool with `args` (without the program name), printing to `out`.

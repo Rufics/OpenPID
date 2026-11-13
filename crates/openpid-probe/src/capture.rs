@@ -330,15 +330,18 @@ pub fn step_file(round: u32, probe: &str, what: &str, plot: &str) -> String {
 
 /// Whether the smoothing levels of the step response are captured for a
 /// probe: for the plants at 2 kHz and for the probe with noise, where
-/// smoothing has something to do, and for the probes that ask what follows
-/// the log rate.
+/// smoothing has something to do, for the probes that ask what follows
+/// the log rate, and for one flight of the hold-out.
 pub fn smoothing_captured(probe: &Probe) -> bool {
-    probe.id == "t1-plants-2k" || probe.id.contains("noise") || probe.id.contains("rates")
+    ["t1-plants-2k", "w5-mixed-2k"].contains(&probe.id)
+        || probe.id.contains("noise")
+        || probe.id.contains("rates")
 }
 
 /// The steps of the step response window for the probes of a round: for
 /// every log its nine plots as they come up, every window's response
-/// ("Raw"), the other latency, and for two logs the smoothing levels.
+/// ("Raw"), the other latency, and for the logs of [`smoothing_captured`]
+/// the smoothing levels.
 fn step_response(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
     let at = |name: &str, position: (u32, u32)| click(STEP, "shot", name, position);
     let run = |steps: &mut Vec<Step>, picture: Option<String>| {
@@ -523,12 +526,17 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
         action: "windows",
         ..Step::default()
     });
+    let smoothed = match probes.iter().filter(|p| smoothing_captured(p)).count() {
+        1 => "one log".to_string(),
+        2 => "two logs".to_string(),
+        n => format!("{n} logs"),
+    };
     Plan {
         about: if probes.iter().all(|p| p.area == Area::StepResponse) {
             format!(
                 "Round {round}: every log through one open dialog, then the step response of \
-                 each: its nine plots, every window's response, the other latency, and for two \
-                 logs the smoothing levels, all copied as vector graphics."
+                 each: its nine plots, every window's response, the other latency, and for \
+                 {smoothed} the smoothing levels, all copied as vector graphics."
             )
         } else if round < 2 {
             format!(
@@ -910,6 +918,60 @@ mod tests {
                 .filter(|s| s.name.as_deref() == Some("Run"))
                 .all(|s| s.mark == Some(true))
         );
+    }
+
+    #[test]
+    fn round_6_copies_the_smoothing_levels_of_one_log() {
+        let probes = catalogue::round(6).unwrap_or_default();
+        let plan = plan(6, &probes);
+        assert!(plan.about.contains("for one log the smoothing levels"));
+        let names = |action: &str| -> Vec<&str> {
+            plan.steps
+                .iter()
+                .filter(|s| s.action == action)
+                .filter_map(|s| s.file.as_deref())
+                .collect()
+        };
+        // as in round 5: nine plots, three raw responses and three
+        // latencies a log; nine smoothed responses for the last log only
+        let copies = names("clip_save");
+        assert_eq!(copies.len(), 5 * 15 + 9);
+        assert_eq!(copies[0], "r6-w1-flight-2k-step-roll-response");
+        assert_eq!(copies[14], "r6-w1-flight-2k-step-spgyro-yaw-latency");
+        assert_eq!(copies[15], "r6-w2-flight-1k-step-roll-response");
+        assert_eq!(
+            copies[75],
+            "r6-w5-mixed-2k-step-smoothing-low-roll-response"
+        );
+        assert_eq!(
+            copies[83],
+            "r6-w5-mixed-2k-step-smoothing-high-yaw-response"
+        );
+        let smoothed = copies.iter().filter(|c| c.contains("smoothing"));
+        assert!(smoothed.clone().all(|c| c.contains("w5")));
+        assert_eq!(smoothed.count(), 9);
+        let shots = names("shot");
+        assert_eq!(shots.len(), 2 + 5 * 2);
+        // the five logs of the list, in the order of their names
+        let rows: Vec<u32> = plan
+            .steps
+            .iter()
+            .filter(|s| s.name.as_deref().is_some_and(|n| n.starts_with("log w")))
+            .filter_map(|s| s.at.map(|a| a.1))
+            .collect();
+        assert_eq!(rows, [145, 174, 204, 233, 263]);
+        // about a quarter of an hour at most, by the script's own estimate
+        let note = files(6, shots.len(), copies.len(), true).remove(2).1;
+        let note = String::from_utf8(note).unwrap_or_default();
+        assert!(
+            note.contains("84 plots") && note.contains("11 minutes"),
+            "{note}"
+        );
+        // rounds 4 and 5 stay as they were run
+        for round in [4, 5] {
+            let earlier = super::plan(round, &catalogue::round(round).unwrap_or_default());
+            assert!(earlier.about.contains("for two logs the smoothing levels"));
+        }
     }
 
     #[test]

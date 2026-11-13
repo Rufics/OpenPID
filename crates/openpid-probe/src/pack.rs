@@ -17,7 +17,7 @@ use openpid_analysis::{Analysis, AnalysisCtx, Epoch, PsdAnalysis, PsdParams};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, LogFormat, OpenOptions};
 use openpid_dsp::Fft;
 use openpid_fmt_blackbox::BlackboxFormat;
-use openpid_fmt_blackbox::write::{WriteError, WriteOptions, betaflight};
+use openpid_fmt_blackbox::write::{Target, WriteError, WriteOptions, betaflight};
 use serde::Serialize;
 use std::f64::consts::TAU;
 use std::path::Path;
@@ -27,6 +27,10 @@ const FORMAT: u32 = 1;
 /// A flight controller logs the time since power-up; the probes start half a
 /// minute after it.
 const TIME_OFFSET_US: i64 = 30_000_000;
+/// The release the logs are written for: Betaflight 2025.12, the newest
+/// the reference tool reads. Every log it has opened from this crate was
+/// one of that release.
+pub const TARGET: Target = Target::V2025_12;
 /// Seconds left out at each end of a log before `OpenPID`'s own analysis, as
 /// the reference tool leaves them out (`docs/DESIGN.md` §6.7).
 const TRIM_S: f64 = 1.0;
@@ -768,6 +772,7 @@ fn build_probe(probe: &Probe) -> Result<Built, PackError> {
         time_offset_us: TIME_OFFSET_US,
         // the name a tool shows for the log, so a screenshot says which probe it is
         headers: vec![("Craft name".into(), id.into())],
+        target: TARGET,
         ..WriteOptions::default()
     };
     let bytes = betaflight(&flight.build(), &options)

@@ -4,7 +4,7 @@
 use openpid_core::{Axis, BatteryField, ChannelId, GyroStage, LogFormat, OpenOptions};
 use openpid_fmt_blackbox::BlackboxFormat;
 use openpid_probe::pack::{self, ChannelTruth, PackError, Spectrum};
-use openpid_probe::{Pack, catalogue};
+use openpid_probe::{Pack, Plant, catalogue};
 use std::sync::OnceLock;
 
 /// Round 1, built once for every test.
@@ -386,7 +386,7 @@ fn an_unknown_round_is_refused() {
             catalogue::ROUNDS
         )
     );
-    assert_eq!(catalogue::ROUNDS, [1, 2, 3, 4, 5]);
+    assert_eq!(catalogue::ROUNDS, [1, 2, 3, 4, 5, 6]);
 }
 
 #[test]
@@ -645,6 +645,157 @@ fn round_5_carries_the_step_model_s_predictions() {
         noisy.windows(2).all(|w| w[0] <= w[1]) && noisy[0] + 30 < noisy[3],
         "{noisy:?}"
     );
+}
+
+/// Round 6, built once for every test.
+fn round_6() -> &'static Pack {
+    static PACK: OnceLock<Pack> = OnceLock::new();
+    PACK.get_or_init(|| pack::build(6, "test").unwrap())
+}
+
+/// The time a plant's response to a step takes to come half way, ms.
+fn half_way_ms(plant: Plant) -> f64 {
+    (0..100_000)
+        .map(|k| f64::from(k) * 0.01)
+        .find(|ms| plant.step_response(ms / 1000.0) >= 0.5)
+        .unwrap()
+}
+
+#[test]
+fn round_6_carries_predictions_for_every_axis() {
+    let pack = round_6();
+    let names: Vec<String> = pack.files().into_iter().map(|(name, _)| name).collect();
+    assert_eq!(
+        names[..7],
+        [
+            "w1-flight-2k.bbl",
+            "w2-flight-1k.bbl",
+            "w3-flight-4k.bbl",
+            "w4-flight-8k.bbl",
+            "w5-mixed-2k.bbl",
+            "manifest.json",
+            "ours.json",
+        ]
+    );
+    assert_eq!(names[7], "predictions.json");
+    let predictions = pack.predictions.as_ref().unwrap();
+    assert_eq!((predictions.round, predictions.assumes.len()), (6, 2));
+    assert!(predictions.probes.is_empty());
+    let grids: Vec<(&str, usize, (usize, usize), usize)> = predictions
+        .step
+        .iter()
+        .map(|p| (p.id, p.first_sample, p.window, p.windows_in_log))
+        .collect();
+    assert_eq!(
+        grids,
+        [
+            ("w1-flight-2k", 2002, (4000, 200), 299),
+            ("w2-flight-1k", 1002, (2000, 100), 179),
+            ("w3-flight-4k", 4002, (8000, 400), 119),
+            ("w4-flight-8k", 8002, (16_000, 800), 99),
+            ("w5-mixed-2k", 2002, (4000, 200), 369),
+        ]
+    );
+    let probes = catalogue::round(6).unwrap();
+    for (probe, predicted) in probes.iter().zip(&predictions.step) {
+        // the smoothing levels for the one log the script captures them of
+        let levels = if probe.id == "w5-mixed-2k" { 4 } else { 1 };
+        for (axis, a) in Axis::ALL.into_iter().zip(&predicted.axes) {
+            let at = format!("{} {}", probe.id, a.axis);
+            assert_eq!(a.levels.len(), levels, "{at}");
+            for level in &a.levels {
+                // on every axis most windows count, and every plot is there
+                let most = predicted.windows_in_log * 4 / 5;
+                assert!(level.windows > most, "{at}: {}", level.windows);
+                assert!(level.windows <= predicted.windows_in_log, "{at}");
+                assert_eq!(level.curve.len(), pack::PREDICTED_MS.len(), "{at}");
+                assert!(level.peak_bar.is_some() && level.latency_bar_ms.is_some());
+            }
+            // against the truth of the plant: a second-order one overshoots
+            // by what its damping says, a first-order one has the peak it
+            // has reached one sample before 150 ms
+            let plant = probe.flight.axis(axis).plant;
+            let truth = match plant {
+                Plant::FirstOrder { .. } => plant.step_response(0.15 - 1.0 / probe.flight.fs),
+                _ => 1.0 + plant.overshoot(),
+            };
+            let off = &a.levels[0];
+            let peak = off.peak.unwrap();
+            assert!((peak - truth).abs() < 0.02, "{at}: {peak} for {truth}");
+            // the latency is the time of the first sample above one half,
+            // counted from one and less a millisecond
+            let half = half_way_ms(plant);
+            let (latency, counted) = (off.latency_ms.unwrap(), 1000.0 / probe.flight.fs - 1.0);
+            assert!(
+                (latency - half - counted).abs() < 1.5,
+                "{at}: {latency} for {half}"
+            );
+            // the delay is read in steps of 0.125 ms, and the two signals
+            // agree best near the time the plant takes to come half way
+            let delay = a.sp_gyro_ms.unwrap();
+            assert_eq!((delay * 8.0).fract(), 0.0, "{at}: {delay}");
+            assert!((delay - half).abs() < 3.0, "{at}: {delay} for {half}");
+        }
+    }
+    // smoothing takes no window away
+    let mixed = &predictions.step[4];
+    for a in &mixed.axes {
+        let windows: Vec<usize> = a.levels.iter().map(|l| l.windows).collect();
+        assert!(windows.windows(2).all(|w| w[0] <= w[1]), "{windows:?}");
+    }
+    // the script: 12 pictures and 84 copies, in about 11 minutes
+    let note = String::from_utf8(pack.files().pop().unwrap().1).unwrap();
+    assert!(note.contains("Calibration round 6"), "{note}");
+    assert!(
+        note.contains("84 plots") && note.contains("11 minutes"),
+        "{note}"
+    );
+}
+
+#[test]
+fn a_round_6_log_is_a_betaflight_2025_12_log_at_its_rate() {
+    // the reference tool reads nothing newer than 2025.12; 8 kHz is the
+    // rate no step-response round had
+    let pack = round_6();
+    let probes = catalogue::round(6).unwrap();
+    for (probe, (name, bytes)) in probes.iter().zip(&pack.logs) {
+        let log = BlackboxFormat::new()
+            .open(bytes, &OpenOptions::default())
+            .unwrap();
+        let session = &log.sessions[0];
+        let version = session.firmware.version.unwrap();
+        assert_eq!((version.major, version.minor), (2025, 12), "{name}");
+        assert_eq!(Some(version), Some(pack::TARGET.version()), "{name}");
+        assert!(session.firmware.revision.starts_with("Betaflight 2025.12."));
+        assert_eq!(session.settings.craft_name.as_deref(), Some(probe.id));
+        assert_eq!(session.settings.loop_rates.log_hz, Some(probe.flight.fs));
+        assert_eq!(session.len(), probe.flight.len(), "{name}");
+        assert_eq!(session.diagnostics.corrupt_frames, 0, "{name}");
+    }
+    let rates: Vec<f64> = pack.manifest.probes.iter().map(|p| p.fs).collect();
+    assert_eq!(rates, [2000.0, 1000.0, 4000.0, 8000.0, 2000.0]);
+    // the stick and the gyro of the log are the rounded flight
+    let flight = &probes[3].flight;
+    let log = BlackboxFormat::new()
+        .open(&pack.logs[3].1, &OpenOptions::default())
+        .unwrap();
+    for axis in Axis::ALL {
+        let exact = flight.samples(axis);
+        for (id, want) in [
+            (ChannelId::Setpoint { axis }, &exact.setpoint),
+            (
+                ChannelId::Gyro {
+                    axis,
+                    stage: GyroStage::Filtered,
+                },
+                &exact.filtered,
+            ),
+        ] {
+            let got = log.sessions[0].channel(&id).unwrap().data.values();
+            let equal = got.iter().zip(want).all(|(g, w)| *g == w.round_ties_even());
+            assert!(equal && got.len() == want.len(), "{id:?}");
+        }
+    }
 }
 
 #[test]

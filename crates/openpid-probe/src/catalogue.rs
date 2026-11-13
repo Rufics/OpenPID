@@ -802,6 +802,159 @@ fn round_5() -> Vec<Probe> {
     ]
 }
 
+/// One axis of a hold-out flight of the step response: the largest rate
+/// the stick asks for, deg/s; the shortest and the longest time it holds a
+/// level, ms; the plant; the gyro noise, deg/s RMS.
+type Flown = (f64, (u32, u32), Plant, f64);
+
+/// A flight of the hold-out of the step response: on every axis random
+/// stick moves through a plant of its own, under a little gyro noise. The
+/// axes take the seeds `seed`, `seed + 1` and `seed + 2`.
+fn held_out(
+    id: &'static str,
+    title: &'static str,
+    purpose: [&'static str; 3],
+    (fs, duration_s): (f64, f64),
+    seed: u64,
+    axes: [Flown; 3],
+) -> Probe {
+    let [roll, pitch, yaw] = [0, 1, 2].map(|k: usize| {
+        let (amplitude, hold_ms, plant, noise) = axes[k];
+        moved(seed + k as u64, amplitude, hold_ms, plant, noise)
+    });
+    Probe {
+        id,
+        area: Area::StepResponse,
+        title,
+        purpose,
+        flight: FlightSpec {
+            roll,
+            pitch,
+            yaw,
+            ..FlightSpec::quiet(fs, duration_s)
+        },
+    }
+}
+
+/// Round 6, the hold-out of the step response: flights made for no
+/// question in particular, as a craft flies them, which the model
+/// (`step_model`) was not fitted to. Fifteen plants none of which an
+/// earlier round flew, each behind a delay; stick moves of new seeds; a
+/// little gyro noise on every axis; log lengths no earlier round had; and
+/// 8 kHz, a log rate no step-response round had.
+fn round_6() -> Vec<Probe> {
+    let second = |natural_hz: f64, damping: f64, delay_ms: f64| Plant::SecondOrder {
+        natural_hz,
+        damping,
+        delay_ms,
+        gain: 1.0,
+    };
+    let first = |tau_ms: f64, delay_ms: f64| Plant::FirstOrder {
+        tau_ms,
+        delay_ms,
+        gain: 1.0,
+    };
+    vec![
+        held_out(
+            "w1-flight-2k",
+            "A flight with stick moves, a plant of its own on every axis and a little gyro \
+             noise: 2 kHz, 34 s",
+            [
+                "stick moves within 300 deg/s; a second-order response of 22 Hz, damping 0.7, \
+                 after 3 ms; gyro noise of 3 deg/s RMS",
+                "stick moves within 250 deg/s; a second-order response of 18 Hz, damping 0.55, \
+                 after 4 ms; gyro noise of 3 deg/s RMS",
+                "stick moves within 120 deg/s; a first-order response with a time constant of \
+                 30 ms after 6 ms; gyro noise of 2 deg/s RMS",
+            ],
+            (2000.0, 34.0),
+            301,
+            [
+                (300.0, (150, 900), second(22.0, 0.7, 3.0), 3.0),
+                (250.0, (150, 900), second(18.0, 0.55, 4.0), 3.0),
+                (120.0, (150, 900), first(30.0, 6.0), 2.0),
+            ],
+        ),
+        held_out(
+            "w2-flight-1k",
+            "Another flight, with other plants: 1 kHz, 22 s",
+            [
+                "stick moves within 280 deg/s; a second-order response of 12 Hz, damping 0.45, \
+                 after 6 ms; gyro noise of 4 deg/s RMS",
+                "stick moves within 220 deg/s; a second-order response of 9 Hz, damping 0.8, \
+                 after 7 ms; gyro noise of 3 deg/s RMS",
+                "stick moves within 150 deg/s; a second-order response of 16 Hz, damping 0.35, \
+                 after 5 ms; gyro noise of 2.5 deg/s RMS",
+            ],
+            (1000.0, 22.0),
+            311,
+            [
+                (280.0, (200, 800), second(12.0, 0.45, 6.0), 4.0),
+                (220.0, (200, 800), second(9.0, 0.8, 7.0), 3.0),
+                (150.0, (200, 800), second(16.0, 0.35, 5.0), 2.5),
+            ],
+        ),
+        held_out(
+            "w3-flight-4k",
+            "Another flight, with other plants: 4 kHz, 16 s",
+            [
+                "stick moves within 350 deg/s; a second-order response of 25 Hz, damping 0.6, \
+                 after 2.5 ms; gyro noise of 5 deg/s RMS",
+                "stick moves within 260 deg/s; a first-order response with a time constant of \
+                 15 ms after 4 ms; gyro noise of 4 deg/s RMS",
+                "stick moves within 100 deg/s; a second-order response of 10 Hz, damping 0.5, \
+                 after 8 ms; gyro noise of 2 deg/s RMS",
+            ],
+            (4000.0, 16.0),
+            321,
+            [
+                (350.0, (120, 600), second(25.0, 0.6, 2.5), 5.0),
+                (260.0, (120, 600), first(15.0, 4.0), 4.0),
+                (100.0, (120, 600), second(10.0, 0.5, 8.0), 2.0),
+            ],
+        ),
+        held_out(
+            "w4-flight-8k",
+            "Another flight, with other plants: 8 kHz, 14 s",
+            [
+                "stick moves within 320 deg/s; a second-order response of 20 Hz, damping 0.3, \
+                 after 3.5 ms; gyro noise of 5 deg/s RMS",
+                "stick moves within 240 deg/s; a second-order response of 13 Hz, damping 0.65, \
+                 after 4.5 ms; gyro noise of 3 deg/s RMS",
+                "stick moves within 140 deg/s; a second-order response of 8 Hz, damping 0.75, \
+                 after 6.5 ms; gyro noise of 2 deg/s RMS",
+            ],
+            (8000.0, 14.0),
+            331,
+            [
+                (320.0, (150, 900), second(20.0, 0.3, 3.5), 5.0),
+                (240.0, (150, 900), second(13.0, 0.65, 4.5), 3.0),
+                (140.0, (150, 900), second(8.0, 0.75, 6.5), 2.0),
+            ],
+        ),
+        held_out(
+            "w5-mixed-2k",
+            "A flight of mixed flying, quick moves, long holds and small moves: 2 kHz, 41 s",
+            [
+                "quick stick moves within 400 deg/s, a new one every 80 to 400 ms; a \
+                 second-order response of 24 Hz, damping 0.4, after 2 ms; gyro noise of 5 deg/s \
+                 RMS",
+                "stick moves within 200 deg/s, held for 300 to 1200 ms; a first-order response \
+                 with a time constant of 45 ms after 5 ms; gyro noise of 3 deg/s RMS",
+                "small stick moves within 90 deg/s, held for 150 to 2000 ms; a second-order \
+                 response of 11 Hz, damping 0.7, after 7.5 ms; gyro noise of 4 deg/s RMS",
+            ],
+            (2000.0, 41.0),
+            341,
+            [
+                (400.0, (80, 400), second(24.0, 0.4, 2.0), 5.0),
+                (200.0, (300, 1200), first(45.0, 5.0), 3.0),
+                (90.0, (150, 2000), second(11.0, 0.7, 7.5), 4.0),
+            ],
+        ),
+    ]
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
@@ -810,12 +963,13 @@ pub fn round(round: u32) -> Option<Vec<Probe>> {
         3 => Some(round_3()),
         4 => Some(round_4()),
         5 => Some(round_5()),
+        6 => Some(round_6()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5];
+pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6];
 
 #[cfg(test)]
 mod tests {
@@ -1032,5 +1186,113 @@ mod tests {
             late[..39_990].iter().all(|v| *v == 0.0) && late[44_010..].iter().all(|v| *v == 0.0)
         );
         assert!(late[40_000..44_000].iter().any(|v| *v != 0.0));
+    }
+
+    /// The plants and the seeds (of stick moves and of noise) of `probes`.
+    fn flown_in(probes: &[Probe]) -> (Vec<Plant>, BTreeSet<u64>) {
+        let mut plants = Vec::new();
+        let mut seeds = BTreeSet::new();
+        for spec in probes
+            .iter()
+            .flat_map(|p| Axis::ALL.map(|axis| p.flight.axis(axis)))
+        {
+            plants.push(spec.plant);
+            if let Stick::Random { seed, .. } = spec.stick {
+                seeds.insert(seed);
+            }
+            let filtered = match &spec.filtered {
+                Filtered::Same => &[][..],
+                Filtered::Separate { waves } => waves,
+            };
+            for wave in spec.waves.iter().chain(filtered) {
+                if let Wave::Noise { seed, .. } | Wave::Band { seed, .. } = wave {
+                    seeds.insert(*seed);
+                }
+            }
+        }
+        (plants, seeds)
+    }
+
+    /// What every axis of the hold-out is held to: random stick moves, a
+    /// first- or second-order plant behind a delay, a little gyro noise.
+    fn assert_flown_as_a_flight(spec: &AxisSpec, at: &str) {
+        assert!(matches!(spec.stick, Stick::Random { .. }), "{at}");
+        match spec.plant {
+            Plant::FirstOrder {
+                tau_ms,
+                delay_ms,
+                gain,
+            } => assert!(tau_ms > 0.0 && delay_ms > 0.0 && gain == 1.0, "{at}"),
+            Plant::SecondOrder {
+                natural_hz,
+                damping,
+                delay_ms,
+                gain,
+            } => {
+                assert!((8.0..=25.0).contains(&natural_hz), "{at}");
+                assert!((0.3..=0.8).contains(&damping), "{at}");
+                assert!(delay_ms > 0.0 && gain == 1.0, "{at}");
+            }
+            other => panic!("{at}: {other:?}"),
+        }
+        match spec.waves[..] {
+            [Wave::Noise { rms, .. }] => assert!((2.0..=5.0).contains(&rms), "{at}"),
+            _ => panic!("{at}: {:?}", spec.waves),
+        }
+        assert_eq!(spec.filtered, Filtered::Same, "{at}");
+    }
+
+    #[test]
+    fn round_6_is_a_hold_out_of_the_step_response() {
+        let probes = round(6).unwrap();
+        let shape: Vec<(&str, f64, f64)> = probes
+            .iter()
+            .map(|p| (p.id, p.flight.fs, p.flight.duration_s))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("w1-flight-2k", 2000.0, 34.0),
+                ("w2-flight-1k", 1000.0, 22.0),
+                ("w3-flight-4k", 4000.0, 16.0),
+                ("w4-flight-8k", 8000.0, 14.0),
+                ("w5-mixed-2k", 2000.0, 41.0),
+            ]
+        );
+        let earlier: Vec<Probe> = (1..=5).flat_map(|r| round(r).unwrap()).collect();
+        // no length of an earlier round, in seconds or in samples; and 8 kHz
+        // is new to the step response
+        for p in &probes {
+            assert_eq!(p.area, Area::StepResponse);
+            for e in &earlier {
+                assert_ne!(p.flight.duration_s, e.flight.duration_s, "{}", p.id);
+                assert_ne!(p.flight.len(), e.flight.len(), "{} {}", p.id, e.id);
+            }
+        }
+        assert!(
+            earlier
+                .iter()
+                .all(|e| e.area != Area::StepResponse || e.flight.fs < 8000.0)
+        );
+        // fifteen plants and thirty seeds, none of them flown before
+        let (old_plants, old_seeds) = flown_in(&earlier);
+        let (plants, seeds) = flown_in(&probes);
+        assert_eq!((plants.len(), seeds.len()), (15, 30));
+        assert!(seeds.is_disjoint(&old_seeds));
+        for (k, plant) in plants.iter().enumerate() {
+            assert!(!old_plants.contains(plant), "{plant:?}");
+            assert!(!plants[..k].contains(plant), "{plant:?} flies twice");
+        }
+        for p in &probes {
+            for axis in Axis::ALL {
+                let at = format!("{} {axis:?}", p.id);
+                assert_flown_as_a_flight(p.flight.axis(axis), &at);
+                let s = p.flight.samples(axis);
+                let peak = s.unfiltered.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+                assert!(peak > 80.0 && peak < 2000.0, "{at}: {peak}");
+                // the setpoint is whole deg/s, as a log keeps it
+                assert!(s.setpoint.iter().all(|v| v.fract() == 0.0), "{at}");
+            }
+        }
     }
 }
