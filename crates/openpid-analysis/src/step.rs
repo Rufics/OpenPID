@@ -188,16 +188,17 @@ pub struct StepOutput {
 /// peak and time to 50 % (the error bars of the Peak / Latency plots,
 /// docs/design/axis-layout).
 ///
-/// With [`StepMethod::Division`] they are what the reference tool shows:
-/// the peak is the highest value of the mean response in its first 150 ms,
-/// its deviation that of the highest of each window's first 150 samples;
-/// the time to 50 % of a window is that of its first sample above 0.5,
-/// counted from one and less a millisecond; the deviations are sample
-/// deviations (`n − 1`).
+/// With [`StepMethod::Division`] the peak is the highest value of the mean
+/// response, its deviation that of the highest value of each window
+/// (decision D-003: over the whole response, where the reference tool
+/// looks at the first 150 ms only); the time to 50 % of a window is, as in
+/// the reference tool, that of its first sample above 0.5, counted from
+/// one and less a millisecond; the deviations are sample deviations
+/// (`n − 1`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct StepSpread {
     /// Mean of the windows' peaks; with [`StepMethod::Division`] the peak
-    /// of the mean response in its first 150 ms.
+    /// of the mean response.
     pub peak_mean: f64,
     /// Standard deviation of the windows' peaks.
     pub peak_sd: f64,
