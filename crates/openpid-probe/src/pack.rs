@@ -287,16 +287,9 @@ pub struct PredictedStepLevel {
     pub smoothing: &'static str,
     /// Windows that count: the `n` of the tool's legend.
     pub windows: usize,
-    /// The same if the limit a response has to keep "from 150 ms on" is a
-    /// number of samples (the 300 it is at 2 kHz) and not a time.
-    pub windows_if_from_sample_300: usize,
-    /// "Peak": the highest value of the curve.
+    /// "Peak": the highest value of the curve in its first 150 ms.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peak: Option<f64>,
-    /// "Peak" if the tool looks at the first 150, 200, 250 and 300 ms only
-    /// (round 4: it stops somewhere between 137 and 324 ms).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub peak_within: Vec<PredictedStepPoint>,
     /// The bar of "Peak".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peak_bar: Option<f64>,
@@ -316,8 +309,8 @@ pub struct PredictedStepLevel {
 pub struct PredictedStepAxis {
     /// `roll`, `pitch` or `yaw`.
     pub axis: &'static str,
-    /// "SP-Gyro Delay", ms (the part of the model that missed two plots of
-    /// 27 in round 4).
+    /// "SP-Gyro Delay", ms (the part of the model that missed eight plots
+    /// of 47 in rounds 4 and 5).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sp_gyro_ms: Option<f64>,
     /// Without smoothing, and at the levels the round captures.
@@ -382,19 +375,13 @@ pub const PREDICTED_MS: [f64; 18] = [
 
 /// What the predictions of a step-response round rest on beyond what is
 /// measured.
-const STEP_ASSUMES: [&str; 6] = [
-    "the regression windows of the smoothing levels are 5, 11 and 21 samples at every log \
-     rate (found at 2 kHz only)",
-    "a response has to stay between 0.5 and 1.5 from 150 ms on (found at 2 kHz, where it is \
-     sample 294 to 317; windows_if_from_sample_300 is the count if it is a number of samples)",
-    "a window needs a mean stick distance of 20 deg/s or more (round 4: between 19.85 and \
-     20.06); exactly 20 is taken to count",
-    "the first window starts two samples after the first second (for one log of round 4, of \
-     12 s, it was three)",
-    "the peak is the highest value of the whole curve (round 4: the tool stops looking \
-     somewhere between 137 and 324 ms; peak_within gives the other readings)",
+const STEP_ASSUMES: [&str; 2] = [
+    "the first window starts two samples after the first second (on two short logs, one of \
+     12 s and one of 18 s, it was three; on another of 12 s two; the curve moves by less \
+     than 0.001)",
     "the delay between setpoint and gyro is read at 8 kHz from straight lines between the \
-     samples, up to 200 ms (right on 25 of 27 plots of round 4, none of them above 19 ms)",
+     samples, up to 200 ms (right on 39 of 47 plots of rounds 4 and 5, one step of 0.125 ms \
+     off on seven, 10 ms off on a creeping plant at 1 kHz)",
 ];
 
 /// A built pack.
@@ -692,37 +679,13 @@ fn predicted_step_level(
     fs: f64,
     level: usize,
 ) -> Option<PredictedStepLevel> {
-    let (grid, windows) = step_model::candidates(setpoint, gyro, fs, level, step_model::LATE)?;
-    let at = |ms: f64| (ms * fs / 1000.0).round() as usize;
-    // the other reading of the limit: from sample 300 on at every rate
-    let if_samples = windows
-        .iter()
-        .filter(|w| step_model::settled(&w.response, 300))
-        .count();
-    let step = step_model::read(grid, windows, fs, step_model::settled_from(fs));
+    let step = step_model::step(setpoint, gyro, fs, level)?;
     let some = !step.windows.is_empty();
-    let highest = |until: usize| {
-        step.mean[..=until.min(step.mean.len() - 1)]
-            .iter()
-            .copied()
-            .fold(f64::MIN, f64::max)
-    };
+    let at = |ms: f64| (ms * fs / 1000.0).round() as usize;
     Some(PredictedStepLevel {
         smoothing: step_model::SMOOTHING[level].0,
         windows: step.windows.len(),
-        windows_if_from_sample_300: if_samples,
         peak: some.then(|| rounded(step.peak)),
-        peak_within: if some {
-            [150.0, 200.0, 250.0, 300.0]
-                .into_iter()
-                .map(|ms| PredictedStepPoint {
-                    ms,
-                    value: rounded(highest(at(ms))),
-                })
-                .collect()
-        } else {
-            Vec::new()
-        },
         peak_bar: some.then(|| rounded(step.peak_spread)),
         latency_ms: some.then(|| rounded(step.latency_ms)),
         latency_bar_ms: some.then(|| rounded(step.latency_spread_ms)),

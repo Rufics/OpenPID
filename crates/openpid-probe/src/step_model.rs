@@ -11,7 +11,8 @@
 //!
 //! The steps:
 //! 1. the filtered gyro is smoothed by a local regression over 1, 5, 11 or
-//!    21 samples ([`SMOOTHING`]); the setpoint is not;
+//!    21 samples, the same at every log rate ([`SMOOTHING`]); the setpoint
+//!    is not;
 //! 2. the log without its first and last second is cut into windows of two
 //!    seconds, a tenth of a second apart ([`grid`]);
 //! 3. in every window the setpoint and the gyro go through a Hann window
@@ -22,16 +23,18 @@
 //! 4. a window counts when the stick was off its centre by 20 deg/s or more
 //!    on average, and when its response stays between 0.5 and 1.5 from
 //!    150 ms on ([`counts`]);
-//! 5. the curve is the mean of the windows that count; "Peak" and
-//!    "SR Latency" are read from them ([`Step`]).
+//! 5. the curve is the mean of the windows that count; "Peak" is its
+//!    highest value in the first 150 ms, and "SR Latency" is read from the
+//!    windows ([`Step`]).
 
 use crate::model;
 use openpid_dsp::fft::{Complex, Fft};
 use std::f64::consts::TAU;
 
 /// The smoothing levels of the tool's step-response window, in the order
-/// of its list, with the samples of the regression window of each. Found
-/// at 2 kHz; whether the windows follow the log rate is not known.
+/// of its list, with the samples of the regression window of each: the
+/// same number of samples at every log rate (rounds 4 and 5: 1, 2 and
+/// 4 kHz).
 pub const SMOOTHING: [(&str, usize); 4] = [("off", 1), ("low", 5), ("medium", 11), ("high", 21)];
 
 /// Length of a window, seconds.
@@ -47,10 +50,11 @@ const SHOWN_S: f64 = 0.5;
 /// divided by their length.
 const FLOOR: f64 = 1.0e-4;
 /// The mean distance of the stick from its centre a window needs, deg/s.
+/// A mean of exactly 20 counts (round 5).
 const STICK_MEAN: f64 = 20.0;
-/// From here on a response has to stay inside [`SETTLED`], seconds. Found
-/// at 2 kHz, where it is sample 294 … 317; at the other rates no window
-/// was near the limit, so it may be a number of samples instead.
+/// From here on a response has to stay inside [`SETTLED`], seconds: a
+/// time, the same at every log rate, and not a number of samples (round 5,
+/// at 1 and 4 kHz).
 const SETTLED_FROM_S: f64 = 0.15;
 /// Where a response has to stay from [`SETTLED_FROM_S`] on.
 const SETTLED: (f64, f64) = (0.5, 1.5);
@@ -62,12 +66,14 @@ const PEAK_SAMPLES: usize = 150;
 /// The rate the setpoint and the gyro are brought to before their delay
 /// is read, Hz.
 const DELAY_RATE: f64 = 8000.0;
-/// The longest delay looked for, seconds. Round 4 had none above 19 ms;
-/// where the tool stops looking is not known.
+/// The longest delay looked for, seconds: an assumption. Where the tool
+/// stops looking is not known.
 const DELAY_MAX_S: f64 = 0.2;
 
 /// Samples by which the first window starts after the first second for
-/// most logs. For one log of round 4 (`t9-short-2k`, 12 s) it was three.
+/// most logs. On two short logs, one of 12 s and one of 18 s, it was three,
+/// on another of 12 s two; which it is for a log is not known, and the
+/// curve moves by less than 0.001 with it.
 pub const LATE: usize = 2;
 
 /// Where the windows of a log lie.
@@ -215,10 +221,9 @@ pub struct Step {
     pub windows: Vec<Window>,
     /// The curve: the mean of the windows, one value per sample.
     pub mean: Vec<f64>,
-    /// "Peak": the highest value of the curve. On two of 26 plots of round
-    /// 4, both of plants that never overshoot, the tool's value was the
-    /// highest of the first 137 … 324 ms only; where it stops looking is
-    /// not known, and this is the highest of the whole curve.
+    /// "Peak": the highest value of the curve among its samples before
+    /// 150 ms ([`settled_from`]), not of the whole curve: a plant that is
+    /// still rising there has the value it has reached (round 5).
     pub peak: f64,
     /// The bar of "Peak": the spread (sample standard deviation) over the
     /// windows of the highest value among the first 150 samples of each.
@@ -257,7 +262,8 @@ pub fn step_from(
     smoothing: usize,
     late: usize,
 ) -> Option<Step> {
-    step_with(setpoint, gyro, fs, smoothing, late, settled_from(fs))
+    let (grid, windows) = candidates(setpoint, gyro, fs, smoothing, late)?;
+    Some(read(grid, windows, fs, settled_from(fs)))
 }
 
 /// The windows of a log whose stick moved enough, each with its response,
@@ -288,23 +294,9 @@ pub fn candidates(
     Some((grid, windows))
 }
 
-/// [`step_from`] with the responses held to 0.5 … 1.5 from sample
-/// `from` on, for the reading of round 4 in which that limit is a number
-/// of samples.
-pub fn step_with(
-    setpoint: &[f64],
-    gyro: &[f64],
-    fs: f64,
-    smoothing: usize,
-    late: usize,
-    from: usize,
-) -> Option<Step> {
-    let (grid, windows) = candidates(setpoint, gyro, fs, smoothing, late)?;
-    Some(read(grid, windows, fs, from))
-}
-
 /// What the tool shows for the windows of [`candidates`]: those whose
-/// response stays inside 0.5 … 1.5 from sample `from` on count.
+/// response stays inside 0.5 … 1.5 from sample `from` on count
+/// ([`settled_from`] for a log), and the "Peak" is looked for before it.
 pub fn read(grid: Grid, mut windows: Vec<Window>, fs: f64, from: usize) -> Step {
     windows.retain(|w| settled(&w.response, from));
     let points = (SHOWN_S * fs).round() as usize + 1;
@@ -312,7 +304,10 @@ pub fn read(grid: Grid, mut windows: Vec<Window>, fs: f64, from: usize) -> Step 
     let mean: Vec<f64> = (0..points)
         .map(|i| windows.iter().map(|w| w.response[i]).sum::<f64>() / n)
         .collect();
-    let peak = mean.iter().copied().fold(f64::NAN, f64::max);
+    let peak = mean[..from.min(mean.len())]
+        .iter()
+        .copied()
+        .fold(f64::NAN, f64::max);
     let highest: Vec<f64> = windows
         .iter()
         .map(|w| {
@@ -341,9 +336,10 @@ pub fn read(grid: Grid, mut windows: Vec<Window>, fs: f64, from: usize) -> Step 
 /// "SP-Gyro Delay", ms: the setpoint and the gyro of the log without its
 /// first and last second, brought to 8 kHz along straight lines between
 /// the samples, and the shift at which the two agree best (the largest sum
-/// of products). It gave the tool's value on 25 of the 27 plots of round
-/// 4; on a noisy axis and on one of small stick moves the tool read 0.25
-/// and 0.125 ms less, so a part of its rule is still missing.
+/// of products). At a log rate of 8 kHz the samples are taken as they
+/// are. It gave the tool's value on 39 of the 47 plots of rounds 4 and 5;
+/// on seven the tool was one step of 0.125 ms off, and on a creeping plant
+/// at 1 kHz 10 ms, so a part of its rule is still missing.
 pub fn sp_gyro_delay_ms(setpoint: &[f64], gyro: &[f64], fs: f64) -> Option<f64> {
     let span = model::span(setpoint.len().min(gyro.len()), fs)?;
     let factor = (DELAY_RATE / fs).round().max(1.0) as usize;
@@ -391,6 +387,8 @@ pub fn sp_gyro_delay_ms(setpoint: &[f64], gyro: &[f64], fs: f64) -> Option<f64> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::signal::{AxisSpec, FlightSpec, Plant, Stick};
+    use openpid_core::Axis;
 
     #[test]
     fn the_windows_of_a_log() {
@@ -484,6 +482,115 @@ mod tests {
         let later = step_from(&setpoint, &gyro, 2000.0, 0, 3).unwrap();
         assert_eq!(later.grid.first, 2003);
         assert_ne!(later.mean, s.mean);
+    }
+
+    /// The setpoint and the gyro of an axis that follows random stick
+    /// moves through `plant` for 24 s at 2 kHz, in closed form.
+    fn flown(plant: Plant) -> (Vec<f64>, Vec<f64>) {
+        let stick = Stick::Random {
+            seed: 7,
+            hold_min_ms: 150,
+            hold_max_ms: 700,
+            amplitude: 200.0,
+        };
+        let flight = FlightSpec {
+            roll: AxisSpec::following(stick, plant),
+            ..FlightSpec::quiet(2000.0, 24.0)
+        };
+        let samples = flight.samples(Axis::Roll);
+        (samples.setpoint, samples.response)
+    }
+
+    #[test]
+    fn a_second_order_plant_gives_its_step_response() {
+        let fs = 2000.0;
+        let plant = |natural_hz: f64| Plant::SecondOrder {
+            natural_hz,
+            damping: 0.4,
+            delay_ms: 5.0,
+            gain: 1.0,
+        };
+        // 15 Hz behind 5 ms: the curve is the plant's, overshoot and all
+        let (setpoint, gyro) = flown(plant(15.0));
+        let s = step(&setpoint, &gyro, fs, 0).unwrap();
+        assert_eq!(s.grid.count, 199);
+        assert!(s.windows.len() > 190, "{}", s.windows.len());
+        for i in (0..=1000).step_by(10) {
+            let truth = plant(15.0).step_response(i as f64 / fs);
+            assert!(
+                (s.mean[i] - truth).abs() < 0.02,
+                "{i}: {} {truth}",
+                s.mean[i]
+            );
+        }
+        // the true peak is 1 + exp(−π·ζ/√(1 − ζ²)) = 1.2538, the true
+        // half-way time 18.11 ms
+        assert!((s.peak - 1.0 - plant(15.0).overshoot()).abs() < 0.005);
+        assert!((s.peak - 1.2538).abs() < 0.005, "{}", s.peak);
+        assert!((s.latency_ms - 18.11).abs() < 0.6, "{}", s.latency_ms);
+        assert!(s.peak_spread > 0.0 && s.peak_spread < 0.1);
+        assert!(s.latency_spread_ms < 1.0, "{}", s.latency_spread_ms);
+        // the delay is where the two agree best: later than the 5 ms of
+        // the plant by the time the response takes
+        let delay = sp_gyro_delay_ms(&setpoint, &gyro, fs).unwrap();
+        assert!(delay > 5.0 && delay < 25.0, "{delay}");
+
+        // 2.5 Hz: the curve tops near 220 ms, and the peak is read before
+        // 150 ms, where the curve is still rising
+        let (setpoint, gyro) = flown(plant(2.5));
+        let s = step(&setpoint, &gyro, fs, 0).unwrap();
+        assert!(s.windows.len() > 150, "{}", s.windows.len());
+        let top = s.mean.iter().copied().fold(f64::MIN, f64::max);
+        assert!(top > 1.15 && top < 1.2538, "{top}");
+        assert_eq!(s.peak, s.mean[299]);
+        assert!(s.peak < top - 0.1, "{} {top}", s.peak);
+        let truth = plant(2.5).step_response(0.1495);
+        assert!((s.peak - truth).abs() < 0.03, "{} {truth}", s.peak);
+    }
+
+    #[test]
+    fn the_peak_is_looked_for_before_the_limit() {
+        // one window that rises to its end: the peak is the last value
+        // before the sample from which the response has to keep its limits
+        let grid = grid(24_000, 2000.0, LATE).unwrap();
+        let rising = Window {
+            index: 0,
+            response: (0..=1000).map(|i| 0.6 + 0.0005 * f64::from(i)).collect(),
+        };
+        let s = read(grid, vec![rising.clone()], 2000.0, 300);
+        assert_eq!((s.windows.len(), s.peak), (1, rising.response[299]));
+        // the bar looks at the first 150 samples of each window: one window
+        // has no spread
+        assert_eq!(s.peak_spread, 0.0);
+        let later = read(grid, vec![rising.clone()], 2000.0, 500);
+        assert_eq!(later.peak, rising.response[499]);
+        // a limit beyond the response leaves no window
+        assert!(read(grid, vec![rising], 2000.0, 1001).windows.is_empty());
+    }
+
+    #[test]
+    fn at_8_khz_the_delay_is_read_from_the_samples_as_they_are() {
+        // 4 s of moves at 8 kHz, the gyro 3.625 ms (29 samples) behind
+        let fs = 8000.0;
+        let (slow, _) = delayed(10_000, 0);
+        let setpoint: Vec<f64> = (0..40_000).map(|i| slow[i / 4]).collect();
+        let gyro: Vec<f64> = (0..40_000)
+            .map(|i| if i < 29 { 0.0 } else { setpoint[i - 29] })
+            .collect();
+        assert_eq!(sp_gyro_delay_ms(&setpoint, &gyro, fs), Some(3.625));
+        // one window of 16 000 samples, 800 apart, from two samples after
+        // the first second; 150 ms are 1200 samples
+        let s = step(&setpoint, &gyro, fs, 0).unwrap();
+        assert_eq!(
+            (s.grid.first, s.grid.length, s.grid.hop, s.grid.count),
+            (8002, 16_000, 800, 9)
+        );
+        assert_eq!((s.mean.len(), settled_from(fs)), (4001, 1200));
+        assert_eq!(s.windows.len(), 9);
+        // the first sample above 0.5 is the 29th: 30 samples of 0.125 ms
+        // less a millisecond
+        assert!((s.latency_ms - 2.75).abs() < 1.0e-9, "{}", s.latency_ms);
+        assert!((s.peak - 1.0).abs() < 0.05, "{}", s.peak);
     }
 
     #[test]

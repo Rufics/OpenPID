@@ -568,7 +568,7 @@ fn round_5_carries_the_step_model_s_predictions() {
         ]
     );
     let predictions = pack.predictions.as_ref().unwrap();
-    assert_eq!((predictions.round, predictions.assumes.len()), (5, 6));
+    assert_eq!((predictions.round, predictions.assumes.len()), (5, 2));
     // a step-response round predicts that window and nothing of the spectrum
     assert!(predictions.probes.is_empty());
     let text = String::from_utf8(pack.files()[9].1.clone()).unwrap();
@@ -615,29 +615,26 @@ fn round_5_carries_the_step_model_s_predictions() {
     assert_eq!(windows[0], 0);
     assert!(windows[1] > 250 && windows[2] > 250, "{windows:?}");
     let none = &stick.axes[0].levels[0];
-    assert!(none.peak.is_none() && none.curve.is_empty() && none.peak_within.is_empty());
+    assert!(none.peak.is_none() && none.curve.is_empty() && none.latency_ms.is_none());
 
-    // the creeping plant has no peak before its end: where the tool stops
-    // looking shows in the value
+    // the creeping plant has no peak before its end: the peak is what the
+    // curve has reached just before 150 ms, 1 - exp(-1.445) in truth
     let slow = &probe("u4-slow-2k").axes[0].levels[0];
-    let within: Vec<f64> = slow.peak_within.iter().map(|p| p.value).collect();
-    assert!(within.windows(2).all(|w| w[0] + 0.01 < w[1]), "{within:?}");
-    assert!(within[3] + 0.005 < slow.peak.unwrap());
-    assert!((within[0] - 0.78).abs() < 0.02, "{within:?}");
+    let (peak, curve) = (slow.peak.unwrap(), &slow.curve);
+    let at = |ms: f64| curve.iter().find(|p| p.ms == ms).unwrap().value;
+    assert!((peak - 0.764).abs() < 0.03, "{peak}");
+    assert!(peak <= at(150.0) && peak > at(100.0), "{peak}");
+    assert!(peak + 0.15 < at(500.0), "{peak}");
+    // ... and a plant that overshoots late is still rising there: 2.5 Hz
+    // tops at 236 ms
+    let late = &probe("u4-slow-2k").axes[1].levels[0];
+    let top = late.curve.iter().map(|p| p.value).fold(f64::MIN, f64::max);
+    assert!(late.peak.unwrap() + 0.1 < top, "{:?} {top}", late.peak);
 
-    // a limit in samples would take other windows than one in milliseconds:
-    // at 4 kHz the creeping plant is below 0.5 at sample 300 (75 ms) ...
+    // "from 150 ms on" is a time: at 4 kHz the creeping plant, still below
+    // 0.5 at sample 300 (75 ms), keeps nearly all of its windows
     let creeping_4k = &probe("u3-rates-4k").axes[1].levels[0];
-    assert!(creeping_4k.windows > 230 && creeping_4k.windows_if_from_sample_300 < 200);
-    // ... and at 1 kHz the noisy axis has 150 ms more to leave the limits in
-    let noisy_1k = &probe("u2-rates-1k").axes[2].levels[0];
-    assert!(noisy_1k.windows + 10 < noisy_1k.windows_if_from_sample_300);
-    // at 2 kHz both readings are the same
-    for id in ["u1-plants-2k", "u4-slow-2k", "u6-short-2k"] {
-        for a in &probe(id).axes {
-            assert_eq!(a.levels[0].windows, a.levels[0].windows_if_from_sample_300);
-        }
-    }
+    assert!(creeping_4k.windows > 230, "{}", creeping_4k.windows);
     // smoothing brings windows of the noisy axis back
     let noisy: Vec<usize> = probe("u2-rates-1k").axes[2]
         .levels
