@@ -65,8 +65,10 @@ COMMANDS:
              defaults are used; --example prints the default spec as JSON to edit.
              With --out <name>.bbl (or .bfl) it is written as a Betaflight Blackbox
              log instead, the way a flight controller logs it (whole deg/s, the
-             firmware's frames and headers), for any tool that reads such logs;
-             --firmware names the Betaflight release whose format is written.
+             firmware's frames), for tools that read such logs; --firmware names
+             the Betaflight release whose format is written. The headers hold
+             what the spec defines (rates of the loops, the filter, the scales),
+             not the settings of a craft.
 
 OPTIONS:
     --session N   Restrict to session index N (0-based)

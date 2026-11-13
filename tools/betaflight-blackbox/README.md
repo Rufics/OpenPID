@@ -19,22 +19,19 @@ Adding a release to the writer:
    lines, and add those lines to `src/write/field-tables.txt` (prefixed with
    the name of the target); the unit test `the_tables_are_the_firmware_s`
    holds the two together.
-3. Header lines, in `src/write/sysinfo/`:
-   - `lines.txt` is one table for all releases: each line once, with the
-     releases that write it and its conditions. A span that is open at the
-     end (`4.3-`) already includes the new release, so only what changed
-     needs an edit: close the span of a line the release dropped
-     (`4.3-2026.6`), add a row for a new line (`<release>-`) where the
-     firmware writes it, and for a line whose conditions or place changed
-     close the old row and add a new one.
-   - `crafts.txt` holds the values of the example craft: add the release to
-     the section of its family (`[2025.12 2026.6 …]`) and give it a section
-     of its own for `Firmware revision`, `Firmware date` and the new lines.
-     Values: those of a real log of that release where there is one, else
-     the firmware's defaults, with a comment saying where each was read. A
-     line with no verified value gets none.
-   The unit tests of `sysinfo/mod.rs` check the files (well-formed, every
-   line of a stock build has a value, the header lists of the fixtures).
+3. Header lines: `src/write/sysinfo/lines.txt` is one table for all
+   releases, each line once, with the releases that write it and its
+   conditions. A span that is open at the end (`4.3-`) already includes the
+   new release, so only what changed needs an edit: close the span of a line
+   the release dropped (`4.3-2026.6`), add a row for a new line
+   (`<release>-`) where the firmware writes it, and for a line whose
+   conditions or place changed close the old row and add a new one. The
+   table has no values: the writer writes a line when it knows its value.
+   What a release fixes itself (`Firmware type`, the version and commit in
+   `Firmware revision`, a new constant line) goes into `version.rs` or
+   `config.rs`, with the file it was read from. The unit tests of
+   `sysinfo/mod.rs` check the table (well-formed, the header lists of the
+   fixtures).
 4. Read what the script cannot see, in `src/main/blackbox/blackbox.c` at the
    tag: `testBlackboxConditionUncached` (the conditions and the bits of
    `fields_disabled_mask`, the enum in `blackbox_fielddefs.h`),

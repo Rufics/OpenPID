@@ -29,6 +29,11 @@
 //!   value pauses the log. Fields the session has no channel for are not
 //!   logged, and the headers say so.
 //!
+//! A header line is written only when its value is known: from the release,
+//! from the headers a decoded session carries, from the session's settings,
+//! from what the frames need, or from the caller. The writer has no
+//! configuration of its own to fill the rest in with (`config`).
+//!
 //! No firmware code is copied: the layout follows the format description
 //! ("Blackbox Internals") and the names and numbers of the firmware's
 //! tables.
@@ -66,10 +71,14 @@ pub struct WriteOptions {
     /// Added to every timestamp, µs: a flight controller logs the time since
     /// it was powered, not since the log began.
     pub time_offset_us: i64,
-    /// Headers that replace the written ones by name (or are appended), for
-    /// what the session does not model: rates, the craft name, a debug mode,
-    /// `blackbox_high_resolution`, `fields_disabled_mask`. The frames follow
-    /// them as they would on a craft configured so.
+    /// Header lines the caller knows the value of: what the session does
+    /// not model (rates, a motor protocol, `blackbox_high_resolution`,
+    /// `fields_disabled_mask`, …). Each replaces the line the writer would
+    /// write, or is added: a line of the release
+    /// ([`Target::header_names`]) where the firmware writes it, any other
+    /// after them all. The writer itself writes only the lines whose value
+    /// it knows, so this is how a log gets the rest. The frames follow the
+    /// lines as they would on a craft configured so.
     pub headers: Vec<(String, String)>,
     /// Whether the log ends with a disarm event, as after a normal landing
     /// (for a session that was not decoded from a log; a decoded one keeps
@@ -195,8 +204,8 @@ impl Schedule {
         } else {
             per_frame
         };
-        lines.replace("I interval", i_interval.to_string());
-        lines.replace("P interval", p_interval.to_string());
+        lines.put("I interval", i_interval.to_string());
+        lines.put("P interval", p_interval.to_string());
         // `master` defines the ratio of a log without P frames as 0; the
         // releases before it divide by zero there
         let ratio = if p_interval == 0 {
@@ -204,9 +213,9 @@ impl Schedule {
         } else {
             i_interval / p_interval
         };
-        lines.replace("P ratio", ratio.to_string());
-        lines.replace("looptime", looptime.to_string());
-        lines.replace("pid_process_denom", pid_denom.to_string());
+        lines.put("P ratio", ratio.to_string());
+        lines.put("looptime", looptime.to_string());
+        lines.put("pid_process_denom", pid_denom.to_string());
         Ok(Schedule {
             i_interval,
             p_interval,
@@ -713,15 +722,16 @@ fn lines_of_the_flight(session: &FlightSession, target: Target, plan: &mut Plan)
         && !lines.is_given("vbatref")
     {
         // the voltage when the log began
-        lines.replace("vbatref", voltage.to_string());
+        lines.put("vbatref", voltage.to_string());
     }
-    if target >= Target::Master && !lines.is_given("debug_mode_name") {
+    let mode_known = lines.get("debug_mode").is_some();
+    if mode_known && target >= Target::Master && !lines.is_given("debug_mode_name") {
         let name = match (&session.settings.debug_mode, lines.int("debug_mode")) {
             (_, 0) => "NONE",
             (Some(mode), _) => mode.name.as_deref().unwrap_or("UNKNOWN"),
             _ => "UNKNOWN",
         };
-        lines.replace("debug_mode_name", name);
+        lines.put("debug_mode_name", name);
     }
 }
 
@@ -734,8 +744,7 @@ fn plan(
     let target = options.target;
     let time = timestamps(session, options.time_offset_us)?;
     let n = time.len();
-    let carried = fields::carried(session, target);
-    let mut lines = config::lines(session, source, target, carried, options);
+    let mut lines = config::lines(session, source, target, options);
     let schedule = if let Some(schedule) = Schedule::of_headers(&lines) {
         schedule
     } else {
@@ -744,7 +753,7 @@ fn plan(
     };
     let layout = fields::layout(session, source, target, schedule, &mut lines)?;
     let (valid, first) = logged_samples(session, source, &layout, n)?;
-    let mut columns = fields::columns(session, source, &layout, &lines, n);
+    let mut columns = fields::columns(session, &layout, &lines, n);
     let replayed = logged_iterations(session, schedule, n).filter(|_| source.decoded);
     columns[0] = replayed.unwrap_or_else(|| {
         (0..n)
@@ -1006,12 +1015,10 @@ mod tests {
             diagnostics: openpid_core::session::Diagnostics::default(),
         };
         let source = Source::of(&session, Target::default());
-        let carried = config::Carried::default();
         config::lines(
             &session,
             &source,
             Target::default(),
-            carried,
             &WriteOptions::default(),
         )
     }

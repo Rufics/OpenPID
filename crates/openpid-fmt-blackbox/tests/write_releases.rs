@@ -357,15 +357,15 @@ fn assert_fields(case: &Case, original: &FlightSession, back: &FlightSession) {
     for ch in 0..4u8 {
         let id = ChannelId::RcCommand { ch };
         if t == Target::Master {
-            // a fraction of full deflection, in thousandths
+            // logged as a fraction of full deflection, in thousandths, and
+            // read back in the old units
             let per_unit = 1000.0 * fine;
             assert_channel(name, original, back, &id, |v| {
-                let fraction = if ch == 3 {
-                    (v - 1000.0) / 1000.0
+                if ch == 3 {
+                    1000.0 + whole((v - 1000.0) / 1000.0 * per_unit) / per_unit * 1000.0
                 } else {
-                    v / 500.0
-                };
-                whole(fraction * per_unit) / per_unit
+                    whole(v / 500.0 * per_unit) / per_unit * 500.0
+                }
             });
         } else {
             assert_channel(name, original, back, &id, steps(fine));
@@ -646,10 +646,36 @@ fn every_field_frame_and_event_of_every_release_at_every_rate() {
     assert_eq!(cases, 5 * (7 + 5));
 }
 
-/// What the headers of the full flight say on each release: nothing is
-/// switched off, the sensors have their lines, the GPS feature is on.
+/// The header lines of a written log after the field definitions.
+fn header_lines(bytes: &[u8]) -> Vec<(String, String)> {
+    let headers = openpid_fmt_blackbox::Headers::parse(bytes).unwrap();
+    let raw = headers.raw.0.into_iter();
+    raw.filter(|(name, _)| name != "Product" && name != "Data version")
+        .filter(|(name, _)| !name.starts_with("Field "))
+        .collect()
+}
+
+/// Asserts that the lines are where the firmware of `target` writes them.
+fn assert_in_the_order_of_the_release(target: Target, lines: &[(String, String)]) {
+    let table = target.header_names();
+    let places: Vec<usize> = lines
+        .iter()
+        .map(|(name, _)| {
+            let place = table.iter().position(|n| n == name);
+            place.unwrap_or_else(|| panic!("{target} has no line {name}"))
+        })
+        .collect();
+    assert!(
+        places.windows(2).all(|w| w[0] < w[1]),
+        "{target}: {lines:?}"
+    );
+}
+
+/// What the headers of the full flight say on each release: what the frames
+/// need and what the session's settings give, each line in its place, and
+/// nothing of a craft the session does not describe.
 #[test]
-fn the_headers_describe_the_craft_that_logs_all_this() {
+fn the_headers_say_what_is_known_of_the_craft_and_no_more() {
     let mut original = everything(1000.0, 0.4);
     original.settings.loop_rates = rates(8000.0, 4000.0, 1000.0);
     for target in Target::ALL {
@@ -658,37 +684,141 @@ fn the_headers_describe_the_craft_that_logs_all_this() {
             headers: wing_headers(target),
             ..WriteOptions::default()
         };
-        let back = read(&betaflight(&original, &options).unwrap());
+        let bytes = betaflight(&original, &options).unwrap();
+        let back = read(&bytes);
         let name = target.to_string();
+        assert_in_the_order_of_the_release(target, &header_lines(&bytes));
         // 4.2 has no mask
         let mask = (target >= Target::V4_3).then_some("0");
         assert_eq!(back.header("fields_disabled_mask"), mask, "{name}");
+        // from the settings of the session
         assert_eq!(back.header("debug_mode"), Some("3"), "{name}");
-        assert_eq!(back.header("dshot_bidir"), Some("1"), "{name}");
-        let features: i64 = back.header("features").unwrap().parse().unwrap();
-        assert_eq!(features & 128, 128, "{name}: the GPS feature");
-        // the voltage of the first frame
-        assert_eq!(back.header("vbatref"), Some("1680"), "{name}");
-        for line in ["vbat_scale", "currentSensor", "mag_hardware", "acc_1G"] {
-            assert!(back.header(line).is_some(), "{name}: {line}");
-        }
         assert_eq!(back.header("yawPID"), Some("45,80,5"), "{name}");
-        let wing = target >= Target::V2025_12;
-        assert_eq!(back.header("s_roll").is_some(), wing, "{name}");
-        // the autopilot of a multirotor is not in a wing build
-        assert_eq!(back.header("ap_hover_throttle"), None, "{name}");
+        // what the frames need: the eRPM, the GPS frames (the one feature
+        // the writer knows of), the voltage of the first frame, the scales
+        // of the accelerometer and of the motors
+        assert_eq!(back.header("dshot_bidir"), Some("1"), "{name}");
+        assert_eq!(back.header("features"), Some("128"), "{name}");
+        assert_eq!(back.header("vbatref"), Some("1680"), "{name}");
+        assert_eq!(back.header("acc_1G"), Some("2048"), "{name}");
+        assert_eq!(back.header("motorOutput"), Some("158,2047"), "{name}");
+        assert_eq!(back.header("gyro_scale"), Some("0x3f800000"), "{name}");
+        // what the release fixes
         let scale = (target == Target::Master).then_some("1000");
         assert_eq!(back.header("rc_command_scale"), scale, "{name}");
         let mode_name = (target == Target::Master).then_some("RC_INTERPOLATION");
         assert_eq!(back.header("debug_mode_name"), mode_name, "{name}");
+        let wing = target >= Target::V2025_12;
         let kind = if wing { "Betaflight" } else { "Cleanflight" };
         assert_eq!(back.header("Firmware type"), Some(kind), "{name}");
+        // what the caller gave, where the release has such a line
+        assert_eq!(back.header("s_roll"), wing.then_some("20"), "{name}");
+        // and nothing the session does not say: the settings of the
+        // battery, the sensors' hardware, the rates, the build, the device
+        for unknown in [
+            "vbat_scale",
+            "vbatcellvoltage",
+            "currentSensor",
+            "mag_hardware",
+            "acc_hardware",
+            "rates",
+            "rc_rates",
+            "thr_mid",
+            "motor_pwm_protocol",
+            "ap_hover_throttle",
+            "Firmware date",
+            "DeviceUID",
+            "Log start datetime",
+        ] {
+            assert_eq!(back.header(unknown), None, "{name}: {unknown}");
+        }
     }
 }
 
+/// Every header line of a release can be given by the caller, and lands
+/// where the firmware writes it: the whole header list of a real 2025.12
+/// log, handed over in reverse order for a synthetic flight, is written in
+/// the order of the log.
+#[test]
+fn the_caller_can_give_any_line_of_the_release_and_it_lands_in_its_place() {
+    let real = std::fs::read(common::logs_dir().join("betaflight-2025.12.2-btfl_027.bbl")).unwrap();
+    let of_the_log = header_lines(&real);
+    assert_eq!(of_the_log.len(), 201);
+    let mut bare = SignalSpec {
+        fs: 1000.0,
+        duration_s: 0.3,
+        ..SignalSpec::default()
+    }
+    .build();
+    bare.settings.loop_rates = rates(8000.0, 4000.0, 1000.0);
+    let mut headers = of_the_log.clone();
+    headers.reverse();
+    headers.push(("probe_id".into(), "x-1".into()));
+    let options = WriteOptions {
+        headers,
+        ..WriteOptions::default()
+    };
+    let bytes = betaflight(&bare, &options).unwrap();
+    let written = header_lines(&bytes);
+    // the flight logs no voltage, and the firmware writes these three lines
+    // only when it does; a line that is not the firmware's comes last
+    let battery = ["vbat_scale", "vbatcellvoltage", "vbatref"];
+    let mut expected: Vec<(String, String)> = of_the_log
+        .into_iter()
+        .filter(|(name, _)| !battery.contains(&name.as_str()))
+        .collect();
+    expected.push(("probe_id".into(), "x-1".into()));
+    assert_eq!(written, expected);
+    let back = read(&bytes);
+    assert_eq!(back.len(), bare.len());
+    assert_eq!(back.diagnostics.corrupt_frames, 0);
+    assert_eq!(back.settings.craft_name.as_deref(), Some("Maia"));
+    assert_eq!(back.settings.pid.as_ref().map(|p| p.pitch.d), Some(34.0));
+}
+
+/// The header lines of a log of 2025.12 for a flight the simulator makes:
+/// the release, the marks of a synthetic log, the schedule, the scales, the
+/// filters of the session (one low-pass on the gyro, nothing else), the
+/// telemetry, the field selection.
+const BARE_2025_12: [&str; 32] = [
+    "Firmware type",
+    "Firmware revision",
+    "Board information",
+    "Craft name",
+    "I interval",
+    "P interval",
+    "P ratio",
+    "gyro_scale",
+    "motorOutput",
+    "looptime",
+    "gyro_sync_denom",
+    "pid_process_denom",
+    "dterm_lpf1_type",
+    "dterm_lpf1_static_hz",
+    "dterm_lpf1_dyn_hz",
+    "dterm_lpf2_type",
+    "dterm_lpf2_static_hz",
+    "dterm_notch_hz",
+    "dterm_notch_cutoff",
+    "gyro_lpf1_type",
+    "gyro_lpf1_static_hz",
+    "gyro_lpf1_dyn_hz",
+    "gyro_lpf2_type",
+    "gyro_lpf2_static_hz",
+    "gyro_notch_hz",
+    "gyro_notch_cutoff",
+    "dyn_notch_count",
+    "dshot_bidir",
+    "motor_poles",
+    "rpm_filter_harmonics",
+    "fields_disabled_mask",
+    "blackbox_high_resolution",
+];
+
 /// A flight with nothing but time, gyro, setpoint, throttle and motors (what
 /// the simulator makes) on every release: the fields it has no channel for
-/// are not logged, and the headers say why.
+/// are not logged, and the headers hold what is known of the flight and no
+/// line of a craft nobody described.
 #[test]
 fn a_bare_flight_logs_what_it_has_and_the_headers_say_so() {
     let mut bare = SignalSpec {
@@ -737,13 +867,16 @@ fn a_bare_flight_logs_what_it_has_and_the_headers_say_so() {
         for line in ["vbat_scale", "vbatcellvoltage", "vbatref", "currentSensor"] {
             assert_eq!(back.header(line), None, "{name}: {line}");
         }
-        let features: i64 = back.header("features").unwrap().parse().unwrap();
-        assert_eq!(features & 128, 0, "{name}: no GPS feature");
-        assert_eq!(back.header("debug_mode"), Some("0"), "{name}");
-        // a multirotor build of the releases that are assembled from options
-        let multirotor = target >= Target::V2025_12;
-        assert_eq!(back.header("ap_hover_throttle").is_some(), multirotor);
-        assert_eq!(back.header("s_roll"), None, "{name}");
+        // nothing is known of features, debug mode, gains or rates
+        for unknown in ["features", "debug_mode", "rollPID", "rates", "s_roll"] {
+            assert_eq!(back.header(unknown), None, "{name}: {unknown}");
+        }
+        let lines = header_lines(&bytes);
+        assert_in_the_order_of_the_release(target, &lines);
+        if target == Target::V2025_12 {
+            let names: Vec<&str> = lines.iter().map(|(name, _)| name.as_str()).collect();
+            assert_eq!(names, BARE_2025_12, "the lines of a synthetic 2025.12 log");
+        }
         for term in ["axisP[1]", "axisD[0]", "axisF[2]"] {
             assert!(raw.column(term).unwrap().iter().all(|v| *v == 0), "{name}");
         }
@@ -925,8 +1058,9 @@ fn the_slow_frames_of_a_real_log_follow_the_rules_the_writer_applies() {
     assert!(changed >= 2 && repeated >= 2, "{changed} / {repeated}");
 }
 
-/// The stick commands of a log of `master` (fractions of full deflection)
-/// written for a release that counts in the old units, and back.
+/// The stick commands of a log of `master` (logged as fractions of full
+/// deflection, read in the old units like every log) written for a release
+/// that logs the old units, and back.
 #[test]
 fn stick_commands_change_their_units_with_the_release() {
     let mut original = everything(1000.0, 0.3);
@@ -942,7 +1076,17 @@ fn stick_commands_change_their_units_with_the_release() {
         let values = s.channel(id).unwrap().data.values();
         values.iter().fold(0.0f64, |m, v| m.max(v.abs()))
     };
-    assert!(peak(&on_master, &roll) < 1.0 && peak(&on_master, &throttle) <= 1.0);
+    assert_eq!(on_master.header("rc_command_scale"), Some("1000"));
+    assert!(peak(&on_master, &roll) > 100.0 && peak(&on_master, &throttle) > 1600.0);
+    for ch in 0..4u8 {
+        let id = ChannelId::RcCommand { ch };
+        let wrote = original.channel(&id).unwrap().data.values();
+        let read = on_master.channel(&id).unwrap().data.values();
+        for (a, b) in wrote.iter().zip(read) {
+            // a thousandth of the deflection is half a unit, one of the throttle
+            assert!((a - b).abs() <= 0.5, "channel {ch}: {a} became {b}");
+        }
+    }
     // and from that log to 2025.12: ±500 and 1000 … 2000 again
     let again = read(&betaflight(&on_master, &options(Target::V2025_12)).unwrap());
     assert_eq!(again.header("rc_command_scale"), None);
@@ -974,11 +1118,11 @@ fn stick_commands_change_their_units_with_the_release() {
         .values();
     let stick = derived.channel(&roll).unwrap().data.values();
     for (sp, st) in setpoint.iter().zip(stick) {
-        let want = whole((sp / 1000.0).clamp(-1.0, 1.0) * 1000.0) / 1000.0;
+        let want = whole((sp / 1000.0).clamp(-1.0, 1.0) * 1000.0) / 1000.0 * 500.0;
         assert!((want - st).abs() < 1e-9, "{sp} -> {st}");
     }
     let stick = derived.channel(&throttle).unwrap().data.values();
-    assert!(stick.iter().all(|v| (0.0..=1.0).contains(v)));
+    assert!(stick.iter().all(|v| (1000.0..=2000.0).contains(v)));
 }
 
 /// The independent decoder (ADR-0005) on the full flight for the releases it
@@ -989,6 +1133,8 @@ fn stick_commands_change_their_units_with_the_release() {
 fn the_independent_decoder_reads_the_full_flight() {
     let mut original = everything(1000.0, 0.6);
     original.settings.loop_rates = rates(8000.0, 4000.0, 1000.0);
+    // the reference crate refuses a log that does not name its motor protocol
+    original.settings.motor.protocol = Some("DSHOT300".into());
     for target in [Target::V4_2, Target::V4_3, Target::V4_4, Target::V4_5] {
         let options = WriteOptions {
             target,
@@ -1052,6 +1198,8 @@ fn the_settings_are_written_under_the_names_of_each_release() {
         assert_eq!(cut(&g.lowpass1), cut(&h.lowpass1), "{name}");
         assert_eq!(cut(&g.lowpass2), cut(&h.lowpass2), "{name}");
         assert_eq!(g.lowpass1.as_ref().unwrap().dyn_min_hz, None, "{name}");
+        // no notch the session does not have: not a static, not a dynamic one
+        assert!(g.notches.is_empty() && g.dyn_notch.is_none(), "{name}");
         let (g, h) = (g.rpm_notch.as_ref().unwrap(), h.rpm_notch.as_ref().unwrap());
         assert_eq!(
             (g.harmonics, g.q, g.min_hz, g.lpf_hz),

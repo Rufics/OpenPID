@@ -1,14 +1,18 @@
 //! The configuration of the craft the log is written for: its
 //! system-information headers.
 //!
-//! The headers are the configuration. They come, later ones winning, from
-//! the example craft of the target release (`sysinfo`), from the headers the
-//! session carries when it was decoded from a Betaflight log, from the typed
-//! settings of the session where they say something else than those
-//! headers, and from the caller's overrides. A session decoded from a log of
-//! the target release keeps its own header list, line for line.
+//! The headers are the configuration, and a line is written only when its
+//! value is known. The values come, later ones winning, from the format (the
+//! few lines that are constants of a release), from the headers the session
+//! carries when it was decoded from a Betaflight log, from the typed
+//! settings of the session, from what the frames need (the schedule, the
+//! field selection, the scales: `fields` and the writer add those), and from
+//! the caller's overrides. Nothing else is written: the writer has no
+//! configuration of its own to fill the rest in with. The table of the
+//! release (`sysinfo`) puts every line in its place; a session decoded from
+//! a log of the target release keeps its own header list, line for line.
 
-use super::sysinfo::{self, Build};
+use super::sysinfo::{self, Line};
 use super::{Target, WriteOptions};
 use crate::headers::LOG_START_MARKER;
 use crate::profiles::common;
@@ -16,10 +20,22 @@ use openpid_core::settings::{FilterChain, Lowpass, LowpassKind, PidGains};
 use openpid_core::{FirmwareInfo, FirmwareVendor, FlightSession, RawHeaders, Settings};
 use std::collections::HashSet;
 
-/// Lowest motor output of the example craft (`motorOutput`), `DShot` units.
-const MOTOR_LOW: f64 = 158.0;
-/// Highest motor output of the example craft.
-const MOTOR_HIGH: f64 = 2047.0;
+/// Lowest motor output the writer scales a motor given in percent to, when
+/// the session names no range (`motorOutput`): the `DShot` range above a
+/// 5.5 % idle.
+pub(super) const MOTOR_LOW: i64 = 158;
+/// Highest motor output of that range.
+pub(super) const MOTOR_HIGH: i64 = 2047;
+/// `gyro_scale`: the firmware logs the gyro in deg/s, so the factor is the
+/// bits of the float 1.0 (`castFloatBytesToInt(1.0f)`, `blackboxWriteSysinfo`
+/// in `src/main/blackbox/blackbox.c`, the same at all seven tags).
+const GYRO_SCALE: &str = "0x3f800000";
+/// `gyro_sync_denom`: a constant 1 in the same function at all seven tags.
+const GYRO_SYNC_DENOM: &str = "1";
+/// The board and the craft of a session that was not decoded from a log:
+/// the log says it is no flight controller's.
+const SYNTHETIC_BOARD: &str = "OPID SYNTHETIC";
+const SYNTHETIC_CRAFT: &str = "OpenPID synthetic";
 /// Bit of the `features` header that enables the GPS (`FEATURE_GPS`).
 pub(super) const FEATURE_GPS: i64 = 1 << 7;
 
@@ -79,31 +95,31 @@ impl Source {
             same_release,
         }
     }
-
-    /// `rcCommand` of the session's channels: as a fraction of full
-    /// deflection when the log it was decoded from declared a scale, in the
-    /// firmware's old units (±500, throttle 1000 … 2000) otherwise.
-    pub(super) fn rc_is_normalised(&self) -> bool {
-        self.betaflight
-            && self
-                .raw
-                .get_f64("rc_command_scale")
-                .is_some_and(|s| s > 0.0)
-    }
 }
 
 /// The header lines after the field definitions, in order.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub(super) struct Lines {
-    lines: Vec<(String, String)>,
+    /// The lines the target release can write, in the firmware's order.
+    table: &'static [Line],
+    written: Vec<(String, String)>,
     /// Lines whose value the session's own log or the caller gave.
     given: HashSet<String>,
 }
 
 impl Lines {
+    /// No lines yet, for a log of `target`.
+    pub(super) fn of(target: Target) -> Lines {
+        Lines {
+            table: sysinfo::lines(target),
+            written: Vec::new(),
+            given: HashSet::new(),
+        }
+    }
+
     /// Value of the line `key`.
     pub(super) fn get(&self, key: &str) -> Option<&str> {
-        self.lines
+        self.written
             .iter()
             .find(|(k, _)| k == key)
             .map(|(_, v)| v.as_str())
@@ -128,67 +144,50 @@ impl Lines {
         self.given.contains(key)
     }
 
-    /// Replaces the value of the line `key` if the release has the line.
-    pub(super) fn replace(&mut self, key: &str, value: impl Into<String>) {
-        if let Some(entry) = self.lines.iter_mut().find(|(k, _)| k == key) {
-            entry.1 = value.into();
+    /// Where the release writes the line `key` among its lines.
+    fn place(&self, key: &str) -> Option<usize> {
+        self.table.iter().position(|l| l.name == key)
+    }
+
+    /// Writes the line `key` if the release has such a line: in place of
+    /// its old value, or where the firmware writes it among the others.
+    pub(super) fn put(&mut self, key: &str, value: impl Into<String>) {
+        if self.place(key).is_some() {
+            self.set(key, value.into());
         }
     }
 
-    /// Replaces the line `key`, or appends it.
-    fn set(&mut self, key: &str, value: &str) {
-        match self.lines.iter_mut().find(|(k, _)| k == key) {
-            Some(entry) => entry.1 = value.to_string(),
-            None => self.lines.push((key.to_string(), value.to_string())),
+    /// Writes the line `key`: a line the release has, in its place; any
+    /// other after all of them.
+    fn set(&mut self, key: &str, value: String) {
+        if let Some(entry) = self.written.iter_mut().find(|(k, _)| k == key) {
+            entry.1 = value;
+            return;
         }
+        let Some(ours) = self.place(key) else {
+            // not a line of the firmware: it has no place, and goes last
+            self.written.push((key.to_string(), value));
+            return;
+        };
+        // before the first line the firmware writes later, and before the
+        // lines that are not the firmware's
+        let later = |name: &str| self.place(name).is_none_or(|theirs| theirs > ours);
+        let at = self.written.iter().position(|(name, _)| later(name));
+        let at = at.unwrap_or(self.written.len());
+        self.written.insert(at, (key.to_string(), value));
     }
 
-    /// Drops the line `key`.
-    pub(super) fn remove(&mut self, key: &str) {
-        self.lines.retain(|(k, _)| k != key);
+    /// Drops the lines the release writes only on `condition`.
+    pub(super) fn remove_all_on(&mut self, condition: &str) {
+        let table = self.table;
+        let conditional = |name: &str| table.iter().any(|l| l.name == name && l.needs(condition));
+        self.written.retain(|(name, _)| !conditional(name));
     }
 
     /// The lines as the decoder's profile reads them.
     pub(super) fn as_raw(&self) -> RawHeaders {
-        RawHeaders(self.lines.clone())
+        RawHeaders(self.written.clone())
     }
-}
-
-/// What the session carries that only some builds of the firmware log.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct Carried {
-    /// A battery voltage.
-    pub voltage: bool,
-    /// A battery current.
-    pub current: bool,
-    /// The S term of a wing.
-    pub wing: bool,
-    /// GPS fixes.
-    pub gps: bool,
-    /// A compass.
-    pub mag: bool,
-    /// A barometer.
-    pub baro: bool,
-}
-
-/// The build options of the firmware that logs what the session carries.
-fn build(target: Target, carried: Carried) -> Vec<Build> {
-    let mut on = sysinfo::stock_build(target);
-    let mut add = |wanted: bool, option: Build| {
-        if wanted && !on.contains(&option) {
-            on.push(option);
-        }
-    };
-    add(carried.voltage, Build::Vbat);
-    add(carried.current, Build::CurrentAdc);
-    add(carried.gps, Build::Gps);
-    add(carried.mag, Build::Mag);
-    add(carried.baro, Build::Baro);
-    if carried.wing && target.assembled_from_options() {
-        on.retain(|b| *b != Build::NotWing);
-        on.extend([Build::Wing, Build::AdvancedTpa]);
-    }
-    on
 }
 
 fn number(v: f64) -> String {
@@ -221,22 +220,22 @@ fn filter_headers(out: &mut Lines, prefix: &str, chain: &FilterChain) {
     for (slot, old, lowpass) in [(1, "", &chain.lowpass1), (2, "2", &chain.lowpass2)] {
         let code = lowpass.as_ref().map_or(0.0, lowpass_code);
         let cutoff = lowpass.as_ref().map_or(0.0, |l| l.cutoff_hz);
-        out.replace(&format!("{prefix}_lpf{slot}_type"), number(code));
-        out.replace(&format!("{prefix}_lpf{slot}_static_hz"), number(cutoff));
-        out.replace(&format!("{prefix}_lowpass{old}_type"), number(code));
-        out.replace(&format!("{prefix}_filter{old}_type"), number(code));
-        out.replace(&format!("{prefix}_lowpass{old}_hz"), number(cutoff));
+        out.put(&format!("{prefix}_lpf{slot}_type"), number(code));
+        out.put(&format!("{prefix}_lpf{slot}_static_hz"), number(cutoff));
+        out.put(&format!("{prefix}_lowpass{old}_type"), number(code));
+        out.put(&format!("{prefix}_filter{old}_type"), number(code));
+        out.put(&format!("{prefix}_lowpass{old}_hz"), number(cutoff));
     }
     let first = chain.lowpass1.as_ref();
     let range = [
         first.and_then(|l| l.dyn_min_hz).unwrap_or(0.0),
         first.and_then(|l| l.dyn_max_hz).unwrap_or(0.0),
     ];
-    out.replace(&format!("{prefix}_lpf1_dyn_hz"), list(&range));
-    out.replace(&format!("{prefix}_lowpass_dyn_hz"), list(&range));
+    out.put(&format!("{prefix}_lpf1_dyn_hz"), list(&range));
+    out.put(&format!("{prefix}_lowpass_dyn_hz"), list(&range));
     if let Some(l) = first.filter(|l| l.dyn_min_hz.is_some()) {
         let key = format!("{prefix}_lpf1_dyn_expo");
-        out.replace(&key, number(l.dyn_expo * 10.0));
+        out.put(&key, number(l.dyn_expo * 10.0));
     }
     // the gyro has two notch slots, the D term one
     let slots = if prefix == "gyro" { 2 } else { 1 };
@@ -247,64 +246,56 @@ fn filter_headers(out: &mut Lines, prefix: &str, chain: &FilterChain) {
     };
     let centres = chain.notches.iter().map(|n| n.center_hz).collect();
     let cutoffs = chain.notches.iter().map(|n| n.cutoff_hz).collect();
-    out.replace(&format!("{prefix}_notch_hz"), padded(centres));
-    out.replace(&format!("{prefix}_notch_cutoff"), padded(cutoffs));
+    out.put(&format!("{prefix}_notch_hz"), padded(centres));
+    out.put(&format!("{prefix}_notch_cutoff"), padded(cutoffs));
 }
 
 /// The gains. To 4.5 the firmware logs `d_min` beside the D gain, from
 /// 2025.12 `d_max`; each release gets the line it has.
 fn gains_headers(out: &mut Lines, gains: [&PidGains; 3]) {
     for (key, g) in ["rollPID", "pitchPID", "yawPID"].into_iter().zip(gains) {
-        out.replace(key, list(&[g.p, g.i, g.d]));
+        out.put(key, list(&[g.p, g.i, g.d]));
     }
-    out.replace("d_max", list(&gains.map(|g| g.d_max.unwrap_or(0.0))));
-    out.replace("d_min", list(&gains.map(|g| g.d_min.unwrap_or(0.0))));
+    out.put("d_max", list(&gains.map(|g| g.d_max.unwrap_or(0.0))));
+    out.put("d_min", list(&gains.map(|g| g.d_min.unwrap_or(0.0))));
     let feedforward = list(&gains.map(|g| g.f.unwrap_or(0.0)));
-    out.replace("ff_weight", feedforward.clone());
+    out.put("ff_weight", feedforward.clone());
     // the name of 4.2
-    out.replace("feedforward_weight", feedforward);
+    out.put("feedforward_weight", feedforward);
 }
 
 /// Headers of the notches that follow the motors.
 fn notch_headers(out: &mut Lines, chain: &FilterChain) {
     let notch = chain.dyn_notch;
     let count = notch.map_or(0, |d| d.count.unwrap_or(1));
-    out.replace("dyn_notch_count", count.to_string());
+    out.put("dyn_notch_count", count.to_string());
     if let Some(d) = notch {
-        out.replace("dyn_notch_min_hz", number(d.min_hz));
-        out.replace("dyn_notch_max_hz", number(d.max_hz));
-        out.replace("dyn_notch_q", number(d.q * 100.0));
+        out.put("dyn_notch_min_hz", number(d.min_hz));
+        out.put("dyn_notch_max_hz", number(d.max_hz));
+        out.put("dyn_notch_q", number(d.q * 100.0));
     }
     let rpm = chain.rpm_notch.as_ref();
     let harmonics = rpm.map_or(0, |r| r.harmonics);
-    out.replace("rpm_filter_harmonics", harmonics.to_string());
+    out.put("rpm_filter_harmonics", harmonics.to_string());
     // the names of 4.2
-    out.replace("gyro_rpm_notch_harmonics", harmonics.to_string());
+    out.put("gyro_rpm_notch_harmonics", harmonics.to_string());
     let Some(r) = rpm else {
         return;
     };
-    out.replace("rpm_filter_q", number(r.q * 100.0));
-    out.replace("rpm_filter_min_hz", number(r.min_hz));
-    out.replace("gyro_rpm_notch_q", number(r.q * 100.0));
-    out.replace("gyro_rpm_notch_min", number(r.min_hz));
+    out.put("rpm_filter_q", number(r.q * 100.0));
+    out.put("rpm_filter_min_hz", number(r.min_hz));
+    out.put("gyro_rpm_notch_q", number(r.q * 100.0));
+    out.put("gyro_rpm_notch_min", number(r.min_hz));
     if r.lpf_hz > 0.0 {
-        out.replace("rpm_notch_lpf", number(r.lpf_hz));
+        out.put("rpm_notch_lpf", number(r.lpf_hz));
     }
-    out.replace("rpm_filter_fade_range_hz", number(r.fade_range_hz));
+    out.put("rpm_filter_fade_range_hz", number(r.fade_range_hz));
     if r.lpf_hz > 0.0 {
-        out.replace("rpm_filter_lpf_hz", number(r.lpf_hz));
+        out.put("rpm_filter_lpf_hz", number(r.lpf_hz));
     }
     if !r.weights.is_empty() {
         let weights: Vec<f64> = r.weights.iter().map(|w| w * 100.0).collect();
-        out.replace("rpm_filter_weights", list(&weights));
-    }
-}
-
-/// Lowest and highest motor output the settings declare.
-fn motor_range(settings: &Settings) -> (f64, f64) {
-    match (settings.motor.output_low, settings.motor.output_high) {
-        (Some(low), Some(high)) if high > low => (low, high),
-        _ => (MOTOR_LOW, MOTOR_HIGH),
+        out.put("rpm_filter_weights", list(&weights));
     }
 }
 
@@ -333,15 +324,27 @@ fn settings_headers(out: &mut Lines, session: &FlightSession, source: &Source) {
     }
     if changed(&|l| l.motor == settings.motor) {
         if let Some(poles) = settings.motor.poles {
-            out.replace("motor_poles", poles.to_string());
+            out.put("motor_poles", poles.to_string());
         }
-        let (low, high) = motor_range(settings);
-        out.replace("motorOutput", list(&[low, high]));
+        if let Some(kv) = settings.motor.kv {
+            out.put("motor_kv", number(kv));
+        }
+        let protocol = settings.motor.protocol.as_deref();
+        if let Some(code) = protocol.and_then(common::protocol_code) {
+            out.put("motor_pwm_protocol", code.to_string());
+        }
+        // the range the motors are scaled to, when the session names one
+        // (`fields` gives the writer's own to a session that does not)
+        if let (Some(low), Some(high)) = (settings.motor.output_low, settings.motor.output_high)
+            && high > low
+        {
+            out.put("motorOutput", list(&[low, high]));
+        }
     }
     if let Some(mode) = &settings.debug_mode
         && changed(&|l| l.debug_mode.as_ref() == Some(mode))
     {
-        out.replace("debug_mode", mode.code.to_string());
+        out.put("debug_mode", mode.code.to_string());
     }
     for (key, value, same) in [
         (
@@ -361,7 +364,7 @@ fn settings_headers(out: &mut Lines, session: &FlightSession, source: &Source) {
         ),
     ] {
         if let Some(v) = value.as_ref().filter(|_| same != Some(value)) {
-            out.replace(key, v.clone());
+            out.put(key, v.clone());
         }
     }
 }
@@ -391,51 +394,54 @@ fn translated_mask(source: &Source, target: Target) -> u32 {
 }
 
 /// The header lines of the log, before the frames have had their say (the
-/// loop rates, the field selection and the reference voltage follow).
+/// loop rates, the field selection, the scales and the reference voltage
+/// follow).
 pub(super) fn lines(
     session: &FlightSession,
     source: &Source,
     target: Target,
-    carried: Carried,
     options: &WriteOptions,
 ) -> Lines {
-    let mut out = Lines::default();
+    let mut out = Lines::of(target);
     if source.same_release {
         // the craft's own list: whatever its build has, in its order
         for (key, value) in &source.raw.0 {
             if key != "Product" && key != "Data version" && !key.starts_with("Field ") {
-                out.lines.push((key.clone(), value.clone()));
+                out.written.push((key.clone(), value.clone()));
                 out.given.insert(key.clone());
             }
         }
     } else {
-        let build = build(target, carried);
-        for line in sysinfo::lines(target) {
-            let Some(value) = line.value else {
-                continue;
-            };
-            if !line.when.iter().all(|b| build.contains(b)) {
-                continue;
-            }
-            let carried_over = source
-                .raw
-                .get(line.name)
-                .filter(|_| source.betaflight)
-                .filter(|_| !IDENTITY.contains(&line.name) && !COMPUTED.contains(&line.name));
-            if carried_over.is_some() {
-                out.given.insert(line.name.to_string());
-            }
-            let value = carried_over.unwrap_or(value);
-            out.lines.push((line.name.to_string(), value.to_string()));
+        // what the release itself fixes
+        out.put("Firmware type", target.firmware_type());
+        out.put("Firmware revision", target.revision());
+        out.put("gyro_scale", GYRO_SCALE);
+        out.put("gyro_sync_denom", GYRO_SYNC_DENOM);
+        // the writer logs in the normal resolution unless told otherwise
+        out.put("blackbox_high_resolution", "0");
+        if let Some(scale) = target.rc_command_scale() {
+            out.put("rc_command_scale", scale.to_string());
         }
         if source.betaflight {
+            // the craft of a log of another release, line by line
+            let carried = |name: &str| !IDENTITY.contains(&name) && !COMPUTED.contains(&name);
+            for (key, value) in source.raw.0.iter().filter(|(key, _)| carried(key)) {
+                out.put(key, value.clone());
+                if out.get(key).is_some() {
+                    out.given.insert(key.clone());
+                }
+            }
             let mask = translated_mask(source, target);
-            out.replace("fields_disabled_mask", mask.to_string());
+            out.put("fields_disabled_mask", mask.to_string());
+        }
+        if !source.decoded {
+            out.put("Board information", SYNTHETIC_BOARD);
+            out.put("Craft name", SYNTHETIC_CRAFT);
         }
     }
     settings_headers(&mut out, session, source);
     for (key, value) in &options.headers {
-        out.set(key, value);
+        out.set(key, value.clone());
         out.given.insert(key.clone());
     }
     out
@@ -496,9 +502,9 @@ mod tests {
             ("Firmware revision", "Betaflight 4.5.1 (x) STM32F7X2"),
             ("rc_command_scale", "1000"),
         ]);
-        assert!(older.betaflight && !older.same_release && older.rc_is_normalised());
+        assert!(older.betaflight && !older.same_release);
         let other = source(&[PRODUCT, ("Firmware revision", "INAV 7.0.0 (x) MATEKF405")]);
-        assert!(other.decoded && !other.betaflight && !other.rc_is_normalised());
+        assert!(other.decoded && !other.betaflight);
     }
 
     #[test]
@@ -524,30 +530,149 @@ mod tests {
         assert_eq!(translated_mask(&unknown, Target::V4_5), 0);
     }
 
+    fn names(lines: &Lines) -> Vec<&str> {
+        lines
+            .written
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect()
+    }
+
+    /// A session that says nothing gets the lines the release fixes, the
+    /// marks of a synthetic log, and its filters as it has them: none.
     #[test]
-    fn a_wing_build_has_the_wing_lines_instead_of_the_multirotor_ones() {
+    fn only_lines_with_a_known_value_are_written() {
         let session = openpid_sim_free_session();
-        let src = Source::of(&session, Target::Master);
         let options = WriteOptions::default();
-        let quad = lines(&session, &src, Target::Master, Carried::default(), &options);
-        let wing = Carried {
-            wing: true,
-            ..Carried::default()
+        let lines_of = |target: Target| {
+            let source = Source::of(&session, target);
+            lines(&session, &source, target, &options)
         };
-        let wing = lines(&session, &src, Target::Master, wing, &options);
-        assert!(quad.get("ap_hover_throttle").is_some() && quad.get("s_roll").is_none());
-        assert!(wing.get("ap_hover_throttle").is_none() && wing.get("s_roll").is_some());
-        assert!(wing.get("ap_wing_cruise_speed").is_some());
-        // no voltage: no battery lines; a compass brings its own
-        assert!(quad.get("vbatref").is_none() && quad.get("mag_hardware").is_none());
-        let carried = Carried {
-            voltage: true,
-            mag: true,
-            ..Carried::default()
-        };
-        let with = lines(&session, &src, Target::Master, carried, &options);
-        assert!(with.get("vbatref").is_some() && with.get("mag_hardware").is_some());
-        assert_eq!(with.number("vbatcellvoltage", 2), 430);
-        assert_eq!(with.int("no such line"), 0);
+        let new = lines_of(Target::Master);
+        assert_eq!(new.get("Firmware type"), Some("Betaflight"));
+        assert_eq!(
+            new.get("Firmware revision"),
+            Some(Target::Master.revision())
+        );
+        assert_eq!(new.get("Board information"), Some("OPID SYNTHETIC"));
+        assert_eq!(new.get("Craft name"), Some("OpenPID synthetic"));
+        assert_eq!(new.get("gyro_scale"), Some("0x3f800000"));
+        assert_eq!(new.get("blackbox_high_resolution"), Some("0"));
+        assert_eq!(new.get("rc_command_scale"), Some("1000"));
+        assert_eq!(new.get("gyro_lpf1_static_hz"), Some("0"));
+        assert_eq!(new.get("rpm_filter_harmonics"), Some("0"));
+        // nothing of a craft the session does not describe
+        for unknown in [
+            "Firmware date",
+            "DeviceUID",
+            "Log start datetime",
+            "rollPID",
+            "rates",
+            "motorOutput",
+            "vbatref",
+            "acc_1G",
+            "features",
+            "debug_mode",
+            "ap_hover_throttle",
+            "s_roll",
+            "motor_poles",
+        ] {
+            assert_eq!(new.get(unknown), None, "{unknown}");
+        }
+        // every line is where the firmware writes it
+        let table = Target::Master.header_names();
+        let places: Vec<usize> = names(&new)
+            .iter()
+            .map(|name| table.iter().position(|n| n == name).unwrap())
+            .collect();
+        assert!(places.windows(2).all(|w| w[0] < w[1]), "{:?}", names(&new));
+        // 4.2: its own names, and no line of a later release
+        let old = lines_of(Target::V4_2);
+        assert_eq!(old.get("Firmware type"), Some("Cleanflight"));
+        assert_eq!(old.get("gyro_lowpass_hz"), Some("0"));
+        assert_eq!(old.get("gyro_lpf1_static_hz"), None);
+        assert_eq!(old.get("blackbox_high_resolution"), None);
+        assert_eq!(old.get("rc_command_scale"), None);
+        assert_eq!(old.number("gyro_notch_hz", 1), 0);
+        assert_eq!(old.int("no such line"), 0);
+    }
+
+    /// A line goes where the firmware writes it, whenever it is written; a
+    /// line that is not the firmware's goes after them all.
+    #[test]
+    fn a_line_lands_in_its_place() {
+        for target in Target::ALL {
+            // every other line first, then the rest, last to first
+            let table = target.header_names();
+            let mut lines = Lines::of(target);
+            for name in table.iter().step_by(2).chain(table.iter().rev()) {
+                lines.set(name, "x".into());
+            }
+            assert_eq!(names(&lines), table, "{target}");
+        }
+        let target = Target::V2025_12;
+        let table = target.header_names();
+        let mut lines = Lines::of(target);
+        lines.set("probe_id", "first".into());
+        for name in table.iter().rev() {
+            lines.set(name, "x".into());
+        }
+        lines.set("note", "second".into());
+        lines.set("looptime", "125".into());
+        let mut expected = table.clone();
+        expected.extend(["probe_id", "note"]);
+        assert_eq!(names(&lines), expected);
+        assert_eq!(lines.get("looptime"), Some("125"));
+        // `put` is for the lines of the release only
+        lines.put("minthrottle", "1070");
+        lines.put("probe_id", "again");
+        assert_eq!(lines.get("minthrottle"), None);
+        assert_eq!(lines.get("probe_id"), Some("first"));
+        // the lines of a condition go together
+        lines.remove_all_on(sysinfo::VBAT);
+        for gone in ["vbat_scale", "vbatcellvoltage", "vbatref"] {
+            assert_eq!(lines.get(gone), None);
+        }
+        assert_eq!(names(&lines).len(), expected.len() - 3);
+    }
+
+    /// The headers of a log of another release are carried line by line:
+    /// those the target has too, except the ones that name the build or
+    /// follow from the frames.
+    #[test]
+    fn the_craft_of_a_log_of_another_release_is_carried() {
+        let mut session = openpid_sim_free_session();
+        session.raw_headers = [
+            PRODUCT,
+            (
+                "Firmware revision",
+                "Betaflight 4.5.1 (77d01ba3b) STM32F7X2",
+            ),
+            ("Firmware date", "Apr  1 2024 10:00:00"),
+            ("Craft name", "Maia"),
+            ("I interval", "256"),
+            ("minthrottle", "1070"),
+            ("thr_mid", "40"),
+            ("gps_rescue_min_sats", "8"),
+            ("fields_disabled_mask", "256"),
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .to_vec();
+        let target = Target::V2025_12;
+        let source = Source::of(&session, target);
+        let carried = lines(&session, &source, target, &WriteOptions::default());
+        assert_eq!(carried.get("Craft name"), Some("Maia"));
+        assert_eq!(carried.get("thr_mid"), Some("40"));
+        assert_eq!(carried.get("gps_rescue_min_sats"), Some("8"));
+        assert!(carried.is_given("thr_mid") && !carried.is_given("gyro_scale"));
+        // the build is the target's, the schedule is computed
+        assert_eq!(carried.get("Firmware revision"), Some(target.revision()));
+        assert_eq!(carried.get("Firmware date"), None);
+        assert_eq!(carried.get("I interval"), None);
+        // 2025.12 has no such line; the mask is in its bit order (ACC: 8 → 9)
+        assert_eq!(carried.get("minthrottle"), None);
+        assert_eq!(carried.get("fields_disabled_mask"), Some("512"));
+        // a real craft is not marked as synthetic
+        assert_eq!(carried.get("Board information"), None);
     }
 }
