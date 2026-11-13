@@ -60,7 +60,8 @@ Format details per Betaflight version are in
 (`openpid-vX.Y.Z-<target>.tar.gz` for Linux and macOS, `.zip` for Windows).
 The targets are Linux x86_64, macOS arm64 (Apple silicon) and Windows x86_64;
 Intel Macs are not supported.
-Each one holds `openpid-gui` (desktop) and `openpid` (CLI).
+Each one holds `openpid-gui` (desktop) and `openpid` (CLI). On Windows `openpid-gui.exe` opens
+its window and no terminal; `openpid.exe` is the program for a terminal.
 
 **From source** (the pinned Rust toolchain is installed automatically by
 `rustup` through `rust-toolchain.toml`):

@@ -234,6 +234,22 @@ jobs:
           cp target/release/openpid${{ runner.os == 'Windows' && '.exe' || '' }} dist/
           cp target/release/openpid-gui${{ runner.os == 'Windows' && '.exe' || '' }} dist/
           cp LICENSE README.md dist/
+      # the desktop program opens its window and no terminal (#189): its file
+      # says "windows subsystem" (2), the command-line program's "console" (3)
+      - name: The desktop program has no console (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          subsystem() {
+            local header
+            header=$(od -An -tu4 -j60 -N4 "$1" | tr -d ' ')
+            od -An -tu2 -j$((header + 92)) -N2 "$1" | tr -d ' '
+          }
+          gui=$(subsystem dist/openpid-gui.exe)
+          cli=$(subsystem dist/openpid.exe)
+          echo "openpid-gui.exe: subsystem $gui; openpid.exe: subsystem $cli"
+          test "$gui" = 2
+          test "$cli" = 3
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.artifact }}
