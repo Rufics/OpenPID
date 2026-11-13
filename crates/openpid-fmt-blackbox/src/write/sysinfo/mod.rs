@@ -2,159 +2,46 @@
 //! knows: the lines after the field definitions (`Firmware revision`,
 //! `looptime`, the gains, the filters, …).
 //!
-//! They are data, kept in two files beside this one and read once:
+//! `lines.txt`, beside this file, is the table of them: every header line
+//! some release writes, each written once, in the firmware's order, with the
+//! releases that write it and the build options and run-time conditions it
+//! depends on. These are facts of the firmware source; the file names the
+//! tag of each release and the function they were read from. It is read
+//! once.
 //!
-//! - `lines.txt`: every header line some release writes, each written once,
-//!   in the firmware's order, with the releases that write it and the build
-//!   options and run-time conditions it depends on ([`Build`]). These are
-//!   facts of the firmware source; the file names the tag of each release
-//!   and the function they were read from.
-//! - `crafts.txt`: the values of the example craft of each release, for a
-//!   session that brings no configuration of its own. They are a
-//!   configuration, not facts of a release; the file says where they are
-//!   from.
-//!
-//! [`lines`] gives the table of one release: its lines, in its order, each
-//! with its conditions and the example value.
+//! The table says which lines a log of a release has and where each belongs.
+//! It holds no values: the writer writes a line when it knows its value and
+//! leaves it out otherwise (`config`).
 
 use super::Target;
 use std::sync::LazyLock;
 
 /// Every header line, the releases that write it and its conditions.
 const LINES: &str = include_str!("lines.txt");
-/// The values of the example craft of each release.
-const CRAFTS: &str = include_str!("crafts.txt");
 
-/// What a header line depends on: a build option of the firmware (the
-/// `USE_…` macro in the comment) or a run-time condition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(super) enum Build {
-    /// `USE_BOARD_INFO`.
-    BoardInfo,
-    /// `USE_ACC`.
-    Acc,
-    /// Run time: the battery voltage is logged (a voltage meter is
-    /// configured and the battery fields are not switched off).
-    Vbat,
-    /// Run time: the current meter is the ADC.
-    CurrentAdc,
-    /// `USE_WING`.
-    Wing,
-    /// Not `USE_WING`.
-    NotWing,
-    /// `USE_ADVANCED_TPA` (the firmware defines it for wing builds).
-    AdvancedTpa,
-    /// `USE_D_MIN` (to 4.5) or `USE_D_MAX` (from 2025.12).
-    DMinMax,
-    /// `USE_DYN_LPF`.
-    DynLpf,
-    /// `USE_ITERM_RELAX`.
-    ItermRelax,
-    /// `USE_ABSOLUTE_CONTROL`.
-    AbsoluteControl,
-    /// `USE_INTEGRATED_YAW_CONTROL`.
-    IntegratedYaw,
-    /// `USE_FEEDFORWARD`.
-    Feedforward,
-    /// `USE_INTERPOLATED_SP` (4.2: the feedforward from the interpolated
-    /// setpoint).
-    InterpolatedSetpoint,
-    /// `USE_GYRO_DATA_ANALYSE` (4.2: the dynamic notch).
-    GyroAnalysis,
-    /// `USE_CHIRP`.
-    Chirp,
-    /// `USE_DYN_NOTCH_FILTER`.
-    DynNotch,
-    /// `USE_DSHOT_TELEMETRY`.
-    DshotTelemetry,
-    /// `USE_RPM_FILTER`.
-    RpmFilter,
-    /// `USE_BARO`.
-    Baro,
-    /// `USE_MAG`.
-    Mag,
-    /// `USE_OPTICALFLOW`.
-    OpticalFlow,
-    /// `USE_RC_SMOOTHING_FILTER`.
-    RcSmoothing,
-    /// `USE_BATTERY_VOLTAGE_SAG_COMPENSATION`.
-    SagCompensation,
-    /// `USE_DYN_IDLE`.
-    DynIdle,
-    /// `USE_SIMPLIFIED_TUNING`.
-    SimplifiedTuning,
-    /// `USE_GPS`.
-    Gps,
-    /// `USE_GPS_RESCUE`.
-    GpsRescue,
-    /// `USE_GPS_RESCUE` on a build that flies the rescue: not `USE_WING`, or
-    /// `ENABLE_RESCUE_PLAN` (the condition of `master`).
-    RescueFlown,
-    /// `USE_ALTITUDE_HOLD`.
-    AltHold,
-    /// `USE_POSITION_HOLD`.
-    PosHold,
-    /// `BUILD_KEY` (a cloud build).
-    CloudKey,
-    /// `RELEASE_NAME` (a cloud build of a release).
-    ReleaseName,
-}
-
-impl Build {
-    /// Every condition.
-    const ALL: [Build; 33] = [
-        Build::BoardInfo,
-        Build::Acc,
-        Build::Vbat,
-        Build::CurrentAdc,
-        Build::Wing,
-        Build::NotWing,
-        Build::AdvancedTpa,
-        Build::DMinMax,
-        Build::DynLpf,
-        Build::ItermRelax,
-        Build::AbsoluteControl,
-        Build::IntegratedYaw,
-        Build::Feedforward,
-        Build::InterpolatedSetpoint,
-        Build::GyroAnalysis,
-        Build::Chirp,
-        Build::DynNotch,
-        Build::DshotTelemetry,
-        Build::RpmFilter,
-        Build::Baro,
-        Build::Mag,
-        Build::OpticalFlow,
-        Build::RcSmoothing,
-        Build::SagCompensation,
-        Build::DynIdle,
-        Build::SimplifiedTuning,
-        Build::Gps,
-        Build::GpsRescue,
-        Build::RescueFlown,
-        Build::AltHold,
-        Build::PosHold,
-        Build::CloudKey,
-        Build::ReleaseName,
-    ];
-
-    /// The condition `lines.txt` calls `name`: the name of the variant.
-    fn from_name(name: &str) -> Option<Build> {
-        Build::ALL.into_iter().find(|b| format!("{b:?}") == name)
-    }
-}
+/// The condition of the lines the firmware writes only when the battery
+/// voltage is logged (`vbat_scale`, `vbatcellvoltage`, `vbatref`).
+pub(super) const VBAT: &str = "VBAT";
+/// The condition of the line the firmware writes only when the current
+/// meter is the ADC (`currentSensor`).
+pub(super) const CURRENT_METER_ADC: &str = "CURRENT_METER_ADC";
 
 /// One header line of a release.
 #[derive(Debug, Clone)]
 pub(super) struct Line {
     /// Header name.
     pub name: &'static str,
-    /// Every one of these must hold for the firmware to write the line.
-    pub when: Vec<Build>,
-    /// The value of the example configuration; `None` where the writer has
-    /// no verified one, so the line is written only for a session that
-    /// carries it.
-    pub value: Option<&'static str>,
+    /// What must hold for the firmware to write the line, as `lines.txt`
+    /// has it: the firmware's macro of a build option (`USE_GPS`,
+    /// `!USE_WING`, `A|B`), or one of the two run-time conditions.
+    pub when: Vec<&'static str>,
+}
+
+impl Line {
+    /// Whether the line depends on `condition`.
+    pub(super) fn needs(&self, condition: &str) -> bool {
+        self.when.contains(&condition)
+    }
 }
 
 /// The releases a span of `lines.txt` names: `all`, one release (`4.2`), a
@@ -187,76 +74,52 @@ fn span(text: &str) -> Result<Vec<Target>, String> {
         .collect())
 }
 
-/// The lines of a data file that hold data: not empty, not a comment.
-fn data(text: &'static str) -> impl Iterator<Item = &'static str> {
+/// The rows of the table: the lines that are not empty and not a comment.
+fn rows(text: &'static str) -> impl Iterator<Item = &'static str> {
     text.lines()
         .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
 }
 
-/// The value of the example craft of `target` for each header name it has
-/// one for (`crafts.txt`: sections of `name:value` under the releases they
-/// are for, a later section overriding an earlier one).
-fn craft(text: &'static str, target: Target) -> Result<Vec<(&'static str, &'static str)>, String> {
-    let mut values: Vec<(&'static str, &'static str)> = Vec::new();
-    let mut ours = false;
-    for line in data(text) {
-        if let Some(section) = line.strip_prefix('[') {
-            let releases = section.trim_end_matches(']').split_whitespace();
-            let releases: Result<Vec<Target>, String> = releases
-                .map(|name| Target::from_name(name).ok_or_else(|| format!("no release `{name}`")))
-                .collect();
-            ours = releases?.contains(&target);
-            continue;
-        }
-        let (name, value) = line
-            .split_once(':')
-            .ok_or_else(|| format!("no `name:value`: `{line}`"))?;
-        if !ours {
-            continue;
-        }
-        match values.iter_mut().find(|(n, _)| *n == name) {
-            Some(entry) => entry.1 = value,
-            None => values.push((name, value)),
-        }
-    }
-    Ok(values)
+/// Whether `condition` is written as the table writes one: the names of
+/// macros, each with or without a `!`, with `|` between alternatives.
+fn is_condition(condition: &str) -> bool {
+    condition.split('|').all(|option| {
+        let name = option.strip_prefix('!').unwrap_or(option);
+        let macro_like = |c: char| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_';
+        !name.is_empty() && name.chars().all(macro_like)
+    })
 }
 
-/// The table of `target` from the two data files.
-fn table(lines: &'static str, crafts: &'static str, target: Target) -> Result<Vec<Line>, String> {
-    let values = craft(crafts, target)?;
+/// The lines of `target` in the table `text`.
+fn table(text: &'static str, target: Target) -> Result<Vec<Line>, String> {
     let mut out = Vec::new();
-    for row in data(lines) {
-        let mut cells = row.split('|').map(str::trim);
+    for row in rows(text) {
+        let mut cells = row.split(';').map(str::trim);
         let (Some(name), Some(releases)) = (cells.next(), cells.next()) else {
-            return Err(format!("no `name | releases`: `{row}`"));
+            return Err(format!("no `name ; releases`: `{row}`"));
         };
         let mut written = false;
         for part in releases.split(',') {
             written |= span(part)?.contains(&target);
         }
-        let when: Result<Vec<Build>, String> = cells
-            .next()
-            .unwrap_or("")
-            .split_whitespace()
-            .map(|c| Build::from_name(c).ok_or_else(|| format!("no condition `{c}`: `{row}`")))
-            .collect();
-        let when = when?;
+        let when: Vec<&str> = cells.next().unwrap_or("").split_whitespace().collect();
+        if let Some(bad) = when.iter().find(|c| !is_condition(c)) {
+            return Err(format!("no condition `{bad}`: `{row}`"));
+        }
         if written {
-            let value = values.iter().find(|(n, _)| *n == name).map(|(_, v)| *v);
-            out.push(Line { name, when, value });
+            out.push(Line { name, when });
         }
     }
     Ok(out)
 }
 
-/// The table of every release, in the order of [`Target::ALL`]. The data
-/// files are part of the program and tested as it is built
-/// (`the_data_files_are_well_formed`); a table that did not read is empty.
+/// The lines of every release, in the order of [`Target::ALL`]. The table
+/// is part of the program and tested as it is built
+/// (`the_table_is_well_formed`); one that did not read is empty.
 static TABLES: LazyLock<Vec<Vec<Line>>> = LazyLock::new(|| {
     Target::ALL
         .into_iter()
-        .map(|target| table(LINES, CRAFTS, target).unwrap_or_default())
+        .map(|target| table(LINES, target).unwrap_or_default())
         .collect()
 });
 
@@ -266,46 +129,15 @@ pub(super) fn lines(target: Target) -> &'static [Line] {
     index.and_then(|i| TABLES.get(i)).map_or(&[], Vec::as_slice)
 }
 
-/// The build options of the craft the example configuration describes: what
-/// a release build for a common flight controller has. To 4.5 that is
-/// everything (the official builds of those versions carried every feature);
-/// from 2025.12, where each build is assembled from options, a quadcopter
-/// with the usual ones and no GPS, compass, barometer or wing code.
-pub(super) fn stock_build(target: Target) -> Vec<Build> {
-    use Build::{
-        AbsoluteControl, Acc, Baro, BoardInfo, DMinMax, DshotTelemetry, DynIdle, DynLpf, DynNotch,
-        Feedforward, Gps, GpsRescue, GyroAnalysis, IntegratedYaw, InterpolatedSetpoint, ItermRelax,
-        Mag, NotWing, RcSmoothing, RpmFilter, SagCompensation, SimplifiedTuning,
-    };
-    let mut on = vec![
-        BoardInfo,
-        Acc,
-        DMinMax,
-        DynLpf,
-        ItermRelax,
-        Feedforward,
-        DynNotch,
-        DshotTelemetry,
-        RpmFilter,
-        RcSmoothing,
-        SagCompensation,
-        DynIdle,
-        SimplifiedTuning,
-        NotWing,
-    ];
-    if !target.assembled_from_options() {
-        on.extend([
-            AbsoluteControl,
-            IntegratedYaw,
-            InterpolatedSetpoint,
-            GyroAnalysis,
-            Baro,
-            Mag,
-            Gps,
-            GpsRescue,
-        ]);
+impl Target {
+    /// The names of the system-information header lines the firmware of
+    /// this release can write, in the order it writes them. The writer
+    /// writes those whose value it knows; a caller that knows more gives
+    /// them in [`WriteOptions::headers`](super::WriteOptions::headers), and
+    /// each lands in the place it has here.
+    pub fn header_names(self) -> Vec<&'static str> {
+        lines(self).iter().map(|l| l.name).collect()
     }
-    on
 }
 
 #[cfg(test)]
@@ -314,79 +146,14 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn the_data_files_are_well_formed() {
-        for target in Target::ALL {
-            let table = table(LINES, CRAFTS, target).unwrap();
-            assert_eq!(table.len(), lines(target).len(), "{target}");
-            // every value belongs to a line some release writes
-            for (name, _) in craft(CRAFTS, target).unwrap() {
-                let known =
-                    data(LINES).any(|row| row.split('|').next().map(str::trim) == Some(name));
-                assert!(
-                    known,
-                    "{target}: a value for `{name}`, which no release writes"
-                );
-            }
-        }
-        assert_eq!(span("all").unwrap().len(), 7);
-        assert_eq!(span("4.4-4.5").unwrap(), [Target::V4_4, Target::V4_5]);
-        assert_eq!(
-            span(" 2026.6- ").unwrap(),
-            [Target::V2026_6, Target::Master]
-        );
-        assert_eq!(span("2026.12-dev").unwrap(), [Target::Master]);
-        assert_eq!(span("2026.12-dev-").unwrap(), [Target::Master]);
-        assert_eq!(span("4.5-2026.12-dev").unwrap().len(), 4);
-        assert!(span("4.1-").is_err() && span("4.2-5.0").is_err() && span("").is_err());
-        // what a damaged file is refused for
-        let bad = |lines: &'static str, crafts: &'static str| {
-            table(lines, crafts, Target::V4_5).unwrap_err()
-        };
-        assert!(bad("looptime", "").contains("name | releases"));
-        assert!(bad("looptime | 4.5 | Turbo", "").contains("no condition `Turbo`"));
-        assert!(bad("looptime | 3.9", "").contains("no span of releases: `3.9`"));
-        assert!(bad("", "[4.5]\nlooptime").contains("name:value"));
-        assert!(bad("", "[4.6]\nlooptime:125").contains("no release `4.6`"));
-        for condition in Build::ALL {
-            assert_eq!(Build::from_name(&format!("{condition:?}")), Some(condition));
-        }
-        assert_eq!(Build::from_name("Acc "), None);
-    }
-
-    #[test]
-    fn every_table_is_a_list_of_distinct_lines_with_values_for_the_stock_build() {
+    fn the_table_is_well_formed() {
+        // every line any release can write, as counted in the firmware source
+        let sizes = Target::ALL.map(|t| table(LINES, t).unwrap().len());
+        assert_eq!(sizes, [112, 136, 172, 191, 242, 233, 275]);
         for target in Target::ALL {
             let lines = lines(target);
             let names: HashSet<&str> = lines.iter().map(|l| l.name).collect();
             assert_eq!(names.len(), lines.len(), "{target}: a line twice");
-            let mut build = stock_build(target);
-            // what a session can switch on by what it carries
-            build.extend([
-                Build::Vbat,
-                Build::CurrentAdc,
-                Build::Gps,
-                Build::Mag,
-                Build::Baro,
-            ]);
-            for l in lines {
-                if l.when.iter().all(|b| build.contains(b)) {
-                    assert!(l.value.is_some(), "{target}: {} has no value", l.name);
-                }
-            }
-            // a wing build instead of a quadcopter
-            if target.assembled_from_options() {
-                let wing: Vec<Build> = build
-                    .iter()
-                    .copied()
-                    .filter(|b| *b != Build::NotWing)
-                    .chain([Build::Wing, Build::AdvancedTpa])
-                    .collect();
-                for l in lines {
-                    if l.when.iter().all(|b| wing.contains(b)) {
-                        assert!(l.value.is_some(), "{target} wing: {}", l.name);
-                    }
-                }
-            }
             for name in [
                 "Firmware revision",
                 "I interval",
@@ -401,6 +168,35 @@ mod tests {
                 assert!(names.contains(name), "{target}: no {name}");
             }
         }
+        assert_eq!(span("all").unwrap().len(), 7);
+        assert_eq!(span("4.4-4.5").unwrap(), [Target::V4_4, Target::V4_5]);
+        assert_eq!(
+            span(" 2026.6- ").unwrap(),
+            [Target::V2026_6, Target::Master]
+        );
+        assert_eq!(span("2026.12-dev").unwrap(), [Target::Master]);
+        assert_eq!(span("2026.12-dev-").unwrap(), [Target::Master]);
+        assert_eq!(span("4.5-2026.12-dev").unwrap().len(), 4);
+        assert!(span("4.1-").is_err() && span("4.2-5.0").is_err() && span("").is_err());
+        // what a damaged table is refused for
+        let bad = |text: &'static str| table(text, Target::V4_5).unwrap_err();
+        assert!(bad("looptime").contains("name ; releases"));
+        assert!(bad("looptime ; 4.5 ; Turbo").contains("no condition `Turbo`"));
+        assert!(bad("looptime ; 4.5 ; USE_A|").contains("no condition"));
+        assert!(bad("looptime ; 3.9").contains("no span of releases: `3.9`"));
+        let line = &table("vbatref ; all ; VBAT USE_X", Target::V4_5).unwrap()[0];
+        assert!(line.needs(VBAT) && !line.needs(CURRENT_METER_ADC));
+    }
+
+    /// Whether a build with the options `defined` writes a line with the
+    /// condition `condition`.
+    fn holds(condition: &str, defined: &[&str]) -> bool {
+        condition
+            .split('|')
+            .any(|option| match option.strip_prefix('!') {
+                Some(name) => !defined.contains(&name),
+                None => defined.contains(&option),
+            })
     }
 
     /// The header names of a fixture after its field definitions.
@@ -417,63 +213,70 @@ mod tests {
             .collect()
     }
 
-    fn written_by(target: Target, build: &[Build]) -> Vec<&'static str> {
+    /// The lines `target` writes in a build with the options `defined`.
+    fn written_by(target: Target, defined: &[&str]) -> Vec<&'static str> {
         lines(target)
             .iter()
-            .filter(|l| l.when.iter().all(|b| build.contains(b)))
+            .filter(|l| l.when.iter().all(|c| holds(c, defined)))
             .map(|l| l.name)
             .collect()
     }
 
-    /// The tables against what flight controllers wrote: the names and the
+    /// Every option the lines of `target` name: the official builds of 4.2
+    /// to 4.5 had them all.
+    fn every_option(target: Target) -> Vec<&'static str> {
+        let conditions = lines(target).iter().flat_map(|l| l.when.iter());
+        conditions
+            .flat_map(|c| c.split('|'))
+            .filter(|option| !option.starts_with('!'))
+            .collect()
+    }
+
+    /// The table against what flight controllers wrote: the names and the
     /// order of every header line of the release builds among the fixtures.
     #[test]
-    fn the_tables_list_what_real_builds_write() {
-        use Build::{
-            Acc, AdvancedTpa, Baro, BoardInfo, Chirp, CurrentAdc, DMinMax, DshotTelemetry, DynIdle,
-            DynLpf, DynNotch, Feedforward, Gps, ItermRelax, Mag, RcSmoothing, RpmFilter,
-            SagCompensation, SimplifiedTuning, Vbat, Wing,
-        };
+    fn the_table_lists_what_real_builds_write() {
         // 4.5.1, an official build: every option, and a battery with an ADC
-        let mut everything = stock_build(Target::V4_5);
-        everything.extend([Vbat, CurrentAdc]);
+        let everything = every_option(Target::V4_5);
         assert_eq!(
             logged("betaflight-4.5.1-two-sessions.bbl"),
             written_by(Target::V4_5, &everything)
         );
         // 4.2: all three fixtures are official builds; the craft of 4.2.8
         // has no current meter on an ADC
-        let mut all = stock_build(Target::V4_2);
-        all.push(Vbat);
-        let without_adc = written_by(Target::V4_2, &all);
-        all.push(CurrentAdc);
-        let with_adc = written_by(Target::V4_2, &all);
-        assert_eq!(logged("betaflight-4.2.11-two-logs.bbl"), with_adc);
-        assert_eq!(logged("betaflight-4.2.0.BFL"), with_adc);
-        assert_eq!(logged("betaflight-4.2.8-44-logs.bbl"), without_adc);
+        let with_adc = every_option(Target::V4_2);
+        let without_adc: Vec<&str> = with_adc
+            .iter()
+            .copied()
+            .filter(|option| *option != CURRENT_METER_ADC)
+            .collect();
+        let of_4_2 = |defined: &[&str]| written_by(Target::V4_2, defined);
+        assert_eq!(logged("betaflight-4.2.11-two-logs.bbl"), of_4_2(&with_adc));
+        assert_eq!(logged("betaflight-4.2.0.BFL"), of_4_2(&with_adc));
+        assert_eq!(logged("betaflight-4.2.8-44-logs.bbl"), of_4_2(&without_adc));
         // 2025.12.2, a cloud build for a wing with GPS, compass and barometer
         let wing = [
-            BoardInfo,
-            Acc,
-            Vbat,
-            CurrentAdc,
-            Wing,
-            AdvancedTpa,
-            DMinMax,
-            DynLpf,
-            ItermRelax,
-            Feedforward,
-            Chirp,
-            DynNotch,
-            DshotTelemetry,
-            RpmFilter,
-            Baro,
-            Mag,
-            RcSmoothing,
-            SagCompensation,
-            DynIdle,
-            SimplifiedTuning,
-            Gps,
+            "USE_BOARD_INFO",
+            "USE_ACC",
+            VBAT,
+            CURRENT_METER_ADC,
+            "USE_WING",
+            "USE_ADVANCED_TPA",
+            "USE_D_MAX",
+            "USE_DYN_LPF",
+            "USE_ITERM_RELAX",
+            "USE_FEEDFORWARD",
+            "USE_CHIRP",
+            "USE_DYN_NOTCH_FILTER",
+            "USE_DSHOT_TELEMETRY",
+            "USE_RPM_FILTER",
+            "USE_BARO",
+            "USE_MAG",
+            "USE_RC_SMOOTHING_FILTER",
+            "USE_BATTERY_VOLTAGE_SAG_COMPENSATION",
+            "USE_DYN_IDLE",
+            "USE_SIMPLIFIED_TUNING",
+            "USE_GPS",
         ];
         assert_eq!(
             logged("betaflight-2025.12.2-btfl_027.bbl"),
@@ -485,27 +288,10 @@ mod tests {
             .filter(|n| *n != "ez_landing_speed")
             .collect();
         assert_eq!(logged("betaflight-4.5.0-gps-rescue.bbl"), before);
-    }
-
-    /// The numbers of `docs/BLACKBOX-VERSIONS.md`: every line a release
-    /// can write, and those of the stock build with a battery.
-    #[test]
-    fn the_size_of_the_tables() {
-        let counts = Target::ALL.map(|t| {
-            let mut build = stock_build(t);
-            build.extend([Build::Vbat, Build::CurrentAdc]);
-            (lines(t).len(), written_by(t, &build).len())
-        });
-        let expected = [
-            (112, 112),
-            (136, 136),
-            (172, 172),
-            (191, 191),
-            (242, 174),
-            (233, 176),
-            (275, 180),
-        ];
-        assert_eq!(counts, expected);
+        // a multirotor of 2025.12 has the autopilot lines a wing has not
+        let quad: Vec<&str> = wing.into_iter().filter(|o| *o != "USE_WING").collect();
+        let lines = written_by(Target::V2025_12, &quad);
+        assert!(lines.contains(&"ap_hover_throttle") && !lines.contains(&"s_roll"));
     }
 
     #[test]
@@ -525,8 +311,6 @@ mod tests {
             !has(Target::V2026_6, "rc_command_scale") && has(Target::Master, "rc_command_scale")
         );
         assert!(!has(Target::V2026_6, "debug_mode_name") && has(Target::Master, "debug_mode_name"));
-        let first = |t: Target| lines(t)[0].value;
-        assert_eq!(first(Target::V4_5), Some("Cleanflight"));
-        assert_eq!(first(Target::V2025_12), Some("Betaflight"));
+        assert_eq!(lines(Target::V4_5)[0].name, "Firmware type");
     }
 }

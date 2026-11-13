@@ -102,10 +102,40 @@ impl Target {
         (own.major, own.minor) == (version.major, version.minor)
     }
 
-    /// From 2025.12 a build is assembled from options (and versions are
-    /// year.month); before, a release build carried every feature.
-    pub(super) fn assembled_from_options(self) -> bool {
-        self >= Target::V2025_12
+    /// The `Firmware type` line: the firmware calls itself Cleanflight to
+    /// 4.5 and Betaflight from 2025.12 (`blackboxWriteSysinfo`).
+    pub(super) fn firmware_type(self) -> &'static str {
+        if self >= Target::V2025_12 {
+            "Betaflight"
+        } else {
+            "Cleanflight"
+        }
+    }
+
+    /// The `Firmware revision` line of a log the writer makes for the
+    /// release: the firmware's name, the version of the tag the release was
+    /// read at (`FC_VERSION_STRING`, `src/main/build/version.h`), the commit
+    /// of that tag as the firmware abbreviates it, and a build target, as
+    /// `blackboxWriteSysinfo` puts them together. A decoder takes the
+    /// release from this line.
+    pub(super) fn revision(self) -> &'static str {
+        match self {
+            Target::V4_2 => "Betaflight 4.2.11 (948ba6339) STM32F7X2",
+            Target::V4_3 => "Betaflight 4.3.2 (60c9521da) STM32F7X2",
+            Target::V4_4 => "Betaflight 4.4.3 (738127e7e) STM32F7X2",
+            Target::V4_5 => "Betaflight 4.5.5 (4adbd3ef7) STM32F7X2",
+            Target::V2025_12 => "Betaflight 2025.12.2 (79065c96b) STM32F7X2",
+            Target::V2026_6 => "Betaflight 2026.6.2 (e0b7bb01b) STM32F7X2",
+            Target::Master => "Betaflight 2026.12.0 (4b1520ef6) STM32F7X2",
+        }
+    }
+
+    /// `rcCommand` as a fraction of full deflection times this, with the
+    /// header `rc_command_scale` saying so: `master` only
+    /// (`BLACKBOX_RC_COMMAND_SCALE`, `loadMainState`). Before, the firmware's
+    /// own units: ±500 on roll, pitch and yaw, 1000 … 2000 on the throttle.
+    pub(super) fn rc_command_scale(self) -> Option<i64> {
+        (self == Target::Master).then_some(1000)
     }
 
     /// Slots of the `debug[]` array (`DEBUG16_VALUE_COUNT`): four to 4.4,
@@ -874,6 +904,25 @@ mod tests {
         // 2025.12 and 2026.6 log the servos whatever the mask says
         assert!(craft.logs(Target::V2026_6, When::Servos));
         assert!(!craft.logs(Target::Master, When::Servos));
+    }
+
+    #[test]
+    fn what_a_release_says_of_itself() {
+        for target in Target::ALL {
+            let version = target.version().to_string();
+            let revision = target.revision();
+            assert!(
+                revision.starts_with(&format!("Betaflight {version} (")),
+                "{revision}"
+            );
+            let parsed = openpid_core::FirmwareInfo::parse_revision(revision);
+            assert_eq!(parsed.version, Some(target.version()));
+            assert_eq!(Target::of_version(target.version()), Some(target));
+        }
+        assert_eq!(Target::V4_5.firmware_type(), "Cleanflight");
+        assert_eq!(Target::V2025_12.firmware_type(), "Betaflight");
+        assert_eq!(Target::V2026_6.rc_command_scale(), None);
+        assert_eq!(Target::Master.rc_command_scale(), Some(1000));
     }
 
     #[test]

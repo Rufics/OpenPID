@@ -11,7 +11,8 @@
 //! found through the decoder's own field mapping, inverted: what the reader
 //! makes of a log is what the writer takes back.
 
-use super::config::{Carried, FEATURE_GPS, Lines, Source};
+use super::config::{FEATURE_GPS, Lines, MOTOR_HIGH, MOTOR_LOW, Source};
+use super::sysinfo::{CURRENT_METER_ADC, VBAT};
 use super::version::{self, Craft, FieldDef, Select, When};
 use super::{Schedule, Target, WriteError};
 use crate::profiles::common::{self, Scales};
@@ -20,9 +21,16 @@ use openpid_core::{
     Axis, BatteryField, Channel, ChannelId, FirmwareInfo, FlightSession, GyroStage, Origin, PidTerm,
 };
 
-/// Rate at full stick of the linear rates the example craft flies, deg/s:
+/// Rate at full stick of the linear rates the writer assumes, deg/s:
 /// the stick a setpoint stands for when the session has no stick channel.
 const FULL_STICK_RATE: f64 = 1000.0;
+
+/// Counts per g the writer logs the accelerometer in when the session's
+/// headers name no `acc_1G`: the resolution of the common ±16 g sensors.
+const ACC_1G: i64 = 2048;
+/// Motor poles the writer makes eRPM of a mechanical speed with when the
+/// session names none.
+const MOTOR_POLES: i64 = 14;
 
 /// Kind of the decoder's table of GPS frames.
 pub(super) const GPS_TABLE: &str = "gps";
@@ -78,22 +86,6 @@ fn has_rpm(s: &FlightSession, motors: u8) -> bool {
     })
 }
 
-/// What the session carries that only some builds of the firmware log.
-pub(super) fn carried(s: &FlightSession, target: Target) -> Carried {
-    Carried {
-        voltage: has(s, &ChannelId::Battery(BatteryField::Voltage)),
-        current: has(s, &ChannelId::Battery(BatteryField::Current)),
-        wing: target.assembled_from_options()
-            && any_axis(s, |axis| {
-                let term = PidTerm::S;
-                ChannelId::PidTerm { axis, term }
-            }),
-        gps: has_rows(s, GPS_TABLE) || has_rows(s, HOME_TABLE),
-        mag: has_custom(s, "magADC", 3),
-        baro: has(s, &custom("baroAlt")) || has(s, &custom("BaroAlt")),
-    }
-}
-
 /// The frames of the log: the fields of each kind this craft logs.
 #[derive(Debug, Clone)]
 pub(super) struct Layout {
@@ -113,7 +105,7 @@ fn any_axis(s: &FlightSession, id: impl Fn(Axis) -> ChannelId) -> bool {
 /// The craft the headers describe, before the session has had its say: the
 /// field selection, the gains that switch the D and S terms on, the debug
 /// mode, and whether the GPS frames carry a time.
-fn configured(target: Target, schedule: Schedule, lines: &Lines) -> Craft {
+fn configured(s: &FlightSession, target: Target, schedule: Schedule, lines: &Lines) -> Craft {
     let mut craft = Craft {
         mask: lines.int("fields_disabled_mask") as u32,
         gps_time: target.gps_frames_have_time(
@@ -124,8 +116,19 @@ fn configured(target: Target, schedule: Schedule, lines: &Lines) -> Craft {
         debug: lines.int("debug_mode") != 0,
         ..Craft::default()
     };
-    for (axis, key) in ["rollPID", "pitchPID", "yawPID"].into_iter().enumerate() {
-        craft.d_gain[axis] = lines.number(key, 2) != 0;
+    let gains = ["rollPID", "pitchPID", "yawPID"];
+    for (axis, key) in Axis::ALL.into_iter().zip(gains) {
+        let term = PidTerm::D;
+        craft.d_gain[axis.index()] = match lines.get(key) {
+            Some(_) => lines.number(key, 2) != 0,
+            // The gains are not known. The firmware logs a D term where the
+            // gain is not zero; its own gains have one on roll and pitch and
+            // none on yaw (`PID_ROLL_DEFAULT`, `PID_PITCH_DEFAULT`,
+            // `PID_YAW_DEFAULT` in `src/main/flight/pid.h`, in 4.2 the
+            // defaults of `pid.c`: the same at all seven tags). A session
+            // with a D term on an axis had a gain there.
+            None => axis != Axis::Yaw || has(s, &ChannelId::PidTerm { axis, term }),
+        };
     }
     for (axis, key) in ["s_roll", "s_pitch", "s_yaw"].into_iter().enumerate() {
         craft.s_gain[axis] = lines.int(key) != 0;
@@ -197,11 +200,17 @@ fn switch_off_what_is_missing(
 fn telemetry(craft: &mut Craft, s: &FlightSession, target: Target, lines: &mut Lines) {
     let speeds = has_rpm(s, craft.motors);
     if !lines.is_given("dshot_bidir") {
-        lines.replace("dshot_bidir", u8::from(speeds).to_string());
+        lines.put("dshot_bidir", u8::from(speeds).to_string());
     }
     craft.dshot_telemetry = lines.int("dshot_bidir") != 0;
     if craft.dshot_telemetry && !speeds {
         craft.switch_off(target, Select::Rpm);
+    }
+    // eRPM made from a mechanical speed: the log states the pole count the
+    // writer made it with
+    let made = (0..craft.motors).any(|idx| !has(s, &ChannelId::Erpm { idx }));
+    if craft.logs(target, When::Rpm(1)) && made && lines.get("motor_poles").is_none() {
+        lines.put("motor_poles", MOTOR_POLES.to_string());
     }
 }
 
@@ -218,7 +227,7 @@ fn gps_is_logged(
 ) -> bool {
     let fixes = has_rows(s, GPS_TABLE) || has_rows(s, HOME_TABLE);
     if fixes && !lines.is_given("features") {
-        lines.replace(
+        lines.put(
             "features",
             (lines.int("features") | FEATURE_GPS).to_string(),
         );
@@ -230,19 +239,25 @@ fn gps_is_logged(
     }
 }
 
-/// Makes the headers say what the craft logs: the mask, and no battery
-/// lines for a craft whose voltage or current is not logged.
+/// Makes the headers say what the craft logs: the mask; the scales of the
+/// motors and of the accelerometer when the session named none (the writer
+/// then logs in its own: the `DShot` range, and 2048 counts per g); and no
+/// battery lines for a craft whose voltage or current is not logged.
 fn state(craft: &Craft, target: Target, lines: &mut Lines) {
-    lines.replace("fields_disabled_mask", craft.mask.to_string());
+    lines.put("fields_disabled_mask", craft.mask.to_string());
+    if craft.logs(target, When::Motors(1)) && lines.get("motorOutput").is_none() {
+        lines.put("motorOutput", format!("{MOTOR_LOW},{MOTOR_HIGH}"));
+    }
+    if craft.logs(target, When::Acc) && lines.get("acc_1G").is_none() {
+        lines.put("acc_1G", ACC_1G.to_string());
+    }
     if !craft.logs(target, When::Vbat) {
-        // the firmware skips these three with the field
-        for key in ["vbat_scale", "vbatcellvoltage", "vbatref"] {
-            lines.remove(key);
-        }
+        // the firmware skips these with the field
+        lines.remove_all_on(VBAT);
     }
     if !craft.logs(target, When::Amperage) && !lines.is_given("currentSensor") {
         // a craft without a current meter has no ADC to describe
-        lines.remove("currentSensor");
+        lines.remove_all_on(CURRENT_METER_ADC);
     }
 }
 
@@ -256,7 +271,7 @@ pub(super) fn layout(
     schedule: Schedule,
     lines: &mut Lines,
 ) -> Result<Layout, WriteError> {
-    let mut craft = configured(target, schedule, lines);
+    let mut craft = configured(s, target, schedule, lines);
     fit_out(&mut craft, s);
     switch_off_what_is_missing(&mut craft, s, target)?;
     telemetry(&mut craft, s, target, lines);
@@ -428,7 +443,7 @@ pub(super) fn columns(
         } else {
             1.0
         },
-        poles: if poles > 0 { poles as f64 } else { 14.0 },
+        poles: if poles > 0 { poles } else { MOTOR_POLES } as f64,
     };
     layout
         .main

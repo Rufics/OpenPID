@@ -400,6 +400,14 @@ fn protocol_name(code: f64) -> String {
     .to_string()
 }
 
+/// The `motor_pwm_protocol` code of a protocol name, the inverse of the
+/// names the settings carry.
+pub(crate) fn protocol_code(name: &str) -> Option<i64> {
+    (0..=9i32)
+        .find(|code| protocol_name(f64::from(*code)) == name)
+        .map(i64::from)
+}
+
 /// Settings common to Betaflight-like header layouts (old and new key names).
 pub fn settings(fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
     let pid = match (

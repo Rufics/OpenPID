@@ -41,7 +41,7 @@ is a version (of 4.2, 4.3 and 4.4 one tag was read).
 |---| --- |---|---|---|---|---|---|---|
 | `Firmware type` | Cleanflight | Cleanflight | Cleanflight | Cleanflight | Betaflight | Betaflight | Betaflight | `blackbox.c`, `blackboxWriteSysinfo` |
 | Version in `Firmware revision` | `4.2.11` | `4.3.2` | `4.4.3` | `4.5.5` | `2025.12.2` | `2026.6.2` | `2026.12.0` | `build/version.h` |
-| System-information lines (all options / stock quad build with a battery) | 112 / 112 | 136 / 136 | 172 / 172 | 191 / 191 | 242 / 174 | 233 / 176 | 275 / 180 | `blackboxWriteSysinfo`, `fc/parameter_names.h` |
+| System-information lines a build with every option can write | 112 | 136 | 172 | 191 | 242 | 233 | 275 | `blackboxWriteSysinfo`, `fc/parameter_names.h` |
 | `minthrottle` line | yes | yes | yes | yes | — | — | — | the same |
 | `DeviceUID`, `motor_kv` lines | — | — | — | — | yes | yes | yes | the same |
 | D range line | `d_min` | `d_min` | `d_min` | `d_min` | `d_max` | `d_max` | `d_max` | the same |
@@ -104,15 +104,13 @@ release writes, once, in the firmware's order, with the releases that write
 it (`all`, `4.3-`, `4.4-4.5`, …) and the build options it depends on. A new
 release that writes what the last one wrote needs no edit there.
 
-The values of the example craft are in `write/sysinfo/crafts.txt`. They are a
-configuration, not facts of a version: those of the fixture's craft where it
-logs the line (linear rates of 1000 deg/s, no debug mode, no GPS feature),
-the firmware's defaults (`pg/autopilot*.c`, `flight/pid.c`,
-`sensors/barometer.c`) for lines no fixture has. 4.2 has the craft of the
-4.2.11 fixture, 4.3 to 4.5 that of the 4.5.1 fixture, 2025.12 and later that
-of the 2025.12.2 fixture. Lines of options the stock build does not have and
-no fixture logs (GPS rescue, altitude and position hold, optical flow, the
-build key) have no value and are written only for a session that brings them.
+The table holds no values, and the writer has none of its own: a header line
+is written when its value is known (from the release, from the headers a
+decoded session carries, from the session's settings, from what the frames
+need, or from the caller) and left out otherwise. `docs/DESIGN.md` §5 lists
+which lines that is. A caller that knows more passes the lines in
+`WriteOptions::headers`; each lands where the table has it
+(`Target::header_names`).
 
 ## Test-log coverage
 

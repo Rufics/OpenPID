@@ -193,7 +193,9 @@ fn the_log_is_what_a_betaflight_craft_writes() {
 
 #[test]
 fn the_independent_decoder_reads_the_same_values() {
-    let original = flight(&spec(2000.0, true, 11));
+    let mut original = flight(&spec(2000.0, true, 11));
+    // the reference crate refuses a log that does not name its motor protocol
+    original.settings.motor.protocol = Some("DSHOT600".into());
     // the reference crate (0.4.3) predates the year.month versions and
     // refuses them; the frames are the same under a 4.5 name
     let options = WriteOptions {
@@ -483,8 +485,9 @@ fn a_filter_the_session_does_not_have_is_logged_as_off() {
     assert!(g.rpm_notch.is_none());
     assert_eq!(back.settings.dterm_filters, FilterChain::default());
     assert_eq!(back.header("dshot_bidir"), Some("0"));
-    // gains the session does not name stay the stock ones
-    assert_eq!(back.settings.pid.as_ref().map(|p| p.roll.p), Some(45.0));
+    // gains the session does not name are not in the log
+    assert_eq!(back.settings.pid, None);
+    assert_eq!(back.header("rollPID"), None);
 }
 
 #[test]
