@@ -27,6 +27,8 @@ const LOG_VIEWER: &str = "Log Viewer";
 const SPECTRUM: &str = "Spectral Analyzer";
 /// Title of its step response window.
 const STEP: &str = "Step Response Tool";
+/// Title of its window of frequency against throttle.
+const THROTTLE: &str = "Frequency x Throttle";
 
 /// The rows of plots of the step response window in a picture the script
 /// saves: top and bottom of the axes of roll, pitch and yaw.
@@ -168,6 +170,51 @@ mod spectrum_at {
     pub const Y_MAX: (u32, u32) = (3610, 1612);
 }
 
+/// Controls and plots of the window of frequency against throttle of
+/// version 0.94, in a picture the script saves. Read off a picture of the
+/// window half this size (the owner, 2026-11-13), so each is right to a
+/// few pixels; the open lists are taken to look as those of the step
+/// response window do.
+mod throttle_at {
+    /// "Freq x Throttle" of the spectrum window.
+    pub const OPEN: (u32, u32) = (3555, 1078);
+    pub const RUN: (u32, u32) = (3468, 179);
+    /// The plots of the first two columns, which come up as "Gyro prefilt"
+    /// and "Gyro": the name in the files, left and right of the axes.
+    pub const COLUMNS: [(&str, u32, u32); 2] = [("prefilt", 193, 848), ("gyro", 1013, 1667)];
+    /// Top and bottom of the axes of roll, pitch and yaw.
+    pub const ROWS: [(u32, u32); 3] = [(318, 874), (994, 1553), (1672, 2229)];
+    /// The list of logs above each of those columns.
+    pub const LOG_LISTS: [(u32, u32); 2] = [(482, 109), (1319, 109)];
+    /// The switch "<100Hz" beside each of those lists.
+    pub const BELOW_100: [(u32, u32); 2] = [(690, 109), (1540, 109)];
+    /// The "scale" box of each of those columns.
+    pub const SCALES: [(u32, u32); 2] = [(113, 274), (943, 274)];
+    pub const SMOOTHING_LIST: (u32, u32) = (3640, 508);
+    /// The switches "2D" and "PSD".
+    pub const TWO_D: (u32, u32) = (3447, 603);
+    pub const PSD: (u32, u32) = (3599, 603);
+    /// The first item of an open list is this far below the list, and the
+    /// next ones follow 47.5 pixels apart.
+    pub const ITEM_FIRST: u32 = 43;
+
+    /// Item `row` (from 0) of the open list at `list`.
+    pub fn item(list: (u32, u32), row: usize) -> (u32, u32) {
+        (list.0, list.1 + ITEM_FIRST + (475 * row as u32) / 10)
+    }
+}
+
+/// The smoothing levels of the window of frequency against throttle, in
+/// the order of its list. "medium" is what the window comes up with.
+const THROTTLE_SMOOTHING: [&str; 5] = ["low", "low-med", "medium", "med-high", "high"];
+/// The place of "medium" in [`THROTTLE_SMOOTHING`].
+const THROTTLE_MEDIUM: usize = 2;
+/// The colour scale typed for one probe in place of the 0.5 the window
+/// comes up with: wide enough for a tone of 10 deg/s.
+const THROTTLE_SCALE: &str = "5";
+/// The colour scale the window comes up with.
+const THROTTLE_SCALE_DEFAULT: &str = "0.5";
+
 /// The row of log `row` (from 0) of a list whose first row is at `first`:
 /// 37.9 pixels a row.
 fn log_row(first: u32, row: usize) -> u32 {
@@ -296,6 +343,10 @@ pub struct Step {
     /// What is typed into a text box.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// The step belongs to the copy of a plot: it is passed over once the
+    /// copies of a picture have been given up ([`Plan::give_up`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub copy: Option<bool>,
 }
 
 /// `steps.json` of a pack.
@@ -305,6 +356,11 @@ pub struct Plan {
     pub about: String,
     /// The reference screenshots.
     pub refs: Frames,
+    /// After a copy that failed, the other copies up to the next picture
+    /// are passed over: where the plots of a window may not be copied at
+    /// all, a run does not spend most of its time waiting for them.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub give_up: bool,
     /// The steps in order.
     pub steps: Vec<Step>,
 }
@@ -418,7 +474,9 @@ fn copy_plot(steps: &mut Vec<Step>, axis: usize, column: usize, file: String) {
 /// 4. `clip_save`, and a click on the button, which collapses the toolbar.
 ///
 /// When no copy has come by `clip_save`, the script goes through the four
-/// steps before it again, slower.
+/// steps before it again, slower. Every step of a copy is marked as one
+/// (`copy`), for a plan that gives up the copies of a picture after one
+/// that failed ([`Plan::give_up`]).
 fn copy_axes(
     steps: &mut Vec<Step>,
     window: &'static str,
@@ -426,6 +484,7 @@ fn copy_axes(
     axes: (u32, u32, u32, u32),
     file: String,
 ) {
+    let first = steps.len();
     let (_, top, right, _) = axes;
     let dots = (right - TOOLBAR_DOTS.0, top - TOOLBAR_DOTS.1);
     let export = (right - EXPORT_ICON.0, top - EXPORT_ICON.1);
@@ -472,6 +531,9 @@ fn copy_axes(
     });
     steps.push(toolbar(format!("{plot} toolbar (close)"), Some(false)));
     steps.push(pause(200));
+    for step in &mut steps[first..] {
+        step.copy = Some(true);
+    }
 }
 
 /// Name of a picture or of a copied plot of the step response window:
@@ -738,6 +800,204 @@ fn step_about(round: u32, probes: &[Probe]) -> String {
     )
 }
 
+/// Name of a picture or of a copied plot of the window of frequency against
+/// throttle: `what` is the setting ("" as the window comes up, "psd", "2d",
+/// "smoothing-low" …) and `plot` the plot ("" for a picture of the window).
+pub fn throttle_file(round: u32, probe: &str, what: &str, plot: &str) -> String {
+    let mut name = format!("r{round}-{probe}-throttle");
+    for part in [what, plot] {
+        if !part.is_empty() {
+            name.push('-');
+            name.push_str(part);
+        }
+    }
+    name
+}
+
+/// Whether the maps of `probe` are also captured at the four smoothing
+/// levels the window does not come up with: the stairs, for the spread of
+/// a column next to its neighbours, and the held throttle, for the spread
+/// of one column alone.
+pub fn throttle_smoothing_captured(probe: &Probe) -> bool {
+    ["z1-stairs-2k", "z3-hold-2k"].contains(&probe.id)
+}
+
+/// Whether the maps of `probe` are also captured on a wider colour scale
+/// and below 100 Hz: the held throttle, whose one spot is then inside the
+/// scale, and drawn large.
+pub fn throttle_views_captured(probe: &Probe) -> bool {
+    probe.id == "z3-hold-2k"
+}
+
+/// A click in the window of frequency against throttle, at a position of a
+/// picture of it.
+fn throttle_click(name: &str, at: (u32, u32)) -> Step {
+    click(THROTTLE, "shot", name, at)
+}
+
+/// An item of a list of that window: a click on the list, a moment for it
+/// to open, a click on the item.
+fn throttle_pick(steps: &mut Vec<Step>, list: (u32, u32), name: &str, row: usize) {
+    steps.push(throttle_click(&format!("{name} (the list)"), list));
+    steps.push(pause(600));
+    steps.push(throttle_click(name, throttle_at::item(list, row)));
+    steps.push(pause(300));
+}
+
+/// The log of a round whose maps are being captured.
+#[derive(Clone, Copy)]
+struct ThrottleLog<'a> {
+    round: u32,
+    id: &'a str,
+}
+
+impl ThrottleLog<'_> {
+    /// A Run, waited for, a picture of the window and copies of the six
+    /// plots of the first two columns, all named after the setting `what`.
+    fn capture(self, steps: &mut Vec<Step>, what: &str) {
+        steps.push(Step {
+            mark: Some(true),
+            ..throttle_click("Run", throttle_at::RUN)
+        });
+        steps.push(settle(THROTTLE, Some(60.0), 1.5));
+        steps.push(shot(THROTTLE, throttle_file(self.round, self.id, what, "")));
+        for (column, left, right) in throttle_at::COLUMNS {
+            for (axis, (top, bottom)) in throttle_at::ROWS.into_iter().enumerate() {
+                let name = format!("{} {column}", AXES[axis]);
+                let plot = format!("{}-{column}", AXES[axis]);
+                let file = throttle_file(self.round, self.id, what, &plot);
+                copy_axes(steps, THROTTLE, &name, (left, top, right, bottom), file);
+            }
+        }
+    }
+
+    /// The maps with the switch at `at` on, and the switch off again.
+    fn switched(self, steps: &mut Vec<Step>, name: &str, at: (u32, u32), what: &str) {
+        steps.push(throttle_click(&format!("{name} on"), at));
+        steps.push(pause(300));
+        self.capture(steps, what);
+        steps.push(throttle_click(&format!("{name} off"), at));
+        steps.push(pause(300));
+    }
+
+    /// The maps at the four other smoothing levels, and "medium" again.
+    fn smoothing_levels(self, steps: &mut Vec<Step>) {
+        let pick = |steps: &mut Vec<Step>, row: usize| {
+            let name = format!("smoothing {}", THROTTLE_SMOOTHING[row]);
+            throttle_pick(steps, throttle_at::SMOOTHING_LIST, &name, row);
+        };
+        for (row, level) in THROTTLE_SMOOTHING.into_iter().enumerate() {
+            if row != THROTTLE_MEDIUM {
+                pick(steps, row);
+                self.capture(steps, &format!("smoothing-{level}"));
+            }
+        }
+        pick(steps, THROTTLE_MEDIUM);
+    }
+
+    /// The maps on the colour scale [`THROTTLE_SCALE`], then below 100 Hz,
+    /// and both as the window came up again.
+    fn views(self, steps: &mut Vec<Step>) {
+        let scale = |steps: &mut Vec<Step>, text: &str| {
+            for (k, at) in throttle_at::SCALES.into_iter().enumerate() {
+                steps.push(Step {
+                    action: "type",
+                    text: Some(text.to_string()),
+                    ..throttle_click(&format!("scale of column {}", k + 1), at)
+                });
+                steps.push(pause(300));
+            }
+        };
+        scale(steps, THROTTLE_SCALE);
+        self.capture(steps, "scale-5");
+        scale(steps, THROTTLE_SCALE_DEFAULT);
+        let below = |steps: &mut Vec<Step>, state: &str| {
+            for (k, at) in throttle_at::BELOW_100.into_iter().enumerate() {
+                let name = format!("<100Hz of column {} {state}", k + 1);
+                steps.push(throttle_click(&name, at));
+                steps.push(pause(300));
+            }
+        };
+        below(steps, "on");
+        self.capture(steps, "sub100");
+        below(steps, "off");
+    }
+}
+
+/// The steps of the window of frequency against throttle for the probes of
+/// a round. The window is opened from the spectrum window, after a Run
+/// there. For every log: the log chosen in the first two columns ("Gyro
+/// prefilt" and "Gyro"), then a Run, a picture and copies of the six plots
+/// as the window comes up, the same with "PSD" on and with "2D" on; for
+/// the logs of [`throttle_smoothing_captured`] also at the other smoothing
+/// levels, and for those of [`throttle_views_captured`] on a wider colour
+/// scale and below 100 Hz.
+fn throttle_maps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+    steps.push(click(
+        LOG_VIEWER,
+        "log",
+        "Spectral Analyzer",
+        log_at::SPECTRUM,
+    ));
+    steps.push(Step {
+        wait_s: Some(900),
+        ..settle(SPECTRUM, None, 1.5)
+    });
+    steps.push(Step {
+        mark: Some(true),
+        ..click(SPECTRUM, "shot", "Run", spectrum_at::RUN)
+    });
+    steps.push(settle(SPECTRUM, Some(60.0), 1.5));
+    steps.push(shot(SPECTRUM, format!("r{round}-spectrum-run")));
+    steps.push(click(
+        SPECTRUM,
+        "shot",
+        "Freq x Throttle",
+        throttle_at::OPEN,
+    ));
+    steps.push(Step {
+        wait_s: Some(120),
+        ..settle(THROTTLE, None, 1.5)
+    });
+    steps.push(shot(THROTTLE, format!("r{round}-throttle-open")));
+    let is_throttle = |p: &Probe| p.area == Area::Throttle;
+    for (row, probe) in probes.iter().enumerate().filter(|(_, p)| is_throttle(p)) {
+        let log = ThrottleLog {
+            round,
+            id: probe.id,
+        };
+        for (k, list) in throttle_at::LOG_LISTS.into_iter().enumerate() {
+            let name = format!("log {} in column {}", probe.id, k + 1);
+            throttle_pick(steps, list, &name, row);
+        }
+        log.capture(steps, "");
+        log.switched(steps, "PSD", throttle_at::PSD, "psd");
+        log.switched(steps, "2D", throttle_at::TWO_D, "2d");
+        if throttle_smoothing_captured(probe) {
+            log.smoothing_levels(steps);
+        }
+        if throttle_views_captured(probe) {
+            log.views(steps);
+        }
+    }
+}
+
+/// What the plan of a round of the map of frequency against throttle does,
+/// for the reader of `steps.json`.
+fn throttle_about(round: u32, probes: &[Probe]) -> String {
+    let levels = probes
+        .iter()
+        .filter(|p| throttle_smoothing_captured(p))
+        .count();
+    format!(
+        "Round {round}: every log through one open dialog, then the window of frequency \
+         against throttle for each: the maps of the unfiltered and of the filtered gyro as \
+         the window comes up, in decibels (\"PSD\") and as lines (\"2D\"), for {levels} logs \
+         at the other smoothing levels, and for one on a wider colour scale and below 100 Hz; \
+         a picture of the window and a vector copy of every plot each time."
+    )
+}
+
 /// Name of the picture of `probe` on the spectrum at a smoothing level.
 pub fn spectrum_shot(round: u32, probe: &str, smoothing: &str) -> String {
     format!("r{round}-{probe}-spectrum-{smoothing}")
@@ -829,6 +1089,9 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     if probes.iter().any(|p| p.area == Area::StepResponse) {
         step_response(&mut steps, round, probes);
     }
+    if probes.iter().any(|p| p.area == Area::Throttle) {
+        throttle_maps(&mut steps, round, probes);
+    }
     steps.push(Step {
         action: "windows",
         ..Step::default()
@@ -836,6 +1099,8 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     Plan {
         about: if probes.iter().all(|p| p.area == Area::StepResponse) {
             step_about(round, probes)
+        } else if probes.iter().all(|p| p.area == Area::Throttle) {
+            throttle_about(round, probes)
         } else if round < 2 {
             format!(
                 "Round {round}: every log through one open dialog, then the spectrum of each \
@@ -848,6 +1113,9 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
                  graphic."
             )
         },
+        // the plots of the window of frequency against throttle had never
+        // been copied when its first round was planned
+        give_up: probes.iter().any(|p| p.area == Area::Throttle),
         refs: Frames {
             log: Frame {
                 left: 1,
@@ -1608,6 +1876,175 @@ mod tests {
             .iter()
             .position(|s| s.name.as_deref() == Some("smoothing off"));
         assert!(back < last_run);
+    }
+
+    #[test]
+    fn round_8_copies_the_maps_of_the_throttle_window() {
+        let probes = catalogue::round(8).unwrap_or_default();
+        let plan = plan(8, &probes);
+        assert!(plan.about.contains("frequency against throttle"));
+        assert!(
+            plan.about
+                .contains("for 2 logs at the other smoothing levels")
+        );
+        let names = |action: &str| -> Vec<&str> {
+            plan.steps
+                .iter()
+                .filter(|s| s.action == action)
+                .filter_map(|s| s.file.as_deref())
+                .collect()
+        };
+        // six plots at a setting: three settings a log, four smoothing
+        // levels more for two logs, two views more for one
+        let copies = names("clip_save");
+        assert_eq!(copies.len(), 6 * (8 * 3 + 2 * 4 + 2));
+        for (k, name) in [
+            (0, "z1-stairs-2k-throttle-roll-prefilt"),
+            (2, "z1-stairs-2k-throttle-yaw-prefilt"),
+            (3, "z1-stairs-2k-throttle-roll-gyro"),
+            (6, "z1-stairs-2k-throttle-psd-roll-prefilt"),
+            (12, "z1-stairs-2k-throttle-2d-roll-prefilt"),
+            (18, "z1-stairs-2k-throttle-smoothing-low-roll-prefilt"),
+            (41, "z1-stairs-2k-throttle-smoothing-high-yaw-gyro"),
+            (42, "z2-ramp-2k-throttle-roll-prefilt"),
+            (60, "z3-hold-2k-throttle-roll-prefilt"),
+            (102, "z3-hold-2k-throttle-scale-5-roll-prefilt"),
+            (108, "z3-hold-2k-throttle-sub100-roll-prefilt"),
+            (114, "z4-fine-2k-throttle-roll-prefilt"),
+            (203, "z8-short-2k-throttle-2d-yaw-gyro"),
+        ] {
+            assert_eq!(copies[k], format!("r8-{name}"));
+        }
+        // a picture at every setting, after the three of the way there
+        let shots = names("shot");
+        assert_eq!(shots.len(), 3 + copies.len() / 6);
+        assert_eq!(
+            shots[..7],
+            [
+                "r8-log-loaded",
+                "r8-spectrum-run",
+                "r8-throttle-open",
+                "r8-z1-stairs-2k-throttle",
+                "r8-z1-stairs-2k-throttle-psd",
+                "r8-z1-stairs-2k-throttle-2d",
+                "r8-z1-stairs-2k-throttle-smoothing-low",
+            ]
+        );
+        let mut unique: Vec<&str> = shots.iter().chain(&copies).copied().collect();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), shots.len() + copies.len());
+        for (i, step) in plan.steps.iter().enumerate() {
+            if step.action == "clip_save" {
+                assert_copy(&plan.steps, i);
+            }
+        }
+        // the window is opened from the spectrum window, after a Run there
+        let position = |name: &str| {
+            let wanted = |s: &Step| s.name.as_deref() == Some(name);
+            plan.steps.iter().position(wanted)
+        };
+        let open = position("Freq x Throttle").unwrap_or(0);
+        assert_eq!(plan.steps[open].window, Some(SPECTRUM));
+        assert_eq!(plan.steps[open].at, Some((3555, 1078)));
+        assert_eq!(plan.steps[open - 3].name.as_deref(), Some("Run"));
+        assert_eq!(plan.steps[open - 3].window, Some(SPECTRUM));
+        assert_eq!(plan.steps[open + 1].window, Some(THROTTLE));
+        // a Run of the window for every picture of it, each against a mark
+        let runs: Vec<&Step> = plan
+            .steps
+            .iter()
+            .filter(|s| s.name.as_deref() == Some("Run") && s.window == Some(THROTTLE))
+            .collect();
+        assert_eq!(runs.len(), shots.len() - 3);
+        assert!(
+            runs.iter()
+                .all(|s| s.mark == Some(true) && s.at == Some((3468, 179)))
+        );
+        // every log is chosen in both columns, a row of the open list each
+        let rows = |column: &str| -> Vec<(u32, u32)> {
+            plan.steps
+                .iter()
+                .filter(|s| {
+                    s.name
+                        .as_deref()
+                        .is_some_and(|n| n.starts_with("log z") && n.ends_with(column))
+                })
+                .filter_map(|s| s.at)
+                .collect()
+        };
+        let first = rows("in column 1");
+        assert_eq!(
+            first,
+            [152, 199, 247, 294, 342, 389, 437, 484].map(|y| (482, y))
+        );
+        let second: Vec<(u32, u32)> = first.iter().map(|(_, y)| (1319, *y)).collect();
+        assert_eq!(rows("in column 2"), second);
+        // the switches go on and off again; the smoothing ends at medium
+        let picked = |part: &str| -> Vec<&str> {
+            plan.steps
+                .iter()
+                .filter_map(|s| s.name.as_deref())
+                .filter(|n| n.contains(part) && !n.ends_with("(the list)"))
+                .collect()
+        };
+        assert_eq!(picked("PSD o"), ["PSD on", "PSD off"].repeat(8));
+        assert_eq!(picked("2D o"), ["2D on", "2D off"].repeat(8));
+        assert_eq!(
+            picked("smoothing "),
+            [
+                "smoothing low",
+                "smoothing low-med",
+                "smoothing med-high",
+                "smoothing high",
+                "smoothing medium",
+            ]
+            .repeat(2)
+        );
+        assert_eq!(
+            plan.steps[position("smoothing high").unwrap_or(0)].at,
+            Some((3640, 741))
+        );
+        let typed: Vec<&str> = plan
+            .steps
+            .iter()
+            .filter(|s| s.action == "type")
+            .filter_map(|s| s.text.as_deref())
+            .collect();
+        assert_eq!(typed, ["5", "5", "0.5", "0.5"]);
+        assert_eq!(picked("<100Hz").len(), 4);
+        // the toolbar button of the first plot
+        let toolbar = position("roll prefilt toolbar").unwrap_or(0);
+        assert_eq!(plan.steps[toolbar].at, Some((834, 303)));
+        // the script's own estimate of the time
+        let note = files(8, shots.len(), copies.len(), false).remove(2).1;
+        let note = String::from_utf8(note).unwrap_or_default();
+        assert!(note.contains("saves 37 pictures"), "{note}");
+        assert!(
+            note.contains("204 plots") && note.contains("25 minutes"),
+            "{note}"
+        );
+        assert_eq!(throttle_file(8, "z", "", ""), "r8-z-throttle");
+        // a copy that fails gives up the other copies of its picture: all
+        // the steps of a copy are marked, and nothing else is
+        assert!(plan.give_up);
+        let marked = plan.steps.iter().filter(|s| s.copy == Some(true)).count();
+        assert_eq!(marked, 14 * copies.len());
+        let actions = ["shot", "settle", "type", "open_file", "windows"];
+        assert!(
+            plan.steps
+                .iter()
+                .filter(|s| actions.contains(&s.action) || s.name.as_deref() == Some("Run"))
+                .all(|s| s.copy.is_none())
+        );
+        let json = serde_json::to_value(&plan).unwrap_or_default();
+        assert_eq!(json["give_up"], true);
+        assert!(SCRIPT.contains("$plan.give_up") && SCRIPT.contains("$step.copy"));
+        // the rounds that were run before go on after a failed copy
+        let earlier = super::plan(7, &catalogue::round(7).unwrap_or_default());
+        assert!(!earlier.give_up);
+        let json = serde_json::to_value(&earlier).unwrap_or_default();
+        assert!(json.get("give_up").is_none());
     }
 
     #[test]

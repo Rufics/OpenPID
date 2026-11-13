@@ -18,6 +18,8 @@ pub enum Area {
     Spectrum,
     /// The step response: how the craft follows the stick.
     StepResponse,
+    /// The map of the spectrum against the throttle.
+    Throttle,
 }
 
 /// One log of a round.
@@ -1112,6 +1114,251 @@ fn round_7() -> Vec<Probe> {
     ]
 }
 
+/// A tone whose frequency follows the throttle, over the whole flight.
+fn throttle_tone(hz_at_zero: f64, hz_per_percent: f64, amplitude: f64) -> Wave {
+    Wave::ThrottleTone {
+        hz_at_zero,
+        hz_per_percent,
+        amplitude,
+        band: None,
+    }
+}
+
+/// A tone of a fixed frequency that sounds only while the throttle is
+/// between `low` and `high` percent.
+fn tone_between(hz: f64, amplitude: f64, low: f64, high: f64) -> Wave {
+    Wave::ThrottleTone {
+        hz_at_zero: hz,
+        hz_per_percent: 0.0,
+        amplitude,
+        band: Some((low, high)),
+    }
+}
+
+/// An axis whose unfiltered gyro carries `unfiltered` and whose filtered
+/// gyro carries `filtered`, each over its own dither: two experiments on
+/// one axis, since a map of the throttle is drawn for either channel.
+fn two_channels(seed: u64, unfiltered: Vec<Wave>, filtered: Vec<Wave>) -> AxisSpec {
+    let with_dither = |mut waves: Vec<Wave>, seed: u64| {
+        waves.push(dither(seed));
+        waves
+    };
+    AxisSpec {
+        filtered: Filtered::Separate {
+            waves: with_dither(filtered, seed + 1),
+        },
+        ..AxisSpec::of(with_dither(unfiltered, seed))
+    }
+}
+
+/// Stairs of the throttle from 10 to 90 % in steps of 10, `stair_s` each,
+/// between two stretches at 50 % that fill the flight up to `duration_s`.
+fn stairs(stair_s: f64, duration_s: f64) -> Throttle {
+    let ends = (duration_s - 9.0 * stair_s) / 2.0;
+    let mut steps = vec![(50.0, ends)];
+    steps.extend((1..=9).map(|k| (10.0 * f64::from(k), stair_s)));
+    steps.push((50.0, ends));
+    Throttle::Stairs { steps }
+}
+
+/// The stairs probe: the same six experiments at every log rate and length.
+fn throttle_stairs(id: &'static str, fs: f64, stair_s: f64, duration_s: f64) -> Probe {
+    Probe {
+        id,
+        area: Area::Throttle,
+        title: "Stairs of the throttle from 10 to 90 %: where a throttle lands on the map, how \
+                far it spreads, what a tone and a noise floor read",
+        purpose: [
+            "unfiltered: a tone of 10 deg/s at 50 Hz + 4 Hz per percent of throttle, so every \
+             stair has its own frequency (90 … 410 Hz): the column of each stair, its spread \
+             and its value; filtered: the same tone at 2 deg/s: is the map linear",
+            "unfiltered: a tone of 10 deg/s at 200 Hz through the whole flight: the same value \
+             in every flown column, or one that follows the time spent there; filtered: that \
+             tone only on the stairs of 30 and 40 %: the edges of a plateau",
+            "unfiltered: white noise of 5 deg/s RMS: the floor, which with the tone gives the \
+             length of a segment; filtered: noise of the same density between 100 and 300 Hz \
+             only: how far the map is smoothed along the frequency",
+        ],
+        flight: FlightSpec {
+            roll: two_channels(
+                801,
+                vec![throttle_tone(50.0, 4.0, 10.0)],
+                vec![throttle_tone(50.0, 4.0, 2.0)],
+            ),
+            pitch: two_channels(
+                803,
+                vec![Wave::tone(200.0, 10.0)],
+                vec![tone_between(200.0, 10.0, 25.0, 45.0)],
+            ),
+            yaw: AxisSpec {
+                filtered: Filtered::Separate {
+                    // the density of white noise of 5 deg/s RMS at 2 kHz
+                    waves: vec![band(100.0, 300.0, 0.025, 806), dither(807)],
+                },
+                ..AxisSpec::of(vec![Wave::Noise {
+                    rms: 5.0,
+                    seed: 805,
+                }])
+            },
+            throttle: stairs(stair_s, duration_s),
+            ..FlightSpec::quiet(fs, duration_s)
+        },
+    }
+}
+
+/// Round 8: the map of frequency against throttle, identify. Every axis
+/// carries two experiments, one on the unfiltered and one on the filtered
+/// gyro.
+fn round_8() -> Vec<Probe> {
+    // ten stairs a fraction of a percent apart, each with its own tone
+    let fine: [(f64, f64); 10] = [
+        (30.0, 100.0),
+        (30.2, 150.0),
+        (30.4, 200.0),
+        (30.6, 250.0),
+        (30.8, 300.0),
+        (60.0, 350.0),
+        (60.3, 400.0),
+        (60.5, 450.0),
+        (60.7, 500.0),
+        (61.0, 550.0),
+    ];
+    let fine_tones = |amplitude: f64| -> Vec<Wave> {
+        fine.iter()
+            .map(|(percent, hz)| tone_between(*hz, amplitude, percent - 0.05, percent + 0.05))
+            .collect()
+    };
+    vec![
+        throttle_stairs("z1-stairs-2k", 2000.0, 3.0, 30.0),
+        Probe {
+            id: "z2-ramp-2k",
+            area: Area::Throttle,
+            title: "The throttle rises evenly from 0 to 100 %: the throttle axis from end to \
+                    end, and columns with little data",
+            purpose: [
+                "unfiltered: a tone of 10 deg/s at 50 Hz + 4 Hz per percent of throttle: a \
+                 straight line from (0 %, 50 Hz) to (100 %, 450 Hz), and where the map puts it; \
+                 filtered: a tone of 10 deg/s at 150 Hz between 20 and 40 % only: what is drawn \
+                 where there is no tone",
+                "unfiltered: a tone of 10 deg/s at 150 Hz through the whole flight: every \
+                 column has a third of a second of it; filtered: 150 Hz below 3 % and 300 Hz \
+                 above 97 % only: the two ends of the axis",
+                "unfiltered: white noise of 5 deg/s RMS; filtered: the rising tone of roll at \
+                 2 deg/s",
+            ],
+            flight: FlightSpec {
+                roll: two_channels(
+                    811,
+                    vec![throttle_tone(50.0, 4.0, 10.0)],
+                    vec![tone_between(150.0, 10.0, 20.0, 40.0)],
+                ),
+                pitch: two_channels(
+                    813,
+                    vec![Wave::tone(150.0, 10.0)],
+                    vec![
+                        tone_between(150.0, 10.0, 0.0, 3.0),
+                        tone_between(300.0, 10.0, 97.0, 100.0),
+                    ],
+                ),
+                yaw: AxisSpec {
+                    filtered: Filtered::Separate {
+                        waves: vec![throttle_tone(50.0, 4.0, 2.0), dither(816)],
+                    },
+                    ..AxisSpec::of(vec![Wave::Noise {
+                        rms: 5.0,
+                        seed: 815,
+                    }])
+                },
+                throttle: Throttle::Ramp {
+                    from: 0.0,
+                    to: 100.0,
+                },
+                ..FlightSpec::quiet(2000.0, 30.0)
+            },
+        },
+        Probe {
+            id: "z3-hold-2k",
+            area: Area::Throttle,
+            title: "The throttle stays at 50 %: the spread of one column at every smoothing \
+                    level, how segments are averaged, how close two tones can be",
+            purpose: [
+                "unfiltered: a tone of 10 deg/s at 100 Hz: one spot, whose shape along the \
+                 throttle and along the frequency is the smoothing; filtered: the same tone at \
+                 2 deg/s, inside the default colour scale",
+                "unfiltered: that tone from 10 to 20 s only; filtered: from 5 to 25 s only: a \
+                 mean of amplitudes reads them in proportion to their time, a mean of powers \
+                 as its square root",
+                "unfiltered: pairs of tones of 10 deg/s 4, 8 and 16 Hz apart (100 and 104, 200 \
+                 and 208, 300 and 316 Hz): which pairs the map tells apart; filtered: white \
+                 noise of 5 deg/s RMS: the floor of a single column",
+            ],
+            flight: FlightSpec {
+                roll: two_channels(
+                    821,
+                    vec![Wave::tone(100.0, 10.0)],
+                    vec![Wave::tone(100.0, 2.0)],
+                ),
+                pitch: two_channels(
+                    823,
+                    vec![burst(100.0, 10.0, 10.0, 20.0)],
+                    vec![burst(100.0, 10.0, 5.0, 25.0)],
+                ),
+                yaw: AxisSpec {
+                    filtered: Filtered::Separate {
+                        waves: vec![Wave::Noise {
+                            rms: 5.0,
+                            seed: 826,
+                        }],
+                    },
+                    ..tones(
+                        825,
+                        &[
+                            (100.0, 10.0),
+                            (104.0, 10.0),
+                            (200.0, 10.0),
+                            (208.0, 10.0),
+                            (300.0, 10.0),
+                            (316.0, 10.0),
+                        ],
+                    )
+                },
+                ..FlightSpec::quiet(2000.0, 30.0)
+            },
+        },
+        Probe {
+            id: "z4-fine-2k",
+            area: Area::Throttle,
+            title: "Stairs a few tenths of a percent apart around 30 and 60 %: which column a \
+                    throttle value goes to",
+            purpose: [
+                "unfiltered: ten stairs (30.0, 30.2, 30.4, 30.6, 30.8, 60.0, 60.3, 60.5, 60.7 \
+                 and 61.0 %), each with its own tone of 10 deg/s from 100 to 550 Hz in steps of \
+                 50: the column of each tone is how a throttle is rounded; filtered: the same \
+                 at 2 deg/s",
+                "unfiltered: a tone of 10 deg/s at 200 Hz through the whole flight: two groups \
+                 of columns with the same tone and different times; filtered: the same",
+                "unfiltered: white noise of 5 deg/s RMS; filtered: the same",
+            ],
+            flight: FlightSpec {
+                roll: two_channels(831, fine_tones(10.0), fine_tones(2.0)),
+                pitch: tones(833, &[(200.0, 10.0)]),
+                yaw: AxisSpec::of(vec![Wave::Noise {
+                    rms: 5.0,
+                    seed: 835,
+                }]),
+                throttle: Throttle::Stairs {
+                    steps: fine.iter().map(|(percent, _)| (*percent, 3.0)).collect(),
+                },
+                ..FlightSpec::quiet(2000.0, 30.0)
+            },
+        },
+        throttle_stairs("z5-stairs-1k", 1000.0, 3.0, 30.0),
+        throttle_stairs("z6-stairs-4k", 4000.0, 3.0, 30.0),
+        throttle_stairs("z7-stairs-8k", 8000.0, 3.0, 30.0),
+        throttle_stairs("z8-short-2k", 2000.0, 1.0, 12.0),
+    ]
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
@@ -1122,12 +1369,13 @@ pub fn round(round: u32) -> Option<Vec<Probe>> {
         5 => Some(round_5()),
         6 => Some(round_6()),
         7 => Some(round_7()),
+        8 => Some(round_8()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7];
+pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8];
 
 #[cfg(test)]
 mod tests {
@@ -1554,5 +1802,125 @@ mod tests {
                 assert_eq!(here, there, "{} at {t} s", p.id);
             }
         }
+    }
+
+    #[test]
+    fn round_8_moves_the_throttle_and_keeps_the_sticks_still() {
+        let probes = round(8).unwrap();
+        let shape: Vec<(&str, f64, f64)> = probes
+            .iter()
+            .map(|p| (p.id, p.flight.fs, p.flight.duration_s))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("z1-stairs-2k", 2000.0, 30.0),
+                ("z2-ramp-2k", 2000.0, 30.0),
+                ("z3-hold-2k", 2000.0, 30.0),
+                ("z4-fine-2k", 2000.0, 30.0),
+                ("z5-stairs-1k", 1000.0, 30.0),
+                ("z6-stairs-4k", 4000.0, 30.0),
+                ("z7-stairs-8k", 8000.0, 30.0),
+                ("z8-short-2k", 2000.0, 12.0),
+            ]
+        );
+        for p in &probes {
+            assert_eq!(p.area, Area::Throttle);
+            let throttle = p.flight.throttle_samples();
+            assert!(
+                throttle.iter().all(|t| (0.0..=100.0).contains(t)),
+                "{}",
+                p.id
+            );
+            for axis in Axis::ALL {
+                let spec = p.flight.axis(axis);
+                let at = format!("{} {axis:?}", p.id);
+                assert_eq!(spec.stick, Stick::Silence, "{at}");
+                assert_eq!(spec.plant, Plant::None, "{at}");
+                // every tone is below the Nyquist frequency of its log, at
+                // any throttle
+                let filtered: &[Wave] = match &spec.filtered {
+                    Filtered::Same => &[],
+                    Filtered::Separate { waves } => waves,
+                };
+                for wave in spec.waves.iter().chain(filtered) {
+                    let top = match wave {
+                        Wave::Tone { hz, .. } => *hz,
+                        Wave::ThrottleTone {
+                            hz_at_zero,
+                            hz_per_percent,
+                            ..
+                        } => hz_at_zero + 100.0 * hz_per_percent,
+                        Wave::Band { to_hz, .. } => *to_hz,
+                        _ => 0.0,
+                    };
+                    assert!(top < p.flight.fs / 2.0, "{at}: {top} Hz");
+                }
+                let s = p.flight.samples(axis);
+                let peak = s
+                    .unfiltered
+                    .iter()
+                    .chain(&s.filtered)
+                    .fold(0.0f64, |m, v| m.max(v.abs()));
+                assert!(peak > 2.0 && peak < 100.0, "{at}: {peak}");
+            }
+        }
+        // the stairs: nine levels for the same time each, between two
+        // stretches at half throttle, and the same flight at every rate
+        let stairs = &probes[0].flight;
+        let throttle = stairs.throttle_samples();
+        assert_eq!(throttle.len(), 60_000);
+        assert_eq!((throttle[0], throttle[2999]), (50.0, 50.0));
+        for k in 1..=9 {
+            let at = 3000 + (k - 1) * 6000;
+            let level = 10.0 * k as f64;
+            assert_eq!((throttle[at], throttle[at + 5999]), (level, level), "{k}");
+        }
+        assert_eq!((throttle[57_000], throttle[59_999]), (50.0, 50.0));
+        for (k, fs) in [(4, 1000.0), (5, 4000.0), (6, 8000.0)] {
+            assert_eq!(probes[k].flight.fs, fs);
+            let same = FlightSpec {
+                fs: 2000.0,
+                ..probes[k].flight.clone()
+            };
+            assert_eq!(&same, stairs, "{}", probes[k].id);
+        }
+        let short = probes[7].flight.throttle_samples();
+        assert_eq!(
+            (short[2999], short[3000], short[4999], short[5000]),
+            (50.0, 10.0, 10.0, 20.0)
+        );
+        // a tone on a stair has the frequency its title promises
+        match &stairs.roll.waves[0] {
+            Wave::ThrottleTone {
+                hz_at_zero,
+                hz_per_percent,
+                amplitude,
+                band: None,
+            } => assert_eq!(
+                (*hz_at_zero, *hz_per_percent, *amplitude),
+                (50.0, 4.0, 10.0)
+            ),
+            other => panic!("{other:?}"),
+        }
+        // the ramp reaches both ends, the hold stays at half
+        let ramp = probes[1].flight.throttle_samples();
+        assert_eq!(ramp[0], 0.0);
+        assert!(ramp[59_999] > 99.99 && ramp[59_999] < 100.0);
+        assert_eq!(
+            probes[2].flight.throttle,
+            Throttle::Constant { percent: 50.0 }
+        );
+        // the fine stairs are tenths of a percent, which a log keeps
+        let fine = probes[3].flight.throttle_samples();
+        let levels: BTreeSet<i64> = fine.iter().map(|t| (t * 10.0).round() as i64).collect();
+        assert_eq!(
+            levels.into_iter().collect::<Vec<_>>(),
+            [300, 302, 304, 306, 308, 600, 603, 605, 607, 610]
+        );
+        assert!(
+            fine.iter()
+                .all(|t| ((t * 10.0).round() - t * 10.0).abs() < 1.0e-9)
+        );
     }
 }

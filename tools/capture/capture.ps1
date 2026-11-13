@@ -461,6 +461,9 @@ $script:clip = [OpCapture]::ClipNumber()
 $script:slow = 1
 $script:failed = 0
 $script:skip = 0
+# a plan with "give_up": after a copy that failed, the steps marked "copy"
+# are passed over until the next picture
+$script:copiesOff = $false
 $script:missing = @{}
 
 function Show-ToolWindows {
@@ -799,6 +802,8 @@ $all = @($plan.steps)
 for ($i = 0; $i -lt $all.Count; $i++) {
     if ($script:skip -gt 0) { $script:skip--; continue }
     $step = $all[$i]
+    if ($step.action -eq "shot") { $script:copiesOff = $false }
+    if ($script:copiesOff -and $step.copy) { continue }
     $index = $i + 1
     try {
         Invoke-Step $step $index
@@ -823,6 +828,10 @@ for ($i = 0; $i -lt $all.Count; $i++) {
         if (-not $done) {
             $script:failed++
             Log ("    FAILED: " + $message)
+            if ($plan.give_up -and ($step.action -eq "clip_save")) {
+                $script:copiesOff = $true
+                Log "    the other copies are passed over until the next picture"
+            }
             if ($message -like "STOP*") { break }
             # a step the rest of the run depends on: no point in going on
             if ($step.must) {

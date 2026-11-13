@@ -377,16 +377,16 @@ fn a_pack_is_written_as_files() {
 
 #[test]
 fn an_unknown_round_is_refused() {
-    let error = pack::build(8, "x").unwrap_err();
-    assert!(matches!(error, PackError::UnknownRound(8)));
+    let error = pack::build(9, "x").unwrap_err();
+    assert!(matches!(error, PackError::UnknownRound(9)));
     assert_eq!(
         error.to_string(),
         format!(
-            "there is no round 8; the rounds are {:?}",
+            "there is no round 9; the rounds are {:?}",
             catalogue::ROUNDS
         )
     );
-    assert_eq!(catalogue::ROUNDS, [1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(catalogue::ROUNDS, [1, 2, 3, 4, 5, 6, 7, 8]);
 }
 
 #[test]

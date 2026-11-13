@@ -32,6 +32,9 @@ ROUNDS:
     7        The numbers version 0.94 of the reference tool reads off a step response
              (rise time, bandwidth, sensitivity peak, phase margin, crossover), asked
              with plants whose answers are known; the manifest carries the answers.
+    8        The map of frequency against throttle, identify: stairs, a ramp and a hold
+             of the throttle with tones and noise of known size, an experiment on each
+             gyro channel of every axis.
 ";
 
 /// Runs the tool with `args` (without the program name), printing to `out`.
