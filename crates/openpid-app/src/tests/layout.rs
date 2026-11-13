@@ -50,6 +50,10 @@ fn panel_rows_put_values_in_one_column_and_explain_on_hover() {
     assert!(ui.sees("too small a step to judge"));
     // the same rows on the Spectrum tab
     ui.tab(Tab::Spectrum);
+    // the curve is one piece and has no segment; the density has
+    assert!(!ui.sees("Segment"));
+    ui.app_mut().tools.psd.method = openpid_analysis::PsdMethod::Density;
+    ui.settle();
     let seg = ui.rect(Role::SpinButton, "Segment");
     let ch = ui.rect(Role::ComboBox, "Channel");
     assert!((ch.right() - seg.right() - crate::panel::UNIT_W).abs() <= 8.0);

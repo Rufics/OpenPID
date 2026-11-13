@@ -58,6 +58,67 @@ fn spectrum_controls_change_what_is_drawn() {
 }
 
 #[test]
+fn spectrum_draws_the_curve_by_default_and_the_density_on_request() {
+    use openpid_analysis::PsdMethod;
+    let mut ui = Ui::open(&[LOG_4_2], Tab::Spectrum);
+    // decision D-001: the reference tool's curve at its default level
+    assert_eq!(ui.app().tools.psd.method, PsdMethod::Curve);
+    assert_eq!(ui.app().tools.psd.smoothing, 2, "medium");
+    // every finished full-range spectrum of the filtered roll gyro: method,
+    // segments, frequency step and how much the curve moves from point to
+    // point
+    let spectra = |ui: &Ui| -> Vec<(PsdMethod, usize, f64, f64)> {
+        let roll = Quantity::Gyro.channel(Axis::Roll);
+        ui.app()
+            .cache
+            .values()
+            .filter_map(|c| match c {
+                crate::app::Cached::Ready(o) => match o.as_ref() {
+                    Output::Psd(p)
+                        if p.channel == roll && p.freq.last().is_some_and(|f| *f > 200.0) =>
+                    {
+                        let rough = p
+                            .power_db
+                            .windows(2)
+                            .map(|w| (w[1] - w[0]).abs())
+                            .sum::<f64>()
+                            / p.power_db.len() as f64;
+                        Some((p.method, p.segments, p.freq[1], rough))
+                    }
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect()
+    };
+    let first = spectra(&ui);
+    assert_eq!(first.len(), 1, "{first:?}");
+    let (method, segments, step, medium) = first[0];
+    assert_eq!((method, segments), (PsdMethod::Curve, 1));
+    // one transform of the whole analysis window: steps far below 1 Hz
+    assert!(step < 0.5, "{step}");
+    // a higher level is a flatter curve
+    ui.app_mut().tools.psd.smoothing = 4;
+    ui.settle();
+    let both = spectra(&ui);
+    assert_eq!(both.len(), 2, "{both:?}");
+    assert!(both.iter().any(|s| s.3 < medium), "{both:?}");
+    ui.app_mut().tools.psd.smoothing = 2;
+
+    // the density: averaged segments, its own smoothing list and a segment
+    assert!(!ui.sees("Segment"));
+    ui.app_mut().tools.psd.method = PsdMethod::Density;
+    ui.settle();
+    let density: Vec<_> = spectra(&ui)
+        .into_iter()
+        .filter(|s| s.0 == PsdMethod::Density)
+        .collect();
+    assert_eq!(density.len(), 1, "{density:?}");
+    assert!(density[0].1 > 1 && density[0].2 >= 1.0, "{density:?}");
+    assert!(ui.sees("Segment"));
+}
+
+#[test]
 fn spectrum_markers_are_placed_by_clicks() {
     at_every_size(|screen| {
         let mut ui = Ui::open_on(&[LOG_4_2], Tab::Spectrum, screen);

@@ -15,7 +15,7 @@ use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{
     GridInput, GridMark, HoverPosition, Line, LineStyle, Plot, PlotPoint, PlotPoints, Text, VLine,
 };
-use openpid_analysis::{PsdOutput, PsdParams};
+use openpid_analysis::{CURVE_LEVELS, PsdMethod, PsdOutput, PsdParams};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, PidTerm};
 use openpid_dsp::Peak;
 use std::sync::Arc;
@@ -33,7 +33,9 @@ const X_LABEL_H: f32 = 18.0;
 /// Share of the width taken by the full-spectrum column.
 const FULL_SHARE: f32 = 0.6;
 
-/// Smoothing levels: the width (Hz) of the moving average over the power.
+/// Smoothing levels of the power density: the width (Hz) of the moving
+/// average over the power. The curve has its own five levels
+/// ([`CURVE_LEVELS`]), which are part of how it is computed.
 pub const SMOOTHING: [(&str, f64); 6] = [
     ("off", 0.0),
     ("low", 2.0),
@@ -236,7 +238,11 @@ pub fn spectrum(app: &mut App, ui: &mut Ui) {
     let display = app.tools.spectrum_display.clone();
     let setup = Setup {
         quantity: Quantity::of(&app.tools.spectrum_channel),
-        width_hz: SMOOTHING[display.smoothing.min(SMOOTHING.len() - 1)].1,
+        // the curve comes smoothed; only the density is smoothed for display
+        width_hz: match app.tools.psd.method {
+            PsdMethod::Curve => 0.0,
+            PsdMethod::Density => SMOOTHING[display.smoothing.min(SMOOTHING.len() - 1)].1,
+        },
         display,
         db: app.tools.psd_db,
         base: app.tools.psd.clone(),
@@ -397,7 +403,7 @@ fn trace(slot: Slot, prefilt: bool, out: Arc<Output>, db: bool, width_hz: f64) -
 
 fn points(p: &PsdOutput, db: bool, width_hz: f64) -> (Vec<f64>, Vec<f64>) {
     let power = smooth_power(&p.freq, &p.power, width_hz);
-    let y = if db {
+    let y: Vec<f64> = if db {
         power
             .iter()
             .map(|v| 10.0 * v.max(f64::MIN_POSITIVE).log10())
@@ -405,7 +411,44 @@ fn points(p: &PsdOutput, db: bool, width_hz: f64) -> (Vec<f64>, Vec<f64>) {
     } else {
         power
     };
-    (p.freq.clone(), y)
+    thin(&p.freq, &y, MAX_DRAWN)
+}
+
+/// Most points a trace is drawn with. The curve of a long log at a high
+/// rate has more than a million; a plot is a thousand pixels wide.
+const MAX_DRAWN: usize = 8192;
+
+/// At most about `max` points of a curve for drawing: the curve is cut into
+/// equal runs and each run gives its lowest and its highest point, in the
+/// order they come, so every peak and every dip stays on screen. A curve
+/// that is short enough comes back as it is.
+pub fn thin(x: &[f64], y: &[f64], max: usize) -> (Vec<f64>, Vec<f64>) {
+    let n = x.len().min(y.len());
+    if n <= max.max(4) {
+        return (x[..n].to_vec(), y[..n].to_vec());
+    }
+    let run = n.div_ceil(max / 2);
+    let mut out = (Vec::with_capacity(max + 2), Vec::with_capacity(max + 2));
+    for start in (0..n).step_by(run) {
+        let end = (start + run).min(n);
+        let (mut lo, mut hi) = (start, start);
+        for i in start..end {
+            if y[i] < y[lo] {
+                lo = i;
+            }
+            if y[i] > y[hi] {
+                hi = i;
+            }
+        }
+        let (first, second) = (lo.min(hi), lo.max(hi));
+        out.0.push(x[first]);
+        out.1.push(y[first]);
+        if second != first {
+            out.0.push(x[second]);
+            out.1.push(y[second]);
+        }
+    }
+    out
 }
 
 /// The power range of every row and column: the panel's fixed ends, else
@@ -457,11 +500,12 @@ fn legend(app: &App, ui: &mut Ui, q: Quantity, d: &SpectrumDisplay, full_w: f32)
         if low_x > used {
             ui.add_space(low_x - used);
         }
-        ui.label(
-            RichText::new(tr("below 100 Hz (1 s segments)"))
-                .size(12.0)
-                .color(crate::colormap::MUTED),
-        );
+        // the density is of one-second segments there; the curve has none
+        let low = match app.tools.psd.method {
+            PsdMethod::Density => tr("below 100 Hz (1 s segments)"),
+            PsdMethod::Curve => tr("below 100 Hz"),
+        };
+        ui.label(RichText::new(low).size(12.0).color(crate::colormap::MUTED));
     });
 }
 
@@ -681,19 +725,57 @@ fn controls(app: &mut App, ui: &mut Ui) {
         tr("Prefilt (dotted)"),
         tr("the unfiltered gyro beside the filtered one; the gyro only"),
     );
-    let smoothing: Vec<(usize, String)> = SMOOTHING
-        .iter()
-        .enumerate()
-        .map(|(i, (name, _))| (i, tr(name).to_string()))
-        .collect();
+    let methods = [
+        (PsdMethod::Curve, tr("smoothed curve").to_string()),
+        (PsdMethod::Density, tr("power density").to_string()),
+    ];
     panel::choice(
         ui,
-        "spectrum-smoothing",
-        tr("Smoothing"),
-        tr("a moving average of the power over 0, 2, 4, 8, 16 or 32 Hz; medium (8 Hz) by default"),
-        &mut d.smoothing,
-        &smoothing,
+        "spectrum-method",
+        tr("Spectrum"),
+        tr(
+            "smoothed curve: one transform of the whole log with its decibels smoothed, as the reference tool draws it; broad noise shows well, a steady tone almost vanishes. power density: averaged segments (Welch); noise reads its true density and a steady tone stands out",
+        ),
+        &mut app.tools.psd.method,
+        &methods,
     );
+    match app.tools.psd.method {
+        PsdMethod::Curve => {
+            let levels: Vec<(usize, String)> = CURVE_LEVELS
+                .iter()
+                .enumerate()
+                .map(|(i, name)| (i, tr(name).to_string()))
+                .collect();
+            app.tools.psd.smoothing = app.tools.psd.smoothing.min(CURVE_LEVELS.len() - 1);
+            panel::choice(
+                ui,
+                "spectrum-smoothing",
+                tr("Smoothing"),
+                tr(
+                    "how wide the smoothing of the curve is, as in the reference tool; medium by default. The same level is a wider band for a shorter log",
+                ),
+                &mut app.tools.psd.smoothing,
+                &levels,
+            );
+        }
+        PsdMethod::Density => {
+            let smoothing: Vec<(usize, String)> = SMOOTHING
+                .iter()
+                .enumerate()
+                .map(|(i, (name, _))| (i, tr(name).to_string()))
+                .collect();
+            panel::choice(
+                ui,
+                "spectrum-smoothing",
+                tr("Smoothing"),
+                tr(
+                    "a moving average of the power over 0, 2, 4, 8, 16 or 32 Hz; medium (8 Hz) by default",
+                ),
+                &mut d.smoothing,
+                &smoothing,
+            );
+        }
+    }
     panel::section(ui, tr("Scale"));
     panel::check(
         ui,
@@ -751,18 +833,21 @@ fn controls(app: &mut App, ui: &mut Ui) {
             .small()
             .color(crate::colormap::MUTED),
     );
-    panel::section(ui, tr("Analysis"));
-    panel::drag(
-        ui,
-        tr("Segment"),
-        tr(
-            "length of each averaged piece of the full spectrum: longer gives finer frequency steps and less averaging",
-        ),
-        &mut app.tools.psd.segment_s,
-        0.01,
-        0.02..=2.0,
-        " s",
-    );
+    // the curve is one piece, the whole log: it has no segment to set
+    if app.tools.psd.method == PsdMethod::Density {
+        panel::section(ui, tr("Analysis"));
+        panel::drag(
+            ui,
+            tr("Segment"),
+            tr(
+                "length of each averaged piece of the full spectrum: longer gives finer frequency steps and less averaging",
+            ),
+            &mut app.tools.psd.segment_s,
+            0.01,
+            0.02..=2.0,
+            " s",
+        );
+    }
 }
 
 /// The marker list (with the delta of the last two) and each log's top peak
@@ -808,6 +893,25 @@ fn readout(markers: &[f64], peaks: &[(Slot, Axis, Vec<Peak>)]) -> Vec<String> {
 #[cfg(test)]
 mod unit {
     use super::*;
+
+    #[test]
+    fn a_long_curve_is_thinned_to_its_lows_and_highs() {
+        let x: Vec<f64> = (0..100_000).map(f64::from).collect();
+        let mut y: Vec<f64> = x.iter().map(|v| (v / 500.0).sin()).collect();
+        y[40_123] = 9.0;
+        y[77_777] = -9.0;
+        let (tx, ty) = thin(&x, &y, 8192);
+        assert!(tx.len() <= 8192 + 2 && tx.len() > 4000, "{}", tx.len());
+        // in order, and the single spike and the single dip are kept
+        assert!(tx.windows(2).all(|w| w[0] < w[1]));
+        let at = |v: f64| tx.iter().position(|t| *t == v).map(|i| ty[i]);
+        assert_eq!(at(40_123.0), Some(9.0));
+        assert_eq!(at(77_777.0), Some(-9.0));
+        // a short curve is not touched
+        let (sx, sy) = thin(&x[..5000], &y[..5000], 8192);
+        assert_eq!((sx.len(), sy.len()), (5000, 5000));
+        assert_eq!(thin(&[], &[], 8192), (vec![], vec![]));
+    }
 
     #[test]
     fn smoothing_averages_over_the_width() {
