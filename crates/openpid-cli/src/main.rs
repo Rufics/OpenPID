@@ -16,6 +16,7 @@ USAGE:
     openpid decode <file> [--session N] [--out <path>] [--scaled]
     openpid run <analysis> [<file>] [--project <p.openpid.json>] [--session N] [--epoch A..B]
                 [--axis roll|pitch|yaw] [--channel KEY] [--out <path>] [--png <path>]
+                [--method curve|density] [--smoothing LEVEL]
     openpid sliders <file> [--session N] [--set KEY=VALUE,...] [--json]
     openpid diff <fileA> <fileB> [--session N] [--session-b M] [--json] [--cli]
     openpid gen [<spec.json>] [--out synthetic.csv] | gen --example
@@ -29,7 +30,9 @@ COMMANDS:
 
     run      Run an analysis and print its result as JSON. Analyses:
              step            step response (needs --axis, default roll)
-             psd             Welch power spectral density of --channel
+             psd             spectrum of --channel: the smoothed curve of the whole log
+                             (--method curve, the default) or Welch's power spectral
+                             density (--method density)
              thr-heatmap     frequency x throttle heatmap of --channel
              stft            frequency x time heatmap of --channel
              motor-noise     per-motor harmonic amplitudes on the gyro (needs gyro.raw.<axis>;
@@ -74,6 +77,10 @@ OPTIONS:
                   take-off and landing (throttle / motor rpm), `active` takes
                   the most active 20 s (stick input)
     --axis AXIS   roll, pitch or yaw
+    --method M    psd: `curve` is one transform of the whole analysis window with its
+                  decibels smoothed, as the reference tool draws it; `density` is
+                  Welch's averaged power density
+    --smoothing L psd, curve: low, low-med, medium (default), med-high or high
     --json        Machine-readable output
     --session-b M diff: session index in the second file (default: --session)
     --cli         diff / run recommend: the firmware's commands instead of the table / JSON
@@ -95,6 +102,8 @@ struct Args {
     epoch_mode: Option<String>,
     set: Vec<(String, f64)>,
     axis: Option<String>,
+    method: Option<String>,
+    smoothing: Option<String>,
     channel: Option<String>,
     session: Option<usize>,
     json: bool,
@@ -156,6 +165,10 @@ fn parse_args() -> Result<Args, String> {
                 args.epoch = Some((a, b));
             }
             "--axis" => args.axis = Some(it.next().ok_or("--axis needs a value")?),
+            "--method" => args.method = Some(it.next().ok_or("--method needs a value")?),
+            "--smoothing" => {
+                args.smoothing = Some(it.next().ok_or("--smoothing needs a level")?);
+            }
             "--set" => {
                 let v = it.next().ok_or("--set needs KEY=VALUE[,KEY=VALUE]")?;
                 for pair in v.split(',').filter(|p| !p.trim().is_empty()) {
@@ -565,8 +578,30 @@ fn cmd_run(args: &Args) -> Result<(), String> {
             serde_json::to_string_pretty(&v)
         }
         "psd" => {
+            let method = match args.method.as_deref() {
+                None => base.psd.method,
+                Some("curve") => openpid_analysis::PsdMethod::Curve,
+                Some("density") => openpid_analysis::PsdMethod::Density,
+                Some(other) => {
+                    return Err(format!("unknown method {other}: curve or density"));
+                }
+            };
+            let smoothing = match args.smoothing.as_deref() {
+                None => base.psd.smoothing,
+                Some(name) => openpid_analysis::CURVE_LEVELS
+                    .iter()
+                    .position(|level| *level == name)
+                    .ok_or_else(|| {
+                        format!(
+                            "unknown smoothing level {name}: {}",
+                            openpid_analysis::CURVE_LEVELS.join(", ")
+                        )
+                    })?,
+            };
             let p = openpid_analysis::PsdParams {
                 channel,
+                method,
+                smoothing,
                 ..base.psd
             };
             serde_json::to_string_pretty(

@@ -167,6 +167,43 @@ fn run_analyses() {
     let (ok, _, _) = run(&["run", "psd", f, "--out", tmp.to_str().unwrap()]);
     assert!(ok && std::fs::metadata(&tmp).unwrap().len() > 100);
     std::fs::remove_file(&tmp).ok();
+    // the spectrum: the smoothed curve of the whole log unless the density
+    // is asked for (decision D-001)
+    let psd = |extra: &[&str]| {
+        let mut args = vec!["run", "psd", f];
+        args.extend_from_slice(extra);
+        let (ok, out, err) = run(&args);
+        assert!(ok, "{args:?}: {err}");
+        serde_json::from_str::<serde_json::Value>(&out).expect("json")
+    };
+    let curve = psd(&[]);
+    assert_eq!(curve["method"], "curve");
+    assert_eq!(curve["segments"], 1);
+    let density = psd(&["--method", "density"]);
+    assert_eq!(density["method"], "density");
+    assert!(density["segments"].as_u64().unwrap() > 1);
+    assert!(
+        curve["freq"].as_array().unwrap().len() > density["freq"].as_array().unwrap().len(),
+        "one transform of the whole log has more points than a segment"
+    );
+    let moves = |v: &serde_json::Value| {
+        let db: Vec<f64> = v["power_db"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d.as_f64().unwrap())
+            .collect();
+        db.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<f64>() / db.len() as f64
+    };
+    assert!(moves(&psd(&["--smoothing", "high"])) < moves(&curve));
+    assert!(moves(&psd(&["--smoothing", "low"])) > moves(&curve));
+    let (ok, _, err) = run(&["run", "psd", f, "--method", "welch"]);
+    assert!(!ok && err.contains("unknown method welch"), "{err}");
+    let (ok, _, err) = run(&["run", "psd", f, "--smoothing", "none"]);
+    assert!(
+        !ok && err.contains("low, low-med, medium, med-high, high"),
+        "{err}"
+    );
     let (ok, _, err) = run(&["run", "nope", f]);
     assert!(!ok && err.contains("unknown analysis"));
     let (ok, _, err) = run(&["run", "step", f, "--axis", "diagonal"]);

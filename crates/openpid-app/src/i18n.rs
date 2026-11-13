@@ -478,6 +478,7 @@ static UA: &[(&str, &str)] = &[
         "back to the filters the log flew with",
         "повернутися до фільтрів, з якими літав лог",
     ),
+    ("below 100 Hz", "нижче 100 Гц"),
     ("below 100 Hz (1 s segments)", "нижче 100 Гц (сегменти 1 с)"),
     ("changes proposed", "змін запропоновано"),
     ("channel", "канал"),
@@ -594,6 +595,10 @@ static UA: &[(&str, &str)] = &[
     (
         "how the craft was set up, in plain words: firmware, rates, PID gains, filters, motors",
         "як налаштовано апарат, простими словами: прошивка, частоти, PID, фільтри, мотори",
+    ),
+    (
+        "how wide the smoothing of the curve is, as in the reference tool; medium by default. The same level is a wider band for a shorter log",
+        "наскільки широке згладжування кривої, як в еталонному інструменті; за замовчуванням середнє. Той самий рівень — ширша смуга для коротшого логу",
     ),
     ("judged", "оцінено"),
     (
@@ -746,6 +751,7 @@ static UA: &[(&str, &str)] = &[
         "position in % (100 = the gains as flown)",
         "позиція у % (100 = коефіцієнти як у польоті)",
     ),
+    ("power density", "щільність потужності"),
     (
         "power in decibels (10·log10) instead of unit²/Hz",
         "потужність у децибелах (10·log10) замість одиниця²/Гц",
@@ -780,6 +786,11 @@ static UA: &[(&str, &str)] = &[
     ("sim as flown", "sim як у польоті"),
     ("sim as flown (dashed)", "sim як у польоті (пунктир)"),
     ("smooth", "згладжування"),
+    ("smoothed curve", "згладжена крива"),
+    (
+        "smoothed curve: one transform of the whole log with its decibels smoothed, as the reference tool draws it; broad noise shows well, a steady tone almost vanishes. power density: averaged segments (Welch); noise reads its true density and a steady tone stands out",
+        "згладжена крива: одне перетворення всього логу зі згладженими децибелами, як малює еталонний інструмент; широкий шум видно добре, сталий тон майже зникає. щільність потужності: усереднені сегменти (Велч); шум читається за справжньою щільністю, сталий тон виразний",
+    ),
     ("smoothing", "згладжування"),
     ("solo", "лише цей"),
     (

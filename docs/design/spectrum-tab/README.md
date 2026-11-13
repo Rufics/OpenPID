@@ -54,9 +54,19 @@ off by default) for the full-spectrum column.
   error, Setpoint, mapped to a channel per axis; only the gyro has a prefilt
   counterpart (`gyro.raw`). Projects keep `spectrum_channel` (the roll channel
   of the quantity); `psd.channel` follows the selected axis for the JSON export.
-- **Smoothing** off / low / low-med / medium / med-high / high: a moving
-  average of the linear power over 0 / 2 / 4 / 8 / 16 / 32 Hz
-  (`smooth_power`, which keeps the total power), default medium.
+- **Spectrum** (added with decision D-001, issue #171): **smoothed curve** (default) or **power density**, one list in
+  the Data section under Prefilt. The curve is `PsdMethod::Curve`, the
+  reference tool's curve; the density is the Welch estimate this tab was
+  designed around. The choice is an analysis parameter (`psd.method`), kept
+  by projects; a project saved before it opens as the density it was saved
+  with.
+- **Smoothing**: for the curve its five levels low / low-med / medium /
+  med-high / high (`psd.smoothing`, part of the analysis: the curve comes
+  smoothed and is not smoothed again for display). For the density off / low
+  / low-med / medium / med-high / high: a moving average of the linear power
+  over 0 / 2 / 4 / 8 / 16 / 32 Hz (`smooth_power`, which keeps the total
+  power), default medium. The list is the same control in both cases.
+- **Segment** is shown for the density only: the curve is one piece.
 - **Power axis**: dB (default) or linear; automatic from the drawn data above
   2 Hz, padded 3 dB and rounded to 10 dB, unless the panel fixes Y min / Y max.
 - **Peaks**: per solid full-range trace, the N most prominent from 20 Hz up
@@ -75,6 +85,11 @@ off by default) for the full-spectrum column.
   the top peaks without repeats.
 
 ## Tests
+
+`spectrum_draws_the_curve_by_default_and_the_density_on_request`: the curve
+at "medium" with one segment and steps far below 1 Hz; a higher level is a
+flatter curve; the density has segments and a Segment field, the curve has
+none.
 
 `spectrum_and_heatmap_controls_change_parameters`: 12 PSD jobs for one log
 (3 axes × gyro / prefilt × full / low); the legend; dB; prefilt off; D-term
