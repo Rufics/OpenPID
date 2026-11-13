@@ -10,6 +10,8 @@
 //! - [`headers`] / [`predictor`] / [`parser`]: frames into validated integer rows;
 //! - [`session`]: rows into the canonical [`openpid_core::FlightSession`] via a
 //!   firmware [`profiles`] profile;
+//! - [`releases`]: what each Betaflight release line logs and how it is
+//!   read, chosen from the firmware revision of a log;
 //! - [`BlackboxFormat`]: the [`openpid_core::LogFormat`] entry point.
 
 pub mod cli;
@@ -19,6 +21,7 @@ pub mod parser;
 pub mod predictor;
 pub mod profiles;
 pub mod reader;
+pub mod releases;
 pub mod session;
 
 pub use cli::BetaflightCli;

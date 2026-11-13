@@ -197,3 +197,173 @@ fn debug_gyro_scaled_becomes_gyro_raw() {
         }
     }
 }
+
+/// The first session with data of a fixture.
+fn first_session(name: &str) -> openpid_core::FlightSession {
+    let data = std::fs::read(common::logs_dir().join(name)).unwrap();
+    BlackboxFormat::new()
+        .open(&data, &OpenOptions::default())
+        .unwrap()
+        .sessions
+        .into_iter()
+        .find(|s| !s.is_empty())
+        .unwrap()
+}
+
+/// Every Betaflight fixture is read with the description of its release
+/// line, and its own headers bear out what that description says about the
+/// line.
+#[test]
+fn each_fixture_is_read_with_the_description_of_its_release_line() {
+    use openpid_fmt_blackbox::releases;
+    for (name, line) in [
+        ("betaflight-4.2.0.BFL", "4.2"),
+        ("betaflight-4.2.8-44-logs.bbl", "4.2"),
+        ("betaflight-4.2.11-error-recovery.bbl", "4.2"),
+        ("betaflight-4.2.11-two-logs.bbl", "4.2"),
+        ("betaflight-4.5.0-gps-rescue.bbl", "4.5"),
+        ("betaflight-4.5.1-two-sessions.bbl", "4.5"),
+        ("betaflight-2025.12.2-btfl_027.bbl", "2025.12"),
+    ] {
+        let s = first_session(name);
+        let selection = releases::select(&s.firmware);
+        let release = selection.release;
+        assert_eq!(release.name, line, "{name}");
+        assert_eq!(selection.note, None, "{name}: a released line");
+        assert!(
+            !s.diagnostics.notes.iter().any(|n| n.contains("read as")),
+            "{name}: {:?}",
+            s.diagnostics.notes
+        );
+        let has = |header: &str| s.header(header).is_some();
+        // the names of the filter settings: 4.3 renamed them
+        assert_eq!(has("gyro_lpf1_static_hz"), release.lpf1_names, "{name}");
+        assert_eq!(has("gyro_lowpass_hz"), !release.lpf1_names, "{name}");
+        // the headers of 4.3, 4.4 and 4.5 are not in a 4.2 log
+        assert_eq!(has("dyn_notch_count"), release.since >= (4, 3), "{name}");
+        assert_eq!(
+            has("blackbox_high_resolution"),
+            release.high_resolution,
+            "{name}"
+        );
+        assert_eq!(has("gps_use_3d_speed"), release.since >= (4, 4), "{name}");
+        assert_eq!(has("gyro_lpf1_dyn_expo"), release.since >= (4, 5), "{name}");
+        // D-min up to 4.5, D-max from 2025.12
+        assert_eq!(has("d_max"), release.d_max_scheme, "{name}");
+        assert_eq!(has("d_min"), !release.d_max_scheme, "{name}");
+        // the battery in centivolts: the voltage at arming is that of a pack
+        // of whole cells between 3.3 V and 4.3 V each (`vbatcellvoltage`)
+        let volts = s.header("vbatref").unwrap().parse::<f64>().unwrap() * release.vbat_volts;
+        assert!(
+            (1..=8).any(|cells| (3.3..=4.3).contains(&(volts / f64::from(cells)))),
+            "{name}: {volts} V"
+        );
+        let battery = s
+            .channel(&ChannelId::Battery(openpid_core::BatteryField::Voltage))
+            .unwrap();
+        let mean = battery.data.values().iter().sum::<f64>() / battery.data.len() as f64;
+        assert!((mean - volts).abs() < 0.25 * volts, "{name}: {mean} V");
+        // the mode boxes are the line's
+        assert_eq!(&release.mode_boxes[..4], ["ARM", "ANGLE", "HORIZON", "MAG"]);
+    }
+}
+
+/// A log of a Betaflight newer than every release line the reader knows is
+/// read with the newest description, and its session says so.
+#[test]
+fn a_newer_betaflight_is_read_as_the_newest_known_line_and_says_so() {
+    let name = "betaflight-2025.12.2-btfl_027.bbl";
+    let known = first_session(name);
+    let data = std::fs::read(common::logs_dir().join(name)).unwrap();
+    let old = b"H Firmware revision:Betaflight 2025.12.2 ";
+    let at = data.windows(old.len()).position(|w| w == old).unwrap();
+    let reopen = |revision: &[u8]| {
+        let mut newer = data[..at].to_vec();
+        newer.extend_from_slice(revision);
+        newer.extend_from_slice(&data[at + old.len()..]);
+        BlackboxFormat::new()
+            .open(&newer, &OpenOptions::default())
+            .unwrap()
+            .sessions
+            .remove(0)
+    };
+    let s = reopen(b"H Firmware revision:Betaflight 2027.6.0 ");
+    assert_eq!(s.firmware.version, Some(FirmwareVersion::new(2027, 6, 0)));
+    assert_eq!(s.profile_id, "betaflight");
+    assert_eq!(s.len(), known.len(), "the log is read all the same");
+    let notes = &s.diagnostics.notes;
+    assert!(
+        notes.iter().any(|n| n.contains(
+            "Betaflight 2027.6.0 is newer than the release lines this reader knows (up to \
+             2026.12): it is read as 2026.12"
+        )),
+        "{notes:?}"
+    );
+    let gyro = ChannelId::Gyro {
+        axis: Axis::Roll,
+        stage: GyroStage::Filtered,
+    };
+    assert_eq!(s.channel(&gyro), known.channel(&gyro));
+    // read as the newest line: the fifth mode box of 2026.6 on (bit 11) is
+    // AUTOPILOT, and the sticks are fractions without a header that says
+    // otherwise
+    let rc = ChannelId::RcCommand { ch: 0 };
+    let (new, old) = (s.channel(&rc).unwrap(), known.channel(&rc).unwrap());
+    assert!(
+        new.data
+            .values()
+            .iter()
+            .zip(old.data.values())
+            .all(|(n, o)| (n - o / 2.0).abs() < 1e-9)
+    );
+    // a line described from the development branch only says that
+    let s = reopen(b"H Firmware revision:Betaflight 2026.12.0 ");
+    assert!(
+        s.diagnostics
+            .notes
+            .iter()
+            .any(|n| n.contains("described from the development branch")),
+        "{:?}",
+        s.diagnostics.notes
+    );
+    // and a released line has nothing to say
+    assert!(
+        !known
+            .diagnostics
+            .notes
+            .iter()
+            .any(|n| n.contains("read as"))
+    );
+}
+
+/// `docs/BLACKBOX-VERSIONS.md` is the readable form of the release
+/// descriptions: it has a row for every line, and says where each was read.
+#[test]
+fn docs_name_every_release_line() {
+    use openpid_fmt_blackbox::releases::LINES;
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/BLACKBOX-VERSIONS.md");
+    let doc = std::fs::read_to_string(path).unwrap();
+    let table = doc.split("## The release lines").nth(1).unwrap();
+    let table = table.split("\n## ").next().unwrap();
+    let rows: Vec<&str> = table.lines().filter(|l| l.starts_with("| ")).collect();
+    for line in &LINES {
+        let row = rows
+            .iter()
+            .find(|r| r.starts_with(&format!("| {} |", line.name)))
+            .unwrap_or_else(|| panic!("no row for the {} line", line.name));
+        let source = row.split('|').nth(2).unwrap();
+        assert!(
+            source.contains("tag") || source.contains("master") || source.contains("previous"),
+            "{}: the row says where it was read: {source}",
+            line.name
+        );
+        assert_eq!(
+            source.contains("not released") || source.contains("working name"),
+            line.provisional,
+            "{}",
+            line.name
+        );
+    }
+    assert_eq!(rows.len(), LINES.len() + 1, "the header and a row per line");
+}

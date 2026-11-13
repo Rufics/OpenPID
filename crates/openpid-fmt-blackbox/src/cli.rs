@@ -7,6 +7,7 @@
 //! the filter settings (`gyro_lowpass_hz` → `gyro_lpf1_static_hz`), which the
 //! headers reveal. A path that is already a setting name passes through.
 
+use crate::releases::Release;
 use openpid_core::{ExportError, Exporter, FirmwareInfo, HeaderDiff, Proposal, RawHeaders};
 use std::fmt::Write as _;
 
@@ -148,7 +149,7 @@ impl BetaflightCli {
     /// which the version tells, or the headers when the version is unknown.
     pub fn for_log(firmware: &FirmwareInfo, headers: &RawHeaders) -> Self {
         let new_names = if firmware.version.is_some() {
-            firmware.is_at_least(4, 3)
+            Release::of_number(firmware.version).lpf1_names
         } else {
             headers
                 .0

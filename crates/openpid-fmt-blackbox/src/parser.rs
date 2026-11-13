@@ -2,6 +2,42 @@
 //! the reference decoders: a frame is accepted only when it decodes without
 //! error, is not absurdly long, is immediately followed by another frame
 //! letter (or EOF), and its iteration/time counters move forward sanely.
+//!
+//! # Going on after a gap
+//!
+//! "Sanely" means within [`MAX_ITERATION_JUMP`] iterations and
+//! [`MAX_TIME_JUMP_US`] of the last accepted main frame: bytes that are not
+//! frames decode to arbitrary counters, and that window is what keeps them
+//! out. A log can also really jump further than that with no "logging
+//! resume" event to announce it: the firmware drops frames while the storage
+//! is busy, and its counters run on. Every frame after such a gap is outside
+//! the window of the last frame before it, for ever. So an intra frame
+//! outside the window is not thrown away at once: it becomes the new
+//! reference when there is evidence that it is the same log going on
+//! (`Parser::anchor_time`, `Parser::corroborated`):
+//!
+//! 1. its iteration is one the firmware writes an intra frame on (a multiple
+//!    of `I interval`) and lies after the last accepted one;
+//! 2. iteration and time moved together across the gap, at the rate of the
+//!    log so far (within [`RATE_TOLERANCE`]), which is what one flight
+//!    controller's two counters do and what the remains of another log on
+//!    the same card do not;
+//! 3. the frames that follow it read on without one corrupt frame, rejected
+//!    frame or stray byte up to the next intra frame (or the "end of log"
+//!    marker), and that frame agrees with it in iteration and time at the
+//!    same rate.
+//!
+//! The same rules find the log again after a hole in the storage: more
+//! than [`GIVE_UP_BYTES`] that are no frames (unwritten or overwritten
+//! blocks). The parser used to take everything after such a stretch as not
+//! being the log; it now looks on for an intra frame that passes the three
+//! rules, wherever its counters lie, and only when there is none are the
+//! remaining bytes trailing ones.
+//!
+//! Where the log so far has no rate (it has only intra frames, or the gap is
+//! at its start) the rate inside the frames after the gap stands in for it
+//! in rule 2. Junk has to pass every one of these at once to be read as a
+//! frame, and nothing that passed before is rejected now.
 
 use crate::encoding::{self as enc, DecodeError};
 use crate::headers::{FrameDef, Headers};
@@ -13,12 +49,22 @@ use std::collections::BTreeMap;
 
 /// Longest frame body (without the letter) the firmware can write.
 pub const MAX_FRAME_LEN: usize = 256;
-/// Bytes without a single accepted frame after which the rest of the file is
-/// treated as not being blackbox data at all (stale sectors on the card, another
-/// file's remains) instead of one failed frame attempt per byte.
+/// Bytes without a single accepted main frame after which the parser stops
+/// making one frame attempt per byte: what follows is a hole in the storage
+/// that the log goes on after, or not blackbox data at all (stale sectors on
+/// the card, another file's remains). It looks for the frame the log goes on
+/// with and takes the rest of the file as trailing bytes when there is none.
 pub const GIVE_UP_BYTES: usize = 16 * 1024;
-const MAX_ITERATION_JUMP: u32 = 500 * 10;
-const MAX_TIME_JUMP_US: i64 = 10 * 1_000_000;
+/// Most loop iterations between two main frames of an unbroken stream.
+pub const MAX_ITERATION_JUMP: u32 = 500 * 10;
+/// Most time between two main frames of an unbroken stream.
+pub const MAX_TIME_JUMP_US: i64 = 10 * 1_000_000;
+/// How far two measurements of the microseconds per loop iteration of one
+/// log may be apart, as a ratio either way, to count as the same rate: the
+/// rate across a gap against the rate before it and after it. The loop of a
+/// flight controller runs off a crystal, so the real spread is a few
+/// percent; the allowance is for the rate being learnt from single frames.
+pub const RATE_TOLERANCE: f64 = 1.25;
 
 const EVENT_SYNC_BEEP: u8 = 0;
 const EVENT_INFLIGHT_ADJUSTMENT: u8 = 13;
@@ -135,6 +181,24 @@ pub struct ParseStats {
     /// Bytes left unread once the parser gave up (see [`GIVE_UP_BYTES`]);
     /// not included in `skipped_bytes`.
     pub trailing_bytes: u64,
+    /// Places where the log went on after a gap that no "logging resume"
+    /// event announced, in log order.
+    pub resumed_gaps: Vec<StreamGap>,
+}
+
+/// A gap in the main frames the parser read across (see the module
+/// documentation): what lies between the last frame before it and the intra
+/// frame after it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamGap {
+    /// Loop iterations between the two frames.
+    pub iterations: u32,
+    /// Time between the two frames, microseconds.
+    pub time_us: i64,
+    /// Bytes between the two frames that are no frames, when the parser
+    /// had given up on them (more than [`GIVE_UP_BYTES`]: a hole in the
+    /// storage); 0 when the frames lie next to each other.
+    pub hole_bytes: u64,
 }
 
 impl ParseStats {
@@ -176,8 +240,18 @@ enum Accepted {
     Event(EventData),
 }
 
+/// What one attempt to read a frame came to.
+enum Step {
+    /// A frame was accepted.
+    Frame(Accepted),
+    /// A stray byte, a corrupt frame or a frame that failed validation.
+    Rejected,
+    /// Nothing more to read.
+    End,
+}
+
 /// Streaming parser over the frame data of one log.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Parser<'a> {
     reader: Reader<'a>,
     headers: &'a Headers,
@@ -203,7 +277,6 @@ pub struct Parser<'a> {
     /// Observed microseconds per loop iteration, learnt from accepted frames;
     /// used to reject junk that happens to parse as an intra frame after a sync loss.
     us_per_iteration: Option<f64>,
-    rollover_us: i64,
     last_skipped: u32,
 
     slow_buf: Vec<i64>,
@@ -217,6 +290,9 @@ pub struct Parser<'a> {
     done: bool,
     /// Reader position just after the last accepted frame.
     last_accept_pos: usize,
+    /// This parser is a copy reading ahead to corroborate a new reference
+    /// frame: it takes no new reference itself.
+    probing: bool,
 }
 
 fn is_frame_letter(b: u8) -> bool {
@@ -276,7 +352,6 @@ impl<'a> Parser<'a> {
             last_iteration: None,
             last_time: None,
             us_per_iteration: None,
-            rollover_us: 0,
             last_skipped: 0,
             slow_buf: vec![0; headers.def(b'S').map_or(0, FrameDef::len)],
             gps_buf: vec![0; gps_def.map_or(0, FrameDef::len)],
@@ -285,7 +360,8 @@ impl<'a> Parser<'a> {
             home_valid: false,
             stats,
             done: false,
-            last_accept_pos: 0,
+            last_accept_pos: headers.data_start,
+            probing: false,
         }
     }
 
@@ -302,53 +378,10 @@ impl<'a> Parser<'a> {
     /// Next accepted frame, or `None` at the end of the log.
     pub fn next_frame(&mut self) -> Option<Frame<'_>> {
         let accepted = loop {
-            if self.done {
-                return None;
-            }
-            let start = self.reader.pos();
-            if start - self.last_accept_pos > GIVE_UP_BYTES {
-                // nothing decodable for a long stretch: the log ended here
-                self.stats.trailing_bytes = (self.reader.len() - start) as u64;
-                self.done = true;
-                return None;
-            }
-            let letter = self.reader.read_u8()?;
-            if !is_frame_letter(letter) {
-                self.stats.skipped_bytes += 1;
-                self.stream_valid = false;
-                continue;
-            }
-            let body = self.parse_body(letter);
-            self.reader.align();
-            let size = self.reader.pos() - start - 1;
-            // "End of log" terminates the stream: nothing after it has to look like a frame.
-            let is_log_end = matches!(body, Ok(Body::Event(Some(EventData::LogEnd))));
-            let next_ok = is_log_end || self.reader.peek_u8().is_none_or(is_frame_letter);
-            let complete = body.is_ok() && size <= MAX_FRAME_LEN && next_ok;
-            if !complete {
-                let st = self.stats.frame(letter);
-                st.corrupt += 1;
-                self.stream_valid = false;
-                self.prev = None;
-                self.prev2 = None;
-                self.reader.set_pos(start + 1);
-                continue;
-            }
-            let body = body.unwrap_or(Body::Event(None));
-            match self.complete(letter, body) {
-                Some(acc) => {
-                    let st = self.stats.frame(letter);
-                    st.valid += 1;
-                    st.bytes += size as u64 + 1;
-                    // only time-validated main frames prove the stream is still alive
-                    if matches!(acc, Accepted::Main { .. }) {
-                        self.last_accept_pos = self.reader.pos();
-                    }
-                    break acc;
-                }
-                None => {
-                    self.stats.frame(letter).desync += 1;
-                }
+            match self.step() {
+                Step::Frame(acc) => break acc,
+                Step::Rejected => {}
+                Step::End => return None,
             }
         };
         Some(match accepted {
@@ -371,6 +404,106 @@ impl<'a> Parser<'a> {
             Accepted::GpsHome => Frame::GpsHome(&self.home_published),
             Accepted::Event(e) => Frame::Event(e),
         })
+    }
+
+    /// One attempt to read a frame at the reader's position.
+    fn step(&mut self) -> Step {
+        if self.done {
+            return Step::End;
+        }
+        let start = self.reader.pos();
+        if start - self.last_accept_pos > GIVE_UP_BYTES {
+            // nothing decodable for a long stretch: the log goes on after a
+            // hole, or it ended here
+            return self.search_past_hole(start);
+        }
+        let Some(letter) = self.reader.read_u8() else {
+            return Step::End;
+        };
+        if !is_frame_letter(letter) {
+            self.stats.skipped_bytes += 1;
+            self.stream_valid = false;
+            return Step::Rejected;
+        }
+        let body = self.parse_body(letter);
+        self.reader.align();
+        let size = self.reader.pos() - start - 1;
+        // "End of log" terminates the stream: nothing after it has to look like a frame.
+        let is_log_end = matches!(body, Ok(Body::Event(Some(EventData::LogEnd))));
+        let next_ok = is_log_end || self.reader.peek_u8().is_none_or(is_frame_letter);
+        let complete = body.is_ok() && size <= MAX_FRAME_LEN && next_ok;
+        if !complete {
+            let st = self.stats.frame(letter);
+            st.corrupt += 1;
+            self.stream_valid = false;
+            self.prev = None;
+            self.prev2 = None;
+            self.reader.set_pos(start + 1);
+            return Step::Rejected;
+        }
+        let body = body.unwrap_or(Body::Event(None));
+        let Some(acc) = self.complete(letter, body) else {
+            self.stats.frame(letter).desync += 1;
+            return Step::Rejected;
+        };
+        let st = self.stats.frame(letter);
+        st.valid += 1;
+        st.bytes += size as u64 + 1;
+        // only time-validated main frames prove the stream is still alive
+        if matches!(acc, Accepted::Main { .. }) {
+            self.last_accept_pos = self.reader.pos();
+        }
+        Step::Frame(acc)
+    }
+
+    /// The log from `from` on, after [`GIVE_UP_BYTES`] without a main
+    /// frame: no longer one attempt per byte and per frame kind, but a
+    /// search for the intra frame the log goes on with, which has to pass
+    /// the rules of going on after a gap (see the module documentation)
+    /// wherever its counters lie. When there is none, the rest of the file
+    /// is not this log.
+    fn search_past_hole(&mut self, from: usize) -> Step {
+        let data = self.reader.data();
+        let mut at = from;
+        while !self.probing
+            && let Some(offset) = data[at..].iter().position(|b| *b == b'I')
+        {
+            let start = at + offset;
+            if let Some(acc) = self.intra_past_hole(start) {
+                self.stats.skipped_bytes += (start - from) as u64;
+                if let Some(gap) = self.stats.resumed_gaps.last_mut() {
+                    gap.hole_bytes = (start - self.last_accept_pos) as u64;
+                }
+                self.last_accept_pos = self.reader.pos();
+                return Step::Frame(acc);
+            }
+            at = start + 1;
+        }
+        self.stats.trailing_bytes = (data.len() - from) as u64;
+        self.done = true;
+        Step::End
+    }
+
+    /// The intra frame at `start`, when it is one and the log goes on with
+    /// it; it is the reference then.
+    fn intra_past_hole(&mut self, start: usize) -> Option<Accepted> {
+        self.reader.set_pos(start + 1);
+        self.parse_main(MainKind::Intra).ok()?;
+        self.reader.align();
+        let size = self.reader.pos() - start - 1;
+        if size > MAX_FRAME_LEN || !self.reader.peek_u8().is_none_or(is_frame_letter) {
+            return None;
+        }
+        let iteration = self.hist[self.cur][self.iter_idx] as u32;
+        let t32 = self.hist[self.cur][self.time_idx] as u32;
+        let t = self.anchor_time(iteration, t32)?;
+        if !self.corroborated(iteration, t) {
+            return None;
+        }
+        let st = self.stats.frame(b'I');
+        st.valid += 1;
+        st.bytes += size as u64 + 1;
+        Some(self.take_anchor(iteration, t))
     }
 
     fn parse_body(&mut self, letter: u8) -> Result<Body, DecodeError> {
@@ -501,7 +634,11 @@ impl<'a> Parser<'a> {
         let code = r.read_u8().ok_or(DecodeError::Eof)?;
         Ok(match code {
             EVENT_SYNC_BEEP => {
-                let t = i64::from(enc::read_uvb(r)?) + self.rollover_us;
+                let t32 = enc::read_uvb(r)?;
+                // the beep sounds within the frames around it
+                let t = self
+                    .last_time
+                    .map_or(i64::from(t32), |last| unwrap_near(last, t32));
                 Some(EventData::SyncBeep { time_us: t })
             }
             EVENT_INFLIGHT_ADJUSTMENT => {
@@ -523,10 +660,10 @@ impl<'a> Parser<'a> {
             }
             EVENT_LOGGING_RESUME => {
                 let iteration = enc::read_uvb(r)?;
-                let t = i64::from(enc::read_uvb(r)?) + self.rollover_us;
+                let t32 = enc::read_uvb(r)?;
                 Some(EventData::LoggingResume {
                     iteration,
-                    time_us: t,
+                    time_us: self.resume_time(iteration, t32),
                 })
             }
             EVENT_DISARM => Some(EventData::Disarm {
@@ -625,16 +762,46 @@ impl<'a> Parser<'a> {
         n
     }
 
-    /// 32-bit microsecond counter rollover recovery.
-    fn apply_rollover(&mut self, t: i64) -> i64 {
-        if let Some(last) = self.last_time {
-            let t32 = t as u32;
-            let last32 = last as u32;
-            if t32 < last32 && i64::from(t32.wrapping_sub(last32)) < MAX_TIME_JUMP_US {
-                self.rollover_us += 1i64 << 32;
-            }
+    /// The time of a main frame from the 32-bit microsecond counter it
+    /// logs. The counter wraps every 71.6 minutes; the time goes on from
+    /// the last accepted main frame (or "logging resume" event): a value
+    /// below that one's, but less than [`MAX_TIME_JUMP_US`] on from it
+    /// through the wrap, is in the next round of the counter.
+    ///
+    /// Nothing is kept besides the time of the last accepted frame: a frame
+    /// that is rejected, and a GPS frame or an event with a time of its
+    /// own, leave the times of the main frames after them alone.
+    fn main_time(&self, t32: u32) -> i64 {
+        let Some(last) = self.last_time else {
+            return i64::from(t32);
+        };
+        let last32 = last as u32;
+        let round = last - i64::from(last32);
+        if t32 < last32 && i64::from(t32.wrapping_sub(last32)) < MAX_TIME_JUMP_US {
+            round + (1i64 << 32) + i64::from(t32)
+        } else {
+            round + i64::from(t32)
         }
-        i64::from(t as u32) + self.rollover_us
+    }
+
+    /// The time of a "logging resume" event from the 32-bit counter value
+    /// it carries. Logging was paused for any length of time, so the
+    /// counter may have wrapped, more than once: the iteration count, which
+    /// the firmware keeps running while logging is paused, says how long the
+    /// pause was when the rate of the log is known. Without a rate it is
+    /// the first such time after the last frame.
+    fn resume_time(&self, iteration: u32, t32: u32) -> i64 {
+        let Some(last) = self.last_time else {
+            return i64::from(t32);
+        };
+        match (self.last_iteration, self.us_per_iteration) {
+            (Some(li), Some(upi)) if iteration > li => {
+                let expected = last + (f64::from(iteration - li) * upi) as i64;
+                Some(unwrap_near(expected, t32)).filter(|t| *t >= last)
+            }
+            _ => None,
+        }
+        .unwrap_or_else(|| unwrap_forward(last, t32))
     }
 
     fn validate_main(&self, iteration: u32, time_us: i64) -> bool {
@@ -677,6 +844,132 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// The intra frame just decoded becomes the reference of the stream.
+    fn set_reference(&mut self, iteration: u32, time_us: i64) -> Accepted {
+        self.stream_valid = true;
+        self.last_iteration = Some(iteration);
+        self.last_time = Some(time_us);
+        let buf = self.cur;
+        self.prev = Some(buf);
+        self.prev2 = Some(buf);
+        self.cur = self.free_slot();
+        Accepted::Main {
+            buf,
+            kind: MainKind::Intra,
+            iteration,
+            time_us,
+        }
+    }
+
+    /// The time of an intra frame outside the window of the last accepted
+    /// frame, when the frame is the same log going on after a gap (see the
+    /// module documentation); `None` when the evidence is not there.
+    fn anchor_after_gap(&self, iteration: u32, t32: u32) -> Option<i64> {
+        if self.probing {
+            return None;
+        }
+        let t = self.anchor_time(iteration, t32)?;
+        self.corroborated(iteration, t).then_some(t)
+    }
+
+    /// Rules 1 and 2 of going on after a gap: the time an intra frame with
+    /// these counters has when it can be a later frame of this log, the
+    /// 32-bit time counter unwrapped to where the iteration count puts it.
+    fn anchor_time(&self, iteration: u32, t32: u32) -> Option<i64> {
+        if !iteration.is_multiple_of(self.headers.i_interval) {
+            return None;
+        }
+        let (Some(li), Some(lt)) = (self.last_iteration, self.last_time) else {
+            // no frame before it to agree with
+            return Some(i64::from(t32));
+        };
+        if iteration <= li {
+            return None;
+        }
+        let d_iter = f64::from(iteration - li);
+        let t = match self.us_per_iteration {
+            Some(upi) => {
+                let t = unwrap_near(lt + (d_iter * upi) as i64, t32);
+                if !same_rate((t - lt) as f64 / d_iter, upi) {
+                    return None;
+                }
+                t
+            }
+            // no rate yet: the first time after the last frame; the frames
+            // that follow have to show the same rate (`corroborated`)
+            None => unwrap_forward(lt, t32),
+        };
+        (t > lt).then_some(t)
+    }
+
+    /// Rule 3 of going on after a gap: whether the frames after an intra
+    /// frame with these counters, the one just decoded, read on cleanly to
+    /// the next intra frame or the end of the log and agree with it.
+    fn corroborated(&self, iteration: u32, time_us: i64) -> bool {
+        let gap_rate = match (self.last_iteration, self.last_time) {
+            (Some(li), Some(lt)) => Some((time_us - lt) as f64 / f64::from(iteration - li)),
+            _ => None,
+        };
+        // the frames after it agree with it when the rate from it to them
+        // is the rate of the log so far and the rate across the gap
+        let agrees = |i: u32, t: i64| {
+            if i <= iteration || t <= time_us {
+                return false;
+            }
+            let rate = (t - time_us) as f64 / f64::from(i - iteration);
+            self.us_per_iteration.is_none_or(|upi| same_rate(rate, upi))
+                && gap_rate.is_none_or(|gap| same_rate(gap, rate))
+        };
+        let mut probe = self.clone();
+        probe.probing = true;
+        let _ = probe.set_reference(iteration, time_us);
+        probe.hist[self.cur][self.time_idx] = time_us;
+        probe.last_accept_pos = probe.reader.pos();
+        let mut last = (iteration, time_us);
+        // an intra frame comes at least every `I interval` iterations
+        for _ in 0..=u64::from(self.headers.i_interval) {
+            loop {
+                match probe.step() {
+                    Step::Frame(Accepted::Main {
+                        kind,
+                        iteration: i,
+                        time_us: t,
+                        ..
+                    }) => {
+                        last = (i, t);
+                        if kind == MainKind::Intra {
+                            return i.is_multiple_of(self.headers.i_interval) && agrees(i, t);
+                        }
+                        break;
+                    }
+                    Step::Frame(Accepted::Event(EventData::LogEnd)) => {
+                        return agrees(last.0, last.1);
+                    }
+                    Step::Frame(_) => {}
+                    Step::Rejected | Step::End => return false,
+                }
+            }
+        }
+        false
+    }
+
+    /// The intra frame just decoded is the log going on after a gap: it
+    /// becomes the reference, and the gap is put on record.
+    fn take_anchor(&mut self, iteration: u32, time_us: i64) -> Accepted {
+        // a log whose first frames are lost has no frame before the gap
+        let (li, lt) = (
+            self.last_iteration.unwrap_or(iteration),
+            self.last_time.unwrap_or(time_us),
+        );
+        self.stats.resumed_gaps.push(StreamGap {
+            iterations: iteration - li,
+            time_us: time_us - lt,
+            hole_bytes: 0,
+        });
+        self.hist[self.cur][self.time_idx] = time_us;
+        self.set_reference(iteration, time_us)
+    }
+
     fn free_slot(&self) -> usize {
         (0..3)
             .find(|i| Some(*i) != self.prev && Some(*i) != self.prev2)
@@ -687,33 +980,26 @@ impl<'a> Parser<'a> {
         match body {
             Body::Main(kind) => {
                 let raw_t = self.hist[self.cur][self.time_idx];
-                let t = self.apply_rollover(raw_t);
+                let t = self.main_time(raw_t as u32);
                 self.hist[self.cur][self.time_idx] = t;
                 let iteration = self.hist[self.cur][self.iter_idx] as u32;
                 let valid = self.validate_main(iteration, t);
                 match kind {
                     MainKind::Intra => {
                         if !valid {
+                            // outside the window: the log going on after a
+                            // gap, when there is evidence for that
+                            if let Some(t) = self.anchor_after_gap(iteration, raw_t as u32) {
+                                return Some(self.take_anchor(iteration, t));
+                            }
                             self.stream_valid = false;
                             self.prev = None;
                             self.prev2 = None;
                             return None;
                         }
-                        self.stream_valid = true;
                         self.stats.intentionally_absent_iterations +=
                             u64::from(self.count_skipped_to(iteration));
-                        self.last_iteration = Some(iteration);
-                        self.last_time = Some(t);
-                        let buf = self.cur;
-                        self.prev = Some(buf);
-                        self.prev2 = Some(buf);
-                        self.cur = self.free_slot();
-                        Some(Accepted::Main {
-                            buf,
-                            kind,
-                            iteration,
-                            time_us: t,
-                        })
+                        Some(self.set_reference(iteration, t))
                     }
                     MainKind::Inter => {
                         if self.stream_valid && !valid {
@@ -743,9 +1029,12 @@ impl<'a> Parser<'a> {
             }
             Body::Slow => Some(Accepted::Slow),
             Body::Gps => {
-                if let Some(ti) = self.gps_time_idx {
-                    let t = self.gps_buf[ti];
-                    self.gps_buf[ti] = self.apply_rollover(t);
+                // The time of a GPS frame is logged against the main frame
+                // before it and is its own: the counter may wrap between
+                // the two, and the main frames after it go on from the last
+                // main frame, not from here.
+                if let (Some(ti), Some(last)) = (self.gps_time_idx, self.last_time) {
+                    self.gps_buf[ti] = unwrap_near(last, self.gps_buf[ti] as u32);
                 }
                 Some(Accepted::Gps {
                     home_valid: self.home_valid,
@@ -773,6 +1062,24 @@ impl<'a> Parser<'a> {
             }
         }
     }
+}
+
+/// The time congruent to the 32-bit counter value `t32` that is nearest to
+/// `reference`.
+fn unwrap_near(reference: i64, t32: u32) -> i64 {
+    reference + i64::from(t32.wrapping_sub(reference as u32) as i32)
+}
+
+/// The first time at or after `reference` congruent to the 32-bit counter
+/// value `t32`.
+fn unwrap_forward(reference: i64, t32: u32) -> i64 {
+    reference + i64::from(t32.wrapping_sub(reference as u32))
+}
+
+/// Whether two rates (microseconds per loop iteration) are the same within
+/// [`RATE_TOLERANCE`].
+fn same_rate(a: f64, b: f64) -> bool {
+    a > 0.0 && b > 0.0 && a <= b * RATE_TOLERANCE && b <= a * RATE_TOLERANCE
 }
 
 /// Decode every field of `def` from `r` into `out`.
@@ -804,7 +1111,11 @@ fn parse_fields(
             enc::TAG8_8SVB => {
                 r.align();
                 let mut count = 1;
-                while count < 8 && i + count < n && def.encodings[i + count] == enc::TAG8_8SVB {
+                while count < 8
+                    && i + count < n
+                    && def.encodings[i + count] == enc::TAG8_8SVB
+                    && !def.group_starts.contains(&(i + count))
+                {
                     count += 1;
                 }
                 let vals = enc::read_tag8_8svb(r, count)?;
@@ -1039,6 +1350,325 @@ H motorOutput:158,2047\n";
         );
     }
 
+    /// The frames of a steady flight over `iterations` (which start on a
+    /// multiple of 4): an I frame every fourth iteration, a P frame between,
+    /// `rate` microseconds per iteration from `t0` at iteration 0. Returns
+    /// the rows a decoder has to produce.
+    fn steady(
+        data: &mut Vec<u8>,
+        iterations: std::ops::Range<u32>,
+        t0: i64,
+        rate: i64,
+    ) -> Vec<Vec<i64>> {
+        let mut rows: Vec<Vec<i64>> = Vec::new();
+        for it in iterations.step_by(2) {
+            let i = i64::from(it);
+            let (t, g) = (t0 + i * rate, i % 50);
+            let row = vec![i, t, g, -g, 7, 1200 + i % 7, 1300];
+            if it.is_multiple_of(4) {
+                intra(
+                    data,
+                    it,
+                    t as u32,
+                    [g as i32, -g as i32, 7],
+                    [row[5] as i32, 1300],
+                );
+            } else {
+                let p = rows.last().expect("a P frame follows an I frame");
+                inter(data, t, [g, -g, 7], [row[5], 1300], p, p);
+            }
+            rows.push(row);
+        }
+        rows
+    }
+
+    /// Compare decoded rows with the expected ones without printing a whole
+    /// log when they differ.
+    fn assert_same(frames: &[Vec<i64>], rows: &[Vec<i64>], what: &str) {
+        assert_eq!(frames.len(), rows.len(), "{what}: number of frames");
+        if let Some(i) = (0..rows.len()).find(|i| frames[*i] != rows[*i]) {
+            panic!("{what}: frame {i} is {:?}, not {:?}", frames[i], rows[i]);
+        }
+    }
+
+    /// The same flight logged with I frames only, so that the parser never
+    /// learns its rate.
+    fn steady_intra_only(
+        data: &mut Vec<u8>,
+        iterations: std::ops::Range<u32>,
+        t0: i64,
+        rate: i64,
+    ) -> Vec<Vec<i64>> {
+        let mut rows = Vec::new();
+        for it in iterations.step_by(4) {
+            let i = i64::from(it);
+            let t = t0 + i * rate;
+            intra(data, it, t as u32, [1, 2, 3], [1200, 1300]);
+            rows.push(vec![i, t, 1, 2, 3, 1200, 1300]);
+        }
+        rows
+    }
+
+    /// Issue #183 B: frames lost while logging leave a gap of more than
+    /// [`MAX_ITERATION_JUMP`] iterations with no "logging resume" event.
+    /// The I frame after it is outside the window of the last frame before
+    /// it, and so was every frame after that: the rest of the log was lost.
+    #[test]
+    fn goes_on_after_a_gap_without_a_resume_event() {
+        // 39 600 iterations (4.95 s) lost, then 20 s, then 30 s more
+        for (second, third) in [(40_000u32, 40_400u32), (160_000, 400_000)] {
+            let mut data = HDR.as_bytes().to_vec();
+            let mut rows = steady(&mut data, 0..400, 1_000_000, 125);
+            rows.extend(steady(&mut data, second..second + 400, 1_000_000, 125));
+            rows.extend(steady(&mut data, third..third + 400, 1_000_000, 125));
+            let (frames, _, stats) = collect(&data);
+            assert_same(&frames, &rows, "two gaps");
+            assert_eq!((stats.corrupt_total(), stats.desync_total()), (0, 0));
+            let gap = |from: u32, to: u32| StreamGap {
+                iterations: to - from,
+                time_us: i64::from(to - from) * 125,
+                hole_bytes: 0,
+            };
+            let expected: Vec<StreamGap> = [(398, second), (second + 398, third)]
+                .into_iter()
+                .filter(|(from, to)| to - from >= MAX_ITERATION_JUMP)
+                .map(|(from, to)| gap(from, to))
+                .collect();
+            assert_eq!(stats.resumed_gaps, expected);
+        }
+        // a log of I frames only has no rate to hold the gap against: the
+        // frames after the gap carry it
+        let mut data = HDR.as_bytes().to_vec();
+        let mut rows = steady_intra_only(&mut data, 0..400, 1_000_000, 125);
+        rows.extend(steady_intra_only(&mut data, 80_000..80_400, 1_000_000, 125));
+        let (frames, _, stats) = collect(&data);
+        assert_same(&frames, &rows, "I frames only");
+        assert_eq!(stats.resumed_gaps.len(), 1);
+        // the time counter may wrap inside the gap: 2^32 us is 34 359 738
+        // iterations of 125 us
+        let mut data = HDR.as_bytes().to_vec();
+        let mut rows = steady(&mut data, 0..400, 1_000_000, 125);
+        rows.extend(steady(&mut data, 34_400_000..34_400_400, 1_000_000, 125));
+        let (frames, _, stats) = collect(&data);
+        assert_same(&frames, &rows, "time runs on past 2^32 us");
+        assert!(frames[200][1] > 1 << 32);
+        assert_eq!(stats.resumed_gaps.len(), 1);
+        // the log may end soon after the gap: the frames up to the "end of
+        // log" marker are evidence too
+        let mut data = HDR.as_bytes().to_vec();
+        let mut rows = steady(&mut data, 0..400, 1_000_000, 125);
+        rows.extend(steady(&mut data, 40_000..40_004, 1_000_000, 125));
+        data.extend_from_slice(b"E\xffEnd of log\0");
+        let (frames, _, _) = collect(&data);
+        assert_same(&frames, &rows, "the end of the log after a gap");
+    }
+
+    /// The other direction of #183 B: what is not this log going on is
+    /// still not read as frames, however much it looks like frames.
+    #[test]
+    fn what_follows_a_gap_needs_evidence() {
+        let good = |data: &mut Vec<u8>| steady(data, 0..400, 1_000_000, 125);
+        // one frame with the right counters and nothing readable after it
+        let mut data = HDR.as_bytes().to_vec();
+        let mut rows = good(&mut data);
+        intra(&mut data, 40_000, 6_000_000, [1, 2, 3], [1200, 1300]);
+        data.extend_from_slice(b"I\x80\x80\x00\x01\x02zz");
+        rows.extend(steady(&mut data, 400..800, 1_000_000, 125));
+        let (frames, _, stats) = collect(&data);
+        assert_same(&frames, &rows, "the lone frame is not taken, the log is");
+        assert!(stats.resumed_gaps.is_empty());
+        assert!(stats.desync_total() >= 1);
+        // the remains of another flight: frames that agree with each other,
+        // but whose time is not where this log's iteration count puts it
+        for (iterations, t0, rate) in [
+            (40_000..40_400, 300_000_000, 125), // another time base
+            (40_000..40_400, 1_000_000, 500),   // another rate
+            (40_000..40_400, -2_000_000, 200),  // the right time at the first frame only
+            (0..300, 1_000_000, 125),           // iterations this log already has
+            (40_000..40_400, -4_500_000, 125),  // time runs backwards
+        ] {
+            let mut data = HDR.as_bytes().to_vec();
+            let rows = good(&mut data);
+            let _ = steady(&mut data, iterations.clone(), t0, rate);
+            let (frames, _, stats) = collect(&data);
+            assert_same(
+                &frames,
+                &rows,
+                &format!("{iterations:?} from {t0} at {rate}"),
+            );
+            assert!(stats.resumed_gaps.is_empty());
+        }
+        // with I frames only there is no rate so far: the gap still has to
+        // have the rate of the frames after it
+        let mut data = HDR.as_bytes().to_vec();
+        let rows = steady_intra_only(&mut data, 0..400, 1_000_000, 125);
+        let _ = steady_intra_only(&mut data, 80_000..80_400, 300_000_000, 125);
+        let (frames, _, stats) = collect(&data);
+        assert_same(&frames, &rows, "I frames only, another time base");
+        assert!(stats.resumed_gaps.is_empty());
+        // an I frame on an iteration the firmware writes none on
+        let mut data = HDR.as_bytes().to_vec();
+        let rows = good(&mut data);
+        for it in (40_002u32..40_400).step_by(4) {
+            let t = 1_000_000 + it * 125;
+            intra(&mut data, it, t, [1, 2, 3], [1200, 1300]);
+        }
+        let (frames, _, _) = collect(&data);
+        assert_same(&frames, &rows, "I frames off the grid");
+    }
+
+    /// Pseudo-random bytes with a frame letter every twelfth.
+    fn junk(len: usize, seed: u32) -> Vec<u8> {
+        let mut x = seed;
+        (0..len)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                if x.is_multiple_of(12) {
+                    b"IPSGHE"[(x as usize / 12) % 6]
+                } else {
+                    (x >> 8) as u8
+                }
+            })
+            .collect()
+    }
+
+    /// Issue #183 C: more than [`GIVE_UP_BYTES`] of undecodable bytes in
+    /// the middle of a log (a block of the storage that was never written,
+    /// or written over) ended it: everything after the hole was reported as
+    /// trailing bytes.
+    #[test]
+    fn goes_on_after_a_hole_in_the_storage() {
+        let holes: [(&str, Vec<u8>); 3] = [
+            ("zeros", vec![0; 20 * 1024]),
+            ("erased flash", vec![0xFF; 20 * 1024]),
+            ("another file's bytes", junk(64 * 1024, 0x1234_5678)),
+        ];
+        for (what, hole) in &holes {
+            // the frames on both sides of the hole belong together; then
+            // frames were lost with the hole; then the log has I frames only
+            for (lost, intra_only) in [(0u32, false), (20_000, false), (0, true), (20_000, true)] {
+                let write = if intra_only {
+                    steady_intra_only
+                } else {
+                    steady
+                };
+                let mut data = HDR.as_bytes().to_vec();
+                let mut rows = write(&mut data, 0..400, 1_000_000, 125);
+                // the frame before the hole goes with it: no frame follows it
+                rows.pop();
+                data.extend_from_slice(hole);
+                rows.extend(write(&mut data, 400 + lost..800 + lost, 1_000_000, 125));
+                data.extend_from_slice(b"E\xffEnd of log\0");
+                let (frames, events, stats) = collect(&data);
+                let what = format!("{what}, {lost} iterations lost, I only: {intra_only}");
+                assert_same(&frames, &rows, &what);
+                assert_eq!(events, [EventData::LogEnd], "{what}");
+                assert_eq!(stats.trailing_bytes, 0, "{what}");
+                assert_eq!(stats.resumed_gaps.len(), 1, "{what}");
+                let gap = stats.resumed_gaps[0];
+                assert!(gap.hole_bytes >= hole.len() as u64, "{what}: {gap:?}");
+                assert!(gap.iterations >= lost, "{what}: {gap:?}");
+                assert!(
+                    stats.skipped_bytes as usize + stats.corrupt_total() as usize >= hole.len() / 2
+                        && stats.skipped_bytes as usize <= hole.len() + 64,
+                    "{what}: the hole is counted once: {stats:?}"
+                );
+            }
+        }
+        // a hole right after the headers, before any frame
+        let mut data = HDR.as_bytes().to_vec();
+        data.extend_from_slice(&holes[0].1);
+        let rows = steady(&mut data, 400..800, 1_000_000, 125);
+        let (frames, _, stats) = collect(&data);
+        assert_same(&frames, &rows, "a hole before the first frame");
+        assert_eq!(stats.resumed_gaps[0].iterations, 0);
+    }
+
+    /// The other direction of #183 C: after the hole nothing is taken that
+    /// is not this log going on, and a file that ends in junk still ends
+    /// where its log does.
+    #[test]
+    fn what_follows_a_hole_needs_evidence() {
+        let hole = vec![0u8; 20 * 1024];
+        for (what, iterations, t0, rate) in [
+            ("another time base", 40_000..40_400, 300_000_000, 125),
+            ("another rate", 400..800, 1_000_000, 500),
+            ("an earlier part", 0..300, 1_000_000, 125),
+        ] {
+            for write in [steady, steady_intra_only] {
+                let mut data = HDR.as_bytes().to_vec();
+                let mut rows = write(&mut data, 0..400, 1_000_000, 125);
+                rows.pop();
+                data.extend_from_slice(&hole);
+                let tail = data.len();
+                let _ = write(&mut data, iterations.clone(), t0, rate);
+                let (frames, _, stats) = collect(&data);
+                assert_same(&frames, &rows, what);
+                assert!(stats.resumed_gaps.is_empty(), "{what}");
+                assert!(
+                    stats.trailing_bytes as usize >= data.len() - tail,
+                    "{what}: the rest is trailing bytes"
+                );
+            }
+        }
+        // 2 MiB of junk after a log: all of it is looked through, none taken
+        for seed in [0x1234_5678, 0x0BAD_F00D, 0x9E37_79B9] {
+            let mut data = HDR.as_bytes().to_vec();
+            let rows = steady(&mut data, 0..400, 1_000_000, 125);
+            let good = data.len();
+            data.extend_from_slice(&junk(2 * 1024 * 1024, seed));
+            let (frames, _, stats) = collect(&data);
+            assert_eq!(&frames[..rows.len() - 1], &rows[..rows.len() - 1]);
+            assert!(frames.len() <= rows.len() + 5, "{}", frames.len());
+            assert!(stats.resumed_gaps.is_empty());
+            assert!(stats.trailing_bytes as usize > data.len() - good - 2 * GIVE_UP_BYTES);
+        }
+    }
+
+    /// Bytes that are not a log do not become one: pseudo-random bytes of
+    /// several kinds after good frames, many times over.
+    #[test]
+    fn junk_is_not_taken_for_the_log_going_on() {
+        let mut x: u32 = 0x9E37_79B9;
+        let mut next = move || {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            x
+        };
+        let mut accepted_junk = 0;
+        for round in 0..150 {
+            let mut data = HDR.as_bytes().to_vec();
+            let rows = steady(&mut data, 0..400, 1_000_000, 125);
+            // below the give-up limit, so that every byte is tried
+            for _ in 0..12 * 1024 {
+                let r = next();
+                data.push(match round % 3 {
+                    // any byte, a frame letter every twelfth
+                    0 if r.is_multiple_of(12) => b"IPSGHE"[(r as usize / 12) % 6],
+                    0 => (r >> 8) as u8,
+                    // short numbers and many I frames: most attempts decode
+                    1 if r.is_multiple_of(5) => b'I',
+                    1 => (r >> 8) as u8 & 0x7F,
+                    // numbers of every length
+                    _ if r.is_multiple_of(7) => b"IP"[(r as usize / 7) % 2],
+                    _ if r.is_multiple_of(3) => (r >> 8) as u8 | 0x80,
+                    _ => (r >> 8) as u8 & 0x7F,
+                });
+            }
+            let (frames, _, stats) = collect(&data);
+            // the last good frame may go: no frame letter follows it
+            assert!(frames.len() >= rows.len() - 1, "round {round}");
+            assert_eq!(&frames[..rows.len() - 1], &rows[..rows.len() - 1]);
+            assert!(stats.resumed_gaps.is_empty(), "round {round}");
+            accepted_junk += frames.len().saturating_sub(rows.len());
+        }
+        // inside the window junk passes as rarely as it did
+        assert!(accepted_junk <= 150, "{accepted_junk}");
+    }
+
     #[test]
     fn rotorflight_state_events_keep_the_stream() {
         let mut data = HDR.as_bytes().to_vec();
@@ -1094,6 +1724,226 @@ H motorOutput:158,2047\n";
         intra(&mut data, 4, 100, [0, 0, 0], [1200, 1300]);
         let (frames, _, _) = collect(&data);
         assert_eq!(frames[1][1], i64::from(u32::MAX) + 1 + 100);
+    }
+
+    /// Issue #183 D: the time of a GPS frame is logged against the main
+    /// frame before it. When the 32-bit counter wrapped between the two,
+    /// the GPS frame moved the times of all later main frames a round on,
+    /// once more with every frame, and all of them were rejected.
+    #[test]
+    fn a_gps_frame_after_the_time_wrap_leaves_the_main_frames_alone() {
+        let header = format!(
+            "{HDR}H Field G name:time,GPS_numSat,GPS_speed\n\
+             H Field G signed:0,0,0\n\
+             H Field G predictor:10,0,0\n\
+             H Field G encoding:1,1,1\n"
+        );
+        // the 20th I frame is 300 us before the wrap; a GPS frame follows
+        // it by `after` us
+        for after in [200u32, 300, 400] {
+            let t0 = (1i64 << 32) - 19 * 32_000 - 300;
+            let mut data = header.as_bytes().to_vec();
+            let (mut rows, mut gps_times) = (Vec::new(), Vec::new());
+            for k in 0..200i64 {
+                let t = t0 + k * 32_000;
+                intra(&mut data, k as u32 * 4, t as u32, [1, 2, 3], [1200, 1300]);
+                rows.push(vec![k * 4, t, 1, 2, 3, 1200, 1300]);
+                if k % 3 == 0 || k == 19 {
+                    let dt = if k == 19 { after } else { 250 };
+                    data.push(b'G');
+                    encode::write_uvb(&mut data, dt);
+                    encode::write_uvb(&mut data, 14);
+                    encode::write_uvb(&mut data, 1200);
+                    gps_times.push(t + i64::from(dt));
+                }
+            }
+            let h = Headers::parse(&data).unwrap();
+            let mut p = Parser::new(&data, &h);
+            let (mut frames, mut gps) = (Vec::new(), Vec::new());
+            while let Some(f) = p.next_frame() {
+                match f {
+                    Frame::Main { values, .. } => frames.push(values.to_vec()),
+                    Frame::Gps { values, .. } => gps.push(values[0]),
+                    _ => {}
+                }
+            }
+            assert_same(&frames, &rows, &format!("a GPS frame {after} us on"));
+            assert_eq!(gps, gps_times, "{after}");
+            assert_eq!(p.stats.desync_total(), 0);
+        }
+    }
+
+    /// A frame that is rejected leaves the times of the frames after it
+    /// alone too (it used to move them a round on when its own time looked
+    /// like one after the wrap).
+    #[test]
+    fn a_rejected_frame_near_the_time_wrap_changes_nothing() {
+        let mut data = HDR.as_bytes().to_vec();
+        intra(&mut data, 8, u32::MAX - 1000, [0, 0, 0], [1200, 1300]);
+        intra(&mut data, 4, 50, [0, 0, 0], [1200, 1300]); // the iteration runs backwards
+        intra(&mut data, 12, u32::MAX - 500, [0, 0, 0], [1200, 1300]);
+        intra(&mut data, 16, 500, [0, 0, 0], [1200, 1300]);
+        let (frames, _, stats) = collect(&data);
+        let times: Vec<i64> = frames.iter().map(|f| f[1]).collect();
+        let max = i64::from(u32::MAX);
+        assert_eq!(times, [max - 1000, max - 500, max + 1 + 500]);
+        assert_eq!(stats.frames[&b'I'].desync, 1);
+    }
+
+    /// Issue #183 E: the time of a "logging resume" event was put in the
+    /// round of the counter of the frames before the pause: after a pause
+    /// that spans the wrap the time ran back by 2^32 us.
+    #[test]
+    fn a_pause_may_span_the_time_wrap() {
+        // I frames only (no rate known): the first such time after the pause
+        let t0 = (1i64 << 32) - 5_000_000;
+        let mut data = HDR.as_bytes().to_vec();
+        let mut rows = Vec::new();
+        let mut frame = |data: &mut Vec<u8>, k: i64| {
+            let t = t0 + k * 32_000;
+            intra(data, k as u32 * 4, t as u32, [1, 2, 3], [1200, 1300]);
+            rows.push(vec![k * 4, t, 1, 2, 3, 1200, 1300]);
+        };
+        for k in 0..50 {
+            frame(&mut data, k);
+        }
+        let resume = t0 + 1050 * 32_000; // 32 s later, past the wrap
+        data.extend_from_slice(b"E\x0e");
+        encode::write_uvb(&mut data, 1050 * 4);
+        encode::write_uvb(&mut data, resume as u32);
+        for k in 1050..1100 {
+            frame(&mut data, k);
+        }
+        let (frames, events, stats) = collect(&data);
+        assert_same(&frames, &rows, "a pause over the wrap");
+        assert_eq!(
+            events,
+            [EventData::LoggingResume {
+                iteration: 4200,
+                time_us: resume
+            }]
+        );
+        assert!(resume > 1 << 32);
+        assert_eq!(stats.desync_total(), 0);
+        assert!(stats.resumed_gaps.is_empty(), "the event announces the gap");
+        // with a rate the pause may be longer than a round of the counter:
+        // the iteration count says how long it was. 40 000 000 iterations of
+        // 125 us are 5000 s; a round is 4295 s
+        let mut data = HDR.as_bytes().to_vec();
+        let mut rows = steady(&mut data, 0..400, 1_000_000, 125);
+        let resume = 1_000_000 + 40_000_000 * 125;
+        data.extend_from_slice(b"E\x0e");
+        encode::write_uvb(&mut data, 40_000_000);
+        encode::write_uvb(&mut data, resume as u32);
+        rows.extend(steady(&mut data, 40_000_000..40_000_400, 1_000_000, 125));
+        let (frames, events, stats) = collect(&data);
+        assert_same(&frames, &rows, "a pause of more than a round");
+        assert_eq!(
+            events,
+            [EventData::LoggingResume {
+                iteration: 40_000_000,
+                time_us: resume
+            }]
+        );
+        assert!(resume > 1 << 32 && (resume as u32) > 1_000_000);
+        assert_eq!(stats.desync_total(), 0);
+        // the arming beep is timed against the frames around it
+        let mut data = HDR.as_bytes().to_vec();
+        intra(&mut data, 0, u32::MAX - 100, [0, 0, 0], [1200, 1300]);
+        data.extend_from_slice(b"E\x00");
+        encode::write_uvb(&mut data, 20);
+        intra(&mut data, 4, 100, [0, 0, 0], [1200, 1300]);
+        data.extend_from_slice(b"E\x00");
+        encode::write_uvb(&mut data, u32::MAX - 50);
+        intra(&mut data, 8, 600, [0, 0, 0], [1200, 1300]);
+        let (frames, events, _) = collect(&data);
+        assert_eq!(frames.len(), 3);
+        assert_eq!(
+            events,
+            [
+                EventData::SyncBeep {
+                    time_us: (1 << 32) + 20
+                },
+                EventData::SyncBeep {
+                    time_us: i64::from(u32::MAX) - 50
+                }
+            ]
+        );
+    }
+
+    /// Issue #183 F: Betaflight (2025.12 on) writes the optional fields
+    /// `vbatLatest` … `rssi` of a P frame as one group of the 8-value
+    /// encoding and the servos as a second one. With gyro, accelerometer,
+    /// debug and motor logging switched off the two stand next to each
+    /// other, and were read as one group of eight and one of two: the
+    /// servo values landed on the wrong servos, with no error.
+    #[test]
+    fn the_servos_are_a_group_of_their_own() {
+        let header = |firmware: &str| {
+            format!(
+                "H Product:Blackbox flight data recorder by Nicholas Sherlock\n\
+                 H Data version:2\n\
+                 H I interval:32\n\
+                 H P interval:4\n\
+                 H Field I name:loopIteration,time,vbatLatest,rssi,servo[0],servo[1],servo[2],\
+                 servo[3],servo[4],servo[5],servo[6],servo[7]\n\
+                 H Field I signed:0,0,0,0,0,0,0,0,0,0,0,0\n\
+                 H Field I predictor:0,0,9,0,8,8,8,8,8,8,8,8\n\
+                 H Field I encoding:1,1,3,1,6,6,6,6,6,6,6,6\n\
+                 H Field P predictor:6,2,1,1,1,1,1,1,1,1,1,1\n\
+                 H Field P encoding:9,0,6,6,6,6,6,6,6,6,6,6\n\
+                 H Firmware revision:{firmware}\n\
+                 H vbatref:1680\n"
+            )
+        };
+        let mut frames = Vec::new();
+        let mut rows: Vec<Vec<i64>> = Vec::new();
+        let (mut vbat, rssi) = (1680i64, 800i64);
+        let mut servo = [1500i64, 1510, 1490, 1500, 1500, 1500, 1500, 1500];
+        for k in 0..64i64 {
+            let (it, t) = (k * 4, 5_000_000 + k * 4000);
+            if it % 32 == 0 {
+                frames.push(b'I');
+                encode::write_uvb(&mut frames, it as u32);
+                encode::write_uvb(&mut frames, t as u32);
+                encode::write_neg14(&mut frames, (vbat - 1680) as i32);
+                encode::write_uvb(&mut frames, rssi as u32);
+                let centred: Vec<i32> = servo.iter().map(|s| (*s - 1500) as i32).collect();
+                encode::write_tag8_8svb(&mut frames, &centred);
+            } else {
+                let (p, p2) = (&rows[rows.len() - 1], &rows[rows.len().saturating_sub(2)]);
+                let p2 = if (it - 4) % 32 == 0 { p } else { p2 };
+                frames.push(b'P');
+                encode::write_svb(&mut frames, (t - (2 * p[1] - p2[1])) as i32);
+                // the firmware: one group for the optional fields ...
+                encode::write_tag8_8svb(&mut frames, &[-1, 0]);
+                vbat -= 1;
+                // ... and a second one for the servos
+                encode::write_tag8_8svb(&mut frames, &[3, -2, 0, 0, 0, 0, 0, 1]);
+                servo[0] += 3;
+                servo[1] -= 2;
+                servo[7] += 1;
+            }
+            let mut row = vec![it, t, vbat, rssi];
+            row.extend_from_slice(&servo);
+            rows.push(row);
+        }
+        let mut data = header("Betaflight 2025.12.2 (c6b3f0a) STM32F7X2").into_bytes();
+        data.extend_from_slice(&frames);
+        let h = Headers::parse(&data).unwrap();
+        assert!(h.servo_group);
+        assert_eq!(h.def(b'P').unwrap().group_starts, [4]);
+        let (decoded, _, stats) = collect(&data);
+        assert_same(&decoded, &rows, "two groups");
+        assert_eq!((stats.corrupt_total(), stats.desync_total()), (0, 0));
+        // a firmware that is not known to write the servos apart is read as
+        // before: neighbouring fields in groups of eight
+        let mut data = header("INAV 7.0.0 (abcdef0) MATEKF405").into_bytes();
+        data.extend_from_slice(&frames);
+        let h = Headers::parse(&data).unwrap();
+        assert!(!h.servo_group && h.def(b'P').unwrap().group_starts.is_empty());
+        let (decoded, _, _) = collect(&data);
+        assert!(decoded != rows, "read as one group of eight and one of two");
     }
 
     #[test]

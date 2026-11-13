@@ -50,6 +50,33 @@
         "valid": 205
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 204
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 204
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 204
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
@@ -57,6 +84,15 @@
         "name": "setpoint[3]",
         "unit": "%",
         "valid": 205
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
+        "valid": 204
       },
       {
         "key": "gyro.filtered.pitch",
@@ -507,12 +543,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -937,12 +1009,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -1367,6 +1475,33 @@
         "valid": 72455
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 72454
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 72454
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 72454
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 93.3,
         "mean": 22.646908,
@@ -1374,6 +1509,15 @@
         "name": "setpoint[3]",
         "unit": "%",
         "valid": 72455
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
+        "valid": 72454
       },
       {
         "key": "gyro.filtered.pitch",
@@ -1824,12 +1968,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -2254,12 +2434,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -2684,12 +2900,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -3114,12 +3366,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -3544,12 +3832,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -3974,12 +4298,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -4404,12 +4764,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -4834,6 +5230,33 @@
         "valid": 2858
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 2857
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 2857
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 2857
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 41.7,
         "mean": 15.7317,
@@ -4841,6 +5264,15 @@
         "name": "setpoint[3]",
         "unit": "%",
         "valid": 2858
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
+        "valid": 2857
       },
       {
         "key": "gyro.filtered.pitch",
@@ -5291,12 +5723,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -5721,12 +6189,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -6151,12 +6655,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -6581,6 +7121,33 @@
         "valid": 884
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 883
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 883
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 883
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
@@ -6588,6 +7155,15 @@
         "name": "setpoint[3]",
         "unit": "%",
         "valid": 884
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
+        "valid": 883
       },
       {
         "key": "gyro.filtered.pitch",
@@ -7038,12 +7614,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -7468,12 +8080,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -7898,12 +8546,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -8328,12 +9012,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -8758,12 +9478,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -9188,12 +9944,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -9618,12 +10410,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -10048,12 +10876,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -10478,12 +11342,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -10908,12 +11808,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -11338,12 +12274,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -11768,6 +12740,33 @@
         "valid": 694
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 693
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 693
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 693
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
@@ -11775,6 +12774,15 @@
         "name": "setpoint[3]",
         "unit": "%",
         "valid": 694
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
+        "valid": 693
       },
       {
         "key": "gyro.filtered.pitch",
@@ -12225,12 +13233,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -12655,12 +13699,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -13085,12 +14165,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -13515,12 +14631,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -13945,6 +15097,33 @@
         "valid": 738
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 737
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 737
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 737
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
@@ -13952,6 +15131,15 @@
         "name": "setpoint[3]",
         "unit": "%",
         "valid": 738
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
+        "valid": 737
       },
       {
         "key": "gyro.filtered.pitch",
@@ -14402,12 +15590,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -14832,6 +16056,33 @@
         "valid": 654
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 653
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 653
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 653
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
@@ -14839,6 +16090,15 @@
         "name": "setpoint[3]",
         "unit": "%",
         "valid": 654
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
+        "valid": 653
       },
       {
         "key": "gyro.filtered.pitch",
@@ -15289,12 +16549,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -15719,12 +17015,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -16149,12 +17481,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -16579,12 +17947,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -17009,12 +18413,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -17439,12 +18879,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -17869,12 +19345,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -18299,12 +19811,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {
@@ -18729,12 +20277,48 @@
         "valid": 0
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 0
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 0
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
         "min": 0.0,
         "name": "setpoint[3]",
         "unit": "%",
+        "valid": 0
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
         "valid": 0
       },
       {

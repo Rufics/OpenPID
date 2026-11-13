@@ -77,10 +77,9 @@ fn setup_info_has_a_column_per_log_and_marks_what_differs() {
         row(&ui, Section::Decoder, "Profile"),
         Some((vec![Some("betaflight"), Some("betaflight")], false))
     );
-    assert_eq!(
-        row(&ui, Section::Decoder, "Unmapped fields"),
-        Some((vec![Some("magADC[0], magADC[1], magADC[2]"), None], true))
-    );
+    // every field of both logs is one the profile knows (the magnetometer
+    // of the 4.5.0 log included): there is no such row
+    assert_eq!(row(&ui, Section::Decoder, "Unmapped fields"), None);
     assert_eq!(
         row(&ui, Section::Setup, "Firmware"),
         Some((

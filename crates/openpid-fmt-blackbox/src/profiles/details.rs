@@ -1,6 +1,15 @@
 //! Betaflight's tuning settings in words, for the rows the typed model has
 //! no field for: rates, throttle curve, TPA, I-term relax, anti-gravity,
-//! feedforward, the simplified-tuning sliders, idle and battery.
+//! feedforward, the simplified-tuning sliders, idle and battery; and the
+//! two groups of settings that decide how the numbers of the log are to be
+//! taken, logging and GPS.
+//!
+//! The other header groups of a Betaflight log (GPS rescue, altitude and
+//! position hold, autopilot, wing, chirp, RC smoothing, hardware and
+//! receiver ids, features and the rest, about 170 names on `master`) are
+//! not put in words here: none of them changes how the logged data is read,
+//! and their units were not checked against `cli/settings.c`. They are
+//! shown verbatim under "All headers".
 //!
 //! The header names and their units are Betaflight's (4.0 and later; the
 //! names changed at 4.3 and both are read). Other firmwares of the family
@@ -8,6 +17,7 @@
 //! other units, Rotorflight's rate types are its own), so only the
 //! Betaflight profile calls this.
 
+use crate::releases::Release;
 use openpid_core::settings::Detail;
 use openpid_core::{FirmwareInfo, RawHeaders};
 use std::fmt::Write as _;
@@ -241,10 +251,77 @@ fn battery(h: &RawHeaders) -> Option<Detail> {
     Some(detail("Battery", value))
 }
 
+/// How the numbers of the log are to be taken, where a setting or the
+/// release decides it: the resolution of gyro, setpoint and `rcCommand`
+/// (`blackbox_high_resolution`, 4.4 on) and what `rcCommand` holds
+/// (`rc_command_scale`, after 2026.6; see
+/// [`Release::rc_command_scale`]). The reader has applied both: the
+/// channels are in one set of units whatever this row says.
+fn logging(release: &Release, h: &RawHeaders) -> Option<Detail> {
+    let mut parts = Vec::new();
+    if let Some(fine) = number(h, &["blackbox_high_resolution"]) {
+        parts.push(if fine == 1.0 {
+            "high resolution (gyro, setpoint and rcCommand in tenths)".to_string()
+        } else {
+            "normal resolution".to_string()
+        });
+    }
+    match (
+        number(h, &["rc_command_scale"]).filter(|s| *s > 0.0),
+        release.rc_command_scale,
+    ) {
+        (Some(scale), _) => parts.push(format!(
+            "rcCommand as a fraction of full stick times {scale:.0}"
+        )),
+        (None, Some(scale)) => parts.push(format!(
+            "rcCommand as a fraction of full stick times {scale:.0} (as Betaflight {} logs it; \
+             the log has no rc_command_scale)",
+            release.name
+        )),
+        (None, None)
+            if h.get("Field I name")
+                .is_some_and(|f| f.contains("rcCommand[")) =>
+        {
+            parts.push("rcCommand as ±500 and the throttle 1000–2000".to_string());
+        }
+        (None, None) => {}
+    }
+    (!parts.is_empty()).then(|| detail("Logging", parts.join("; ")))
+}
+
+/// What the GPS frames of the log hold where a setting decides it: which
+/// speed `GPS_speed` is (`gps_use_3d_speed`; 2025.12 on logs the 3D speed
+/// with it, 4.4 and 4.5 have the setting but log the speed over ground
+/// whatever it says, see [`Release::gps_speed_3d`]) and how the home point
+/// the coordinates are logged against is taken (`gps_set_home_point_once`).
+/// Nothing for a log without GPS frames.
+fn gps(release: &Release, h: &RawHeaders) -> Option<Detail> {
+    h.get("Field G name")?;
+    let wanted_3d = number(h, &["gps_use_3d_speed"]) == Some(1.0);
+    let mut parts = vec![match (wanted_3d, release.gps_speed_3d) {
+        (true, true) => "the speed logged is the 3D speed (gps_use_3d_speed)".to_string(),
+        (true, false) => format!(
+            "the speed logged is the speed over ground (gps_use_3d_speed is on, but \
+                 Betaflight {} logs the ground speed)",
+            release.name
+        ),
+        (false, _) => "the speed logged is the speed over ground".to_string(),
+    }];
+    if let Some(once) = number(h, &["gps_set_home_point_once"]) {
+        parts.push(if once == 1.0 {
+            "home point set once".to_string()
+        } else {
+            "home point set anew at each arming".to_string()
+        });
+    }
+    Some(detail("GPS", parts.join("; ")))
+}
+
 /// The settings of a Betaflight log in words, in the order to show them.
 /// Nothing for Betaflight before 4.0, whose headers had other units.
 pub fn betaflight(fw: &FirmwareInfo, h: &RawHeaders) -> Vec<Detail> {
-    if !fw.is_at_least(4, 0) {
+    let release = Release::of_number(fw.version);
+    if release.is_before_4_0() {
         return Vec::new();
     }
     let mut out = Vec::new();
@@ -273,6 +350,8 @@ pub fn betaflight(fw: &FirmwareInfo, h: &RawHeaders) -> Vec<Detail> {
     out.extend(sliders(h));
     out.extend(idle(h));
     out.extend(battery(h));
+    out.extend(logging(release, h));
+    out.extend(gps(release, h));
     out
 }
 
@@ -294,6 +373,97 @@ mod tests {
             .iter()
             .find(|d| d.label == label)
             .map(|d| d.value.clone())
+    }
+
+    #[test]
+    fn logging_and_gps_say_how_the_numbers_are_taken() {
+        let fw = |revision: &str| FirmwareInfo::parse_revision(revision);
+        let fields = ("Field I name", "loopIteration,time,rcCommand[0]");
+        let gps_frames = ("Field G name", "time,GPS_numSat,GPS_speed");
+        let logging =
+            |v: &str, h: &[(&str, &str)]| value(&betaflight(&fw(v), &headers(h)), "Logging");
+        let gps = |v: &str, h: &[(&str, &str)]| value(&betaflight(&fw(v), &headers(h)), "GPS");
+        // 4.2: no resolution setting; the sticks as they always were
+        assert_eq!(
+            logging("Betaflight 4.2.11 (948ba6339) STM32F7X2", &[fields]).as_deref(),
+            Some("rcCommand as ±500 and the throttle 1000–2000")
+        );
+        assert_eq!(
+            logging("Betaflight 4.2.11 (948ba6339) STM32F7X2", &[]),
+            None
+        );
+        // 4.4 on: the resolution
+        assert_eq!(
+            logging(
+                "Betaflight 4.5.1 (77d01ba3b) STM32F7X2",
+                &[fields, ("blackbox_high_resolution", "0")]
+            )
+            .as_deref(),
+            Some("normal resolution; rcCommand as ±500 and the throttle 1000–2000")
+        );
+        assert_eq!(
+            logging(
+                "Betaflight 2025.12.2 (79065c96b) STM32F7X2",
+                &[("blackbox_high_resolution", "1")]
+            )
+            .as_deref(),
+            Some("high resolution (gyro, setpoint and rcCommand in tenths)")
+        );
+        // after 2026.6: the header, or what the release logs without it
+        assert_eq!(
+            logging(
+                "Betaflight 2026.12.0 (4b1520e) STM32H743",
+                &[fields, ("rc_command_scale", "1000")]
+            )
+            .as_deref(),
+            Some("rcCommand as a fraction of full stick times 1000")
+        );
+        assert_eq!(
+            logging("Betaflight 2026.12.0 (4b1520e) STM32H743", &[fields]).as_deref(),
+            Some(
+                "rcCommand as a fraction of full stick times 1000 (as Betaflight 2026.12 logs \
+                 it; the log has no rc_command_scale)"
+            )
+        );
+        // GPS: nothing without GPS frames
+        assert_eq!(
+            gps(
+                "Betaflight 4.5.1 (77d01ba3b) STM32F7X2",
+                &[("gps_use_3d_speed", "1")]
+            ),
+            None
+        );
+        assert_eq!(
+            gps(
+                "Betaflight 4.5.1 (77d01ba3b) STM32F7X2",
+                &[
+                    gps_frames,
+                    ("gps_use_3d_speed", "1"),
+                    ("gps_set_home_point_once", "0")
+                ]
+            )
+            .as_deref(),
+            Some(
+                "the speed logged is the speed over ground (gps_use_3d_speed is on, but \
+                 Betaflight 4.5 logs the ground speed); home point set anew at each arming"
+            )
+        );
+        assert_eq!(
+            gps(
+                "Betaflight 2025.12.2 (79065c96b) STM32F7X2",
+                &[
+                    gps_frames,
+                    ("gps_use_3d_speed", "1"),
+                    ("gps_set_home_point_once", "1")
+                ]
+            )
+            .as_deref(),
+            Some("the speed logged is the 3D speed (gps_use_3d_speed); home point set once")
+        );
+        assert_eq!(
+            gps("Betaflight 4.2.11 (948ba6339) STM32F7X2", &[gps_frames]).as_deref(),
+            Some("the speed logged is the speed over ground")
+        );
     }
 
     #[test]

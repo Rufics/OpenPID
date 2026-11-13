@@ -20,7 +20,7 @@ pub mod sticks;
 pub mod summary;
 pub mod units;
 
-pub use channel::{Axis, BatteryField, ChannelId, GyroStage, PidTerm, StickAxis};
+pub use channel::{Axis, BatteryField, ChannelId, GpsField, GyroStage, PidTerm, StickAxis};
 pub use format::{Confidence, FormatError, FormatRegistry, LogFormat, OpenOptions};
 pub use modes::{FlightMode, ModeChange};
 pub use profile::{BoundProfile, FieldMapping, FirmwareProfile, ProfileRegistry, RawHeaders};

@@ -1,12 +1,12 @@
 //! Turn parsed frames into the canonical [`FlightSession`].
 
 use crate::headers::{HeaderError, Headers};
-use crate::parser::{EventData, Frame, MainKind, ParseStats, Parser};
+use crate::parser::{EventData, Frame, MainKind, ParseStats, Parser, StreamGap};
 use openpid_core::modes::{ModeChange, push_change};
 use openpid_core::session::{AuxRow, AuxTable, Diagnostics, Event, EventKind};
 use openpid_core::{
-    BoundProfile, Channel, ChannelId, ChannelSet, FlightSession, Origin, ProfileRegistry, Series,
-    Timebase, Unit,
+    BoundProfile, Channel, ChannelId, ChannelSet, FieldMapping, FlightSession, Origin,
+    ProfileRegistry, Series, Timebase, Unit,
 };
 
 /// Raw decode result of one log: integer columns exactly as logged.
@@ -200,6 +200,10 @@ pub fn build_session(
         });
     }
 
+    if let Some(b) = &bound {
+        aux_channels(log, b.as_ref(), &mut channels);
+    }
+
     let mut diagnostics = Diagnostics {
         corrupt_frames: log.stats.corrupt_total(),
         desync_frames: log.stats.desync_total(),
@@ -218,13 +222,7 @@ pub fn build_session(
             .notes
             .push("no firmware profile matched; channels are raw".into());
     }
-    if log.stats.trailing_bytes > 0 {
-        diagnostics.notes.push(format!(
-            "{} trailing bytes after the last valid frame are not blackbox data (stale card \
-             sectors or another file's remains); decoding stopped there",
-            log.stats.trailing_bytes
-        ));
-    }
+    diagnostics.notes.extend(damage_notes(&log.stats));
 
     let mut aux = vec![log.slow.clone()];
     aux.extend(log.gps.iter().cloned());
@@ -251,6 +249,87 @@ pub fn build_session(
         b.derive(&mut session);
     }
     session
+}
+
+/// What the frames beside the main ones carry (slow state, GPS fixes, the
+/// home point) becomes channels too where the profile knows the field: on
+/// the timeline of the main frames, each value held until the next one. The
+/// tables themselves stay in the session's `aux`.
+fn aux_channels(log: &DecodedLog, profile: &dyn BoundProfile, channels: &mut ChannelSet) {
+    let tables = [Some(&log.slow), log.gps.as_ref(), log.gps_home.as_ref()];
+    for table in tables.into_iter().flatten() {
+        for (column, name) in table.columns.iter().enumerate() {
+            let Some(m) = profile.map_aux_field(&table.kind, name) else {
+                continue;
+            };
+            // a main-frame field of the same identity stays
+            if channels.contains(&m.id) {
+                continue;
+            }
+            channels.insert(Channel {
+                data: held(table, column, log.len(), &m),
+                id: m.id,
+                name: name.clone(),
+                unit: m.unit,
+                origin: Origin::Logged {
+                    field: name.clone(),
+                },
+            });
+        }
+    }
+}
+
+/// What the parser read across or gave up on, in words for the session's
+/// diagnostics: gaps no event announced, holes in the storage, trailing
+/// bytes.
+fn damage_notes(stats: &ParseStats) -> Vec<String> {
+    let mut notes = Vec::new();
+    let (holes, gaps): (Vec<&StreamGap>, Vec<&StreamGap>) =
+        stats.resumed_gaps.iter().partition(|g| g.hole_bytes > 0);
+    if let Some(longest) = gaps.iter().max_by_key(|g| g.time_us) {
+        notes.push(format!(
+            "the log goes on after {} gap(s) that no logging-resume event announces (the \
+             longest: {:.1} s, {} loop iterations): frames were lost while logging; the frames \
+             after each gap are read",
+            gaps.len(),
+            longest.time_us as f64 / 1.0e6,
+            longest.iterations
+        ));
+    }
+    if !holes.is_empty() {
+        notes.push(format!(
+            "{} stretch(es) of bytes that are not blackbox data lie inside the log ({} bytes in \
+             all, {:.1} s of the flight: unwritten or overwritten storage); the frames after \
+             each are read",
+            holes.len(),
+            holes.iter().map(|g| g.hole_bytes).sum::<u64>(),
+            holes.iter().map(|g| g.time_us).sum::<i64>() as f64 / 1.0e6
+        ));
+    }
+    if stats.trailing_bytes > 0 {
+        notes.push(format!(
+            "{} trailing bytes after the last valid frame are not blackbox data (stale card \
+             sectors or another file's remains); decoding stopped there",
+            stats.trailing_bytes
+        ));
+    }
+    notes
+}
+
+/// One column of a table of frames logged now and then as a series over
+/// the `len` main frames: sample `i` has the value of the last row logged at
+/// or before main frame `i` (a row counts from the main frame that follows
+/// it, as the forward-filled slow fields of the raw CSV do), and no value
+/// before the first row.
+fn held(table: &AuxTable, column: usize, len: usize, mapping: &FieldMapping) -> Series {
+    let mut rows = table.rows.iter().peekable();
+    let mut current = None;
+    Series::from_options((0..len).map(|i| {
+        while let Some(row) = rows.next_if(|r| r.sample_index <= i) {
+            current = row.values.get(column).map(|v| mapping.apply(*v));
+        }
+        current
+    }))
 }
 
 /// The mode changes of the slow frames' `flightModeFlags`, each word turned

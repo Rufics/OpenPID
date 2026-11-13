@@ -1,7 +1,9 @@
 //! Header block parsing (`H name:value` lines) and frame definitions.
 
 use crate::encoding;
-use openpid_core::{FirmwareInfo, RawHeaders};
+use crate::predictor;
+use crate::releases;
+use openpid_core::{FirmwareInfo, FirmwareVendor, RawHeaders};
 use std::collections::BTreeMap;
 
 /// Marker line that starts every log written by Cleanflight-family firmware.
@@ -21,6 +23,11 @@ pub struct FrameDef {
     pub predictors: Vec<u8>,
     /// Encoding id per field.
     pub encodings: Vec<u8>,
+    /// Fields a group of the 8-value encoding ([`encoding::TAG8_8SVB`]) ends
+    /// before although the field has that encoding too: the firmware wrote
+    /// it as the first value of a group of its own. Empty when neighbouring
+    /// fields of that encoding always share groups of eight.
+    pub group_starts: Vec<usize>,
 }
 
 impl FrameDef {
@@ -37,6 +44,15 @@ impl FrameDef {
     /// Index of a field by name.
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.names.iter().position(|n| n == name)
+    }
+
+    /// Mark the servo array as a group of its own (see
+    /// [`Headers::servo_group`]).
+    fn split_before_servos(&mut self) {
+        let is_servo = |name: &String| name.starts_with("servo[");
+        self.group_starts = (1..self.len())
+            .filter(|i| is_servo(&self.names[*i]) && !is_servo(&self.names[*i - 1]))
+            .collect();
     }
 
     fn validate(&self, frame_type: u8) -> Result<(), HeaderError> {
@@ -60,6 +76,18 @@ impl FrameDef {
             return Err(HeaderError::Inconsistent(
                 ft,
                 "encoding list length differs from names".into(),
+            ));
+        }
+        // A frame with a predictor this crate cannot apply has no values:
+        // every one of them would be rejected, and the log would come out
+        // empty with nothing to say why.
+        if let Some(i) = (0..self.len()).find(|i| !predictor::is_known(self.predictors[*i])) {
+            return Err(HeaderError::Inconsistent(
+                ft,
+                format!(
+                    "unsupported predictor {} for field {}",
+                    self.predictors[i], self.names[i]
+                ),
             ));
         }
         let mut i = 0;
@@ -137,6 +165,20 @@ pub struct Headers {
     pub vbatref: i64,
     /// Firmware identity from the `Firmware revision` header.
     pub firmware: FirmwareInfo,
+    /// The firmware writes the servo array of a main frame as one group of
+    /// the 8-value encoding of its own, whatever stands before it; from the
+    /// release line of the log ([`crate::releases::Release::servo_group`]).
+    ///
+    /// Betaflight since 2025.12 logs `servo[0..7]` that way (tags 2025.12.2
+    /// and 2026.6.2, `blackbox.c`: `writeInterframe` writes the optional
+    /// fields `vbatLatest` … `rssi` with one call and the servos with a
+    /// second one), and warns in its field table that a decoder which takes
+    /// neighbouring fields of that encoding in eights reads them wrong when
+    /// fewer than eight of the optional fields stand right before the
+    /// servos, which they do with gyro, accelerometer, debug and motor
+    /// logging all switched off. Up to 4.5 it logged one servo, `servo[5]`,
+    /// as a plain number (tags 4.3.2, 4.4.3, 4.5.5).
+    pub servo_group: bool,
     /// Byte offset where frame data begins.
     pub data_start: usize,
 }
@@ -144,55 +186,13 @@ pub struct Headers {
 impl Headers {
     /// Parse the header block at the start of `data`.
     pub fn parse(data: &[u8]) -> Result<Headers, HeaderError> {
-        let mut raw: Vec<(String, String)> = Vec::new();
-        let mut pos = 0usize;
-        while data.len() >= pos + 2 && data[pos] == b'H' && data[pos + 1] == b' ' {
-            let line_start = pos + 2;
-            let limit = (line_start + MAX_HEADER_LINE).min(data.len());
-            let Some(nl) = data[line_start..limit].iter().position(|b| *b == b'\n') else {
-                break;
-            };
-            let line = &data[line_start..line_start + nl];
-            if line.contains(&0) {
-                break;
-            }
-            let line = String::from_utf8_lossy(line);
-            let line = line.trim_end_matches('\r');
-            if let Some((name, value)) = line.split_once(':') {
-                raw.push((name.to_string(), value.to_string()));
-            }
-            pos = line_start + nl + 1;
-        }
+        let (raw, pos) = read_lines(data);
         if raw.is_empty() {
             return Err(HeaderError::NoHeader);
         }
         let raw = RawHeaders(raw);
 
-        let mut defs: BTreeMap<u8, FrameDef> = BTreeMap::new();
-        for (name, value) in &raw.0 {
-            let Some(rest) = name.strip_prefix("Field ") else {
-                continue;
-            };
-            let mut it = rest.splitn(2, ' ');
-            let (Some(ft), Some(kind)) = (it.next(), it.next()) else {
-                continue;
-            };
-            let Some(&ft) = ft.as_bytes().first() else {
-                continue;
-            };
-            let def = defs.entry(ft).or_default();
-            match kind {
-                "name" => def.names = value.split(',').map(|s| s.trim().to_string()).collect(),
-                "signed" => def.signed = parse_ints(value).into_iter().map(|v| v != 0).collect(),
-                "predictor" => {
-                    def.predictors = parse_ints(value).into_iter().map(|v| v as u8).collect()
-                }
-                "encoding" => {
-                    def.encodings = parse_ints(value).into_iter().map(|v| v as u8).collect()
-                }
-                _ => {}
-            }
-        }
+        let mut defs = frame_defs(&raw);
         // P frames share names and signedness with I frames.
         let i_def = defs
             .get(&b'I')
@@ -202,9 +202,21 @@ impl Headers {
             p.names.clone_from(&i_def.names);
             p.signed.clone_from(&i_def.signed);
         }
+        let mut firmware = FirmwareInfo::parse_revision(raw.get("Firmware revision").unwrap_or(""));
+        firmware.build_date = raw.get("Firmware date").map(str::to_string);
+        let servo_group = firmware.vendor == FirmwareVendor::Betaflight
+            && releases::select(&firmware).release.servo_group;
+        if servo_group {
+            for ft in *b"IP" {
+                if let Some(def) = defs.get_mut(&ft) {
+                    def.split_before_servos();
+                }
+            }
+        }
         for (ft, def) in &defs {
             def.validate(*ft)?;
         }
+        check_references(&defs, &i_def)?;
         if i_def.index_of("loopIteration").is_none() {
             return Err(HeaderError::MissingMainField("loopIteration"));
         }
@@ -216,33 +228,13 @@ impl Headers {
         let i_interval = raw
             .get_i64("I interval")
             .map_or(32, |v| v.clamp(1, i64::from(u32::MAX)) as u32);
-        let p_interval = match raw.get("P interval").map(str::trim) {
-            Some(v) if v.contains('/') => {
-                let (a, b) = v.split_once('/').unwrap_or(("1", "1"));
-                let num = a.trim().parse().unwrap_or(1u32);
-                let denom = b.trim().parse().unwrap_or(1u32);
-                if num == 0 || denom == 0 {
-                    PInterval::IntraOnly
-                } else {
-                    PInterval::Fraction { num, denom }
-                }
-            }
-            Some(v) => match v.parse::<u32>() {
-                Ok(0) => PInterval::IntraOnly,
-                Ok(d) => PInterval::Fraction { num: 1, denom: d },
-                Err(_) => PInterval::Fraction { num: 1, denom: 1 },
-            },
-            None => PInterval::Fraction { num: 1, denom: 1 },
-        };
+        let p_interval = p_interval(&raw);
         let minthrottle = raw.get_i64("minthrottle").unwrap_or(1150);
         let motor_output_low = raw
             .get("motorOutput")
             .and_then(|v| v.split(',').next()?.trim().parse::<i64>().ok())
             .unwrap_or(minthrottle);
         let vbatref = raw.get_i64("vbatref").unwrap_or(4095);
-        let mut firmware = FirmwareInfo::parse_revision(raw.get("Firmware revision").unwrap_or(""));
-        firmware.build_date = raw.get("Firmware date").map(str::to_string);
-
         let data_version = raw.get_i64("Data version").map_or(1, |v| v as u32);
         Ok(Headers {
             raw,
@@ -254,6 +246,7 @@ impl Headers {
             motor_output_low,
             vbatref,
             firmware,
+            servo_group,
             data_start: pos,
         })
     }
@@ -289,6 +282,118 @@ impl Headers {
             PInterval::IntraOnly => f64::from(self.i_interval),
             PInterval::Fraction { num, denom } => f64::from(denom) / f64::from(num),
         }
+    }
+}
+
+/// The `H name:value` lines at the start of `data`, in order, and the byte
+/// offset just after the last of them. The block ends at the first line
+/// that is not a header line, is longer than [`MAX_HEADER_LINE`] or holds a
+/// zero byte; a line without a colon is passed over.
+fn read_lines(data: &[u8]) -> (Vec<(String, String)>, usize) {
+    let mut raw: Vec<(String, String)> = Vec::new();
+    let mut pos = 0usize;
+    while data.len() >= pos + 2 && data[pos] == b'H' && data[pos + 1] == b' ' {
+        let line_start = pos + 2;
+        let limit = (line_start + MAX_HEADER_LINE).min(data.len());
+        let Some(nl) = data[line_start..limit].iter().position(|b| *b == b'\n') else {
+            break;
+        };
+        let line = &data[line_start..line_start + nl];
+        if line.contains(&0) {
+            break;
+        }
+        let line = String::from_utf8_lossy(line);
+        let line = line.trim_end_matches('\r');
+        if let Some((name, value)) = line.split_once(':') {
+            raw.push((name.to_string(), value.to_string()));
+        }
+        pos = line_start + nl + 1;
+    }
+    (raw, pos)
+}
+
+/// The frame definitions of the `Field <letter> <kind>` headers, by frame
+/// letter, as logged (the P frames still without the names and signs they
+/// share with the I frames).
+fn frame_defs(raw: &RawHeaders) -> BTreeMap<u8, FrameDef> {
+    let mut defs: BTreeMap<u8, FrameDef> = BTreeMap::new();
+    for (name, value) in &raw.0 {
+        let Some((ft, kind)) = field_header(name) else {
+            continue;
+        };
+        let def = defs.entry(ft).or_default();
+        match kind {
+            "name" => def.names = value.split(',').map(|s| s.trim().to_string()).collect(),
+            "signed" => def.signed = parse_ints(value).into_iter().map(|v| v != 0).collect(),
+            "predictor" => {
+                def.predictors = parse_ints(value).into_iter().map(|v| v as u8).collect()
+            }
+            "encoding" => def.encodings = parse_ints(value).into_iter().map(|v| v as u8).collect(),
+            _ => {}
+        }
+    }
+    defs
+}
+
+/// The frame letter and the kind (`name`, `signed`, `predictor`,
+/// `encoding`) of a `Field <letter> <kind>` header name.
+fn field_header(name: &str) -> Option<(u8, &str)> {
+    let (ft, kind) = name.strip_prefix("Field ")?.split_once(' ')?;
+    Some((*ft.as_bytes().first()?, kind))
+}
+
+/// A predictor that refers to a field the log does not have leaves a frame
+/// without values as an unknown predictor does: `motor[0]` for predictor 5
+/// in the main frames, the home coordinates for predictor 7 in the GPS
+/// frames.
+fn check_references(defs: &BTreeMap<u8, FrameDef>, i_def: &FrameDef) -> Result<(), HeaderError> {
+    let lacks = |ft: u8, predictor: u8, field: &str| {
+        let def = defs.get(&ft)?;
+        let i = def.predictors.iter().position(|p| *p == predictor)?;
+        Some(HeaderError::Inconsistent(
+            ft as char,
+            format!(
+                "predictor {predictor} for field {} needs the field {field}, which the log does \
+                 not define",
+                def.names[i]
+            ),
+        ))
+    };
+    if i_def.index_of("motor[0]").is_none() {
+        for ft in *b"IP" {
+            lacks(ft, predictor::MOTOR_0, "motor[0]").map_or(Ok(()), Err)?;
+        }
+    }
+    let home = defs.get(&b'H');
+    for field in ["GPS_home[0]", "GPS_home[1]"] {
+        if home.is_none_or(|h| h.index_of(field).is_none()) {
+            lacks(b'G', predictor::HOME_COORD, field).map_or(Ok(()), Err)?;
+        }
+    }
+    Ok(())
+}
+
+/// The `P interval` header: `1/denom`, a bare denominator, or 0 for a log
+/// of intra frames only; one P frame per iteration when it is absent or
+/// unreadable.
+fn p_interval(raw: &RawHeaders) -> PInterval {
+    match raw.get("P interval").map(str::trim) {
+        Some(v) if v.contains('/') => {
+            let (a, b) = v.split_once('/').unwrap_or(("1", "1"));
+            let num = a.trim().parse().unwrap_or(1u32);
+            let denom = b.trim().parse().unwrap_or(1u32);
+            if num == 0 || denom == 0 {
+                PInterval::IntraOnly
+            } else {
+                PInterval::Fraction { num, denom }
+            }
+        }
+        Some(v) => match v.parse::<u32>() {
+            Ok(0) => PInterval::IntraOnly,
+            Ok(d) => PInterval::Fraction { num: 1, denom: d },
+            Err(_) => PInterval::Fraction { num: 1, denom: 1 },
+        },
+        None => PInterval::Fraction { num: 1, denom: 1 },
     }
 }
 
@@ -408,5 +513,59 @@ I\x00";
             Headers::parse(b"garbage"),
             Err(HeaderError::NoHeader)
         ));
+    }
+
+    /// Issue #183 G: a predictor id this crate does not know made every
+    /// frame fail, and the log came out empty with no explanation; an
+    /// encoding it does not know has always been an error that says so.
+    #[test]
+    fn rejects_predictors_it_cannot_apply() {
+        let error = |from: &str, to: &str| {
+            let text = String::from_utf8_lossy(SAMPLE).replace(from, to);
+            assert_ne!(text.as_bytes(), SAMPLE, "{from}");
+            Headers::parse(text.as_bytes()).unwrap_err().to_string()
+        };
+        assert_eq!(
+            error(
+                "H Field I predictor:0,0,0,0,0,11,5\n",
+                "H Field I predictor:0,0,0,0,12,11,5\n"
+            ),
+            "field definition for frame 'I' is inconsistent: unsupported predictor 12 for field \
+             axisP[2]"
+        );
+        assert!(
+            error(
+                "H Field P predictor:6,2,1,1,1,3,3\n",
+                "H Field P predictor:6,2,1,1,1,3,200\n"
+            )
+            .contains("frame 'P' is inconsistent: unsupported predictor 200 for field motor[1]")
+        );
+        assert!(
+            error(
+                "H Field S predictor:0,0,0,0,0\n",
+                "H Field S predictor:0,0,0,0,99\n"
+            )
+            .contains("frame 'S'")
+        );
+        // a predictor that refers to a field the log does not have
+        assert!(error("motor[0],motor[1]\n", "motorA,motorB\n").contains(
+            "predictor 5 for field motorB needs the field motor[0], which the log does not \
+                 define"
+        ));
+        let gps = "H Field G name:GPS_numSat,GPS_coord[0],GPS_coord[1]\n\
+                   H Field G signed:0,1,1\n\
+                   H Field G predictor:0,7,7\n\
+                   H Field G encoding:1,0,0\n";
+        let home = "H Field H name:GPS_home[0],GPS_home[1]\n\
+                    H Field H signed:1,1\n\
+                    H Field H predictor:0,0\n\
+                    H Field H encoding:0,0\n";
+        let marker = "H Firmware revision:";
+        assert!(error(marker, &format!("{gps}{marker}")).contains(
+            "frame 'G' is inconsistent: predictor 7 for field GPS_coord[0] needs the field \
+                 GPS_home[0]"
+        ));
+        let text = String::from_utf8_lossy(SAMPLE).replace(marker, &format!("{gps}{home}{marker}"));
+        assert!(Headers::parse(text.as_bytes()).is_ok());
     }
 }

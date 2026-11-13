@@ -26,6 +26,11 @@ pub const LAST_MAIN_FRAME_TIME: u8 = 10;
 /// Lowest motor output.
 pub const MINMOTOR: u8 = 11;
 
+/// Whether this crate can apply the predictor id.
+pub fn is_known(predictor: u8) -> bool {
+    predictor <= MINMOTOR
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 /// Why a predictor could not be applied.
 pub enum PredictError {

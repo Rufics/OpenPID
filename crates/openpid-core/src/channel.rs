@@ -167,6 +167,96 @@ impl StickAxis {
     }
 }
 
+/// A quantity of a satellite-navigation receiver, or of the home point the
+/// flight controller took from it. A fix comes a few times a second: in a
+/// session these channels hold each value until the next one, and are
+/// invalid before the first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GpsField {
+    /// Satellites used in the fix.
+    Satellites,
+    /// Latitude, degrees, north positive.
+    Latitude,
+    /// Longitude, degrees, east positive.
+    Longitude,
+    /// Altitude above mean sea level, metres.
+    Altitude,
+    /// Speed over ground, m/s.
+    GroundSpeed,
+    /// Speed in three dimensions, m/s.
+    Speed3d,
+    /// Course over ground, degrees clockwise from north.
+    Course,
+    /// Velocity to the north, m/s.
+    VelocityNorth,
+    /// Velocity to the east, m/s.
+    VelocityEast,
+    /// Velocity downwards, m/s.
+    VelocityDown,
+    /// The receiver's time of the fix, seconds into the GPS week.
+    TimeOfWeek,
+    /// The log's time of the fix, microseconds, on the clock of
+    /// [`ChannelId::Time`].
+    FixTime,
+    /// Latitude of the home point, degrees.
+    HomeLatitude,
+    /// Longitude of the home point, degrees.
+    HomeLongitude,
+    /// Altitude of the home point above mean sea level, metres.
+    HomeAltitude,
+    /// When the home point was taken, seconds since 1970-01-01 UTC.
+    HomeTime,
+}
+
+impl GpsField {
+    /// Every field, in the order of a fix and then of the home point.
+    pub const ALL: [GpsField; 16] = [
+        GpsField::Satellites,
+        GpsField::Latitude,
+        GpsField::Longitude,
+        GpsField::Altitude,
+        GpsField::GroundSpeed,
+        GpsField::Speed3d,
+        GpsField::Course,
+        GpsField::VelocityNorth,
+        GpsField::VelocityEast,
+        GpsField::VelocityDown,
+        GpsField::TimeOfWeek,
+        GpsField::FixTime,
+        GpsField::HomeLatitude,
+        GpsField::HomeLongitude,
+        GpsField::HomeAltitude,
+        GpsField::HomeTime,
+    ];
+
+    /// Lower-case name used in channel keys.
+    pub fn name(self) -> &'static str {
+        match self {
+            GpsField::Satellites => "satellites",
+            GpsField::Latitude => "latitude",
+            GpsField::Longitude => "longitude",
+            GpsField::Altitude => "altitude",
+            GpsField::GroundSpeed => "ground_speed",
+            GpsField::Speed3d => "speed_3d",
+            GpsField::Course => "course",
+            GpsField::VelocityNorth => "velocity_north",
+            GpsField::VelocityEast => "velocity_east",
+            GpsField::VelocityDown => "velocity_down",
+            GpsField::TimeOfWeek => "time_of_week",
+            GpsField::FixTime => "fix_time",
+            GpsField::HomeLatitude => "home_latitude",
+            GpsField::HomeLongitude => "home_longitude",
+            GpsField::HomeAltitude => "home_altitude",
+            GpsField::HomeTime => "home_time",
+        }
+    }
+
+    fn parse(s: &str) -> Option<GpsField> {
+        GpsField::ALL.into_iter().find(|f| f.name() == s)
+    }
+}
+
 /// Semantic identity of a data channel, independent of the logging firmware.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -243,6 +333,8 @@ pub enum ChannelId {
     Battery(BatteryField),
     /// Receiver signal strength (raw firmware units).
     Rssi,
+    /// A quantity of the satellite-navigation receiver or of the home point.
+    Gps(GpsField),
     /// A field the firmware profile could not classify; kept under its logged name.
     Custom(String),
 }
@@ -267,6 +359,7 @@ impl ChannelId {
             ChannelId::Acc { axis } => format!("acc.{}", axis.name()),
             ChannelId::Battery(f) => format!("battery.{}", f.name()),
             ChannelId::Rssi => "rssi".into(),
+            ChannelId::Gps(f) => format!("gps.{}", f.name()),
             ChannelId::Custom(name) => format!("custom:{name}"),
         }
     }
@@ -283,6 +376,7 @@ impl ChannelId {
             ["loop_iteration"] => Some(ChannelId::LoopIteration),
             ["throttle"] => Some(ChannelId::Throttle),
             ["rssi"] => Some(ChannelId::Rssi),
+            ["gps", field] => Some(ChannelId::Gps(GpsField::parse(field)?)),
             ["gyro", stage, axis] => {
                 let stage = match *stage {
                     "raw" => GyroStage::Raw,
@@ -379,7 +473,8 @@ mod tests {
             ChannelId::Rssi,
             ChannelId::Custom("BaroAlt".into()),
         ];
-        for id in ids {
+        let gps = GpsField::ALL.into_iter().map(ChannelId::Gps);
+        for id in ids.into_iter().chain(gps) {
             assert_eq!(
                 ChannelId::parse(&id.key()).as_ref(),
                 Some(&id),
@@ -388,5 +483,7 @@ mod tests {
             );
         }
         assert_eq!(ChannelId::parse("gyro.bogus.roll"), None);
+        assert_eq!(ChannelId::Gps(GpsField::Speed3d).key(), "gps.speed_3d");
+        assert_eq!(ChannelId::parse("gps.bogus"), None);
     }
 }

@@ -114,6 +114,15 @@ pub trait BoundProfile {
     /// `Custom` channel.
     fn map_field(&self, field: &str) -> Option<FieldMapping>;
 
+    /// Map a field of a frame that is logged now and then, beside the main
+    /// frames, onto a channel: `table` is the kind of its
+    /// [`crate::session::AuxTable`] (`slow`, `gps`, `gps_home`). The channel
+    /// holds each logged value until the next one. `None`, the default,
+    /// leaves the field in its table only.
+    fn map_aux_field(&self, _table: &str, _field: &str) -> Option<FieldMapping> {
+        None
+    }
+
     /// The typed settings of the log.
     fn settings(&self) -> Settings;
 

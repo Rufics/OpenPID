@@ -59,6 +59,33 @@
         "valid": 2
       },
       {
+        "key": "custom:failsafePhase",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "failsafePhase",
+        "unit": "",
+        "valid": 1
+      },
+      {
+        "key": "custom:rxFlightChannelsValid",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxFlightChannelsValid",
+        "unit": "",
+        "valid": 1
+      },
+      {
+        "key": "custom:rxSignalReceived",
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "name": "rxSignalReceived",
+        "unit": "",
+        "valid": 1
+      },
+      {
         "key": "custom:setpoint[3]",
         "max": 0.0,
         "mean": 0.0,
@@ -66,6 +93,15 @@
         "name": "setpoint[3]",
         "unit": "%",
         "valid": 2
+      },
+      {
+        "key": "custom:stateFlags",
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "name": "stateFlags",
+        "unit": "flags",
+        "valid": 1
       },
       {
         "key": "gyro.filtered.pitch",
