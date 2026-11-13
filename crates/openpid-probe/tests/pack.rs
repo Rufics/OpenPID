@@ -752,11 +752,11 @@ fn round_6_carries_predictions_for_every_axis() {
         let windows: Vec<usize> = a.levels.iter().map(|l| l.windows).collect();
         assert!(windows.windows(2).all(|w| w[0] <= w[1]), "{windows:?}");
     }
-    // the script: 27 pictures and 174 copies, in about 21 minutes
+    // the script: 29 pictures and 192 copies, in about 23 minutes
     let note = String::from_utf8(pack.files().pop().unwrap().1).unwrap();
     assert!(note.contains("Calibration round 6"), "{note}");
     assert!(
-        note.contains("174 plots") && note.contains("21 minutes"),
+        note.contains("192 plots") && note.contains("23 minutes"),
         "{note}"
     );
 }
