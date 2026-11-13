@@ -9,18 +9,20 @@
 //! predictions are made with it before the owner runs the round, so that
 //! the round confirms it or corrects it.
 //!
-//! Rounds 4 and 5 were run on version 0.9 of the tool. The model is that
-//! of version 0.94, which moves its windows by 0.05 s where 0.9 moved them
-//! by 0.1 s (seen in one picture of the first log of round 6); everything
-//! else of the rule is carried over from 0.9 and has not been checked on
-//! 0.94.
+//! Rounds 4 and 5 were run on version 0.9 of the tool, round 6 on version
+//! 0.94. The model is that of 0.94, which differs from 0.9 in one thing:
+//! it moves its windows by 0.05 s where 0.9 moved them by 0.1 s. With that
+//! the rule held on every plot of the five logs of round 6. Version 0.94
+//! also lets the length of the window be chosen; it enters simply
+//! ([`grid`]).
 //!
 //! The steps:
 //! 1. the filtered gyro is smoothed by a local regression over 1, 5, 11 or
 //!    21 samples, the same at every log rate ([`SMOOTHING`]); the setpoint
 //!    is not;
 //! 2. the log without its first and last second is cut into windows of two
-//!    seconds, a twentieth of a second apart ([`grid`]);
+//!    seconds (or of the length chosen), a fortieth of their length apart
+//!    ([`grid`]);
 //! 3. in every window the setpoint and the gyro go through a Hann window
 //!    and are followed by 200 zeros; the gyro's transform is divided by the
 //!    setpoint's with a small constant in the denominator; the result, back
@@ -43,13 +45,15 @@ use std::f64::consts::TAU;
 /// 4 kHz).
 pub const SMOOTHING: [(&str, usize); 4] = [("off", 1), ("low", 5), ("medium", 11), ("high", 21)];
 
-/// Length of a window, seconds.
-const WINDOW_S: f64 = 2.0;
-/// Distance between the starts of two windows, seconds: 0.05 s in version
-/// 0.94 of the tool, where version 0.9 had 0.1 s. Seen in one picture of
-/// the first log of round 6: its three axes show 595, 593 and 586 windows,
-/// which this distance gives exactly (0.1 s gives 295, 297 and 293).
-const HOP_S: f64 = 0.05;
+/// Length of a window as the tool comes up, seconds. Version 0.94 offers
+/// one to five seconds.
+pub const WINDOW_S: f64 = 2.0;
+/// The starts of two windows are this part of a window apart: 0.05 s for
+/// windows of two seconds in version 0.94 of the tool, where version 0.9
+/// had 0.1 s. Measured in round 6 on every plot of five logs (the first
+/// log shows 595, 593 and 586 windows, where 0.1 s gives 295, 297 and
+/// 293), and on its windows of one and of three seconds.
+const HOPS_IN_A_WINDOW: f64 = 40.0;
 /// Zeros that follow a window before its transform: the same number at 1,
 /// 2 and 4 kHz.
 const PAD: usize = 200;
@@ -80,9 +84,9 @@ const DELAY_RATE: f64 = 8000.0;
 const DELAY_MAX_S: f64 = 0.2;
 
 /// Samples by which the first window starts after the first second for
-/// most logs. On two short logs, one of 12 s and one of 18 s, it was three,
-/// on another of 12 s two; which it is for a log is not known, and the
-/// curve moves by less than 0.001 with it.
+/// most logs. On three logs, of 12 s, of 18 s and of 41 s, it was three, on
+/// another of 12 s two; which it is for a log is not known, and the curve
+/// moves by less than 0.001 with it.
 pub const LATE: usize = 2;
 
 /// Where the windows of a log lie.
@@ -105,13 +109,15 @@ impl Grid {
     }
 }
 
-/// The windows of a log of `len` samples at `fs` whose first window starts
-/// `late` samples after the first second, or `None` when the log holds no
-/// window.
-pub fn grid(len: usize, fs: f64, late: usize) -> Option<Grid> {
+/// The windows of `window_s` seconds ([`WINDOW_S`] as the tool comes up)
+/// of a log of `len` samples at `fs` whose first window starts `late`
+/// samples after the first second, or `None` when the log holds no window.
+/// The length of the window enters in two places only: the windows are
+/// that long and a fortieth of it apart.
+pub fn grid(len: usize, fs: f64, late: usize, window_s: f64) -> Option<Grid> {
     let second = fs.round() as usize;
-    let length = (WINDOW_S * fs).round() as usize;
-    let hop = (HOP_S * fs).round() as usize;
+    let length = (window_s * fs).round() as usize;
+    let hop = (window_s / HOPS_IN_A_WINDOW * fs).round() as usize;
     // the span of the spectrum: the log less two seconds and one sample
     let span = len.checked_sub(2 * second + 1)?;
     let count = span.checked_sub(length)? / hop.max(1);
@@ -271,22 +277,36 @@ pub fn step_from(
     smoothing: usize,
     late: usize,
 ) -> Option<Step> {
-    let (grid, windows) = candidates(setpoint, gyro, fs, smoothing, late)?;
+    let (grid, windows) = candidates(setpoint, gyro, fs, smoothing, (late, WINDOW_S))?;
     Some(read(grid, windows, fs, settled_from(fs)))
+}
+
+/// [`step`] with windows of `window_s` seconds.
+pub fn step_of(
+    setpoint: &[f64],
+    gyro: &[f64],
+    fs: f64,
+    smoothing: usize,
+    window_s: f64,
+) -> Option<Step> {
+    let (grid, found) = candidates(setpoint, gyro, fs, smoothing, (LATE, window_s))?;
+    Some(read(grid, found, fs, settled_from(fs)))
 }
 
 /// The windows of a log whose stick moved enough, each with its response,
 /// whether the response keeps its limits or not: `setpoint` and `gyro` as
-/// for [`step`], the first window `late` samples after the first second.
+/// for [`step`]; `cut` says how the log is cut, the samples by which the
+/// first window starts after the first second and the seconds of a window
+/// (`(LATE, WINDOW_S)` as the tool comes up).
 pub fn candidates(
     setpoint: &[f64],
     gyro: &[f64],
     fs: f64,
     smoothing: usize,
-    late: usize,
+    cut: (usize, f64),
 ) -> Option<(Grid, Vec<Window>)> {
     let len = setpoint.len().min(gyro.len());
-    let grid = grid(len, fs, late)?;
+    let grid = grid(len, fs, cut.0, cut.1)?;
     let span = SMOOTHING[smoothing.min(SMOOTHING.len() - 1)].1;
     let gyro = model::smooth(&gyro[..len], span);
     let points = (SHOWN_S * fs).round() as usize + 1;
@@ -308,7 +328,11 @@ pub fn candidates(
 /// ([`settled_from`] for a log), and the "Peak" is looked for before it.
 pub fn read(grid: Grid, mut windows: Vec<Window>, fs: f64, from: usize) -> Step {
     windows.retain(|w| settled(&w.response, from));
-    let points = (SHOWN_S * fs).round() as usize + 1;
+    let shown = (SHOWN_S * fs).round() as usize + 1;
+    let points = windows
+        .iter()
+        .map(|w| w.response.len())
+        .fold(shown, usize::min);
     let n = windows.len() as f64;
     let mean: Vec<f64> = (0..points)
         .map(|i| windows.iter().map(|w| w.response[i]).sum::<f64>() / n)
@@ -402,23 +426,23 @@ mod tests {
     #[test]
     fn the_windows_of_a_log() {
         // 30 s at 2 kHz: 519 windows of 4000 samples, 100 apart, from 2002
-        let g = grid(60_000, 2000.0, LATE).unwrap();
+        let g = grid(60_000, 2000.0, LATE, WINDOW_S).unwrap();
         assert_eq!((g.first, g.length, g.hop, g.count), (2002, 4000, 100, 519));
         assert_eq!(g.start(518), 53_802);
         // 12 s: 159
-        assert_eq!(grid(24_000, 2000.0, 3).unwrap().count, 159);
+        assert_eq!(grid(24_000, 2000.0, 3, WINDOW_S).unwrap().count, 159);
         // the same seconds at other rates give the same number of windows
-        assert_eq!(grid(30_000, 1000.0, LATE).unwrap().count, 519);
-        assert_eq!(grid(120_000, 4000.0, LATE).unwrap().count, 519);
+        assert_eq!(grid(30_000, 1000.0, LATE, WINDOW_S).unwrap().count, 519);
+        assert_eq!(grid(120_000, 4000.0, LATE, WINDOW_S).unwrap().count, 519);
         // 34 s, the first log of round 6: the 599 windows of which the tool
         // counted 595, 593 and 586
-        assert_eq!(grid(68_000, 2000.0, LATE).unwrap().count, 599);
+        assert_eq!(grid(68_000, 2000.0, LATE, WINDOW_S).unwrap().count, 599);
         // four seconds hold no window: two are cut off, and the two that
         // are left are one sample short
-        assert_eq!(grid(8000, 2000.0, LATE), None);
-        assert_eq!(grid(100, 2000.0, LATE), None);
-        assert_eq!(grid(8101, 2000.0, LATE).unwrap().count, 1);
-        assert_eq!(grid(8201, 2000.0, LATE).unwrap().count, 2);
+        assert_eq!(grid(8000, 2000.0, LATE, WINDOW_S), None);
+        assert_eq!(grid(100, 2000.0, LATE, WINDOW_S), None);
+        assert_eq!(grid(8101, 2000.0, LATE, WINDOW_S).unwrap().count, 1);
+        assert_eq!(grid(8201, 2000.0, LATE, WINDOW_S).unwrap().count, 2);
     }
 
     /// A stick that moves to a new level within 200 deg/s every 150 …
@@ -565,7 +589,7 @@ mod tests {
     fn the_peak_is_looked_for_before_the_limit() {
         // one window that rises to its end: the peak is the last value
         // before the sample from which the response has to keep its limits
-        let grid = grid(24_000, 2000.0, LATE).unwrap();
+        let grid = grid(24_000, 2000.0, LATE, WINDOW_S).unwrap();
         let rising = Window {
             index: 0,
             response: (0..=1000).map(|i| 0.6 + 0.0005 * f64::from(i)).collect(),
@@ -604,6 +628,38 @@ mod tests {
         // less a millisecond
         assert!((s.latency_ms - 2.75).abs() < 1.0e-9, "{}", s.latency_ms);
         assert!((s.peak - 1.0).abs() < 0.05, "{}", s.peak);
+    }
+
+    #[test]
+    fn the_length_of_the_window_moves_the_windows_with_it() {
+        // 12 s at 2 kHz, of which ten seconds less a sample are cut up:
+        // windows of 2 s are 100 samples apart, of 1 s 50, of 3 s 150
+        let shape = |window_s: f64| {
+            let g = grid(24_000, 2000.0, LATE, window_s).unwrap();
+            (g.first, g.length, g.hop, g.count)
+        };
+        assert_eq!(shape(WINDOW_S), (2002, 4000, 100, 159));
+        assert_eq!(shape(1.0), (2002, 2000, 50, 359));
+        assert_eq!(shape(3.0), (2002, 6000, 150, 93));
+        // twice the windows of 2 s, and the 41 that fit into the second a
+        // window of 1 s leaves free
+        assert_eq!(shape(1.0).3, 2 * shape(WINDOW_S).3 + 41);
+        assert_eq!(grid(24_000, 2000.0, LATE, 5.0).unwrap().count, 39);
+        assert_eq!(grid(24_000, 2000.0, LATE, 10.0), None);
+
+        // a gyro 10 ms behind its stick reads the same from any of them
+        let (setpoint, gyro) = delayed(24_000, 20);
+        let two = step(&setpoint, &gyro, 2000.0, 0).unwrap();
+        assert_eq!(step_of(&setpoint, &gyro, 2000.0, 0, WINDOW_S), Some(two));
+        for (window_s, count) in [(1.0, 359), (3.0, 93)] {
+            let s = step_of(&setpoint, &gyro, 2000.0, 0, window_s).unwrap();
+            // a short window wanders more, and a few leave 0.5 … 1.5
+            assert_eq!(s.grid.count, count);
+            assert!(s.windows.len() > count * 9 / 10, "{}", s.windows.len());
+            assert_eq!(s.mean.len(), 1001);
+            assert!((s.latency_ms - 9.5).abs() < 0.1, "{}", s.latency_ms);
+            assert!((s.peak - 1.0).abs() < 0.05, "{window_s}: {}", s.peak);
+        }
     }
 
     #[test]

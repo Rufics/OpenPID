@@ -380,12 +380,13 @@ pub const PREDICTED_MS: [f64; 18] = [
 /// What the predictions of a step-response round rest on beyond what is
 /// measured.
 const STEP_ASSUMES: [&str; 3] = [
-    "version 0.94 of the tool moves its windows by 0.05 s where version 0.9 moved them by \
-     0.1 s (one picture: n = 595, 593, 586 for w1-flight-2k, which this gives exactly); \
-     everything else of the rule is carried over from 0.9 unchecked",
-    "the first window starts two samples after the first second (on two short logs, one of \
-     12 s and one of 18 s, it was three; on another of 12 s two; the curve moves by less \
-     than 0.001)",
+    "version 0.94 of the tool moves its windows by a fortieth of their length, 0.05 s for \
+     the 2 s it comes up with, where version 0.9 moved them by 0.1 s (measured in round 6: \
+     every plot of five logs, and windows of 1 s and of 3 s on one of them); the rest of the \
+     rule is that of version 0.9, which held on every plot of round 6",
+    "the first window starts two samples after the first second (on three logs, of 12 s, of \
+     18 s and of 41 s, it was three; on another of 12 s two; the curve moves by less than \
+     0.001)",
     "the delay between setpoint and gyro is read at 8 kHz from straight lines between the \
      samples, up to 200 ms (right on 39 of 47 plots of rounds 4 and 5, one step of 0.125 ms \
      off on seven, 10 ms off on a creeping plant at 1 kHz)",
@@ -730,7 +731,12 @@ fn predicted_step(session: &FlightSession, probe: &Probe) -> Result<PredictedSte
     for axis in Axis::ALL {
         let setpoint = logged_setpoint(session, axis, id)?;
         let gyro = logged(session, axis, GyroStage::Filtered, id)?;
-        grid = step_model::grid(setpoint.len().min(gyro.len()), fs, step_model::LATE);
+        grid = step_model::grid(
+            setpoint.len().min(gyro.len()),
+            fs,
+            step_model::LATE,
+            step_model::WINDOW_S,
+        );
         let levels = (0..levels)
             .map(|level| predicted_step_level(&setpoint, &gyro, fs, level))
             .collect::<Option<Vec<_>>>()
