@@ -319,9 +319,8 @@ ends. With the window and the span above, the model gives the thirty curves
 checked (yaw below 100 Hz of every log at every level; pitch for one of
 them) to 0.000016 dB at worst.
 
-The model is `crates/openpid-probe/src/model.rs`; twelve curves of the
-reference tool are in `tests/calibration/spectrum/` and a test holds the
-model to them.
+The model was held to twelve curves of the reference tool (one-off
+material, not committed).
 
 ## Round 3 (2026-11-11): the hold-out
 
@@ -383,12 +382,12 @@ curve is settled. In one place:
    `L³·log10(points)` points made odd, L = 1 … 5; at the two ends a line
    through the nearest points of that many.
 
-It is in code as `crates/openpid-probe/src/model.rs`, held by a test to
-eighteen curves of the reference tool in `tests/calibration/spectrum/`.
+It is in code as `PsdMethod::Curve` of `openpid-analysis` (#187), and
+was held to eighteen curves of the reference tool.
 
 What is left is not about the reference tool any more. The owner chose
 option A of D-001 on 2026-11-11: OpenPID draws the reference tool's curve
-by default and keeps its density as a second mode (pull request #181). The other channels of that window and the "Freq x
+by default and keeps its density as a second mode (pull request #187, on its own from `master`; it replaces #181). The other channels of that window and the "Freq x
 Throttle" and "Freq x Time" screens are areas of their own.
 
 ### Not settled

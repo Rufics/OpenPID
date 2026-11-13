@@ -187,18 +187,22 @@ curves on the 27 plots of the round. One rule gives every one of them, the
 45 mean curves (27 without smoothing, 18 at the three levels), the window
 counts of all 45 legends, and the Peak and SR Latency plots, to the
 precision of the copies (0.0000004 on a curve that runs from 0 to 1.25).
-It is in `crates/openpid-probe/src/step_model.rs`, with the readings it is
-tested against in `tests/calibration/step/`.
+Round 5 confirmed it on logs it had not seen and corrected item 6. The
+rule is `openpid_analysis::step_windows` (#188); the copies and the
+scripts that read them were one-off material and are not in the repository.
 
 1. **Smoothing** works on the filtered gyro only, before anything else: a
    local regression with tricube weights (the one of the Spectral
-   Analyzer) over 5, 11 and 21 samples for "low", "medium" and "high" at
-   2 kHz. The setpoint is not smoothed. The logged setpoint is used, not
+   Analyzer) over 5, 11 and 21 samples for "low", "medium" and "high":
+   samples, the same number at 1, 2 and 4 kHz (round 5). The setpoint is
+   not smoothed. The logged setpoint is used, not
    one computed from the sticks.
 2. **Windows**: the log without its first and last second, starting two
    samples after the first second (as the spectrum does), is cut into
-   windows of 2 s, a tenth of a second apart: 259 for 30 s, 79 for 12 s,
-   at every log rate.
+   windows of 2 s, a tenth of a second apart: 259 for 30 s, 219 for 26 s,
+   139 for 18 s, 79 for 12 s, at every log rate. On two of the three
+   short logs (one of 12 s, the one of 18 s) the first window starts one
+   sample later; why is not known, and the curve moves by less than 0.001.
 3. **One window**: the setpoint and the gyro each go through a Hann window
    and are followed by 200 zeros (200 at 1, 2 and 4 kHz alike). Their
    transforms `X` and `Y`, divided by their length, give
@@ -206,14 +210,18 @@ tested against in `tests/calibration/step/`.
    response; its running sum is the window's step response, of which the
    first 500 ms are kept, at the log's own rate.
 4. **A window counts** when the stick was off its centre by 20 deg/s or
-   more on average (the mean of `|setpoint|` over the window), and when
-   its response stays between 0.5 and 1.5 from 150 ms to 500 ms.
+   more on average (the mean of `|setpoint|` over the window; exactly 20
+   is enough, 19 is not), and when its response stays between 0.5 and 1.5
+   from 150 ms to 500 ms (150 ms is a time: sample 150, 300 and 600 at 1,
+   2 and 4 kHz).
 5. **The curve** is the mean of the windows that count; the `n` of the
    legend is their number.
-6. **Peak** is the highest value of the curve; its bar is the spread
-   (standard deviation) over the windows of each window's highest value
-   among its first 150 samples (150 samples at every rate: 150, 75 and
-   37.5 ms).
+6. **Peak** is the highest value of the curve before 150 ms (the samples
+   before the one from which item 4 looks); a response that is still
+   rising there reads lower than its final overshoot. Its bar is the
+   spread (sample standard deviation) over the windows of each window's
+   highest value among its first 150 samples (150 samples at every rate:
+   150, 75 and 37.5 ms).
 7. **SR Latency** is, per window, the time of the first sample above 0.5,
    counted from one and less a millisecond (`(i + 1) / fs − 1 ms` for
    sample `i` counted from zero): a pure delay of 10 ms reads 10.0, 9.5 and
@@ -245,30 +253,34 @@ tool does it: the 200 zeros and the first 150 samples are numbers of
 samples, the same at every rate; and the first sample above 0.5 is taken,
 with no reading between two samples.
 
-### What is still open
+### What round 5 settled, and what is still open
 
-| Open | What is known | Round 5 asks |
-|---|---|---|
-| The smoothing windows at other log rates | 5, 11, 21 samples at 2 kHz | the three levels on a pure delay at 1 and 4 kHz |
-| "From 150 ms on": a time or a number of samples | sample 294 … 317 at 2 kHz; no window was near the limit at 1 and 4 kHz | a noisy axis at 1 kHz and a creeping plant at 4 kHz, where the two readings take different windows (192 or 211; 241 or 168) |
-| Where the Peak stops looking | on two plots of plants that never overshoot the tool's value was the highest of the first 137 … 324 ms only | a plant that creeps to its level (time constant 100 ms): its curve rises to its end, so the Peak tells where the tool stops; and peaks at 149 and 236 ms |
-| "20 deg/s or more": is exactly 20 enough | between 19.85 (left out) and 20.06 (taken) | a stick always 19, 21 and 20 deg/s from its centre |
-| Where the first window starts | two samples after the first second on eight logs, three on the 12 s log | logs of 12, 18 and 26 s |
-| SP-Gyro Delay | setpoint and gyro of the trimmed log brought to 8 kHz along straight lines; the shift with the largest sum of products. Right on 25 of 27 plots; 0.125 and 0.25 ms too high on the axis of small moves and on the noisy one | every plot of round 5; delays above 19 ms |
+| Question after round 4 | Answer of round 5 |
+|---|---|
+| The smoothing windows at other log rates | 5, 11 and 21 samples at 1 and 4 kHz too: all curves of the three levels as predicted |
+| "From 150 ms on": a time or a number of samples | a time: 192 windows on the noisy axis at 1 kHz and 241 on the creeping plant at 4 kHz, the counts of that reading |
+| Where the Peak stops looking | at 150 ms: for a plant of 2.5 Hz, whose curve tops at 226 ms, the Peak is the curve's value at 149.5 ms (0.95254); for the creeping plant it is the value just before 150 ms (0.774) |
+| "20 deg/s or more": is exactly 20 enough | yes: 257 windows at 20 and at 21, none at 19 |
+| Where the first window starts | two samples after the first second on the logs of 26 and 30 s and on one of 12 s, three on the other of 12 s and on the one of 18 s. Not the length alone, then, and not the first second (two of the logs begin alike). **Open**; the effect is below 0.001 on the curve |
+| SP-Gyro Delay | the same straight-line reading at 8 kHz is right on 39 of the 47 plots of both rounds, one step of 0.125 ms off on seven and 10 ms off on one (the creeping plant at 1 kHz: 62.5 against 72.75, where the agreement of the two signals has a flat top). Trying other ways of bringing the signals to 8 kHz, other ends of the stretch, with and without the means: none reads more plots. **Open** |
 
 ## OpenPID after decision D-002 (2026-11-12)
 
 The owner chose option A: OpenPID computes the step response as the
 reference tool does. The rule above is now `openpid_analysis::step_windows`
 and the default method of the Step response tab, of `openpid run step` and
-of the advice (#184); the estimator OpenPID had is kept as a second method.
+of the advice (#188, on its own from `master`; it replaces #184, which
+stood on the branches of the test tools); the estimator OpenPID had is kept
+as a second method.
 
-**Computed.** The tests that held the model to the reference tool's
-readings now hold OpenPID's own code to them, and one goes the whole way a
-user does: the log as a file, the reader, an epoch, the analysis with its
-defaults. For the epoch that is the reference tool's stretch of the log
-(1.001 s to one second before the end) the result is its curve to
-0.000002, with its window count, Peak, SR latency and both bars.
+**Computed.** OpenPID's own code was held to the reference tool's readings
+of rounds 4 and 5, once the whole way a user goes: the log as a file, the
+reader, an epoch, the analysis with its defaults. For the epoch that is
+the reference tool's stretch of the log (1.001 s to one second before the
+end) the result is its curve to 0.000002, with its window count, Peak, SR
+latency and both bars. Those comparisons were one-off; what stays in the
+repository are the tests on plants whose response is known in closed form
+and on the flown logs below.
 
 **On flown logs** (not probes; the reference tool's numbers are from the
 owner's screenshots for #33, read by eye to two or three digits):
@@ -314,3 +326,35 @@ choice, both readings.
 | `u6-short-2k` (12 s), `u7-mid-2k` (18 s) | the three plants | where the first window starts |
 
 The script takes 123 copies and 16 pictures, in about 15 minutes.
+
+### What came back (2026-11-13)
+
+945 steps of the script, one failed; 122 vector copies and 16 pictures.
+
+- **Curves and counts.** All 49 mean curves are the predicted ones, to
+  0.0000005 where the first window starts as predicted and to 0.0006 on
+  `u7-mid-2k`, which starts a sample later; all window counts are the
+  predicted ones. The stick that is always 19 deg/s from its centre has no
+  curve ("insufficient data"), as predicted.
+- **SR Latency**: every mean as predicted. Every bar too, once the plot is
+  read as it is drawn: see below.
+- **Peak**: as predicted on every plot whose curve tops before 150 ms. On
+  the slow plants it is the highest value before 150 ms, the reading the
+  prediction had listed as the alternative: item 6 of the rule now says so.
+- **Drawn.** The Peak plot's axis runs from 0.8 to 1.5 whatever the
+  values, and the Latency plot's axis is set around the points; a bar is
+  cut where it leaves the axis, and a point outside is not drawn at all.
+  On the creeping plant only the upper end of a Peak bar is visible (the
+  point is at 0.774), and the latency bars of the slow plants (8 … 9 ms)
+  are cut at both ends. Read with that in mind, every bar is the sample
+  standard deviation the rule gives. OpenPID fits both axes to the points
+  with their bars, so nothing is cut.
+
+- **Against the truth.** The plants that are over within 150 ms are read
+  as before, to a few thousandths. The slow ones are read low: the plant of
+  2.5 Hz overshoots to 1.163 at 236 ms; the tool's curve tops at 1.122,
+  and its Peak, read before 150 ms, is 0.953. Where the Peak should be
+  read is entry D-003 of [DECISIONS.md](DECISIONS.md).
+
+The rule stands; the third round holds it out on logs made for no
+question in particular.

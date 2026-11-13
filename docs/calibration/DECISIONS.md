@@ -9,8 +9,8 @@ the owner has chosen**: an entry without a decision changes no code.
 An entry compares three things for one synthetic probe:
 
 - what **the reference tool** shows, as read from the owner's screenshots
-  (the numbers are kept in `tests/calibration/`, the screenshots are not
-  committed);
+  and copies (neither they nor the numbers read from them are committed:
+  what a round found is written in these documents);
 - what **OpenPID** shows for the same probe;
 - **the exact value**, which is known because the probe is synthetic.
 
@@ -25,8 +25,12 @@ Taken by the owner on 2026-11-11:
    tool.
 2. A pack reaches the owner as a zip and is reproducible from the
    repository.
-3. Screenshots of the reference tool are not committed, only the numbers
-   read from them (`tests/calibration/`).
+3. Screenshots of the reference tool are not committed. Since 2026-11-13
+   neither are the numbers read from them, nor any other material of a
+   round: the repository holds the program's code and its tests, and the
+   comparison of this epic is done once. What a round found is written in
+   these documents; what it changes in OpenPID arrives as a pull request
+   of its own from `master`, with tests that need no data of a round.
 4. The order of the areas: Spectrum, Step response, Freq × throttle,
    Freq × time, the rest.
 
@@ -50,7 +54,7 @@ Taken by the owner on 2026-11-11:
 | Id | D-000 |
 | Area | the area and the row of INVENTORY.md, for example "Spectrum, S1" |
 | Probe | the probe (name, round, pack commit) and what it contains |
-| The reference tool shows | the number or curve read from the screenshot, with the file in `tests/calibration/` |
+| The reference tool shows | the number or curve read from the screenshot or the copy |
 | OpenPID shows | the number or curve for the same probe, with the test or command that gives it |
 | The exact value | the value the probe was built to give and why; or "none: a display choice" |
 | Options | A. … B. … C. … (what a user would see with each) |
@@ -74,7 +78,7 @@ Taken by the owner on 2026-11-11:
 | Options | **A.** The reference tool's curve by default (one transform, its level, decibel smoothing with its five levels), and OpenPID's density as a second mode. A user sees the same numbers as in the reference tool and its tutorials; narrow lines are hidden unless the mode is switched. **B.** OpenPID's density by default, the reference tool's curve as a second mode. Noise reads 6.8 dB higher than in the reference tool, tones stand out; numbers from tutorials do not carry over unless the mode is switched. **C.** OpenPID's curve only, the offset documented. |
 | Recommendation | A: the epic's aim is that a user who knows the reference tool reads the same numbers. The density stays one switch away because it is the exact quantity, the only one the probes can check to a tenth of a decibel, and the one that shows a steady resonance. The other six probes of round 1 are in and do not change it. They add a caution for either order of the two modes: in the reference tool's curve the height of a peak follows its width, so a fixed resonance is shown weakly and anything that changes during the flight strongly |
 | The owner's decision | **A**, 2026-11-11: the reference tool's curve by default, OpenPID's density as a second mode |
-| Carried out by | #181 |
+| Carried out by | #187 (on its own from `master`; it replaces #181, which stood on the branches of the test tools) |
 
 ### D-002 What the Step response curve is
 
@@ -89,7 +93,22 @@ Taken by the owner on 2026-11-11:
 | Options | **A.** OpenPID computes the response as the reference tool does (identified on round 4, to be confirmed on rounds 5 and 6): the same curve, peak and window count as the reference tool, and on these probes the truth. **B.** OpenPID keeps its own estimator and it is corrected against the closed-form responses (its smoothing of the spectrum and its regularisation are what bias it); numbers stay close to the reference tool's without being the same. **C.** No change; the bias is documented. |
 | Recommendation | A, if the identified method stays as close to the truth on the confirming and the hold-out rounds as it is here: then matching the reference tool and being right are the same change. To be put to the owner when the method is identified |
 | The owner's decision | **A**, 2026-11-12: OpenPID computes the response as the reference tool does. Decided before rounds 5 and 6: what they correct in the rule is corrected in OpenPID with it |
-| Carried out by | #184 |
+| Carried out by | #188 (on its own from `master`; it replaces #184), with the Peak of round 5 |
+
+### D-003 Where the Peak of a step response is read
+
+| Field | |
+|---|---|
+| Id | D-003 |
+| Area | Step response: the Peak plot and its bar |
+| Probe | `u4-slow-2k` of round 5 (pack `407c2cd`): second-order plants of 2.5 Hz and of 4 Hz, damping 0.5, after 5 ms; and the plants of 15 Hz of rounds 4 and 5 at 1, 2 and 4 kHz |
+| The reference tool shows | Peak 0.953 for the plant of 2.5 Hz: the value of its curve just before 150 ms, where it stops looking; the curve it draws goes on to 1.122 at 226 ms. Peak 1.137 for the plant of 4 Hz, which tops before 150 ms. The bar is the spread over the windows of each window's highest value among its first 150 samples, whatever the log rate: 150 ms at 1 kHz, 75 ms at 2 kHz, 37.5 ms at 4 kHz, where it ends before the top of a response that peaks at 40 ms |
+| OpenPID shows | the same, since D-002 (#188) |
+| The exact value | both plants overshoot to 1.163, at 236 and at 149 ms |
+| Options | **A.** As the reference tool (what OpenPID does now): a craft whose response tops after 150 ms shows a Peak below the overshoot its own curve draws, and the bar covers a stretch that depends on the log rate. **B.** Peak is the highest value of the whole curve (500 ms) and the bar the spread of the windows' highest values over the same stretch: 1.122 for the plant of 2.5 Hz (the method itself reads a slow plant low; the truth is 1.163); the same point as now for every response that tops before 150 ms; the bar differs from the reference tool's at every rate. **C.** The point as the reference tool, the bar over 150 ms instead of 150 samples: the reference tool's Peak, and a bar that means the same at every log rate |
+| Recommendation | B. The number is called Peak and is read as the overshoot; on a slow craft the reference tool's reading is not the overshoot, and its bar is over a stretch nobody chose. The point changes on slow crafts only, where the reference tool's value misleads |
+| The owner's decision | — |
+| Carried out by | — |
 
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
