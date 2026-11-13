@@ -180,3 +180,108 @@ fn the_legend_shows_gains_at_the_firmwares_step() {
     assert!(ui.sees("0.1288,0.1288,0.0072"), "roll P, I, D");
     assert!(!ui.sees("0,0,0,"), "not rounded to integers");
 }
+
+#[test]
+fn the_step_tab_ships_with_the_division_and_draws_what_the_reference_tool_reads() {
+    use crate::axis_layout::{LatencyShown, latency_values, peak_values};
+    use crate::worker::{Kind, Output};
+    use openpid_analysis::{StepMethod, StepParams};
+    use std::sync::Arc;
+
+    let mut ui = Ui::setup()
+        .files([LOG_2025])
+        .tab(Tab::Step)
+        .shipped()
+        .open();
+    assert_eq!(ui.app().tools.step.method, StepMethod::Division);
+    assert_eq!(ui.app().tools.recommend.step.method, StepMethod::Division);
+    // the reference tool analyses a log without its first and last second,
+    // from two samples in: the same stretch here
+    set_epoch(&mut ui, Some((1.001, 38.6)));
+    let result = |ui: &mut Ui, axis: Axis| -> (Slot, Arc<Output>) {
+        let p = StepParams {
+            axis,
+            ..ui.app().tools.step.clone()
+        };
+        let out = ui.app_mut().result(Slot::A, Kind::Step(p));
+        (Slot::A, out.expect("computed").expect("has a response"))
+    };
+    // (axis, windows / peak / SR latency the reference tool showed for this
+    // log; DESIGN §6.2)
+    for (axis, windows, peak, latency) in [
+        (Axis::Roll, 78, 1.15, 22.0),
+        (Axis::Pitch, 13, 1.12, 22.5),
+        (Axis::Yaw, 30, 1.18, 12.3),
+    ] {
+        let shown = [result(&mut ui, axis)];
+        let Output::Step(step) = shown[0].1.as_ref() else {
+            panic!("a step result");
+        };
+        assert_eq!(step.method, StepMethod::Division);
+        // the screenshots are of version 0.9, whose windows were 0.1 s
+        // apart; ours follow 0.94: 0.05 s, twice the windows
+        assert!(step.windows_used.abs_diff(2 * windows) <= 3, "{axis:?}");
+        // the Peak plot: the point and its bar
+        let drawn = peak_values(&shown);
+        assert_eq!(drawn.len(), 1);
+        assert!(
+            (drawn[0].1 - peak).abs() < 0.015,
+            "{axis:?}: {}",
+            drawn[0].1
+        );
+        assert_eq!(drawn[0].2, Some(step.spread.peak_sd));
+        // the Latency plot shows the SR latency of the windows, not the
+        // half-way time of the mean curve
+        let drawn = latency_values(&shown, LatencyShown::HalfRise);
+        assert!(
+            (drawn[0].1 - latency).abs() < 0.5,
+            "{axis:?}: {}",
+            drawn[0].1
+        );
+        assert_eq!(drawn[0].1, step.spread.half_ms_mean);
+        assert_eq!(drawn[0].2, Some(step.spread.half_ms_sd));
+        let delay = latency_values(&shown, LatencyShown::Xcorr);
+        assert_eq!(Some(delay[0].1), step.metrics.latency_ms);
+        assert_eq!(delay[0].2, None);
+    }
+    // the panel of the division: its method and its smoothing, none of the
+    // fields of the Wiener estimate
+    assert!(ui.has("Method") && ui.has("Smoothing"));
+    for field in [
+        "Cut-off",
+        "Min input",
+        "High input",
+        "Window",
+        "Y correction",
+    ] {
+        assert!(!ui.has(field), "{field}");
+    }
+    let (_, plain) = result(&mut ui, Axis::Roll);
+    ui.choose("Smoothing", "high");
+    assert_eq!(ui.app().tools.step.smoothing, 3);
+    let (_, smoothed) = result(&mut ui, Axis::Roll);
+    let (Output::Step(a), Output::Step(b)) = (plain.as_ref(), smoothed.as_ref()) else {
+        panic!("step results");
+    };
+    assert_ne!(a.mean, b.mean, "smoothing the gyro changes the response");
+    // the other method brings its own fields, and another curve
+    ui.choose("Method", "Wiener with cut-off");
+    assert_eq!(ui.app().tools.step.method, StepMethod::Wiener);
+    for field in [
+        "Cut-off",
+        "Min input",
+        "High input",
+        "Window",
+        "Y correction",
+    ] {
+        assert!(ui.has(field), "{field}");
+    }
+    let (_, wiener) = result(&mut ui, Axis::Roll);
+    let Output::Step(w) = wiener.as_ref() else {
+        panic!("a step result");
+    };
+    assert_eq!(w.method, StepMethod::Wiener);
+    assert_ne!(w.windows_used, a.windows_used);
+    let drawn = latency_values(&[(Slot::A, Arc::clone(&wiener))], LatencyShown::HalfRise);
+    assert_eq!(Some(drawn[0].1), w.metrics.delay_ms);
+}

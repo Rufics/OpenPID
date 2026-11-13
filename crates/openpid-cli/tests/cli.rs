@@ -185,6 +185,23 @@ fn run_analyses() {
     let v: serde_json::Value = serde_json::from_str(&out).expect("json");
     let verdicts = v["verdicts"].as_array().expect("verdicts in the step JSON");
     assert_eq!(verdicts.len(), 7);
+    // the division by default; smoothing of the gyro changes the windows
+    assert_eq!(v["method"], "division");
+    let used = |extra: &[&str]| {
+        let mut args = vec!["run", "step", sharp, "--epoch", "auto", "--axis", "yaw"];
+        args.extend(extra);
+        let (ok, out, err) = run(&args);
+        assert!(ok, "{err}");
+        let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+        (v["method"].to_string(), v["windows_used"].as_u64().unwrap())
+    };
+    let (_, plain) = used(&[]);
+    let (method, smoothed) = used(&["--smoothing", "high"]);
+    assert_eq!(method, "\"division\"");
+    assert!(smoothed >= plain, "{smoothed} of {plain}");
+    let (method, wiener) = used(&["--method", "wiener"]);
+    assert_eq!(method, "\"wiener\"");
+    assert!(wiener > 0 && wiener != plain, "{wiener} and {plain}");
     assert!(
         verdicts
             .iter()
@@ -193,7 +210,17 @@ fn run_analyses() {
     );
     // gentle stick inputs: not enough data at the default threshold
     let (ok, _, err) = run(&["run", "step", f, "--epoch", "auto"]);
+    assert!(
+        !ok && err.contains("was the stick 20 deg/s from its centre"),
+        "{err}"
+    );
+    // ... nor for the former estimate, at its own threshold
+    let (ok, _, err) = run(&["run", "step", f, "--epoch", "auto", "--method", "wiener"]);
     assert!(!ok && err.contains("above 80 deg/s"), "{err}");
+    let (ok, _, err) = run(&["run", "step", f, "--method", "curve"]);
+    assert!(!ok && err.contains("division or wiener"), "{err}");
+    let (ok, _, err) = run(&["run", "step", f, "--smoothing", "low-med"]);
+    assert!(!ok && err.contains("off, low, medium, high"), "{err}");
     let (ok, _, err) = run(&["run", "step", f, "--epoch", "active"]);
     assert!(!ok && err.contains("shorter than 20 s"), "{err}");
     let short = log("betaflight-4.5.1-two-sessions.bbl");
@@ -393,7 +420,7 @@ fn run_takes_the_log_and_parameters_from_a_project() {
     std::fs::write(
         &project,
         format!(
-            r#"{{"version":1,"slots":[{{"path":"{}","session":0,"epoch":{{"start_s":2.0,"end_s":8.0}}}}],"axis":"pitch","step":{{"cutoff_hz":40.0,"window_s":1.5,"min_input":20.0}}}}"#,
+            r#"{{"version":1,"slots":[{{"path":"{}","session":0,"epoch":{{"start_s":2.0,"end_s":8.0}}}}],"axis":"pitch","step":{{"method":"wiener","cutoff_hz":40.0,"window_s":1.5,"min_input":20.0}}}}"#,
             log.to_str().unwrap().replace('\\', "/")
         ),
     )
@@ -408,7 +435,7 @@ fn run_takes_the_log_and_parameters_from_a_project() {
     std::fs::write(
         &whole_project,
         format!(
-            r#"{{"version":1,"slots":[{{"path":"{}","session":0}}],"axis":"pitch","step":{{"min_input":20.0}}}}"#,
+            r#"{{"version":1,"slots":[{{"path":"{}","session":0}}],"axis":"pitch","step":{{"method":"wiener","min_input":20.0}}}}"#,
             log.to_str().unwrap().replace('\\', "/")
         ),
     )

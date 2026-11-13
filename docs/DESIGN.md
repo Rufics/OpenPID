@@ -28,7 +28,7 @@ The mapping to the PIDtoolbox / Pro feature table and the phase plan.
 | Feature | PTB | Pro | OpenPID phase | Note |
 |---------|:---:|:---:|:---:|------|
 | Log viewer (time plots, A/B) | ✓ | ✓ | 1 | Two logs A/B side by side, as in PTB |
-| Step response | ✓ | ✓ | 1 | Wiener deconvolution (§6.2) |
+| Step response | ✓ | ✓ | 1 | spectral division in windows, as the reference tool; Wiener deconvolution as a second method (§6.2) |
 | 2D spectral analyzer (PSD) | ✓ | ✓ | 1 | Welch |
 | Freq × throttle heatmap | ✓ | ✓ | 1 | §6.4 |
 | Freq × time heatmap (STFT) | ✓ | ✓ | 1 | §6.5 |
@@ -317,7 +317,22 @@ The separate crate `openpid-fmt-csv` reads CSV exports in the `blackbox_decode` 
 
 ### 6.2 Step response
 
-The method is **Wiener deconvolution** from the input (setpoint) to the output (filtered gyro), as in the modern PTB and PID-Analyzer, not the "end of manoeuvre" heuristic of the old PTB.
+Two estimators (`StepMethod`), both from the input (setpoint) to the output (filtered gyro) over windows of the epoch.
+
+**`Division`, the default** (decision D-002, issue #172, 2026-11-12): the rule found in the reference tool by comparing what it draws for synthetic logs of known content, in `openpid_analysis::step_windows`.
+
+1. The filtered gyro is smoothed by a local regression with tricube weights over 1, 5, 11 or 21 samples ("off", "low", "medium", "high"); the setpoint is not.
+2. The epoch is cut into windows of 2 s, a fortieth of a window (0.05 s) apart, as version 0.94 of the reference tool has them (0.9 had them 0.1 s apart: half as many windows, the same curve to the third decimal). As the reference tool counts them, the number of windows is the whole number of hops in what is left of the epoch after one window.
+3. Every window: `x = setpoint·w`, `y = gyro·w` (symmetric Hann), each followed by 200 zeros; with the transforms divided by their length, `H = Y·conj(X) / (|X|² + 0.0001)`; `h = IFFT(H)`; the step response is the running sum of `h`, of which the first 500 ms are kept at the log's own rate.
+4. A window counts when the mean of `|setpoint|` over it is 20 °/s or more and its response stays between 0.5 and 1.5 from 150 ms to 500 ms (and, in OpenPID, when at least 95 % of its samples are valid). Windows with enough stick whose response leaves those limits are counted as `windows_rejected`.
+5. The curve is the plain mean of the windows that count. The peak is the highest value of the curve in its first 150 ms, so a response that is still rising there reads lower than its final overshoot. The spread of the peak is the sample standard deviation of each window's highest value among its first 150 samples; "SR latency" is the mean over the windows of the time of the first sample above 0.5, `(i + 1)/fs − 1 ms`, with its sample standard deviation.
+6. The delay from setpoint to gyro ("SP-gyro delay"): both brought to 8 kHz along straight lines between the samples; the shift, up to 200 ms, with the largest sum of products.
+
+What it was held to (issue #172): the 5 610 single-window responses, the 45 mean curves with their window counts and the Peak and latency plots the reference tool drew for nine synthetic logs of known content; then, with the predictions written down first, 49 more curves with their window counts, peaks and latencies for seven further logs at 1, 2 and 4 kHz. Each agreed to the precision of its copy. On plants whose step response is known in closed form the curve is the true response to a few thousandths (a peak of 1.2520 for a true 1.2538). That holds for responses that are over within about 150 ms. A slower plant is read low: for a second-order plant of 2.5 Hz the curve tops at 1.19 where the plant overshoots to 1.25, and the Peak reads 1.02, the value at 150 ms. Four numbers are counts of samples and not times at every log rate (the smoothing windows, the 200 zeros, the 150 samples of the peak's spread, the sample at which a latency is read): that is how the reference tool has them, and OpenPID follows. The 150 ms from which a response has to stay settled, and before which the peak is looked for, is a time. The delay of step 6 read the reference tool's value on 39 of 47 plots and was one step of 0.125 ms off on seven more; a part of that rule is still missing. The reference tool leaves out the first and the last second of a log and starts two samples later (three on some short logs, for a reason not found; the curve moves by less than 0.001); in OpenPID that is a choice of epoch (`1.001 … duration − 1`), not part of the method.
+
+The metrics of step 6 below are OpenPID's own and are read from this curve as from the other.
+
+**`Wiener`**, the estimator this crate started with, kept for comparison. Against the closed-form responses it is biased: 6 % of overshoot on a pure delay, a peak 0.04 … 0.05 too high on an underdamped plant, the half-way time up to a millisecond off.
 
 1. The epoch (the user's time range) is cut into windows of length `L` (default 2 s) with a hop of `L/superpos` (superpos = 16 → 125 ms).
 2. Every window: `x = setpoint·w`, `y = gyro·w` (Hann), zero-padded to a smooth length.
@@ -326,7 +341,9 @@ The method is **Wiener deconvolution** from the input (setpoint) to the output (
 5. Aggregation: a weighted mean (weight = input amplitude) **and** a 2D histogram (time × amplitude) to show the spread; optional Y-offset correction (normalising on the settled tail value) and smoothing (PTB "smoothing 1/20/40/60").
 6. Metrics: rise time (10–90 %), overshoot %, settling time (±5 %), delay (the first crossing of 50 % of the mean curve) and **latency**: the lag of the cross-correlation peak of setpoint ↔ gyro on the raw signals of the epoch (`openpid_dsp::xcorr::lag_of_max`, searched up to 100 ms, parabolic peak refinement). For a white input this is the transport delay of the axis; with smooth stick input the peak also catches part of the plant's own lag (on real logs 10–17 ms against a 50 % delay of 18–22 ms), so the value is read next to delay. A "whitened" variant through first differences was rejected: on real logs the gyro noise dominates the derivative (r ≈ 0.1) and the peak jumps between 4 and 37 ms depending on the smoothing. Both values are shown side by side: delay depends on the filters and PIDs, latency is the transport delay of the axis. Y-offset: every window is normalised on the mean of the last quarter of its response when that is > 0.2 (otherwise the window is left as is).
 
-Parameters (`StepParams`): `window_s, superpos, cutoff_hz, min_input, settle_range, high_input, resp_len_s, y_offset, smoothing, axis`.
+Parameters (`StepParams`): `axis, method, smoothing` (the level of `Division`), and for `Wiener` `window_s, superpos, cutoff_hz, min_input, settle_range, high_input, response_s, y_offset, smooth_ms`.
+
+The table below is the earlier calibration of `Wiener` on screenshots, before the synthetic logs; its numbers are of that estimator.
 
 **Calibration against PIDtoolbox Pro v0.9** (#33; the owner's screenshots of the same logs; PTB leaves out the first and the last second of the log, so the comparison uses that epoch; `step_response_matches_the_reference_tool` in `crates/openpid-analysis/tests/real_logs.rs` keeps it). PTB's selection rule itself is not public: the only public PTB code (2019, GPLv3) still uses the old "end of manoeuvre" heuristic and no deconvolution, so the rule was matched on the results, not read.
 

@@ -10,7 +10,10 @@ use crate::views::{grid_heatmap, show_error, slot_color, verdict_color};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{HLine, Legend, Line, LineStyle, PlotPoints, Points};
-use openpid_analysis::{FitnessLevel, StepParams, StepTargets, VerdictLevel, verdicts};
+use openpid_analysis::step_windows;
+use openpid_analysis::{
+    FitnessLevel, StepMethod, StepOutput, StepParams, StepTargets, VerdictLevel, verdicts,
+};
 use openpid_core::Axis;
 use openpid_core::settings::{PidGains, Settings};
 use std::sync::Arc;
@@ -191,7 +194,8 @@ impl Default for StepDisplay {
     }
 }
 
-/// Smoothing levels, as the width of the moving average (ms).
+/// Smoothing levels of [`StepMethod::Wiener`], as the width of the moving
+/// average over the mean (ms).
 const SMOOTHING: [(&str, f64); 4] = [
     ("off", 0.0),
     ("low", 10.0),
@@ -202,20 +206,40 @@ const SMOOTHING: [(&str, f64); 4] = [
 fn step_controls(app: &mut App, ui: &mut Ui) {
     axes_row(app, ui);
     panel::section(ui, tr("Display"));
-    let smoothing: Vec<(f64, String)> = SMOOTHING
-        .iter()
-        .map(|(name, ms)| (*ms, tr(name).to_string()))
-        .collect();
-    panel::choice(
-        ui,
-        "step-smoothing",
-        tr("Smoothing"),
-        tr(
-            "a moving average over the mean response: off, 10, 20 or 40 ms; more smoothing hides noise, and a little of the overshoot",
-        ),
-        &mut app.tools.step.smooth_ms,
-        &smoothing,
-    );
+    let division = app.tools.step.method == StepMethod::Division;
+    if division {
+        // the levels of the method itself: the gyro is smoothed first
+        let levels: Vec<(usize, String)> = step_windows::SMOOTHING
+            .iter()
+            .enumerate()
+            .map(|(i, (name, _))| (i, tr(name).to_string()))
+            .collect();
+        panel::choice(
+            ui,
+            "step-smoothing",
+            tr("Smoothing"),
+            tr(
+                "a local regression of the gyro before the response is computed: off, 5, 11 or 21 samples; it brings back windows that noise had dropped, and blurs a sharp step",
+            ),
+            &mut app.tools.step.smoothing,
+            &levels,
+        );
+    } else {
+        let smoothing: Vec<(f64, String)> = SMOOTHING
+            .iter()
+            .map(|(name, ms)| (*ms, tr(name).to_string()))
+            .collect();
+        panel::choice(
+            ui,
+            "step-smoothing",
+            tr("Smoothing"),
+            tr(
+                "a moving average over the mean response: off, 10, 20 or 40 ms; more smoothing hides noise, and a little of the overshoot",
+            ),
+            &mut app.tools.step.smooth_ms,
+            &smoothing,
+        );
+    }
     panel::choice(
         ui,
         "step-latency",
@@ -238,12 +262,14 @@ fn step_controls(app: &mut App, ui: &mut Ui) {
         1.1..=5.0,
         "",
     );
-    panel::check(
-        ui,
-        &mut app.tools.step.y_offset,
-        tr("Y correction"),
-        tr("normalise every window on its settled tail before averaging"),
-    );
+    if !division {
+        panel::check(
+            ui,
+            &mut app.tools.step.y_offset,
+            tr("Y correction"),
+            tr("normalise every window on its settled tail before averaging"),
+        );
+    }
     panel::check(
         ui,
         &mut app.tools.step_display.raw,
@@ -251,6 +277,22 @@ fn step_controls(app: &mut App, ui: &mut Ui) {
         tr("the individual responses behind the mean, as a density"),
     );
     panel::section(ui, tr("Analysis"));
+    panel::choice(
+        ui,
+        "step-method",
+        tr("Method"),
+        tr(
+            "windowed division: windows of 2 s every 0.05 s, the gyro's spectrum divided by the setpoint's; a window counts when the stick was 20 °/s from its centre on average and its response stays between 0.5 and 1.5 after 150 ms; the plain mean of those, as the reference tool computes it. Wiener with cut-off: OpenPID's former estimate, which rounds a sharp response and reads a peak a little high",
+        ),
+        &mut app.tools.step.method,
+        &[
+            (StepMethod::Division, tr("windowed division").to_string()),
+            (StepMethod::Wiener, tr("Wiener with cut-off").to_string()),
+        ],
+    );
+    if division {
+        return;
+    }
     panel::drag(
         ui,
         tr("Window"),
@@ -291,6 +333,17 @@ fn step_controls(app: &mut App, ui: &mut Ui) {
         50.0..=2000.0,
         " °/s",
     );
+}
+
+/// The "SR latency" of a result: with the windowed division the mean over
+/// the windows of each window's time to 0.5, as the reference tool shows
+/// it; with the Wiener estimate the time the mean response takes to reach
+/// half of where it settles.
+pub fn sr_latency_ms(s: &StepOutput) -> Option<f64> {
+    match s.method {
+        StepMethod::Division => Some(s.spread.half_ms_mean).filter(|v| v.is_finite()),
+        StepMethod::Wiener => s.metrics.delay_ms,
+    }
 }
 
 /// What a response plot draws: each log's mean, its PID label, and the
@@ -824,6 +877,46 @@ fn per_log_points(pu: &mut egui_plot::PlotUi<'_>, values: &[(Slot, f64, Option<f
     }
 }
 
+/// What the Peak plot draws for every log: the highest point of its mean
+/// response (with the windowed division, in its first 150 ms, as the
+/// reference tool reads it), and the spread of the windows' peaks as the bar.
+pub fn peak_values(outputs: &[(Slot, Arc<Output>)]) -> Vec<(Slot, f64, Option<f64>)> {
+    outputs
+        .iter()
+        .filter_map(|(slot, o)| match o.as_ref() {
+            Output::Step(s) => Some((
+                *slot,
+                match s.method {
+                    StepMethod::Division => s.spread.peak_mean,
+                    StepMethod::Wiener => s.mean.iter().copied().fold(f64::MIN, f64::max),
+                },
+                Some(s.spread.peak_sd),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+/// What the Latency plot draws for every log: the SR latency with the
+/// spread over the windows as the bar, or the delay from setpoint to gyro.
+pub fn latency_values(
+    outputs: &[(Slot, Arc<Output>)],
+    shown: LatencyShown,
+) -> Vec<(Slot, f64, Option<f64>)> {
+    outputs
+        .iter()
+        .filter_map(|(slot, o)| match o.as_ref() {
+            Output::Step(s) => match shown {
+                LatencyShown::HalfRise => {
+                    sr_latency_ms(s).map(|d| (*slot, d, Some(s.spread.half_ms_sd)))
+                }
+                LatencyShown::Xcorr => s.metrics.latency_ms.map(|d| (*slot, d, None)),
+            },
+            _ => None,
+        })
+        .collect()
+}
+
 fn peak_plot(
     ui: &mut Ui,
     axis: Axis,
@@ -832,17 +925,7 @@ fn peak_plot(
     _w: f32,
     height: f32,
 ) {
-    let values: Vec<(Slot, f64, Option<f64>)> = outputs
-        .iter()
-        .filter_map(|(slot, o)| match o.as_ref() {
-            Output::Step(s) => Some((
-                *slot,
-                s.mean.iter().copied().fold(f64::MIN, f64::max),
-                Some(s.spread.peak_sd),
-            )),
-            _ => None,
-        })
-        .collect();
+    let values = peak_values(outputs);
     crate::grid::plot(format!("step-peak-{}", axis.name()))
         .width(SIDE_PLOT_W)
         .height(height)
@@ -872,19 +955,7 @@ fn latency_plot(
     display: &StepDisplay,
     height: f32,
 ) {
-    let values: Vec<(Slot, f64, Option<f64>)> = outputs
-        .iter()
-        .filter_map(|(slot, o)| match o.as_ref() {
-            Output::Step(s) => match display.latency {
-                LatencyShown::HalfRise => s
-                    .metrics
-                    .delay_ms
-                    .map(|d| (*slot, d, Some(s.spread.half_ms_sd))),
-                LatencyShown::Xcorr => s.metrics.latency_ms.map(|d| (*slot, d, None)),
-            },
-            _ => None,
-        })
-        .collect();
+    let values = latency_values(outputs, display.latency);
     crate::grid::plot(format!("step-latency-{}", axis.name()))
         .width(SIDE_PLOT_W)
         .height(height)
