@@ -99,13 +99,20 @@ corrupted on purpose and is not written back.
 header lines out of a Betaflight checkout at a tag; its README says how a
 release is added.
 
-The values of the example craft in `write/sysinfo/` are a configuration, not
-facts of a version: those of the fixture's craft where it logs the line
-(linear rates of 1000 deg/s, no debug mode, no GPS feature), the firmware's
-defaults (`pg/autopilot*.c`, `flight/pid.c`, `sensors/barometer.c`) for lines
-no fixture has. Lines of options the stock build does not have and no fixture
-logs (GPS rescue, altitude and position hold, optical flow, the build key)
-are listed without a value and written only for a session that brings them.
+The header lines are one table, `write/sysinfo/lines.txt`: every line some
+release writes, once, in the firmware's order, with the releases that write
+it (`all`, `4.3-`, `4.4-4.5`, …) and the build options it depends on. A new
+release that writes what the last one wrote needs no edit there.
+
+The values of the example craft are in `write/sysinfo/crafts.txt`. They are a
+configuration, not facts of a version: those of the fixture's craft where it
+logs the line (linear rates of 1000 deg/s, no debug mode, no GPS feature),
+the firmware's defaults (`pg/autopilot*.c`, `flight/pid.c`,
+`sensors/barometer.c`) for lines no fixture has. 4.2 has the craft of the
+4.2.11 fixture, 4.3 to 4.5 that of the 4.5.1 fixture, 2025.12 and later that
+of the 2025.12.2 fixture. Lines of options the stock build does not have and
+no fixture logs (GPS rescue, altitude and position hold, optical flow, the
+build key) have no value and are written only for a session that brings them.
 
 ## Test-log coverage
 
