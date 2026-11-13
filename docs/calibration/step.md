@@ -358,3 +358,14 @@ The script takes 123 copies and 16 pictures, in about 15 minutes.
 
 The rule stands; the third round holds it out on logs made for no
 question in particular.
+
+## Round 3 (round 6 of the ledger): hold-out
+
+Five flights (`catalogue::round(6)`, pack `3dbab4a`), none made to ask a
+question: on every axis another plant behind a delay, a little gyro noise,
+stick moves of other seeds, lengths no earlier round had, and 8 kHz for
+the first time. The pack carries what the rule expects for each of the 15
+axes without smoothing and for one log at the three levels: 95 … 369
+windows, peaks between 0.96 and 1.37, SR latencies between 10 and 35 ms.
+The rule is not changed for this round: what the copies show is either
+what it predicted or a finding.
