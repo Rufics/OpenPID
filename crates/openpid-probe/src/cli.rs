@@ -19,9 +19,9 @@ COMMANDS:
            log, manifest.json (what is true about each log), ours.json (what OpenPID
            computes for the same logs), predictions.json where there is a model (what the
            model of the reference tool expects it to show), and the capture script
-           with its steps (capture.ps1, steps.json, run.cmd), which walks the
-           reference tool through the round on Windows. The same round always gives
-           the same bytes.
+           with its steps (capture.ps1, steps.json, run.cmd), which walks version
+           0.94 of the reference tool through the round on Windows. The same round
+           always gives the same bytes.
            --built-from records the commit in the manifest.
 
 ROUNDS:

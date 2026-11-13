@@ -460,6 +460,7 @@ $script:cursor = $null
 $script:clip = [OpCapture]::ClipNumber()
 $script:slow = 1
 $script:failed = 0
+$script:skip = 0
 $script:missing = @{}
 
 function Show-ToolWindows {
@@ -650,6 +651,24 @@ function Invoke-Step($step, $index) {
         Show-ToolWindows
         return
     }
+    if ($action -eq "clip_wait") {
+        # whether the last click with "clip" has copied anything. The toolbar
+        # of a plot may be open or closed when its steps begin: when the copy
+        # is there the steps that try from the other state are passed over
+        $waitS = 3
+        if ($step.wait_s) { $waitS = [int]$step.wait_s }
+        $deadline = (Get-Date).AddSeconds($waitS)
+        while (([OpCapture]::ClipNumber() -eq $script:clip) -and ((Get-Date) -lt $deadline)) {
+            Start-Sleep -Milliseconds 150
+        }
+        if ([OpCapture]::ClipNumber() -ne $script:clip) {
+            $script:skip = [int]$step.skip
+            Log ("    copied: the next {0} steps are passed over" -f $script:skip)
+        } else {
+            Log "    nothing copied yet: once more from the other state of the toolbar"
+        }
+        return
+    }
     if ($action -eq "clip_save") {
         # what the last click with "clip" has copied
         $waitS = 10
@@ -778,6 +797,7 @@ Start-Sleep -Seconds 5
 $index = 0
 $all = @($plan.steps)
 for ($i = 0; $i -lt $all.Count; $i++) {
+    if ($script:skip -gt 0) { $script:skip--; continue }
     $step = $all[$i]
     $index = $i + 1
     try {
