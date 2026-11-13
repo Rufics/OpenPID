@@ -28,5 +28,12 @@ Rejected:
 ## Addendum (after the implementation, 2026-11-04)
 - The rendering backend is `glow` (OpenGL), not `wgpu`: a smaller dependency graph and build time; `wgpu` stays an option through the `eframe/wgpu` feature if an own 3D pass is ever needed (notch overlay 3D in phase 2).
 - The `system_fonts` feature is off: it pulls `yeslogic-fontconfig-sys` (the native libfontconfig on Linux at build time), against ADR-0001; the fonts built into egui are enough.
+- The features of `eframe` are named one by one (`default-features = false`), so every one of its defaults is a decision (2026-11-13, #191):
+  - **`clipboard` is on.** Without it nothing reaches the system clipboard: Ctrl+C on a selected text and the program's copy buttons do nothing. It brings `arboard`, on Windows `clipboard-win` and `error-code` (the Boost licence, BSL-1.0: permissive, allowed in `deny.toml` for them), on Wayland `smithay-clipboard`. Category (1) of ADR-0001: a platform API. A test keeps the feature named.
+  - **`links` is off.** It brings `webbrowser` with `url`, `idna` and the ICU tables behind them, some thirty crates for the one link the program has. The program opens that link with the platform's own opener (`rundll32 url.dll,FileProtocolHandler`, `open`, `xdg-open`) in `crates/openpid-app/src/browser.rs`, for web addresses only.
+  - The other defaults of `eframe` (`accesskit`, `web_screen_reader`) stay off, as before; nothing was decided about them here.
 - Heatmaps are drawn with the built-in `egui_plot::Heatmap` (since 0.38), so no textures are needed.
 - egui 0.37 changed its API: `App::ui(&mut Ui)` instead of `update(&Context)`, `Panel::top/bottom` instead of `TopBottomPanel`.
+
+## History
+- 2026-11-04 … 2026-11-13: `eframe` was built with `glow`, `default_fonts`, `x11` and `wayland` only. `clipboard` and `links` were left out without a decision, as defaults that `default-features = false` drops: copying from the program and its link to the user guide did nothing on any platform (#191).

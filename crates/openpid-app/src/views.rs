@@ -1919,10 +1919,28 @@ pub fn start_screen(app: &mut App, ui: &mut Ui) {
             }
         });
     ui.add_space(12.0);
-    ui.hyperlink_to(
-        tr("User guide"),
-        "https://github.com/Rufics/OpenPID/blob/master/docs/USER-GUIDE.md",
-    );
+    if ui
+        .link(tr("User guide"))
+        .on_hover_text(USER_GUIDE)
+        .clicked()
+    {
+        app.browse(USER_GUIDE);
+    }
+}
+
+/// Where the user guide is read.
+const USER_GUIDE: &str = "https://github.com/Rufics/OpenPID/blob/master/docs/USER-GUIDE.md";
+
+impl App {
+    /// Opens `url` in the system's browser (in a test it is only noted).
+    pub fn browse(&mut self, url: &str) {
+        self.browsed.push(url.to_string());
+        if cfg!(not(test)) {
+            // nothing to do about a platform without a browser: the address
+            // is in the link's hover text
+            crate::browser::open(url).ok();
+        }
+    }
 }
 
 /// The dashed drop zone with the primary "Open log…" button in it; it

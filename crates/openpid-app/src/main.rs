@@ -6,6 +6,7 @@
 mod advice_tab;
 mod app;
 mod axis_layout;
+mod browser;
 mod colormap;
 mod export;
 mod filter_tab;
