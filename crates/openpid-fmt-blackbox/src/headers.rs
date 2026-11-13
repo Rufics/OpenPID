@@ -186,55 +186,13 @@ pub struct Headers {
 impl Headers {
     /// Parse the header block at the start of `data`.
     pub fn parse(data: &[u8]) -> Result<Headers, HeaderError> {
-        let mut raw: Vec<(String, String)> = Vec::new();
-        let mut pos = 0usize;
-        while data.len() >= pos + 2 && data[pos] == b'H' && data[pos + 1] == b' ' {
-            let line_start = pos + 2;
-            let limit = (line_start + MAX_HEADER_LINE).min(data.len());
-            let Some(nl) = data[line_start..limit].iter().position(|b| *b == b'\n') else {
-                break;
-            };
-            let line = &data[line_start..line_start + nl];
-            if line.contains(&0) {
-                break;
-            }
-            let line = String::from_utf8_lossy(line);
-            let line = line.trim_end_matches('\r');
-            if let Some((name, value)) = line.split_once(':') {
-                raw.push((name.to_string(), value.to_string()));
-            }
-            pos = line_start + nl + 1;
-        }
+        let (raw, pos) = read_lines(data);
         if raw.is_empty() {
             return Err(HeaderError::NoHeader);
         }
         let raw = RawHeaders(raw);
 
-        let mut defs: BTreeMap<u8, FrameDef> = BTreeMap::new();
-        for (name, value) in &raw.0 {
-            let Some(rest) = name.strip_prefix("Field ") else {
-                continue;
-            };
-            let mut it = rest.splitn(2, ' ');
-            let (Some(ft), Some(kind)) = (it.next(), it.next()) else {
-                continue;
-            };
-            let Some(&ft) = ft.as_bytes().first() else {
-                continue;
-            };
-            let def = defs.entry(ft).or_default();
-            match kind {
-                "name" => def.names = value.split(',').map(|s| s.trim().to_string()).collect(),
-                "signed" => def.signed = parse_ints(value).into_iter().map(|v| v != 0).collect(),
-                "predictor" => {
-                    def.predictors = parse_ints(value).into_iter().map(|v| v as u8).collect()
-                }
-                "encoding" => {
-                    def.encodings = parse_ints(value).into_iter().map(|v| v as u8).collect()
-                }
-                _ => {}
-            }
-        }
+        let mut defs = frame_defs(&raw);
         // P frames share names and signedness with I frames.
         let i_def = defs
             .get(&b'I')
@@ -258,33 +216,7 @@ impl Headers {
         for (ft, def) in &defs {
             def.validate(*ft)?;
         }
-        // The same goes for a predictor that refers to a field the log
-        // does not have.
-        let lacks = |ft: u8, predictor: u8, field: &str| {
-            defs.get(&ft)
-                .and_then(|d| d.predictors.iter().position(|p| *p == predictor))
-                .map(|i| {
-                    HeaderError::Inconsistent(
-                        ft as char,
-                        format!(
-                            "predictor {predictor} for field {} needs the field {field}, which \
-                             the log does not define",
-                            defs[&ft].names[i]
-                        ),
-                    )
-                })
-        };
-        if i_def.index_of("motor[0]").is_none() {
-            for ft in *b"IP" {
-                lacks(ft, predictor::MOTOR_0, "motor[0]").map_or(Ok(()), Err)?;
-            }
-        }
-        let home = defs.get(&b'H');
-        for field in ["GPS_home[0]", "GPS_home[1]"] {
-            if home.is_none_or(|h| h.index_of(field).is_none()) {
-                lacks(b'G', predictor::HOME_COORD, field).map_or(Ok(()), Err)?;
-            }
-        }
+        check_references(&defs, &i_def)?;
         if i_def.index_of("loopIteration").is_none() {
             return Err(HeaderError::MissingMainField("loopIteration"));
         }
@@ -296,24 +228,7 @@ impl Headers {
         let i_interval = raw
             .get_i64("I interval")
             .map_or(32, |v| v.clamp(1, i64::from(u32::MAX)) as u32);
-        let p_interval = match raw.get("P interval").map(str::trim) {
-            Some(v) if v.contains('/') => {
-                let (a, b) = v.split_once('/').unwrap_or(("1", "1"));
-                let num = a.trim().parse().unwrap_or(1u32);
-                let denom = b.trim().parse().unwrap_or(1u32);
-                if num == 0 || denom == 0 {
-                    PInterval::IntraOnly
-                } else {
-                    PInterval::Fraction { num, denom }
-                }
-            }
-            Some(v) => match v.parse::<u32>() {
-                Ok(0) => PInterval::IntraOnly,
-                Ok(d) => PInterval::Fraction { num: 1, denom: d },
-                Err(_) => PInterval::Fraction { num: 1, denom: 1 },
-            },
-            None => PInterval::Fraction { num: 1, denom: 1 },
-        };
+        let p_interval = p_interval(&raw);
         let minthrottle = raw.get_i64("minthrottle").unwrap_or(1150);
         let motor_output_low = raw
             .get("motorOutput")
@@ -367,6 +282,118 @@ impl Headers {
             PInterval::IntraOnly => f64::from(self.i_interval),
             PInterval::Fraction { num, denom } => f64::from(denom) / f64::from(num),
         }
+    }
+}
+
+/// The `H name:value` lines at the start of `data`, in order, and the byte
+/// offset just after the last of them. The block ends at the first line
+/// that is not a header line, is longer than [`MAX_HEADER_LINE`] or holds a
+/// zero byte; a line without a colon is passed over.
+fn read_lines(data: &[u8]) -> (Vec<(String, String)>, usize) {
+    let mut raw: Vec<(String, String)> = Vec::new();
+    let mut pos = 0usize;
+    while data.len() >= pos + 2 && data[pos] == b'H' && data[pos + 1] == b' ' {
+        let line_start = pos + 2;
+        let limit = (line_start + MAX_HEADER_LINE).min(data.len());
+        let Some(nl) = data[line_start..limit].iter().position(|b| *b == b'\n') else {
+            break;
+        };
+        let line = &data[line_start..line_start + nl];
+        if line.contains(&0) {
+            break;
+        }
+        let line = String::from_utf8_lossy(line);
+        let line = line.trim_end_matches('\r');
+        if let Some((name, value)) = line.split_once(':') {
+            raw.push((name.to_string(), value.to_string()));
+        }
+        pos = line_start + nl + 1;
+    }
+    (raw, pos)
+}
+
+/// The frame definitions of the `Field <letter> <kind>` headers, by frame
+/// letter, as logged (the P frames still without the names and signs they
+/// share with the I frames).
+fn frame_defs(raw: &RawHeaders) -> BTreeMap<u8, FrameDef> {
+    let mut defs: BTreeMap<u8, FrameDef> = BTreeMap::new();
+    for (name, value) in &raw.0 {
+        let Some((ft, kind)) = field_header(name) else {
+            continue;
+        };
+        let def = defs.entry(ft).or_default();
+        match kind {
+            "name" => def.names = value.split(',').map(|s| s.trim().to_string()).collect(),
+            "signed" => def.signed = parse_ints(value).into_iter().map(|v| v != 0).collect(),
+            "predictor" => {
+                def.predictors = parse_ints(value).into_iter().map(|v| v as u8).collect()
+            }
+            "encoding" => def.encodings = parse_ints(value).into_iter().map(|v| v as u8).collect(),
+            _ => {}
+        }
+    }
+    defs
+}
+
+/// The frame letter and the kind (`name`, `signed`, `predictor`,
+/// `encoding`) of a `Field <letter> <kind>` header name.
+fn field_header(name: &str) -> Option<(u8, &str)> {
+    let (ft, kind) = name.strip_prefix("Field ")?.split_once(' ')?;
+    Some((*ft.as_bytes().first()?, kind))
+}
+
+/// A predictor that refers to a field the log does not have leaves a frame
+/// without values as an unknown predictor does: `motor[0]` for predictor 5
+/// in the main frames, the home coordinates for predictor 7 in the GPS
+/// frames.
+fn check_references(defs: &BTreeMap<u8, FrameDef>, i_def: &FrameDef) -> Result<(), HeaderError> {
+    let lacks = |ft: u8, predictor: u8, field: &str| {
+        let def = defs.get(&ft)?;
+        let i = def.predictors.iter().position(|p| *p == predictor)?;
+        Some(HeaderError::Inconsistent(
+            ft as char,
+            format!(
+                "predictor {predictor} for field {} needs the field {field}, which the log does \
+                 not define",
+                def.names[i]
+            ),
+        ))
+    };
+    if i_def.index_of("motor[0]").is_none() {
+        for ft in *b"IP" {
+            lacks(ft, predictor::MOTOR_0, "motor[0]").map_or(Ok(()), Err)?;
+        }
+    }
+    let home = defs.get(&b'H');
+    for field in ["GPS_home[0]", "GPS_home[1]"] {
+        if home.is_none_or(|h| h.index_of(field).is_none()) {
+            lacks(b'G', predictor::HOME_COORD, field).map_or(Ok(()), Err)?;
+        }
+    }
+    Ok(())
+}
+
+/// The `P interval` header: `1/denom`, a bare denominator, or 0 for a log
+/// of intra frames only; one P frame per iteration when it is absent or
+/// unreadable.
+fn p_interval(raw: &RawHeaders) -> PInterval {
+    match raw.get("P interval").map(str::trim) {
+        Some(v) if v.contains('/') => {
+            let (a, b) = v.split_once('/').unwrap_or(("1", "1"));
+            let num = a.trim().parse().unwrap_or(1u32);
+            let denom = b.trim().parse().unwrap_or(1u32);
+            if num == 0 || denom == 0 {
+                PInterval::IntraOnly
+            } else {
+                PInterval::Fraction { num, denom }
+            }
+        }
+        Some(v) => match v.parse::<u32>() {
+            Ok(0) => PInterval::IntraOnly,
+            Ok(d) => PInterval::Fraction { num: 1, denom: d },
+            Err(_) => PInterval::Fraction { num: 1, denom: 1 },
+        },
+        None => PInterval::Fraction { num: 1, denom: 1 },
     }
 }
 
