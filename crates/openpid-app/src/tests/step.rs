@@ -285,3 +285,287 @@ fn the_step_tab_ships_with_the_division_and_draws_what_the_reference_tool_reads(
     let drawn = latency_values(&[(Slot::A, Arc::clone(&wiener))], LatencyShown::HalfRise);
     assert_eq!(Some(drawn[0].1), w.metrics.delay_ms);
 }
+
+/// The results of the visible log on `axis`, as the tab hands them to its plots.
+fn step_outputs(ui: &mut Ui, axis: Axis) -> Vec<(Slot, std::sync::Arc<crate::worker::Output>)> {
+    let p = openpid_analysis::StepParams {
+        axis,
+        ..ui.app().tools.step.clone()
+    };
+    let out = ui.app_mut().result(Slot::A, crate::worker::Kind::Step(p));
+    vec![(Slot::A, out.expect("computed").expect("has a response"))]
+}
+
+/// Picks `pair` in the "Plots" list of the panel.
+fn show_pair(ui: &mut Ui, pair: crate::axis_layout::SidePlots) {
+    ui.choose_exact("Plots", pair.name());
+    assert_eq!(ui.app().tools.step_display.side, pair);
+}
+
+#[test]
+fn the_narrow_plots_draw_the_pair_chosen_in_the_panel() {
+    use crate::axis_layout::{
+        LatencyShown, SidePlots, StepNumber, latency_values, peak_values, side_values,
+    };
+    use crate::worker::Output;
+
+    let mut ui = Ui::setup()
+        .files([LOG_2025])
+        .tab(Tab::Step)
+        .shipped()
+        .open();
+    // as it opens: Peak and SR latency, the two plots the tab had before
+    // the list, with their bars
+    assert_eq!(ui.app().tools.step_display.side, SidePlots::PeakLatency);
+    assert_eq!(SidePlots::default(), SidePlots::PeakLatency);
+    let drawn = ui.app().step_view.side.clone();
+    assert_eq!(drawn.len(), 6, "two plots on each of three axes");
+    for (i, axis) in Axis::ALL.into_iter().enumerate() {
+        let outputs = step_outputs(&mut ui, axis);
+        let peak = peak_values(&outputs);
+        assert!(peak[0].2.is_some(), "the peak keeps its bar");
+        assert_eq!(drawn[2 * i], (axis, StepNumber::Peak, peak));
+        let latency = latency_values(&outputs, LatencyShown::HalfRise);
+        assert!(latency[0].2.is_some(), "the latency keeps its bar");
+        assert_eq!(drawn[2 * i + 1], (axis, StepNumber::Latency, latency));
+    }
+    // the five entries of the list: the pairs the reference tool offers
+    assert_eq!(
+        SidePlots::ALL.map(SidePlots::name),
+        [
+            "Peak | Latency",
+            "Latency | SP-gyro delay",
+            "Rise time | Bandwidth",
+            "Sensitivity peak | freq",
+            "Phase margin | Crossover",
+        ]
+    );
+    // every other pair, then the first again: the plots follow the list
+    // without a new job, and draw the numbers of the results
+    let jobs_before = jobs(&ui, "step");
+    for pair in [
+        SidePlots::LatencyDelay,
+        SidePlots::RiseBandwidth,
+        SidePlots::Sensitivity,
+        SidePlots::MarginCrossover,
+        SidePlots::PeakLatency,
+    ] {
+        show_pair(&mut ui, pair);
+        let drawn = ui.app().step_view.side.clone();
+        assert_eq!(drawn.len(), 6);
+        for (i, axis) in Axis::ALL.into_iter().enumerate() {
+            let outputs = step_outputs(&mut ui, axis);
+            let Output::Step(step) = outputs[0].1.as_ref() else {
+                panic!("a step result");
+            };
+            let p = step.performance;
+            for (plot, number) in drawn[2 * i..2 * i + 2].iter().zip(pair.numbers()) {
+                assert_eq!((plot.0, plot.1), (axis, number));
+                assert_eq!(plot.2, side_values(&outputs, number));
+                let expected = match number {
+                    StepNumber::Delay => step.metrics.latency_ms,
+                    StepNumber::RiseTime => p.rise_ms,
+                    StepNumber::Bandwidth => p.bandwidth_hz,
+                    StepNumber::SensitivityPeak => p.sensitivity_db,
+                    StepNumber::SensitivityFreq => p.sensitivity_hz,
+                    StepNumber::PhaseMargin => p.phase_margin_deg,
+                    StepNumber::Crossover => p.crossover_hz,
+                    // the two with bars were held above
+                    StepNumber::Peak | StepNumber::Latency => continue,
+                };
+                let expected = expected.unwrap_or_else(|| panic!("{axis:?} has {number:?}"));
+                assert_eq!(plot.2, [(Slot::A, expected, None)], "{axis:?} {number:?}");
+            }
+        }
+    }
+    assert_eq!(jobs(&ui, "step"), jobs_before, "a display option");
+    // the numbers of this flight are those of a tuned quad: the loop
+    // follows the stick to some tens of hertz, amplifies a disturbance by a
+    // few dB and keeps some tens of degrees of margin
+    for axis in Axis::ALL {
+        let outputs = step_outputs(&mut ui, axis);
+        let value = |number| side_values(&outputs, number)[0].1;
+        let within = |number, range: std::ops::Range<f64>| {
+            let v = value(number);
+            assert!(range.contains(&v), "{axis:?} {number:?}: {v}");
+        };
+        within(StepNumber::RiseTime, 10.0..35.0);
+        within(StepNumber::Bandwidth, 8.0..30.0);
+        within(StepNumber::SensitivityPeak, 2.0..6.0);
+        within(StepNumber::SensitivityFreq, 5.0..60.0);
+        within(StepNumber::PhaseMargin, 30.0..60.0);
+        within(StepNumber::Crossover, 5.0..20.0);
+        assert!(value(StepNumber::Crossover) < value(StepNumber::Bandwidth));
+    }
+}
+
+#[test]
+fn a_log_without_a_number_has_no_point() {
+    use crate::axis_layout::{StepNumber, side_values};
+    use crate::worker::Output;
+    use openpid_analysis::StepPerformance;
+    use std::sync::Arc;
+
+    let mut ui = Ui::setup()
+        .files([LOG_2025])
+        .tab(Tab::Step)
+        .shipped()
+        .open();
+    let outputs = step_outputs(&mut ui, Axis::Roll);
+    let Output::Step(step) = outputs[0].1.as_ref() else {
+        panic!("a step result");
+    };
+    // the same result with a curve that gave no bandwidth and no margin
+    let mut bare = step.clone();
+    bare.performance = StepPerformance {
+        rise_ms: Some(12.0),
+        ..StepPerformance::default()
+    };
+    let outputs = vec![outputs[0].clone(), (Slot::B, Arc::new(Output::Step(bare)))];
+    assert_eq!(side_values(&outputs, StepNumber::RiseTime).len(), 2);
+    assert_eq!(
+        side_values(&outputs, StepNumber::RiseTime)[1],
+        (Slot::B, 12.0, None)
+    );
+    for number in [
+        StepNumber::Bandwidth,
+        StepNumber::SensitivityPeak,
+        StepNumber::SensitivityFreq,
+        StepNumber::PhaseMargin,
+        StepNumber::Crossover,
+    ] {
+        let drawn = side_values(&outputs, number);
+        assert_eq!(drawn.len(), 1, "{number:?}");
+        assert_eq!(drawn[0].0, Slot::A);
+    }
+    // the peak and the latency do not depend on them
+    assert_eq!(side_values(&outputs, StepNumber::Peak).len(), 2);
+    assert_eq!(side_values(&outputs, StepNumber::Latency).len(), 2);
+}
+
+#[test]
+fn the_sensitivity_plot_has_its_caution_and_limit_lines_in_view() {
+    use crate::axis_layout::{Mark, SidePlots, StepNumber};
+
+    assert_eq!(
+        StepNumber::SensitivityPeak.marks(),
+        [(4.0, Mark::Caution), (6.0, Mark::Limit)]
+    );
+    // whatever the logs read, both lines are inside the plot
+    let view = StepNumber::SensitivityPeak.in_view();
+    let low = view.iter().copied().fold(f64::MAX, f64::min);
+    let high = view.iter().copied().fold(f64::MIN, f64::max);
+    assert!(low < 4.0 && high > 6.0, "{view:?}");
+    // the peak keeps its line at 1 and its frame, the latency its zero
+    assert_eq!(StepNumber::Peak.marks(), [(1.0, Mark::Reference)]);
+    assert_eq!(StepNumber::Peak.in_view(), [0.8, 1.5]);
+    assert_eq!(StepNumber::Latency.in_view(), [0.0]);
+    // no other plot has a line, and every plot names its unit
+    for pair in SidePlots::ALL {
+        for number in pair.numbers() {
+            if ![StepNumber::Peak, StepNumber::SensitivityPeak].contains(&number) {
+                assert!(number.marks().is_empty(), "{number:?}");
+            }
+            let label = number.axis_label();
+            let unit = match number {
+                StepNumber::Peak => "peak",
+                StepNumber::Latency | StepNumber::Delay | StepNumber::RiseTime => "(ms)",
+                StepNumber::SensitivityPeak => "(dB)",
+                StepNumber::PhaseMargin => "(°)",
+                StepNumber::Bandwidth | StepNumber::SensitivityFreq | StepNumber::Crossover => {
+                    "(Hz)"
+                }
+            };
+            assert!(label.ends_with(unit), "{label}");
+        }
+    }
+}
+
+#[test]
+fn the_list_of_pairs_explains_its_numbers_and_stays_in_the_panel() {
+    use crate::axis_layout::{SidePlots, StepNumber};
+    use crate::i18n::{self, Lang};
+    use eframe::egui::accesskit::Role;
+
+    // one sentence for each number, in our own words
+    for (number, says) in [
+        (StepNumber::RiseTime, "from 10 % to 90 % of 1"),
+        (StepNumber::Bandwidth, "the closed loop falls to -3 dB"),
+        (
+            StepNumber::SensitivityPeak,
+            "the most the loop amplifies a disturbance",
+        ),
+        (StepNumber::SensitivityPeak, "below 4 dB is comfortable"),
+        (
+            StepNumber::SensitivityPeak,
+            "6 dB and more is too little stability margin",
+        ),
+        (
+            StepNumber::SensitivityFreq,
+            "amplifies a disturbance the most",
+        ),
+        (StepNumber::PhaseMargin, "from -180° at the crossover"),
+        (StepNumber::Crossover, "the open-loop gain is 0 dB"),
+    ] {
+        assert!(
+            number.hint().contains(says),
+            "{number:?}: {}",
+            number.hint()
+        );
+    }
+    // every name, label and sentence has its translation
+    for pair in SidePlots::ALL {
+        for number in pair.numbers() {
+            let english = (number.name(), number.axis_label(), number.hint());
+            i18n::set(Lang::Ua);
+            let ukrainian = (number.name(), number.axis_label(), number.hint());
+            i18n::set(Lang::En);
+            assert_ne!(english.0, ukrainian.0);
+            assert_ne!(english.1, ukrainian.1);
+            assert_ne!(english.2, ukrainian.2);
+        }
+    }
+
+    let mut ui = Ui::setup()
+        .files([LOG_2025])
+        .tab(Tab::Step)
+        .shipped()
+        .open();
+    ui.ctx()
+        .all_styles_mut(|s| s.interaction.tooltip_delay = 0.0);
+    ui.settle();
+    // the hint of the row names what the plots show now
+    ui.hover_role(Role::Label, "Plots");
+    assert!(ui.sees("what the two narrow plots beside each response show"));
+    assert!(ui.sees("Peak: the peak of the mean response"));
+    assert!(ui.sees("Latency: the time the response takes to reach 50 %"));
+    assert!(!ui.sees("the open-loop gain is 0 dB"));
+    // the row keeps the panel's columns whatever the length of the entry:
+    // the box ends where the other boxes end and leaves the label alone
+    let edge = ui.rect(Role::ComboBox, "Smoothing").right();
+    for pair in [
+        SidePlots::LatencyDelay,
+        SidePlots::RiseBandwidth,
+        SidePlots::Sensitivity,
+        SidePlots::MarginCrossover,
+    ] {
+        show_pair(&mut ui, pair);
+        let label = ui.rect(Role::Label, "Plots");
+        let combo = ui.rect(Role::ComboBox, "Plots");
+        assert!((combo.right() - edge).abs() <= 1.0, "{pair:?}: {combo:?}");
+        assert!(combo.left() >= label.right(), "{pair:?}: {combo:?}");
+        ui.hover_role(Role::Label, "Plots");
+        let [left, right] = pair.numbers();
+        assert!(ui.sees(left.hint()), "{pair:?}");
+        assert!(ui.sees(right.hint()), "{pair:?}");
+    }
+    assert!(ui.sees("Crossover freq: the frequency at which the open-loop gain is 0 dB"));
+    // in the open list every entry explains itself
+    ui.open_list("Plots");
+    ui.hover(SidePlots::Sensitivity.name());
+    assert!(ui.sees("Sensitivity peak: the most the loop amplifies a disturbance"));
+    assert!(ui.sees("Sensitivity freq: the frequency at which the loop amplifies"));
+    ui.hover(SidePlots::RiseBandwidth.name());
+    assert!(ui.sees("Rise time: the time the mean response takes from 10 % to 90 % of 1"));
+    assert!(ui.sees("Bandwidth: the frequency at which the closed loop falls to -3 dB"));
+}

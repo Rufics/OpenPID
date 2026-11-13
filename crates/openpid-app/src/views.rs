@@ -1387,6 +1387,9 @@ pub struct StepViewState {
     pub advice: Option<String>,
     /// Verdicts per slot and axis, as in the table.
     pub rows: Vec<(Slot, Axis, Vec<Verdict>)>,
+    /// The narrow plots beside the responses: the axis, the number and the
+    /// point of every log (value and, where it has one, the spread).
+    pub side: Vec<crate::axis_layout::SidePlot>,
 }
 
 /// Colour of a verdict level (Okabe–Ito green / yellow / vermilion, grey).
