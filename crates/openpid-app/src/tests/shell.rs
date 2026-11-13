@@ -413,6 +413,32 @@ fn the_tour_starts_once_on_the_first_log_and_walks_the_tuning_loop() {
 }
 
 #[test]
+fn the_user_guide_link_opens_its_page() {
+    let mut ui = Ui::setup().open();
+    assert!(ui.app().browsed.is_empty());
+    ui.click("User guide");
+    assert_eq!(
+        ui.app().browsed,
+        ["https://github.com/Rufics/OpenPID/blob/master/docs/USER-GUIDE.md"]
+    );
+}
+
+/// Without the `clipboard` feature of `eframe` nothing reaches the system
+/// clipboard: Ctrl+C and every copy button do nothing, on every platform
+/// (#191). The feature is not among the ones `default-features = false`
+/// leaves on, so the workspace has to name it.
+#[test]
+fn the_desktop_program_is_built_with_the_clipboard() {
+    let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.toml");
+    let manifest = std::fs::read_to_string(manifest).unwrap();
+    let eframe = manifest
+        .lines()
+        .find(|line| line.starts_with("eframe ="))
+        .unwrap();
+    assert!(eframe.contains("\"clipboard\""), "{eframe}");
+}
+
+#[test]
 fn recent_files_open_from_the_start_screen() {
     let dir = temp_dir("recent");
     let path = dir.join("prefs.json");

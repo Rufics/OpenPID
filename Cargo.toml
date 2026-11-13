@@ -20,7 +20,7 @@ openpid-dsp = { path = "crates/openpid-dsp", version = "0.1.2" }
 openpid-analysis = { path = "crates/openpid-analysis", version = "0.1.2" }
 openpid-sim = { path = "crates/openpid-sim", version = "0.1.2" }
 rustfft = "6.4"
-eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
+eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "x11", "wayland", "clipboard"] }
 egui_plot = "0.38"
 rfd = "0.17"
 serde = { version = "1", features = ["derive"] }

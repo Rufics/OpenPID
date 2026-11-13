@@ -3,6 +3,9 @@ allow = [
   "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "Unicode-3.0", "MPL-2.0",
   # egui's bundled fonts
   "OFL-1.1", "Ubuntu-font-1.0",
+  # the Windows clipboard behind `eframe/clipboard` (`clipboard-win`, `error-code`): the
+  # Boost licence, permissive, no condition on a binary (ADR-0002)
+  "BSL-1.0",
 ]
 
 [bans]

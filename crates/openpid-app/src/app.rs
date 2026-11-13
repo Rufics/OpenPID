@@ -316,6 +316,9 @@ pub struct App {
     pub anchors: HashMap<&'static str, egui::Rect>,
     /// The plots of the current frame by name (`probe.rs`).
     pub probes: crate::probe::Probes,
+    /// The web addresses the user asked to open, oldest first: a test reads
+    /// them, where no browser is started.
+    pub browsed: Vec<String>,
     /// Persisted preferences (Settings tab).
     pub prefs: Prefs,
     /// Where `prefs` are saved; `None` = no config directory, keep them for the session.
@@ -416,6 +419,7 @@ impl App {
             auto_tour: true,
             anchors: HashMap::new(),
             probes: crate::probe::Probes::default(),
+            browsed: Vec::new(),
             prefs,
             prefs_path,
             theme_applied: None,
