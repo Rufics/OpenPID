@@ -84,9 +84,9 @@ pub(super) fn carried(s: &FlightSession, target: Target) -> Carried {
         voltage: has(s, &ChannelId::Battery(BatteryField::Voltage)),
         current: has(s, &ChannelId::Battery(BatteryField::Current)),
         wing: target.assembled_from_options()
-            && Axis::ALL.into_iter().any(|axis| {
+            && any_axis(s, |axis| {
                 let term = PidTerm::S;
-                has(s, &ChannelId::PidTerm { axis, term })
+                ChannelId::PidTerm { axis, term }
             }),
         gps: has_rows(s, GPS_TABLE) || has_rows(s, HOME_TABLE),
         mag: has_custom(s, "magADC", 3),
@@ -105,16 +105,15 @@ pub(super) struct Layout {
     pub slow: Vec<FieldDef>,
 }
 
-/// Decides which fields are logged and makes the headers say so: writes
-/// `fields_disabled_mask`, `dshot_bidir` and `features`, and drops the
-/// battery lines of a craft whose voltage is not logged.
-pub(super) fn layout(
-    s: &FlightSession,
-    source: &Source,
-    target: Target,
-    schedule: Schedule,
-    lines: &mut Lines,
-) -> Result<Layout, WriteError> {
+/// Whether the session has a channel of its own for any axis of `id`.
+fn any_axis(s: &FlightSession, id: impl Fn(Axis) -> ChannelId) -> bool {
+    Axis::ALL.into_iter().any(|axis| has(s, &id(axis)))
+}
+
+/// The craft the headers describe, before the session has had its say: the
+/// field selection, the gains that switch the D and S terms on, the debug
+/// mode, and whether the GPS frames carry a time.
+fn configured(target: Target, schedule: Schedule, lines: &Lines) -> Craft {
     let mut craft = Craft {
         mask: lines.int("fields_disabled_mask") as u32,
         gps_time: target.gps_frames_have_time(
@@ -122,6 +121,7 @@ pub(super) fn layout(
             schedule.p_interval,
             lines.int("P ratio"),
         ),
+        debug: lines.int("debug_mode") != 0,
         ..Craft::default()
     };
     for (axis, key) in ["rollPID", "pitchPID", "yawPID"].into_iter().enumerate() {
@@ -130,17 +130,11 @@ pub(super) fn layout(
     for (axis, key) in ["s_roll", "s_pitch", "s_yaw"].into_iter().enumerate() {
         craft.s_gain[axis] = lines.int(key) != 0;
     }
-    let stick = (0..4u8).any(|ch| has(s, &ChannelId::RcCommand { ch }));
-    let setpoint = Axis::ALL
-        .into_iter()
-        .any(|axis| has(s, &ChannelId::Setpoint { axis }));
-    let throttle = has(s, &custom("setpoint[3]")) || s.channel(&ChannelId::Throttle).is_some();
-    if !(stick || setpoint) {
-        craft.switch_off(target, Select::RcCommands);
-    }
-    if !(setpoint || throttle) {
-        craft.switch_off(target, Select::Setpoint);
-    }
+    craft
+}
+
+/// The sensors and outputs the craft has: those the session has values of.
+fn fit_out(craft: &mut Craft, s: &FlightSession) {
     craft.vbat = has(s, &ChannelId::Battery(BatteryField::Voltage));
     craft.amperage = has(s, &ChannelId::Battery(BatteryField::Current));
     craft.mag = has_custom(s, "magADC", 3);
@@ -148,12 +142,30 @@ pub(super) fn layout(
     craft.rangefinder = has(s, &custom("surfaceRaw"));
     craft.rssi = has(s, &ChannelId::Rssi);
     craft.pitot = has_custom(s, "pitot", 2);
+    craft.motors = motor_count(s);
+    craft.tricopter = has(s, &custom("servo[5]"));
+    craft.servos = has_custom(s, "servo", 8);
+}
 
-    let gyro = |stage: GyroStage| {
-        Axis::ALL
-            .into_iter()
-            .any(|axis| has(s, &ChannelId::Gyro { axis, stage }))
-    };
+/// Switches off, in the mask, the groups the configuration would log and
+/// the session has no values for: the stick commands, the setpoints, the
+/// unfiltered gyro, the accelerometer or the attitude when only the other
+/// one is there, the debug values of a set debug mode, the motors.
+fn switch_off_what_is_missing(
+    craft: &mut Craft,
+    s: &FlightSession,
+    target: Target,
+) -> Result<(), WriteError> {
+    let stick = (0..4u8).any(|ch| has(s, &ChannelId::RcCommand { ch }));
+    let setpoint = any_axis(s, |axis| ChannelId::Setpoint { axis });
+    let throttle = has(s, &custom("setpoint[3]")) || s.channel(&ChannelId::Throttle).is_some();
+    if !(stick || setpoint) {
+        craft.switch_off(target, Select::RcCommands);
+    }
+    if !(setpoint || throttle) {
+        craft.switch_off(target, Select::Setpoint);
+    }
+    let gyro = |stage: GyroStage| any_axis(s, |axis| ChannelId::Gyro { axis, stage });
     if !gyro(GyroStage::Filtered) && !craft.is_off(target, Select::Gyro) {
         return Err(WriteError::MissingChannel("filtered gyro"));
     }
@@ -161,9 +173,7 @@ pub(super) fn layout(
         craft.switch_off(target, Select::GyroUnfilt);
     }
     // one sensor behind two groups: the accelerometer and the attitude
-    let acc = Axis::ALL
-        .into_iter()
-        .any(|axis| has(s, &ChannelId::Acc { axis }));
+    let acc = any_axis(s, |axis| ChannelId::Acc { axis });
     let attitude = has_custom(s, "imuQuaternion", 3);
     craft.acc = acc || attitude;
     if craft.acc && !acc {
@@ -172,16 +182,19 @@ pub(super) fn layout(
     if craft.acc && !attitude {
         craft.switch_off(target, Select::Attitude);
     }
-    craft.debug = lines.int("debug_mode") != 0;
     if craft.debug && !(0..8u8).any(|idx| has(s, &ChannelId::Debug { idx })) {
         craft.switch_off(target, Select::DebugLog);
     }
-    craft.motors = motor_count(s);
     if craft.motors == 0 {
         craft.switch_off(target, Select::Motor);
     }
-    craft.tricopter = has(s, &custom("servo[5]"));
-    craft.servos = has_custom(s, "servo", 8);
+    Ok(())
+}
+
+/// Whether the ESCs report their speed: `dshot_bidir`, which follows the
+/// session unless its log or the caller gave it. Telemetry without speeds to
+/// log has the RPM fields switched off.
+fn telemetry(craft: &mut Craft, s: &FlightSession, target: Target, lines: &mut Lines) {
     let speeds = has_rpm(s, craft.motors);
     if !lines.is_given("dshot_bidir") {
         lines.replace("dshot_bidir", u8::from(speeds).to_string());
@@ -190,9 +203,19 @@ pub(super) fn layout(
     if craft.dshot_telemetry && !speeds {
         craft.switch_off(target, Select::Rpm);
     }
+}
 
-    // a decoded log has the tables of the GPS frames exactly when its
-    // headers defined them; any other session logs the GPS when it has fixes
+/// Whether the GPS frames are logged. A decoded log has the tables of the
+/// GPS frames exactly when its headers defined them; any other session logs
+/// the GPS when it has fixes (the feature is then switched on in `features`)
+/// and the mask does not switch it off.
+fn gps_is_logged(
+    craft: &Craft,
+    s: &FlightSession,
+    source: &Source,
+    target: Target,
+    lines: &mut Lines,
+) -> bool {
     let fixes = has_rows(s, GPS_TABLE) || has_rows(s, HOME_TABLE);
     if fixes && !lines.is_given("features") {
         lines.replace(
@@ -200,12 +223,16 @@ pub(super) fn layout(
             (lines.int("features") | FEATURE_GPS).to_string(),
         );
     }
-    let gps = if source.decoded {
+    if source.decoded {
         table(s, GPS_TABLE).is_some() || table(s, HOME_TABLE).is_some()
     } else {
         lines.int("features") & FEATURE_GPS != 0 && !craft.is_off(target, Select::Gps)
-    };
+    }
+}
 
+/// Makes the headers say what the craft logs: the mask, and no battery
+/// lines for a craft whose voltage or current is not logged.
+fn state(craft: &Craft, target: Target, lines: &mut Lines) {
     lines.replace("fields_disabled_mask", craft.mask.to_string());
     if !craft.logs(target, When::Vbat) {
         // the firmware skips these three with the field
@@ -217,6 +244,24 @@ pub(super) fn layout(
         // a craft without a current meter has no ADC to describe
         lines.remove("currentSensor");
     }
+}
+
+/// Decides which fields are logged and makes the headers say so: writes
+/// `fields_disabled_mask`, `dshot_bidir` and `features`, and drops the
+/// battery lines of a craft whose voltage is not logged.
+pub(super) fn layout(
+    s: &FlightSession,
+    source: &Source,
+    target: Target,
+    schedule: Schedule,
+    lines: &mut Lines,
+) -> Result<Layout, WriteError> {
+    let mut craft = configured(target, schedule, lines);
+    fit_out(&mut craft, s);
+    switch_off_what_is_missing(&mut craft, s, target)?;
+    telemetry(&mut craft, s, target, lines);
+    let gps = gps_is_logged(&craft, s, source, target, lines);
+    state(&craft, target, lines);
     let logged = |fields: Vec<FieldDef>| -> Vec<FieldDef> {
         fields
             .into_iter()

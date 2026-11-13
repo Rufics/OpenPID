@@ -148,11 +148,6 @@ impl Lines {
         self.lines.retain(|(k, _)| k != key);
     }
 
-    /// The lines, in order.
-    pub(super) fn into_vec(self) -> Vec<(String, String)> {
-        self.lines
-    }
-
     /// The lines as the decoder's profile reads them.
     pub(super) fn as_raw(&self) -> RawHeaders {
         RawHeaders(self.lines.clone())

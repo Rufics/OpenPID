@@ -544,14 +544,12 @@ impl<'a> SlowLog<'a> {
             .into_iter()
             .map(FlightMode::from_name)
             .collect();
-        let has_event =
-            |wanted: fn(&EventKind) -> bool| session.events.iter().any(|e| wanted(&e.kind));
         let mut log = SlowLog {
             session,
             boxes,
             own_frames: fields::table(session, fields::SLOW_TABLE)
                 .is_some_and(|t| !t.rows.is_empty()),
-            own_events: has_event(|k| matches!(k, EventKind::FlightMode { .. })),
+            own_events: has_event(session, |k| matches!(k, EventKind::FlightMode { .. })),
             interval: schedule.i_interval * SLOW_EVERY_INTRA,
             logged: None,
             flags: 0,
@@ -615,7 +613,7 @@ impl<'a> SlowLog<'a> {
 
 /// The header block: the field definitions of every frame, then the
 /// system information.
-fn header_block(layout: &Layout, lines: Lines) -> Vec<u8> {
+fn header_block(layout: &Layout, lines: &Lines) -> Vec<u8> {
     let join = |fields: &[FieldDef], f: &dyn Fn(&FieldDef) -> String| {
         fields.iter().map(f).collect::<Vec<_>>().join(",")
     };
@@ -648,12 +646,297 @@ fn header_block(layout: &Layout, lines: Lines) -> Vec<u8> {
         define('G', fix, false);
     }
     define('S', &layout.slow, false);
-    out.extend(lines.into_vec());
+    out.extend(lines.as_raw().0);
     let mut buf = Vec::new();
     for (key, value) in out {
         buf.extend_from_slice(format!("H {key}:{value}\n").as_bytes());
     }
     buf
+}
+
+/// Whether the session has an event of the kind `wanted` picks.
+fn has_event(session: &FlightSession, wanted: fn(&EventKind) -> bool) -> bool {
+    session.events.iter().any(|e| wanted(&e.kind))
+}
+
+/// The log as planned: its configuration, its fields and their values.
+#[derive(Debug)]
+struct Plan {
+    schedule: Schedule,
+    /// The header lines after the field definitions.
+    lines: Lines,
+    layout: Layout,
+    /// One column of integers per field of the main frames.
+    columns: Vec<Vec<i64>>,
+    /// The samples that are logged.
+    valid: Vec<bool>,
+    /// The first sample logged (the number of samples when none is).
+    first: usize,
+}
+
+/// The samples that are logged, and the first of them: those with a gyro
+/// value where the log has the gyro, else all.
+fn logged_samples(
+    session: &FlightSession,
+    source: &Source,
+    layout: &Layout,
+    n: usize,
+) -> Result<(Vec<bool>, usize), WriteError> {
+    let gyro_logged = layout.main.iter().any(|f| f.name == "gyroADC[0]");
+    let valid = if gyro_logged {
+        loggable(session, n)
+    } else {
+        vec![true; n]
+    };
+    let first = match valid.iter().position(|v| *v) {
+        Some(first) => first,
+        // a log that ended before its first frame is written as it was
+        None if source.decoded => n,
+        None => return Err(WriteError::Empty),
+    };
+    Ok((valid, first))
+}
+
+/// The header lines that follow from the flight itself: the reference
+/// voltage is the voltage of the first frame, and `master` names the debug
+/// mode. Both keep what the session's own log or the caller gave.
+fn lines_of_the_flight(session: &FlightSession, target: Target, plan: &mut Plan) {
+    let Plan {
+        lines,
+        layout,
+        columns,
+        first,
+        ..
+    } = plan;
+    let voltage = layout.main.iter().position(|f| f.name == "vbatLatest");
+    if let Some(voltage) = voltage.and_then(|v| columns[v].get(*first))
+        && !lines.is_given("vbatref")
+    {
+        // the voltage when the log began
+        lines.replace("vbatref", voltage.to_string());
+    }
+    if target >= Target::Master && !lines.is_given("debug_mode_name") {
+        let name = match (&session.settings.debug_mode, lines.int("debug_mode")) {
+            (_, 0) => "NONE",
+            (Some(mode), _) => mode.name.as_deref().unwrap_or("UNKNOWN"),
+            _ => "UNKNOWN",
+        };
+        lines.replace("debug_mode_name", name);
+    }
+}
+
+/// Plans the log: the headers, the schedule, the fields and their values.
+fn plan(
+    session: &FlightSession,
+    source: &Source,
+    options: &WriteOptions,
+) -> Result<Plan, WriteError> {
+    let target = options.target;
+    let time = timestamps(session, options.time_offset_us)?;
+    let n = time.len();
+    let carried = fields::carried(session, target);
+    let mut lines = config::lines(session, source, target, carried, options);
+    let schedule = if let Some(schedule) = Schedule::of_headers(&lines) {
+        schedule
+    } else {
+        let rates = &session.settings.loop_rates;
+        Schedule::of_rates(target, rates, sampled_hz(&time), &mut lines)?
+    };
+    let layout = fields::layout(session, source, target, schedule, &mut lines)?;
+    let (valid, first) = logged_samples(session, source, &layout, n)?;
+    let mut columns = fields::columns(session, source, &layout, &lines, n);
+    let replayed = logged_iterations(session, schedule, n).filter(|_| source.decoded);
+    columns[0] = replayed.unwrap_or_else(|| {
+        (0..n)
+            .map(|k| schedule.iteration_of(k.saturating_sub(first) as i64))
+            .collect()
+    });
+    columns[1] = time.iter().map(|t| wrapped(*t)).collect();
+    let mut plan = Plan {
+        schedule,
+        lines,
+        layout,
+        columns,
+        valid,
+        first,
+    };
+    lines_of_the_flight(session, target, &mut plan);
+    Ok(plan)
+}
+
+/// The fields of the GPS frames of a log that has none.
+const NO_FIELDS: &[FieldDef] = &[];
+
+/// The frames of the log as they are written, sample after sample.
+#[derive(Debug)]
+struct Recorder<'a> {
+    buf: Vec<u8>,
+    layout: &'a Layout,
+    schedule: Schedule,
+    refs: References,
+    /// What the session carries between its main frames.
+    between: Between<'a>,
+    /// The slow frames and mode events of a flight.
+    slow: SlowLog<'a>,
+    /// A flight is logged by the firmware's rules; a decoded log is written
+    /// as it was.
+    logging: bool,
+    /// The arming beep is still to be logged (a flight without one of its
+    /// own, before its first frame).
+    beep_due: bool,
+    /// The two frames before the current one; `None` while the log is paused.
+    history: Option<(Vec<i64>, Vec<i64>)>,
+    paused: bool,
+}
+
+impl<'a> Recorder<'a> {
+    /// A recorder that has written the header block of the plan.
+    fn new(
+        session: &'a FlightSession,
+        source: &Source,
+        options: &WriteOptions,
+        plan: &'a Plan,
+    ) -> Recorder<'a> {
+        let Plan {
+            schedule,
+            lines,
+            layout,
+            first,
+            ..
+        } = plan;
+        let (schedule, first) = (*schedule, *first);
+        let refs = References {
+            motor0: layout.main.iter().position(|f| f.name == "motor[0]"),
+            motor_low: lines.number("motorOutput", 0),
+            vbatref: lines.int("vbatref"),
+            ..References::default()
+        };
+        let (home_fields, gps_fields) = match &layout.gps {
+            Some((home, fix)) => (home.as_slice(), fix.as_slice()),
+            None => (NO_FIELDS, NO_FIELDS),
+        };
+        let gps_logged = layout.gps.is_some();
+        let table = |kind: &str, logged: bool| fields::table(session, kind).filter(|_| logged);
+        let between = Between {
+            home: Rows::new(b'H', home_fields, table(fields::HOME_TABLE, gps_logged)),
+            gps: Rows::new(b'G', gps_fields, table(fields::GPS_TABLE, gps_logged)),
+            slow: Rows::new(b'S', &layout.slow, table(fields::SLOW_TABLE, true)),
+            events: &session.events,
+            next_event: 0,
+            time_offset_us: options.time_offset_us,
+            modes: mode_bits(source, options.target),
+        };
+        let logging = !source.decoded;
+        Recorder {
+            buf: header_block(layout, lines),
+            layout,
+            schedule,
+            refs,
+            between,
+            slow: SlowLog::new(session, options.target, schedule, first),
+            logging,
+            beep_due: logging && !has_event(session, |k| matches!(k, EventKind::SyncBeep { .. })),
+            history: None,
+            paused: false,
+        }
+    }
+
+    /// A sample that is not logged: the log pauses.
+    fn pause(&mut self) {
+        self.paused = true;
+        self.history = None;
+    }
+
+    /// What precedes the main frame of sample `k`: what the session carries
+    /// there, the event of a log that resumes, and, in a flight, the
+    /// flight-mode event and the slow frame.
+    fn before_frame(&mut self, k: usize, iteration: i64, time_us: i64, intra: bool) {
+        self.between.write(&mut self.buf, k, &mut self.refs);
+        if self.paused {
+            let resume = EventKind::LoggingResume {
+                iteration: iteration as u32,
+                time_us,
+            };
+            frames::event(&mut self.buf, &resume);
+            self.slow.force();
+            self.paused = false;
+        }
+        if !self.logging {
+            return;
+        }
+        // `P interval:0` logs the slow frames with the I frames; any other
+        // schedule logs them before P frames only
+        let intra_only = self.schedule.p_interval == 0;
+        if !intra {
+            self.slow.mode_event(&mut self.buf, k);
+        }
+        if !intra || intra_only {
+            self.slow.frame(&mut self.buf, self.layout, k, iteration);
+        }
+    }
+
+    /// What a flight logs after the main frame of sample `k`: the arming
+    /// beep after the first frame, and the flight-mode event on a schedule
+    /// without P frames (`P interval:0`, or a P interval as long as the I
+    /// interval), where it is checked on the iteration after the frame,
+    /// which logs nothing.
+    fn after_frame(&mut self, k: usize, time_us: i64) {
+        if !self.logging {
+            return;
+        }
+        if self.beep_due {
+            frames::event(&mut self.buf, &EventKind::SyncBeep { time_us });
+            self.beep_due = false;
+        }
+        let schedule = self.schedule;
+        if schedule.p_interval == 0 || schedule.p_interval >= schedule.i_interval {
+            self.slow.mode_event(&mut self.buf, k);
+        }
+    }
+
+    /// Logs sample `k`, whose values are `row`.
+    fn sample(&mut self, k: usize, row: Vec<i64>) {
+        let (iteration, time_us) = (row[0], row[1]);
+        let intra = self.schedule.is_intra(iteration);
+        if self.paused && !intra {
+            // the firmware resumes a paused log on an I frame only
+            return;
+        }
+        self.before_frame(k, iteration, time_us, intra);
+        let references = self
+            .history
+            .as_ref()
+            .filter(|_| !intra)
+            .map(|(p, p2)| (p.as_slice(), p2.as_slice()));
+        frames::main_frame(
+            &mut self.buf,
+            &self.layout.main,
+            &row,
+            references,
+            &self.refs,
+        );
+        self.refs.last_main_time = time_us;
+        self.after_frame(k, time_us);
+        self.history = Some(match self.history.take() {
+            Some((previous, _)) if !intra => (row, previous),
+            _ => (row.clone(), row),
+        });
+    }
+
+    /// Ends the log: what the session carries after its last frame, and for
+    /// a flight without an end of its own the disarm and end-of-log events.
+    fn finish(mut self, session: &FlightSession, disarm: bool) -> Vec<u8> {
+        self.between
+            .write(&mut self.buf, usize::MAX, &mut self.refs);
+        if self.logging && !has_event(session, |k| matches!(k, EventKind::LogEnd)) {
+            if disarm && !has_event(session, |k| matches!(k, EventKind::Disarm { .. })) {
+                let reason = DISARM_SWITCH;
+                frames::event(&mut self.buf, &EventKind::Disarm { reason });
+            }
+            frames::event(&mut self.buf, &EventKind::LogEnd);
+        }
+        self.buf
+    }
 }
 
 /// Writes `session` as one Betaflight Blackbox log of the release
@@ -681,146 +964,17 @@ fn header_block(layout: &Layout, lines: Lines) -> Vec<u8> {
 /// [`WriteError`] when there is nothing to log, a needed channel is absent,
 /// or the loop rates of the settings cannot be scheduled.
 pub fn betaflight(session: &FlightSession, options: &WriteOptions) -> Result<Vec<u8>, WriteError> {
-    let target = options.target;
-    let offset = options.time_offset_us;
-    let source = Source::of(session, target);
-    let time = timestamps(session, offset)?;
-    let n = time.len();
-    let carried = fields::carried(session, target);
-    let mut lines = config::lines(session, &source, target, carried, options);
-    let schedule = if let Some(schedule) = Schedule::of_headers(&lines) {
-        schedule
-    } else {
-        let rates = &session.settings.loop_rates;
-        Schedule::of_rates(target, rates, sampled_hz(&time), &mut lines)?
-    };
-    let layout = fields::layout(session, &source, target, schedule, &mut lines)?;
-    let gyro_logged = layout.main.iter().any(|f| f.name == "gyroADC[0]");
-    let valid = if gyro_logged {
-        loggable(session, n)
-    } else {
-        vec![true; n]
-    };
-    let first = match valid.iter().position(|v| *v) {
-        Some(first) => first,
-        // a log that ended before its first frame is written as it was
-        None if source.decoded => n,
-        None => return Err(WriteError::Empty),
-    };
-
-    let mut columns = fields::columns(session, &source, &layout, &lines, n);
-    let replayed = logged_iterations(session, schedule, n).filter(|_| source.decoded);
-    columns[0] = replayed.unwrap_or_else(|| {
-        (0..n)
-            .map(|k| schedule.iteration_of(k.saturating_sub(first) as i64))
-            .collect()
-    });
-    columns[1] = time.iter().map(|t| wrapped(*t)).collect();
-    let field = |name: &str| layout.main.iter().position(|f| f.name == name);
-    if let Some(voltage) = field("vbatLatest").and_then(|v| columns[v].get(first))
-        && !lines.is_given("vbatref")
-    {
-        // the voltage when the log began
-        lines.replace("vbatref", voltage.to_string());
+    let source = Source::of(session, options.target);
+    let plan = plan(session, &source, options)?;
+    let mut recorder = Recorder::new(session, &source, options, &plan);
+    for k in plan.first..plan.valid.len() {
+        if plan.valid[k] {
+            recorder.sample(k, plan.columns.iter().map(|c| c[k]).collect());
+        } else {
+            recorder.pause();
+        }
     }
-    if target >= Target::Master && !lines.is_given("debug_mode_name") {
-        let name = match (&session.settings.debug_mode, lines.int("debug_mode")) {
-            (_, 0) => "NONE",
-            (Some(mode), _) => mode.name.as_deref().unwrap_or("UNKNOWN"),
-            _ => "UNKNOWN",
-        };
-        lines.replace("debug_mode_name", name);
-    }
-    let mut refs = References {
-        motor0: field("motor[0]"),
-        motor_low: lines.number("motorOutput", 0),
-        vbatref: lines.int("vbatref"),
-        ..References::default()
-    };
-
-    let no_fields: (Vec<FieldDef>, Vec<FieldDef>) = (Vec::new(), Vec::new());
-    let (home_fields, gps_fields) = layout.gps.as_ref().unwrap_or(&no_fields);
-    let gps_logged = layout.gps.is_some();
-    let table = |kind: &str, logged: bool| fields::table(session, kind).filter(|_| logged);
-    let mut between = Between {
-        home: Rows::new(b'H', home_fields, table(fields::HOME_TABLE, gps_logged)),
-        gps: Rows::new(b'G', gps_fields, table(fields::GPS_TABLE, gps_logged)),
-        slow: Rows::new(b'S', &layout.slow, table(fields::SLOW_TABLE, true)),
-        events: &session.events,
-        next_event: 0,
-        time_offset_us: offset,
-        modes: mode_bits(&source, target),
-    };
-    // a decoded log is written as it was; a flight is logged by the rules
-    let logging = !source.decoded;
-    let mut slow = SlowLog::new(session, target, schedule, first);
-    // `P interval:0` logs the slow frames with the I frames; a P interval
-    // as long as the I interval logs no P frame either, and no slow frame
-    // at all: the firmware writes one only before a P frame
-    let intra_only = schedule.p_interval == 0;
-    let no_inter = intra_only || schedule.p_interval >= schedule.i_interval;
-    let has_event = |wanted: fn(&EventKind) -> bool| session.events.iter().any(|e| wanted(&e.kind));
-
-    let mut buf = header_block(&layout, lines);
-    // the two frames before the current one; `None` while the log is paused
-    let mut history: Option<(Vec<i64>, Vec<i64>)> = None;
-    let mut paused = false;
-    for k in first..n {
-        if !valid[k] {
-            paused = true;
-            history = None;
-            continue;
-        }
-        let row: Vec<i64> = columns.iter().map(|c| c[k]).collect();
-        let (iteration, time_us) = (row[0], row[1]);
-        let intra = schedule.is_intra(iteration);
-        if paused && !intra {
-            // the firmware resumes a paused log on an I frame only
-            continue;
-        }
-        between.write(&mut buf, k, &mut refs);
-        if paused {
-            let resume = EventKind::LoggingResume {
-                iteration: iteration as u32,
-                time_us,
-            };
-            frames::event(&mut buf, &resume);
-            slow.force();
-            paused = false;
-        }
-        if logging && !intra {
-            slow.mode_event(&mut buf, k);
-        }
-        if logging && (!intra || intra_only) {
-            slow.frame(&mut buf, &layout, k, iteration);
-        }
-        let references = history
-            .as_ref()
-            .filter(|_| !intra)
-            .map(|(p, p2)| (p.as_slice(), p2.as_slice()));
-        frames::main_frame(&mut buf, &layout.main, &row, references, &refs);
-        refs.last_main_time = time_us;
-        if logging && k == first && !has_event(|k| matches!(k, EventKind::SyncBeep { .. })) {
-            frames::event(&mut buf, &EventKind::SyncBeep { time_us });
-        }
-        if logging && no_inter {
-            // checked on the iteration after the frame, which logs nothing
-            slow.mode_event(&mut buf, k);
-        }
-        history = Some(match history.take() {
-            Some((previous, _)) if !intra => (row, previous),
-            _ => (row.clone(), row),
-        });
-    }
-    between.write(&mut buf, usize::MAX, &mut refs);
-    if logging && !has_event(|k| matches!(k, EventKind::LogEnd)) {
-        if options.disarm && !has_event(|k| matches!(k, EventKind::Disarm { .. })) {
-            let reason = DISARM_SWITCH;
-            frames::event(&mut buf, &EventKind::Disarm { reason });
-        }
-        frames::event(&mut buf, &EventKind::LogEnd);
-    }
-    Ok(buf)
+    Ok(recorder.finish(session, options.disarm))
 }
 
 #[cfg(test)]
