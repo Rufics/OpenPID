@@ -2,6 +2,11 @@
 //! this crate only loads files, runs analyses on a worker thread and draws.
 //!
 //! Usage: `openpid-gui [--tab log|step|spectrum|throttle|time|filter|advice|sliders|setup|settings] [log …]` (up to 8 logs, one slot each)
+//!
+//! On Windows the release build has no console (#189): a double click opens
+//! the program's window and nothing else, and a failure is said in a message
+//! box. A debug build keeps its console.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod advice_tab;
 mod app;
@@ -32,7 +37,33 @@ mod tour;
 mod views;
 mod worker;
 
+/// What stands in for a console in a release build on Windows: without
+/// one, a failure would close the program with no word.
+#[cfg(all(windows, not(debug_assertions)))]
+mod no_console {
+    /// Says `text` in a message box and waits until it is closed.
+    pub fn say(text: &str) {
+        rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Error)
+            .set_title("OpenPID")
+            .set_description(text)
+            .show();
+    }
+
+    /// From now on a panic is said in a message box, after what a panic
+    /// does anyway.
+    pub fn report_panics() {
+        let usual = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |panic| {
+            usual(panic);
+            say(&format!("OpenPID has to close.\n\n{panic}"));
+        }));
+    }
+}
+
 fn main() -> eframe::Result {
+    #[cfg(all(windows, not(debug_assertions)))]
+    no_console::report_panics();
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("OpenPID")
@@ -41,11 +72,16 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     let (files, tab) = parse_args(std::env::args().skip(1));
-    eframe::run_native(
+    let run = eframe::run_native(
         "OpenPID",
         options,
         Box::new(move |cc| Ok(Box::new(app::App::with_context(&cc.egui_ctx, files, tab)))),
-    )
+    );
+    #[cfg(all(windows, not(debug_assertions)))]
+    if let Err(error) = &run {
+        no_console::say(&format!("OpenPID could not start.\n\n{error}"));
+    }
+    run
 }
 
 // The only eframe-specific glue; everything else runs headless (ADR-0008).
