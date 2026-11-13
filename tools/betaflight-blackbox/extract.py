@@ -3,7 +3,7 @@
 
 The log writer of `crates/openpid-fmt-blackbox/src/write/` describes each
 Betaflight release it can write for: the fields of every frame (`version.rs`)
-and the system-information header lines (`sysinfo/`). Those descriptions are
+and the system-information header lines (`sysinfo/lines.txt`). Those are
 facts of the firmware source at the release's tag. This script reads them out
 of a Betaflight checkout, so that a new release can be added (or an existing
 one checked) without reading 2000 lines of C by eye:

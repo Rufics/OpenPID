@@ -3,8 +3,8 @@
 //! quantised values of the session.
 #![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
-use blackbox_log::frame::Frame as _;
-use blackbox_log::prelude::*;
+mod common;
+
 use openpid_core::session::EventKind;
 use openpid_core::settings::{
     DynNotch, FilterChain, Lowpass, LowpassKind, Notch, PerAxis, PidGains, RpmNotch,
@@ -204,54 +204,9 @@ fn the_independent_decoder_reads_the_same_values() {
         ..WriteOptions::default()
     };
     let bytes = betaflight(&original, &options).unwrap();
-    let mine = decode(&bytes).unwrap();
-    let def = mine.headers.main_def();
-    let inter = mine.headers.def(b'P').unwrap();
-
-    let reference = blackbox_log::File::new(&bytes);
-    assert_eq!(reference.log_count(), 1);
-    let headers = reference.parse(0).unwrap().unwrap();
-    let names: Vec<String> = headers
-        .main_frame_def()
-        .iter()
-        .map(|f| f.name.to_string())
-        .collect();
-    // the reference lists every field but the time, which it keeps apart
-    let index: Vec<usize> = names.iter().map(|n| def.index_of(n).unwrap()).collect();
-    assert_eq!(names.len(), def.len() - 1, "the same fields");
-    let time = def.index_of("time").unwrap();
-
-    let mut parser = headers.data_parser();
-    let (mut row, mut compared) = (0usize, 0u64);
-    while let Some(event) = parser.next() {
-        let ParserEvent::Main(frame) = event else {
-            continue;
-        };
-        let intra = mine.intra[row];
-        assert_eq!(
-            mine.columns[time][row],
-            frame.time_raw() as i64,
-            "row {row}"
-        );
-        for (j, value) in frame.iter_raw().enumerate() {
-            // the reference keeps the wrong history after an I frame and
-            // ignores the sub-sampling (see `conformance.rs`): fields
-            // predicted from two frames are compared on I frames only
-            let from_history = [2, 3, 6].contains(&inter.predictors[index[j]]);
-            if names[j] == "loopIteration" || (!intra && from_history) {
-                continue;
-            }
-            assert_eq!(
-                mine.columns[index[j]][row] as u32, value,
-                "row {row}, field {}",
-                names[j]
-            );
-            compared += 1;
-        }
-        row += 1;
-    }
-    assert_eq!(row, original.len(), "every frame was read");
-    assert!(compared > 50_000, "compared only {compared} values");
+    let read = common::assert_reference_decoder_agrees(&bytes, "2 kHz");
+    assert_eq!(read.frames, original.len(), "every frame was read");
+    assert!(read.values > 50_000, "compared only {}", read.values);
 }
 
 /// A small deterministic generator, so the property test needs no crate.

@@ -1,0 +1,409 @@
+# The system-information header lines of Betaflight: every line some release
+# writes after the field definitions, each written once, in an order of which
+# the order of every release is a part.
+#
+#   name | releases | conditions
+#
+# releases    the releases that write the line: `all`, one (`4.2`), a span
+#             (`4.4-4.5`), from one on (`4.3-`: 4.3 and every later release),
+#             or several of these with commas. A line that changed its
+#             conditions, or its place among the others, stands once for each.
+# conditions  the build options and run-time conditions that must all hold
+#             (the names of `Build` in `mod.rs`, which gives the firmware's
+#             macro for each); none: every build writes the line.
+#
+# Read from `blackboxWriteSysinfo` in `src/main/blackbox/blackbox.c`, the
+# parameter names from `src/main/fc/parameter_names.h`, at these tags of the
+# Betaflight repository (`tools/betaflight-blackbox/extract.py` lists them):
+#
+#   4.2          4.2.11
+#   4.3          4.3.2
+#   4.4          4.4.3
+#   4.5          4.5.0 ... 4.5.5 (the same lines in all six)
+#   2025.12      2025.12.1 ... 2025.12.5 (the same in all five)
+#   2026.6       2026.6.1, 2026.6.2 (the same in both)
+#   2026.12-dev  master at 4b1520e
+#
+# Checked against the header lists of the fixtures of 4.2.0, 4.2.8, 4.2.11,
+# 4.5.1 and 2025.12.2 (`mod.rs`, `the_tables_list_what_real_builds_write`).
+
+Firmware type | all
+Firmware revision | all
+Firmware date | all
+Build key | 2026.12-dev- | CloudKey
+Release name | 2026.12-dev- | CloudKey ReleaseName
+DeviceUID | 2025.12-
+Board information | all | BoardInfo
+Log start datetime | all
+Craft name | all
+I interval | all
+P interval | all
+P ratio | all
+minthrottle | 4.2-4.5
+maxthrottle | all
+gyro_scale | all
+motorOutput | all
+motor_kv | 2025.12-
+acc_1G | all | Acc
+vbat_scale | all | Vbat
+vbatcellvoltage | all | Vbat
+vbatref | all | Vbat
+currentSensor | all | CurrentAdc
+looptime | all
+gyro_sync_denom | all
+pid_process_denom | all
+thr_mid | all
+thr_expo | all
+thr_hover | 2025.12-
+tpa_mode | 4.4-
+tpa_rate | all
+tpa_breakpoint | all
+tpa_low_rate | 4.5-
+tpa_low_breakpoint | 4.5-
+tpa_low_always | 4.5-
+mixer_type | 4.5-
+ez_landing_threshold | 4.5-
+ez_landing_limit | 4.5-
+ez_landing_speed | 4.5-
+landing_disarm_threshold | 2025.12-
+spa_roll_center | 2025.12- | Wing
+spa_roll_width | 2025.12- | Wing
+spa_roll_mode | 2025.12- | Wing
+spa_pitch_center | 2025.12- | Wing
+spa_pitch_width | 2025.12- | Wing
+spa_pitch_mode | 2025.12- | Wing
+spa_yaw_center | 2025.12- | Wing
+spa_yaw_width | 2025.12- | Wing
+spa_yaw_mode | 2025.12- | Wing
+tpa_curve_type | 2025.12- | AdvancedTpa
+tpa_curve_stall_throttle | 2025.12- | AdvancedTpa
+tpa_curve_pid_thr0 | 2025.12- | AdvancedTpa
+tpa_curve_pid_thr100 | 2025.12- | AdvancedTpa
+tpa_curve_expo | 2025.12- | AdvancedTpa
+rc_rates | all
+rc_expo | all
+rates | all
+rate_limits | all
+rollPID | all
+pitchPID | all
+yawPID | all
+levelPID | all
+magPID | 4.2-2026.6
+d_min | 4.2-4.5 | DMinMax
+d_min_gain | 4.2 | DMinMax
+d_min_advance | 4.2 | DMinMax
+dterm_filter_type | 4.2
+dterm_lowpass_hz | 4.2
+dterm_lowpass_dyn_hz | 4.2 | DynLpf
+dterm_filter2_type | 4.2
+dterm_lowpass2_hz | 4.2
+d_max | 2025.12- | DMinMax
+d_max_gain | 4.3- | DMinMax
+d_max_advance | 4.3- | DMinMax
+dterm_lpf1_type | 4.3-
+dterm_lpf1_static_hz | 4.3-
+dterm_lpf1_dyn_hz | 4.3- | DynLpf
+dterm_lpf1_dyn_expo | 4.5- | DynLpf
+dterm_lpf2_type | 4.3-
+dterm_lpf2_static_hz | 4.3-
+yaw_lowpass_hz | all
+dterm_notch_hz | all
+dterm_notch_cutoff | all
+iterm_windup | all
+iterm_relax | all | ItermRelax
+iterm_relax_type | all | ItermRelax
+iterm_relax_cutoff | all | ItermRelax
+vbat_pid_gain | 4.2
+pidAtMinThrottle | 4.2
+pid_at_min_throttle | 4.3-
+anti_gravity_mode | 4.2-4.3
+anti_gravity_threshold | 4.2-4.3
+anti_gravity_gain | all
+anti_gravity_cutoff_hz | 4.4-
+anti_gravity_p_gain | 4.4-
+abs_control_gain | 4.2-2025.12 | AbsoluteControl
+use_integrated_yaw | 4.2-2026.6 | IntegratedYaw
+feedforward_transition | 4.2
+feedforward_weight | 4.2
+ff_interpolate_sp | 4.2 | InterpolatedSetpoint
+ff_spike_limit | 4.2 | InterpolatedSetpoint
+ff_max_rate_limit | 4.2 | InterpolatedSetpoint
+ff_boost | 4.2
+ff_weight | 4.3-
+feedforward_transition | 4.3- | Feedforward
+feedforward_averaging | 4.3- | Feedforward
+feedforward_smooth_factor | 4.3- | Feedforward
+feedforward_jitter_factor | 4.3- | Feedforward
+feedforward_boost | 4.3- | Feedforward
+feedforward_max_rate_limit | 4.3- | Feedforward
+angle_feedforward | 4.5- | Feedforward
+angle_feedforward_smoothing_ms | 4.5- | Feedforward
+feedforward_yaw_hold_gain | 2025.12- | Feedforward
+feedforward_yaw_hold_time | 2025.12- | Feedforward
+angle_limit | 4.5-
+angle_earth_ref | 4.5-
+horizon_limit_degrees | 4.5-
+horizon_delay_ms | 4.5-
+acc_limit_yaw | all
+acc_limit | all
+pidsum_limit | all
+pidsum_limit_yaw | all
+s_roll | 2025.12- | Wing
+s_pitch | 2025.12- | Wing
+s_yaw | 2025.12- | Wing
+chirp_lag_freq_hz | 2025.12- | Chirp
+chirp_lead_freq_hz | 2025.12- | Chirp
+chirp_amplitude_roll | 2025.12- | Chirp
+chirp_amplitude_pitch | 2025.12- | Chirp
+chirp_amplitude_yaw | 2025.12- | Chirp
+chirp_frequency_start_deci_hz | 2025.12- | Chirp
+chirp_frequency_end_deci_hz | 2025.12- | Chirp
+chirp_time_seconds | 2025.12- | Chirp
+deadband | all
+yaw_deadband | all
+gyro_hardware_lpf | all
+gyro_lowpass_type | 4.2
+gyro_lowpass_hz | 4.2
+gyro_lowpass_dyn_hz | 4.2 | DynLpf
+gyro_lowpass2_type | 4.2
+gyro_lowpass2_hz | 4.2
+gyro_lpf1_type | 4.3-
+gyro_lpf1_static_hz | 4.3-
+gyro_lpf1_dyn_hz | 4.3- | DynLpf
+gyro_lpf1_dyn_expo | 4.5- | DynLpf
+gyro_lpf2_type | 4.3-
+gyro_lpf2_static_hz | 4.3-
+gyro_notch_hz | all
+gyro_notch_cutoff | all
+dyn_notch_max_hz | 4.2 | GyroAnalysis
+dyn_notch_width_percent | 4.2 | GyroAnalysis
+dyn_notch_q | 4.2 | GyroAnalysis
+dyn_notch_min_hz | 4.2 | GyroAnalysis
+gyro_to_use | 4.3-4.5
+gyro_enabled_bitmask | 2025.12-
+gyro_debug_axis | 2025.12-
+dyn_notch_max_hz | 4.3- | DynNotch
+dyn_notch_count | 4.3- | DynNotch
+dyn_notch_q | 4.3- | DynNotch
+dyn_notch_min_hz | 4.3- | DynNotch
+dshot_bidir | all | DshotTelemetry
+gyro_rpm_notch_harmonics | 4.2 | RpmFilter
+gyro_rpm_notch_q | 4.2 | RpmFilter
+gyro_rpm_notch_min | 4.2 | RpmFilter
+dterm_rpm_notch_harmonics | 4.2 | RpmFilter
+dterm_rpm_notch_q | 4.2 | RpmFilter
+dterm_rpm_notch_min | 4.2 | RpmFilter
+rpm_notch_lpf | 4.2 | RpmFilter
+motor_poles | 4.3- | DshotTelemetry
+rpm_filter_harmonics | 4.3- | RpmFilter
+rpm_filter_weights | 4.5- | RpmFilter
+rpm_filter_q | 4.3- | RpmFilter
+rpm_filter_min_hz | 4.3- | RpmFilter
+rpm_filter_fade_range_hz | 4.3- | RpmFilter
+rpm_filter_lpf_hz | 4.3- | RpmFilter
+acc_lpf_hz | all | Acc
+acc_hardware | all | Acc
+baro_hardware | all | Baro
+baro_drift | 2026.12-dev- | Baro
+altitude_source | 4.4-
+altitude_prefer_baro | 4.4-
+altitude_lpf | 4.4-
+altitude_d_lpf | 4.4-
+ap_landing_altitude_m | 2025.12- | NotWing
+ap_hover_throttle | 2025.12- | NotWing
+ap_throttle_min | 2025.12- | NotWing
+ap_throttle_max | 2025.12- | NotWing
+ap_altitude_p | 2025.12- | NotWing
+ap_altitude_i | 2025.12- | NotWing
+ap_altitude_d | 2025.12- | NotWing
+ap_altitude_a | 2026.12-dev- | NotWing
+ap_altitude_f | 2025.12- | NotWing
+ap_position_p | 2025.12- | NotWing
+ap_position_i | 2025.12- | NotWing
+ap_position_d | 2025.12- | NotWing
+ap_position_a | 2025.12- | NotWing
+ap_position_f | 2026.6- | NotWing
+ap_position_cutoff | 2025.12- | NotWing
+ap_stop_threshold | 2026.6- | NotWing
+ap_max_angle | 2025.12- | NotWing
+ap_max_yaw_rate | 2026.12-dev- | NotWing
+ap_yaw_p | 2026.12-dev- | NotWing
+ap_wing_cruise_throttle | 2026.12-dev- | Wing
+ap_wing_min_throttle | 2026.12-dev- | Wing
+ap_wing_max_throttle | 2026.12-dev- | Wing
+ap_wing_bank_throttle | 2026.12-dev- | Wing
+ap_wing_max_climb_angle | 2026.12-dev- | Wing
+ap_wing_max_dive_angle | 2026.12-dev- | Wing
+ap_wing_max_climb_rate | 2026.12-dev- | Wing
+ap_wing_max_sink_rate | 2026.12-dev- | Wing
+ap_wing_alt_time_constant | 2026.12-dev- | Wing
+ap_wing_climb_p | 2026.12-dev- | Wing
+ap_wing_climb_i | 2026.12-dev- | Wing
+ap_wing_vert_accel | 2026.12-dev- | Wing
+ap_wing_cruise_speed | 2026.12-dev- | Wing
+ap_wing_turn_pitch_ff | 2026.12-dev- | Wing
+ap_wing_turn_yaw_ff | 2026.12-dev- | Wing
+ap_wing_max_bank | 2026.12-dev- | Wing
+ap_wing_l1_period | 2026.12-dev- | Wing
+ap_wing_l1_damping | 2026.12-dev- | Wing
+ap_wing_loiter_radius | 2026.12-dev- | Wing
+ap_wing_loiter_direction | 2026.12-dev- | Wing
+ap_wing_land_heading | 2026.12-dev- | Wing
+ap_wing_land_side | 2026.12-dev- | Wing
+ap_wing_land_final_length | 2026.12-dev- | Wing
+ap_wing_land_glide_angle | 2026.12-dev- | Wing
+ap_wing_land_approach_alt | 2026.12-dev- | Wing
+ap_wing_land_flare_height | 2026.12-dev- | Wing
+ap_wing_land_flare_pitch | 2026.12-dev- | Wing
+ap_wing_land_flare_sink | 2026.12-dev- | Wing
+ap_wing_land_final_bank | 2026.12-dev- | Wing
+ap_wing_land_slope_tolerance | 2026.12-dev- | Wing
+ap_wing_land_attempts | 2026.12-dev- | Wing
+ap_wing_land_max_tailwind | 2026.12-dev- | Wing
+ap_landing_detection_time | 2026.12-dev- | Wing
+ap_wing_land_launch_height | 2026.12-dev- | Wing
+mag_hardware | all | Mag
+opticalflow_hardware | 2026.12-dev- | OpticalFlow
+opticalflow_rotation | 2026.12-dev- | OpticalFlow
+opticalflow_flip_x | 2026.12-dev- | OpticalFlow
+gyro_cal_on_first_arm | all
+rc_interpolation | 4.2
+rc_interpolation_interval | 4.2
+rc_interpolation_channels | 4.2
+airmode_activate_throttle | all
+serialrx_provider | all
+use_unsynced_pwm | all
+motor_pwm_protocol | all
+motor_pwm_rate | all
+dshot_idle_value | 4.2-4.5
+motor_idle | 2025.12-
+debug_mode | all
+debug_mode_name | 2026.12-dev-
+features | all
+rc_smoothing_type | 4.2 | RcSmoothing
+rc_smoothing | 4.3- | RcSmoothing
+rc_smoothing_auto_factor | 4.3- | RcSmoothing
+rc_smoothing_auto_factor_throttle | 4.3- | RcSmoothing
+rc_smoothing_feedforward_cutoff | 4.3-4.5 | RcSmoothing
+rc_smoothing_setpoint_cutoff | 4.3- | RcSmoothing
+rc_smoothing_throttle_cutoff | 4.3- | RcSmoothing
+rc_smoothing_debug_axis | all | RcSmoothing
+rc_smoothing_cutoffs | 4.2 | RcSmoothing
+rc_smoothing_auto_factor | 4.2 | RcSmoothing
+rc_smoothing_filter_type | 4.2 | RcSmoothing
+rc_smoothing_active_cutoffs | 4.2 | RcSmoothing
+rc_smoothing_active_cutoffs_ff_sp_thr | 4.3- | RcSmoothing
+rc_smoothing_rx_average | 4.2-4.4 | RcSmoothing
+rc_smoothing_rx_smoothed | 4.5- | RcSmoothing
+rates_type | all
+fields_disabled_mask | 4.3-
+blackbox_high_resolution | 4.4-
+rc_command_scale | 2026.12-dev-
+vbat_sag_compensation | 4.3- | SagCompensation
+dyn_idle_min_rpm | 4.3- | DynIdle
+dyn_idle_p_gain | 4.3- | DynIdle
+dyn_idle_i_gain | 4.3- | DynIdle
+dyn_idle_d_gain | 4.3- | DynIdle
+dyn_idle_max_increase | 4.3- | DynIdle
+dyn_idle_start_increase | 4.5 | DynIdle
+simplified_pids_mode | 4.3- | SimplifiedTuning
+simplified_master_multiplier | 4.3- | SimplifiedTuning
+simplified_i_gain | 4.3- | SimplifiedTuning
+simplified_d_gain | 4.3- | SimplifiedTuning
+simplified_pi_gain | 4.3- | SimplifiedTuning
+simplified_dmax_gain | 4.3-4.5 | SimplifiedTuning
+simplified_d_max_gain | 2025.12- | SimplifiedTuning
+simplified_feedforward_gain | 4.3- | SimplifiedTuning
+simplified_pitch_d_gain | 4.3- | SimplifiedTuning
+simplified_pitch_pi_gain | 4.3- | SimplifiedTuning
+simplified_dterm_filter | 4.3- | SimplifiedTuning
+simplified_dterm_filter_multiplier | 4.3- | SimplifiedTuning
+simplified_gyro_filter | 4.3- | SimplifiedTuning
+simplified_gyro_filter_multiplier | 4.3- | SimplifiedTuning
+motor_output_limit | 4.3-
+throttle_limit_type | 4.3-
+throttle_limit_percent | 4.3-
+throttle_boost | 4.3-
+throttle_boost_cutoff | 4.3-
+thrust_linear | 4.5-
+gps_provider | 4.4- | Gps
+gps_set_home_point_once | 4.4- | Gps
+gps_use_3d_speed | 4.4- | Gps
+gps_rescue_min_start_dist | 4.4-4.5 | Gps GpsRescue
+gps_rescue_alt_mode | 4.4-4.5 | Gps GpsRescue
+gps_rescue_initial_climb | 4.4-4.5 | Gps GpsRescue
+gps_rescue_ascend_rate | 4.4-4.5 | Gps GpsRescue
+gps_rescue_return_alt | 4.4-4.5 | Gps GpsRescue
+gps_rescue_ground_speed | 4.4-4.5 | Gps GpsRescue
+gps_rescue_max_angle | 4.4-4.5 | Gps GpsRescue
+gps_rescue_roll_mix | 4.4-4.5 | Gps GpsRescue
+gps_rescue_pitch_cutoff | 4.4-4.5 | Gps GpsRescue
+gps_rescue_imu_yaw_gain | 4.5 | Gps GpsRescue
+gps_rescue_descent_dist | 4.4-4.5 | Gps GpsRescue
+gps_rescue_descend_rate | 4.4-4.5 | Gps GpsRescue
+gps_rescue_landing_alt | 4.4-4.5 | Gps GpsRescue
+gps_rescue_disarm_threshold | 4.4-4.5 | Gps GpsRescue
+gps_rescue_throttle_min | 4.4-4.5 | Gps GpsRescue
+gps_rescue_throttle_max | 4.4-4.5 | Gps GpsRescue
+gps_rescue_throttle_hover | 4.4-4.5 | Gps GpsRescue
+gps_rescue_sanity_checks | 4.4-4.5 | Gps GpsRescue
+gps_rescue_min_sats | 4.4-4.5 | Gps GpsRescue
+gps_rescue_allow_arming_without_fix | 4.4-4.5 | Gps GpsRescue
+gps_rescue_throttle_p | 4.4-4.5 | Gps GpsRescue
+gps_rescue_throttle_i | 4.4-4.5 | Gps GpsRescue
+gps_rescue_throttle_d | 4.4-4.5 | Gps GpsRescue
+gps_rescue_velocity_p | 4.4-4.5 | Gps GpsRescue
+gps_rescue_velocity_i | 4.4-4.5 | Gps GpsRescue
+gps_rescue_velocity_d | 4.4-4.5 | Gps GpsRescue
+gps_rescue_yaw_p | 4.4-4.5 | Gps GpsRescue
+gps_rescue_use_mag | 4.4-4.5 | Gps GpsRescue Mag
+gps_rescue_min_start_dist | 2025.12-2026.6 | Gps GpsRescue NotWing
+gps_rescue_alt_mode | 2025.12-2026.6 | Gps GpsRescue NotWing
+gps_rescue_initial_climb | 2025.12-2026.6 | Gps GpsRescue NotWing
+gps_rescue_ascend_rate | 2025.12-2026.6 | Gps GpsRescue NotWing
+gps_rescue_return_alt | 2025.12-2026.6 | Gps GpsRescue NotWing
+gps_rescue_ground_speed | 2025.12-2026.6 | Gps GpsRescue NotWing
+gps_rescue_max_angle | 2025.12 | Gps GpsRescue NotWing
+gps_rescue_roll_mix | 2025.12 | Gps GpsRescue NotWing
+gps_rescue_pitch_cutoff | 2025.12 | Gps GpsRescue NotWing
+gps_rescue_imu_yaw_gain | 2025.12 | Gps GpsRescue NotWing
+gps_rescue_descent_dist | 2025.12-2026.6 | Gps GpsRescue NotWing
+gps_rescue_descend_rate | 2025.12-2026.6 | Gps GpsRescue NotWing
+gps_rescue_disarm_threshold | 2025.12 | Gps GpsRescue NotWing
+gps_rescue_sanity_checks | 2025.12-2026.6 | Gps GpsRescue NotWing
+gps_rescue_min_sats | 2025.12-2026.6 | Gps GpsRescue NotWing
+gps_rescue_allow_arming_without_fix | 2025.12-2026.6 | Gps GpsRescue NotWing
+gps_rescue_velocity_p | 2025.12 | Gps GpsRescue NotWing
+gps_rescue_velocity_i | 2025.12 | Gps GpsRescue NotWing
+gps_rescue_velocity_d | 2025.12 | Gps GpsRescue NotWing
+gps_rescue_yaw_p | 2025.12-2026.6 | Gps GpsRescue NotWing
+gps_rescue_use_mag | 2025.12 | Gps GpsRescue NotWing Mag
+alt_hold_climb_rate | 2025.12-2026.6 | AltHold NotWing
+alt_hold_deadband | 2025.12-2026.6 | AltHold NotWing
+pos_hold_without_mag | 2025.12 | PosHold NotWing
+pos_hold_deadband | 2025.12-2026.6 | PosHold NotWing
+gps_rescue_min_start_dist | 2026.12-dev- | Gps RescueFlown
+gps_rescue_alt_mode | 2026.12-dev- | Gps RescueFlown
+gps_rescue_initial_climb | 2026.12-dev- | Gps RescueFlown
+gps_rescue_ascend_rate | 2026.12-dev- | Gps RescueFlown
+gps_rescue_return_alt | 2026.12-dev- | Gps RescueFlown
+gps_rescue_ground_speed | 2026.12-dev- | Gps RescueFlown NotWing
+gps_rescue_descent_dist | 2026.12-dev- | Gps RescueFlown NotWing
+gps_rescue_descend_rate | 2026.12-dev- | Gps RescueFlown
+gps_rescue_sanity_checks | 2026.12-dev- | Gps RescueFlown NotWing
+gps_rescue_min_sats | 2026.12-dev- | Gps RescueFlown
+gps_rescue_allow_arming_without_fix | 2026.12-dev- | Gps RescueFlown
+alt_hold_climb_rate | 2026.12-dev- | AltHold
+alt_hold_deadband | 2026.12-dev- | AltHold
+pos_hold_deadband | 2026.12-dev- | PosHold
+tpa_speed_type | 2025.12- | Wing
+tpa_speed_basic_delay | 2025.12- | Wing
+tpa_speed_basic_gravity | 2025.12- | Wing
+tpa_speed_adv_prop_pitch | 2025.12- | Wing
+tpa_speed_adv_mass | 2025.12- | Wing
+tpa_speed_adv_drag_k | 2025.12- | Wing
+tpa_speed_adv_thrust | 2025.12- | Wing
+tpa_speed_max_voltage | 2025.12- | Wing
+tpa_speed_pitch_offset | 2025.12- | Wing
+yaw_type | 2025.12- | Wing
+angle_pitch_offset | 2025.12- | Wing

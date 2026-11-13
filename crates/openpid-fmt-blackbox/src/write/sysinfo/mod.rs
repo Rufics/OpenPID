@@ -2,21 +2,28 @@
 //! knows: the lines after the field definitions (`Firmware revision`,
 //! `looptime`, the gains, the filters, …).
 //!
-//! One table per release holds every line that release can write, in the
-//! firmware's order, with what the line depends on; the tables are data read
-//! from the firmware source at the release's tag (each file names it). A
-//! flight controller writes a line when its build has the option and, for a
-//! few, when a run-time condition holds; [`Build`] names both kinds.
-
-mod master;
-mod v2025_12;
-mod v2026_6;
-mod v4_2;
-mod v4_3;
-mod v4_4;
-mod v4_5;
+//! They are data, kept in two files beside this one and read once:
+//!
+//! - `lines.txt`: every header line some release writes, each written once,
+//!   in the firmware's order, with the releases that write it and the build
+//!   options and run-time conditions it depends on ([`Build`]). These are
+//!   facts of the firmware source; the file names the tag of each release
+//!   and the function they were read from.
+//! - `crafts.txt`: the values of the example craft of each release, for a
+//!   session that brings no configuration of its own. They are a
+//!   configuration, not facts of a release; the file says where they are
+//!   from.
+//!
+//! [`lines`] gives the table of one release: its lines, in its order, each
+//! with its conditions and the example value.
 
 use super::Target;
+use std::sync::LazyLock;
+
+/// Every header line, the releases that write it and its conditions.
+const LINES: &str = include_str!("lines.txt");
+/// The values of the example craft of each release.
+const CRAFTS: &str = include_str!("crafts.txt");
 
 /// What a header line depends on: a build option of the firmware (the
 /// `USE_…` macro in the comment) or a run-time condition.
@@ -93,48 +100,170 @@ pub(super) enum Build {
     ReleaseName,
 }
 
+impl Build {
+    /// Every condition.
+    const ALL: [Build; 33] = [
+        Build::BoardInfo,
+        Build::Acc,
+        Build::Vbat,
+        Build::CurrentAdc,
+        Build::Wing,
+        Build::NotWing,
+        Build::AdvancedTpa,
+        Build::DMinMax,
+        Build::DynLpf,
+        Build::ItermRelax,
+        Build::AbsoluteControl,
+        Build::IntegratedYaw,
+        Build::Feedforward,
+        Build::InterpolatedSetpoint,
+        Build::GyroAnalysis,
+        Build::Chirp,
+        Build::DynNotch,
+        Build::DshotTelemetry,
+        Build::RpmFilter,
+        Build::Baro,
+        Build::Mag,
+        Build::OpticalFlow,
+        Build::RcSmoothing,
+        Build::SagCompensation,
+        Build::DynIdle,
+        Build::SimplifiedTuning,
+        Build::Gps,
+        Build::GpsRescue,
+        Build::RescueFlown,
+        Build::AltHold,
+        Build::PosHold,
+        Build::CloudKey,
+        Build::ReleaseName,
+    ];
+
+    /// The condition `lines.txt` calls `name`: the name of the variant.
+    fn from_name(name: &str) -> Option<Build> {
+        Build::ALL.into_iter().find(|b| format!("{b:?}") == name)
+    }
+}
+
 /// One header line of a release.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(super) struct Line {
     /// Header name.
     pub name: &'static str,
     /// Every one of these must hold for the firmware to write the line.
-    pub when: &'static [Build],
+    pub when: Vec<Build>,
     /// The value of the example configuration; `None` where the writer has
     /// no verified one, so the line is written only for a session that
     /// carries it.
     pub value: Option<&'static str>,
 }
 
-/// A line with the value of the example configuration.
-const fn line(name: &'static str, when: &'static [Build], value: &'static str) -> Line {
-    Line {
-        name,
-        when,
-        value: Some(value),
-    }
+/// The releases a span of `lines.txt` names: `all`, one release (`4.2`), a
+/// span (`4.4-4.5`), or every release from one on (`4.3-`).
+fn span(text: &str) -> Result<Vec<Target>, String> {
+    let named = |name: &str| {
+        let unknown = || format!("no release `{name}` in `{text}`");
+        Target::from_name(name).ok_or_else(unknown)
+    };
+    let (first, last) = match text.trim() {
+        "all" => (Target::ALL[0], Target::ALL[Target::ALL.len() - 1]),
+        from if from.ends_with('-') => (
+            named(&from[..from.len() - 1])?,
+            Target::ALL[Target::ALL.len() - 1],
+        ),
+        // the names of the releases have a `-` of their own (`2026.12-dev`)
+        one if Target::from_name(one).is_some() => (named(one)?, named(one)?),
+        both => {
+            let ends = both
+                .match_indices('-')
+                .map(|(at, _)| (&both[..at], &both[at + 1..]))
+                .find(|(a, b)| Target::from_name(a).is_some() && Target::from_name(b).is_some());
+            let (first, last) = ends.ok_or_else(|| format!("no span of releases: `{both}`"))?;
+            (named(first)?, named(last)?)
+        }
+    };
+    Ok(Target::ALL
+        .into_iter()
+        .filter(|t| (first..=last).contains(t))
+        .collect())
 }
 
-/// A line the writer has no value for.
-const fn open(name: &'static str, when: &'static [Build]) -> Line {
-    Line {
-        name,
-        when,
-        value: None,
-    }
+/// The lines of a data file that hold data: not empty, not a comment.
+fn data(text: &'static str) -> impl Iterator<Item = &'static str> {
+    text.lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
 }
+
+/// The value of the example craft of `target` for each header name it has
+/// one for (`crafts.txt`: sections of `name:value` under the releases they
+/// are for, a later section overriding an earlier one).
+fn craft(text: &'static str, target: Target) -> Result<Vec<(&'static str, &'static str)>, String> {
+    let mut values: Vec<(&'static str, &'static str)> = Vec::new();
+    let mut ours = false;
+    for line in data(text) {
+        if let Some(section) = line.strip_prefix('[') {
+            let releases = section.trim_end_matches(']').split_whitespace();
+            let releases: Result<Vec<Target>, String> = releases
+                .map(|name| Target::from_name(name).ok_or_else(|| format!("no release `{name}`")))
+                .collect();
+            ours = releases?.contains(&target);
+            continue;
+        }
+        let (name, value) = line
+            .split_once(':')
+            .ok_or_else(|| format!("no `name:value`: `{line}`"))?;
+        if !ours {
+            continue;
+        }
+        match values.iter_mut().find(|(n, _)| *n == name) {
+            Some(entry) => entry.1 = value,
+            None => values.push((name, value)),
+        }
+    }
+    Ok(values)
+}
+
+/// The table of `target` from the two data files.
+fn table(lines: &'static str, crafts: &'static str, target: Target) -> Result<Vec<Line>, String> {
+    let values = craft(crafts, target)?;
+    let mut out = Vec::new();
+    for row in data(lines) {
+        let mut cells = row.split('|').map(str::trim);
+        let (Some(name), Some(releases)) = (cells.next(), cells.next()) else {
+            return Err(format!("no `name | releases`: `{row}`"));
+        };
+        let mut written = false;
+        for part in releases.split(',') {
+            written |= span(part)?.contains(&target);
+        }
+        let when: Result<Vec<Build>, String> = cells
+            .next()
+            .unwrap_or("")
+            .split_whitespace()
+            .map(|c| Build::from_name(c).ok_or_else(|| format!("no condition `{c}`: `{row}`")))
+            .collect();
+        let when = when?;
+        if written {
+            let value = values.iter().find(|(n, _)| *n == name).map(|(_, v)| *v);
+            out.push(Line { name, when, value });
+        }
+    }
+    Ok(out)
+}
+
+/// The table of every release, in the order of [`Target::ALL`]. The data
+/// files are part of the program and tested as it is built
+/// (`the_data_files_are_well_formed`); a table that did not read is empty.
+static TABLES: LazyLock<Vec<Vec<Line>>> = LazyLock::new(|| {
+    Target::ALL
+        .into_iter()
+        .map(|target| table(LINES, CRAFTS, target).unwrap_or_default())
+        .collect()
+});
 
 /// Every header line `target` can write, in the firmware's order.
 pub(super) fn lines(target: Target) -> &'static [Line] {
-    match target {
-        Target::V4_2 => v4_2::LINES,
-        Target::V4_3 => v4_3::LINES,
-        Target::V4_4 => v4_4::LINES,
-        Target::V4_5 => v4_5::LINES,
-        Target::V2025_12 => v2025_12::LINES,
-        Target::V2026_6 => v2026_6::LINES,
-        Target::Master => master::LINES,
-    }
+    let index = Target::ALL.iter().position(|t| *t == target);
+    index.and_then(|i| TABLES.get(i)).map_or(&[], Vec::as_slice)
 }
 
 /// The build options of the craft the example configuration describes: what
@@ -183,6 +312,46 @@ pub(super) fn stock_build(target: Target) -> Vec<Build> {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn the_data_files_are_well_formed() {
+        for target in Target::ALL {
+            let table = table(LINES, CRAFTS, target).unwrap();
+            assert_eq!(table.len(), lines(target).len(), "{target}");
+            // every value belongs to a line some release writes
+            for (name, _) in craft(CRAFTS, target).unwrap() {
+                let known =
+                    data(LINES).any(|row| row.split('|').next().map(str::trim) == Some(name));
+                assert!(
+                    known,
+                    "{target}: a value for `{name}`, which no release writes"
+                );
+            }
+        }
+        assert_eq!(span("all").unwrap().len(), 7);
+        assert_eq!(span("4.4-4.5").unwrap(), [Target::V4_4, Target::V4_5]);
+        assert_eq!(
+            span(" 2026.6- ").unwrap(),
+            [Target::V2026_6, Target::Master]
+        );
+        assert_eq!(span("2026.12-dev").unwrap(), [Target::Master]);
+        assert_eq!(span("2026.12-dev-").unwrap(), [Target::Master]);
+        assert_eq!(span("4.5-2026.12-dev").unwrap().len(), 4);
+        assert!(span("4.1-").is_err() && span("4.2-5.0").is_err() && span("").is_err());
+        // what a damaged file is refused for
+        let bad = |lines: &'static str, crafts: &'static str| {
+            table(lines, crafts, Target::V4_5).unwrap_err()
+        };
+        assert!(bad("looptime", "").contains("name | releases"));
+        assert!(bad("looptime | 4.5 | Turbo", "").contains("no condition `Turbo`"));
+        assert!(bad("looptime | 3.9", "").contains("no span of releases: `3.9`"));
+        assert!(bad("", "[4.5]\nlooptime").contains("name:value"));
+        assert!(bad("", "[4.6]\nlooptime:125").contains("no release `4.6`"));
+        for condition in Build::ALL {
+            assert_eq!(Build::from_name(&format!("{condition:?}")), Some(condition));
+        }
+        assert_eq!(Build::from_name("Acc "), None);
+    }
 
     #[test]
     fn every_table_is_a_list_of_distinct_lines_with_values_for_the_stock_build() {
