@@ -103,12 +103,12 @@ Taken by the owner on 2026-11-11:
 | Area | Step response: the Peak plot and its bar |
 | Probe | `u4-slow-2k` of round 5 (pack `407c2cd`): second-order plants of 2.5 Hz and of 4 Hz, damping 0.5, after 5 ms; and the plants of 15 Hz of rounds 4 and 5 at 1, 2 and 4 kHz |
 | The reference tool shows | Peak 0.953 for the plant of 2.5 Hz: the value of its curve just before 150 ms, where it stops looking; the curve it draws goes on to 1.122 at 226 ms. Peak 1.137 for the plant of 4 Hz, which tops before 150 ms. The bar is the spread over the windows of each window's highest value among its first 150 samples, whatever the log rate: 150 ms at 1 kHz, 75 ms at 2 kHz, 37.5 ms at 4 kHz, where it ends before the top of a response that peaks at 40 ms |
-| OpenPID shows | the same, since D-002 (#188). Version 0.94 of the reference tool reads both as 0.9 did (round 6, at 8 kHz too, where the 150 samples are 19 ms) |
+| OpenPID shows | the same, since D-002 (#188), until #193. Version 0.94 of the reference tool reads both as 0.9 did (round 6, at 8 kHz too, where the 150 samples are 19 ms) |
 | The exact value | both plants overshoot to 1.163, at 236 and at 149 ms |
 | Options | **A.** As the reference tool (what OpenPID does now): a craft whose response tops after 150 ms shows a Peak below the overshoot its own curve draws, and the bar covers a stretch that depends on the log rate. **B.** Peak is the highest value of the whole curve (500 ms) and the bar the spread of the windows' highest values over the same stretch: 1.122 for the plant of 2.5 Hz (the method itself reads a slow plant low; the truth is 1.163); the same point as now for every response that tops before 150 ms; the bar differs from the reference tool's at every rate. **C.** The point as the reference tool, the bar over 150 ms instead of 150 samples: the reference tool's Peak, and a bar that means the same at every log rate |
 | Recommendation | B. The number is called Peak and is read as the overshoot; on a slow craft the reference tool's reading is not the overshoot, and its bar is over a stretch nobody chose. The point changes on slow crafts only, where the reference tool's value misleads |
-| The owner's decision | — |
-| Carried out by | — |
+| The owner's decision | **B**, 2026-11-13: the Peak is the highest value of the whole curve, its bar the spread of the windows' highest values over the same 500 ms |
+| Carried out by | #193 (on top of #188, where the code it changes is) |
 
 ### D-004 The performance numbers of a step response
 
@@ -118,12 +118,12 @@ Taken by the owner on 2026-11-11:
 | Area | Step response: rise time, bandwidth, sensitivity peak and its frequency, phase margin, crossover frequency (new in version 0.94 of the reference tool; the owner decided on 2026-11-13 that OpenPID shows them) |
 | Probe | the eight logs of round 7 (pack `7066f96`) and the five of round 6: plants with analytic answers |
 | The reference tool shows | six numbers per axis, read off the mean curve after it is brought to a gain of 1 (the rise time excepted). Its arithmetic for five of them is not found: some 2 000 plain definitions come near and none is exact. It reads the phase margin at a grid point of 0.977 Hz, so the same plant shows 32.5° … 35.4° at different log rates |
-| OpenPID shows | the rise time only (10 % → 90 % of the mean curve; the tool's value exactly) |
+| OpenPID shows | until #194 the rise time only (10 % → 90 % of where the mean curve settles) |
 | The exact value | known for every plant of round 7. The tool is within 0.10 Hz (bandwidth), 0.06 dB (sensitivity), 1.0° (margin) and 0.19 Hz (crossover) of it in the median, and up to 1.0 Hz, 0.27 dB, 9.2° and 0.57 Hz off on slow or sharp responses |
 | Options | **A.** A plain, documented computation on the same mean curve: differences of the curve over its last value, the tool's frequency grid, bandwidth at −3 dB, the highest `\|1 − T\|`, crossover and margin of `T / (1 − T)` with the phase read between grid points. Within 0.13 Hz, 0.03 dB, 0.03 Hz and 1.4° of the tool in the median, and as near the truth as the tool or nearer. A user comparing the two programs sees the same numbers to the first decimal on an ordinary craft. **B.** The same, but the phase margin read at the grid point as the tool reads it: within 0.3° of the tool in the median, and its jump of up to 3° between log rates with it. **C.** Wait until the tool's arithmetic is found exactly (more rounds, with no promise that it can be), and show nothing until then |
 | Recommendation | A. The numbers are engineering estimates with a spread larger than the difference between the two programs; A has a definition one can write down and test against the analytic plants, and no artefact of the grid. If the tool's arithmetic is found later, the difference is a small change |
-| The owner's decision | — |
-| Carried out by | — |
+| The owner's decision | **A**, 2026-11-13: the plain, documented computation, with the phase margin read between grid points |
+| Carried out by | #194 (on top of #188) |
 
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
