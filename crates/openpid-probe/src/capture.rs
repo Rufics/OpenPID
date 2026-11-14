@@ -1304,6 +1304,45 @@ pub fn spectrum_shot(round: u32, probe: &str, smoothing: &str) -> String {
     format!("r{round}-{probe}-spectrum-{smoothing}")
 }
 
+/// What the plan of a round does, for the reader of `steps.json`.
+fn about(round: u32, probes: &[Probe]) -> String {
+    let time = probes.iter().any(|p| p.area == Area::Time);
+    if probes.iter().all(|p| p.area == Area::StepResponse) {
+        step_about(round, probes)
+    } else if time && round >= TIME_LEVELS {
+        format!(
+            "Round {round}: every log through one open dialog, then the window of frequency \
+             against time: for every log the maps of the unfiltered gyro as the window \
+             comes up; for the first also at eight other settings of its two smoothing \
+             lists and with the colour scale ending at 0 dB; for the last, a flight, also \
+             the maps of the filtered gyro and at two settings of the lists; a picture of \
+             the window and a vector copy of every plot each time."
+        )
+    } else if time {
+        format!(
+            "Round {round}: every log through one open dialog; the window of frequency \
+             against throttle for the logs of other lengths (the maps as it comes up); \
+             then a first look at the window of frequency against time: for every log of \
+             its own the maps of the unfiltered and of the filtered gyro, for the first \
+             also its two smoothing lists, the view below 100 Hz and a colour scale down \
+             to -70 dB; a picture of the window and a vector copy of every plot each time."
+        )
+    } else if probes.iter().all(|p| p.area == Area::Throttle) {
+        throttle_about(round, probes)
+    } else if round < 2 {
+        format!(
+            "Round {round}: every log through one open dialog, then the spectrum of each \
+             at the five smoothing levels."
+        )
+    } else {
+        format!(
+            "Round {round}: every log through one open dialog, then the spectrum of each \
+             at the five smoothing levels, every plot below 100 Hz copied as a vector \
+             graphic."
+        )
+    }
+}
+
 /// The plan of a round: load every log at once, then for every spectrum
 /// probe the spectrum at each smoothing level, as a picture and, from round
 /// 2 on, as vector copies of its plots.
@@ -1408,40 +1447,7 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
         ..Step::default()
     });
     Plan {
-        about: if probes.iter().all(|p| p.area == Area::StepResponse) {
-            step_about(round, probes)
-        } else if time && round >= TIME_LEVELS {
-            format!(
-                "Round {round}: every log through one open dialog, then the window of frequency \
-                 against time: for every log the maps of the unfiltered gyro as the window \
-                 comes up; for the first also at eight other settings of its two smoothing \
-                 lists and with the colour scale ending at 0 dB; for the last, a flight, also \
-                 the maps of the filtered gyro and at two settings of the lists; a picture of \
-                 the window and a vector copy of every plot each time."
-            )
-        } else if time {
-            format!(
-                "Round {round}: every log through one open dialog; the window of frequency \
-                 against throttle for the logs of other lengths (the maps as it comes up); \
-                 then a first look at the window of frequency against time: for every log of \
-                 its own the maps of the unfiltered and of the filtered gyro, for the first \
-                 also its two smoothing lists, the view below 100 Hz and a colour scale down \
-                 to -70 dB; a picture of the window and a vector copy of every plot each time."
-            )
-        } else if probes.iter().all(|p| p.area == Area::Throttle) {
-            throttle_about(round, probes)
-        } else if round < 2 {
-            format!(
-                "Round {round}: every log through one open dialog, then the spectrum of each \
-                 at the five smoothing levels."
-            )
-        } else {
-            format!(
-                "Round {round}: every log through one open dialog, then the spectrum of each \
-                 at the five smoothing levels, every plot below 100 Hz copied as a vector \
-                 graphic."
-            )
-        },
+        about: about(round, probes),
         // the plots of the window of frequency against throttle had never
         // been copied when its first round was planned
         give_up: throttle || time,
