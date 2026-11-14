@@ -125,3 +125,38 @@ motor") is an option for checking motor noise. The colour bar and the value
 under the pointer carry **no unit** any more: the amplitude of broadband
 noise depends on the segment length and the logging, so "deg/s" there read
 as an exact rate it is not; the numbers compare maps.
+
+## Revision: the map of the reference tool (2026-11-14, decision D-005)
+
+The owner decided that the map is computed as the reference tool computes its
+own, all of it (DESIGN §6.4; #173). What that changed on this tab:
+
+- **The map**: 100 throttle columns from 0 to 100 % (column `c` drawn from
+  `c − 1` to `c` percent) instead of 101 bins with a ± 6 % window; rows to
+  half the log rate; segments of 0.3 s that overlap. "Segment" and "Throttle
+  window ±" left the panel: the rule has no such parameters.
+- **Smoothing**: a list of the five levels of the rule (low … high, medium by
+  default) in "Analysis"; each level is a job of its own.
+- **Decibels**: a switch in "Colour". The decibel matrix is in the same
+  result as the linear one, so switching draws anew and computes nothing.
+- **mean= and peak=** in the top left corner of every map, three significant
+  digits, painted over the plot (the pointer still reaches the map under
+  them); a hint says what they are and that a cell is not a tone's amplitude.
+- **Colour scale**: a list in "Colour": the reference tool's fixed scale
+  (0 … 0.5, −40 … 10 in decibels) by default, "automatic" (the 99th
+  percentile above 20 Hz, as before; "Link scales" applies to it) or "typed
+  in" with "Colour max" (the linear view). `App::colour_scales` still records
+  the upper end per log.
+- **Max frequency** became a view option ("Range"): auto is half the log
+  rate, a value lowers the top of the axis; the map and its numbers do not
+  change with it.
+- Kept as they were: prefilt beside the quantity, the RPM overlay and the
+  notch bands, the dimmed bins and the line under the maps, "Zoom to the
+  flown range" (btfl_027: 14–29 % with the narrower columns), the value under
+  the pointer, the exports.
+
+Tests: `throttle_maps_span_the_whole_range_and_print_their_mean_and_peak`,
+`throttle_smoothing_has_five_levels`,
+`throttle_decibels_show_the_second_matrix_of_the_same_result`,
+`throttle_colour_scale_is_fixed_automatic_or_typed_in`, and the earlier ones
+adapted. The pictures above show the tab before this revision.

@@ -1420,13 +1420,9 @@ pub(crate) fn effective_max(g: &Grid2D, max: f64, min_y: f64) -> f64 {
     openpid_analysis::render::colour_max(g, max, min_y)
 }
 
-/// A vertical colour scale: the colour map from 0 (bottom) to `max` (top)
-/// with five ticks (docs/design/colour-scale, R1).
-pub(crate) fn colour_bar(ui: &mut Ui, max: f64, height: f32) -> egui::Response {
-    colour_bar_range(ui, 0.0, max, height)
-}
-
-/// [`colour_bar`] from `lo` to `hi` (a dB range, for one).
+/// A vertical colour scale: the colour map from `lo` (bottom) to `max`
+/// (top) with five ticks (docs/design/colour-scale, R1); `lo` is 0 for a
+/// linear map and the floor of a decibel one.
 pub(crate) fn colour_bar_range(ui: &mut Ui, lo: f64, max: f64, height: f32) -> egui::Response {
     let stops = crate::colormap::heatmap().stops();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(BAR_W, height), egui::Sense::hover());
@@ -1524,17 +1520,18 @@ pub(crate) fn hover_label(ui: &mut Ui, hover: Option<(Slot, f64, f64, f64)>, x_i
 /// Textures kept before the cache is emptied (one per result and colour scale).
 const MAX_HEATMAP_TEXTURES: usize = 96;
 
-/// A heatmap grid as a texture, rasterised once per result and colour scale
-/// and redrawn as one image instead of a cell mesh every frame. `owner` is
-/// the result the grid belongs to (its address keys the texture while it is
-/// cached). Returns the image item positioned over the grid.
+/// A heatmap grid as a texture, rasterised once per result, view and colour
+/// scale and redrawn as one image instead of a cell mesh every frame.
+/// `owner` is the result the grid belongs to (its address keys the texture
+/// while it is cached) and `view` names which of its grids this is. Returns
+/// the image item positioned over the grid.
 pub(crate) fn grid_image(
     app: &mut App,
     ctx: &egui::Context,
     owner: &Arc<Output>,
+    view: &str,
     g: &Grid2D,
-    max: f64,
-    min_y_for_scale: f64,
+    (lo, hi): (f64, f64),
 ) -> Option<egui_plot::PlotImage> {
     use std::hash::{Hash, Hasher};
     if g.x.len() < 2 || g.y.len() < 2 {
@@ -1542,8 +1539,9 @@ pub(crate) fn grid_image(
     }
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     (Arc::as_ptr(owner) as usize).hash(&mut hasher);
-    max.to_bits().hash(&mut hasher);
-    min_y_for_scale.to_bits().hash(&mut hasher);
+    view.hash(&mut hasher);
+    lo.to_bits().hash(&mut hasher);
+    hi.to_bits().hash(&mut hasher);
     let cmap = crate::colormap::heatmap();
     cmap.hash(&mut hasher);
     let key = hasher.finish();
@@ -1551,7 +1549,7 @@ pub(crate) fn grid_image(
         if app.heatmap_textures.len() >= MAX_HEATMAP_TEXTURES {
             app.heatmap_textures.clear();
         }
-        let (w, h, rgba) = openpid_analysis::render::grid_rgba_with(g, max, min_y_for_scale, cmap);
+        let (w, h, rgba) = openpid_analysis::render::grid_rgba_range(g, (lo, hi), cmap, false);
         let image = egui::ColorImage::from_rgba_unmultiplied([w, h], &rgba);
         let handle = ctx.load_texture(
             format!("heatmap-{key:x}"),
@@ -1563,10 +1561,7 @@ pub(crate) fn grid_image(
         app.heatmap_textures.insert(key, handle);
     }
     let tex = &app.heatmap_textures[&key];
-    let dx = g.x[1] - g.x[0];
-    let dy = g.y[1] - g.y[0];
-    let (x0, x1) = (g.x[0] - dx / 2.0, g.x[g.x.len() - 1] + dx / 2.0);
-    let (y0, y1) = (g.y[0] - dy / 2.0, g.y[g.y.len() - 1] + dy / 2.0);
+    let ((x0, x1), (y0, y1)) = (cell_edges(&g.x), cell_edges(&g.y));
     Some(
         egui_plot::PlotImage::new(
             "amplitude",
@@ -1576,6 +1571,16 @@ pub(crate) fn grid_image(
         )
         .allow_hover(false),
     )
+}
+
+/// The outer edges of the cells whose middles are `v`: half a step beyond
+/// the first and the last.
+fn cell_edges(v: &[f64]) -> (f64, f64) {
+    let (Some(first), Some(last)) = (v.first(), v.last()) else {
+        return (0.0, 100.0);
+    };
+    let half = v.get(1).map_or(0.0, |second| (second - first) / 2.0);
+    (first - half, last + half)
 }
 
 /// How long a finger must rest on the log viewer to place the cursor, seconds.
@@ -1748,10 +1753,7 @@ fn notch_band(
 
 /// The static notches, the dynamic-notch band and the RPM filter minimum.
 fn draw_notches(pu: &mut egui_plot::PlotUi<'_>, o: &RpmOverlay, x: &[f64], y_max: f64) {
-    let span = (
-        x.first().copied().unwrap_or(0.0),
-        x.last().copied().unwrap_or(100.0),
-    );
+    let span = cell_edges(x);
     for (i, (centre, cutoff)) in o.notches.iter().enumerate() {
         let half = (centre - cutoff).abs();
         notch_band(

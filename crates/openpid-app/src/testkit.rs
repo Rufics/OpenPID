@@ -285,6 +285,15 @@ impl Ui {
         self.settle();
     }
 
+    /// Clicks the button named `label`, when a text beside it has the same
+    /// name (a panel row whose control is a button).
+    pub fn click_button(&mut self, label: &str) {
+        self.h
+            .get_by_role_and_label(Role::Button, label)
+            .click_accesskit();
+        self.settle();
+    }
+
     /// Clicks the one control whose name contains `text`.
     pub fn click_containing(&mut self, text: &str) {
         self.h.get_by_label_contains(text).click_accesskit();
@@ -371,6 +380,18 @@ impl Ui {
     }
 
     /// Picks the option named exactly `option` in the combo box named
+    /// `label` and closes its list: a click through `AccessKit` leaves the
+    /// list open, and the next click on the box would only close it. For a
+    /// test that picks more than once.
+    pub fn pick(&mut self, label: &str, option: &str) {
+        self.choose_exact(label, option);
+        self.h
+            .get_by_role_and_label(Role::ComboBox, label)
+            .click_accesskit();
+        self.settle();
+    }
+
+    /// Picks the option named exactly `option` in the combo box named
     /// `label` (when one option's name is part of another's: `RP`, `RPY`).
     pub fn choose_exact(&mut self, label: &str, option: &str) {
         self.h
@@ -430,6 +451,11 @@ impl Ui {
     /// Whether some text on screen contains `text`.
     pub fn sees(&self, text: &str) -> bool {
         self.h.query_all_by_label_contains(text).next().is_some()
+    }
+
+    /// How many texts on screen contain `text`.
+    pub fn count_seen(&self, text: &str) -> usize {
+        self.h.query_all_by_label_contains(text).count()
     }
 
     /// Whether a control or a text named exactly `label` is on screen.
