@@ -228,6 +228,37 @@ mod tests {
         let loaded = Project::load(&file).unwrap();
         assert_eq!(loaded.tab, "spectrum");
         assert_eq!(loaded.step, StepParams::default());
+        // a project saved before the map of frequency against time followed
+        // the reference tool: its segment, hop and window are ignored, the
+        // two lists come up at "low", and its frequency bound stays
+        std::fs::write(
+            &file,
+            r#"{"version":2,"stft":{"channel":{"gyro":{"axis":"pitch","stage":"raw"}},
+                "segment_s":0.2,"hop":0.25,"window":"hann","max_hz":1000.0}}"#,
+        )
+        .unwrap();
+        let old = Project::load(&file).unwrap();
+        assert_eq!(
+            old.stft,
+            StftParams {
+                channel: ChannelId::Gyro {
+                    axis: Axis::Pitch,
+                    stage: GyroStage::Raw,
+                },
+                smooth_freq: crate::FreqSmoothing::Low,
+                smooth_time: crate::TimeSmoothing::Low,
+                max_hz: Some(1000.0),
+            }
+        );
+        // and one saved now comes back with its levels
+        let mut now = Project::default();
+        now.stft.smooth_freq = crate::FreqSmoothing::High;
+        now.stft.smooth_time = crate::TimeSmoothing::Off;
+        now.save(&file).unwrap();
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.contains(r#""smooth_freq": "high""#), "{text}");
+        assert!(text.contains(r#""smooth_time": "off""#), "{text}");
+        assert_eq!(Project::load(&file).unwrap(), now);
         std::fs::write(&file, r#"{"version":99}"#).unwrap();
         assert!(Project::load(&file).unwrap_err().contains("newer"));
         std::fs::write(&file, "nope").unwrap();

@@ -84,3 +84,41 @@ btfl_027:
 Betaflight 4.5.1 (the throttle bursts line up with the noise):
 
 ![4.5.1](second-log.jpg)
+
+## Revision: the map of the reference tool (2026-11-14, decision D-006)
+
+The owner decided that the map is computed as the reference tool computes its
+own, with one stated exception (DESIGN §6.5; #174). What that changed on this
+tab:
+
+- **The map**: a column per segment of 0.3 s, a power density in decibels
+  (`10·log10(2·|X|² / (L·fs))`), rows to half the log rate, smoothed along
+  the frequency. It is no longer an amplitude shown as `20·log10`.
+- **No linear colour.** The map is decibels by definition and the reference
+  tool has no linear colour here, so the "Scale" switch (dB / linear) and the
+  linear "Colour max" left the panel.
+- **Smooth frequency** and **Smooth time**: two lists of the four levels of
+  the rule (off, low, medium, high; both "low" by default) in "Analysis";
+  each level is a job of its own. "Segment" left the panel: the rule has one
+  segment length.
+- **Colour scale**: a list in "Colour": the reference tool's fixed
+  −30 … 10 dB by default, "automatic" (the percentiles above, as before) or
+  "typed in" with "Z min" and "Z max", which start from the scale on screen.
+- **Max frequency**: auto is half the log rate; a value leaves out the rows
+  above it.
+- **A map wider than a texture**: at "high" a long log has more columns than
+  a texture may be wide; several columns then share a pixel, drawn in the
+  colour of the largest of them.
+- **Not copied**: the reference tool draws a few of its first columns out of
+  place; here every column is at the middle of its segment.
+- Kept as they were: the three rows of the docked log, prefilt by default,
+  the spectrum at the position beside each row (now in the new decibels, on
+  the scale of the maps), the throttle strip, the player, the value under the
+  pointer, the exports.
+
+Tests: `time_tab_stacks_the_axes_in_db_with_the_throttle_under_them`,
+`time_tab_lists_set_the_two_levels_of_the_map`,
+`time_tab_colour_scale_is_fixed_automatic_or_typed`,
+`time_tab_max_frequency_lowers_the_top_of_the_maps`,
+`a_map_wider_than_a_texture_is_drawn_by_the_largest_cell_of_a_group`, and the
+earlier ones adapted. The pictures above show the tab before this revision.

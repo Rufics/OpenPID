@@ -172,9 +172,16 @@ fn spectra_of_a_real_flight() {
             },
         )
         .unwrap();
+    // segments of 0.3 s, half a segment apart, the rows to half the log rate,
+    // every cell a finite number of decibels
     assert!(st.grid.x.len() > 50);
-    assert!(st.grid.y.last().copied().unwrap() <= 1000.0);
+    assert_eq!(st.nperseg, (0.3 * st.fs).round() as usize);
+    assert_eq!(st.hop * 2, st.nperseg);
+    assert_eq!(st.grid.y.len(), st.nperseg / 2 + 1);
+    assert!((st.grid.y.last().copied().unwrap() - st.fs / 2.0).abs() < 1e-6);
     assert_eq!(st.grid.z.len(), st.grid.x.len() * st.grid.y.len());
+    assert!(st.grid.z.iter().all(|v| v.is_finite() && *v > -150.0));
+    assert!(st.grid.x.windows(2).all(|w| w[1] > w[0]));
 }
 
 #[test]

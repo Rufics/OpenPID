@@ -387,6 +387,112 @@ fn png_of_a_heatmap() {
 }
 
 #[test]
+fn the_time_map_takes_its_two_levels() {
+    // betaflight-4.2.0.BFL is logged at 1 kHz: a segment of 0.3 s is 300
+    // samples, the rows are the bins 0 … 150
+    let l = log("betaflight-4.2.0.BFL");
+    let f = l.to_str().unwrap();
+    let map = |extra: &[&str]| -> serde_json::Value {
+        let mut args = vec!["run", "stft", f];
+        args.extend_from_slice(extra);
+        let (ok, out, err) = run(&args);
+        assert!(ok, "{args:?}: {err}");
+        serde_json::from_str(&out).expect("json")
+    };
+    let columns = |v: &serde_json::Value| v["grid"]["x"].as_array().unwrap().len();
+    // by default both lists at "low": half a segment between the columns
+    let low = map(&[]);
+    assert_eq!(low["smooth_freq"], "low");
+    assert_eq!(low["smooth_time"], "low");
+    assert_eq!(
+        (low["nperseg"].as_u64(), low["hop"].as_u64()),
+        (Some(300), Some(150))
+    );
+    assert_eq!(low["grid"]["y"].as_array().unwrap().len(), 151);
+    assert_eq!(low["grid"]["z_label"], "power density (dB, (deg/s)²/Hz)");
+    // the other levels, "med" as the reference tool's list writes it
+    let other = map(&["--smooth-freq", "off", "--smooth-time", "high"]);
+    assert_eq!(other["smooth_freq"], "off");
+    assert_eq!(other["smooth_time"], "high");
+    assert_eq!(other["hop"], 30);
+    assert!(columns(&other) > 4 * columns(&low));
+    let medium = map(&["--smooth-freq", "med", "--smooth-time", "medium"]);
+    assert_eq!(medium["smooth_freq"], "medium");
+    assert_eq!(medium["hop"], 60);
+    let off = map(&["--smooth-time", "off"]);
+    assert_eq!(off["hop"], 300);
+    assert!(columns(&off) < columns(&low));
+    // the smoothing along the frequency changes the cells, not the grid
+    assert_eq!(columns(&map(&["--smooth-freq", "high"])), columns(&low));
+    assert_ne!(
+        map(&["--smooth-freq", "high"])["grid"]["z"],
+        low["grid"]["z"]
+    );
+    // a level that is not in the list is refused, and says what the list is
+    for option in ["--smooth-freq", "--smooth-time"] {
+        let (ok, _, err) = run(&["run", "stft", f, option, "loud"]);
+        assert!(!ok, "{option}");
+        assert!(
+            err.contains(&format!("bad {option} loud: off, low, med or high")),
+            "{err}"
+        );
+        let (ok, _, err) = run(&["run", "stft", f, option]);
+        assert!(
+            !ok && err.contains(&format!("{option} needs a level")),
+            "{err}"
+        );
+    }
+    // a project gives its levels (one saved before the map followed the
+    // reference tool has none: both "low"), and the options win over them
+    let project = temp("time.openpid.json");
+    let saved = |stft: &str| {
+        std::fs::write(
+            &project,
+            format!(
+                r#"{{"version":2,"slots":[{{"path":"{}","session":0}}],"stft":{stft}}}"#,
+                l.to_str().unwrap().replace('\\', "/")
+            ),
+        )
+        .unwrap();
+    };
+    saved(r#"{"smooth_freq":"high","smooth_time":"off","max_hz":200.0}"#);
+    let p = project.to_str().unwrap();
+    let from_project = map(&["--project", p]);
+    assert_eq!(from_project["smooth_freq"], "high");
+    assert_eq!(from_project["hop"], 300);
+    assert_eq!(
+        from_project["grid"]["y"].as_array().unwrap().len(),
+        61,
+        "0 … 200 Hz"
+    );
+    let overridden = map(&["--project", p, "--smooth-time", "low"]);
+    assert_eq!(overridden["smooth_freq"], "high");
+    assert_eq!(overridden["hop"], 150);
+    saved(r#"{"segment_s":0.2,"hop":0.25,"window":"hann","max_hz":1000.0}"#);
+    let old = map(&["--project", p]);
+    assert_eq!(old["smooth_freq"], "low");
+    assert_eq!(
+        (old["nperseg"].as_u64(), old["hop"].as_u64()),
+        (Some(300), Some(150))
+    );
+    std::fs::remove_file(&project).ok();
+    // the picture: a pixel per cell, the decibels on −30 … 10 dB, nothing
+    // transparent (the first pixel is the top left cell)
+    let png = temp("time.png");
+    let (ok, _, err) = run(&["run", "stft", f, "--png", png.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    let bytes = std::fs::read(&png).unwrap();
+    let be =
+        |at: usize| u32::from_be_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
+    assert_eq!((be(16) as usize, be(20) as usize), (columns(&low), 151));
+    // signature 8, IHDR 25, IDAT length and name 8, zlib 2, block 5, filter 1
+    assert_eq!(bytes[49 + 3], 255, "the first pixel is opaque");
+    std::fs::remove_file(&png).ok();
+    let (ok, help, _) = run(&["--help"]);
+    assert!(ok && help.contains("--smooth-freq") && help.contains("--smooth-time"));
+}
+
+#[test]
 fn run_takes_the_log_and_parameters_from_a_project() {
     let project = temp("flight.openpid.json");
     let log = log("betaflight-4.2.0.BFL");
