@@ -42,6 +42,9 @@ ROUNDS:
              segments changes) and a first look at the map of frequency against time:
              tones that come and go, a tone that climbs, steps of frequency and of
              loudness, noise.
+    11       The map of frequency against time again: what its two smoothing lists do,
+             flights of other lengths and rates, and a flight made for no question, to
+             hold the rule of round 10 against.
 ";
 
 /// Runs the tool with `args` (without the program name), printing to `out`.

@@ -1,0 +1,3007 @@
+{
+  "format": 1,
+  "round": 11,
+  "built_from": "unknown",
+  "probes": [
+    {
+      "id": "g1-levels-2k",
+      "file": "g1-levels-2k.bbl",
+      "bytes": 1826432,
+      "fnv1a64": "b7c243846424f7c1",
+      "area": "time",
+      "title": "A tone that comes and goes, a tone that climbs, close pairs of tones and noise: the columns and the rows of the map of frequency against time, and what a cell reads",
+      "fs": 2000.0,
+      "duration_s": 30.0,
+      "samples": 60000,
+      "axes": [
+        {
+          "axis": "roll",
+          "purpose": "unfiltered: 100 Hz at 10 deg/s from 3 to 3.5 s, 6 to 7 s, 9 to 11 s, 12.5 to 12.6 s and 13.5 to 13.52 s: how long a column is and how far a short tone spreads; filtered: 200 Hz at 2 deg/s all the time: the level of a steady tone",
+          "unfiltered": {
+            "tones": [
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  3.0,
+                  3.5
+                ],
+                "logged_amplitude": 10.044189
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  6.0,
+                  7.0
+                ],
+                "logged_amplitude": 10.005508
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  9.0,
+                  11.0
+                ],
+                "logged_amplitude": 9.97757
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  12.5,
+                  12.6
+                ],
+                "logged_amplitude": 10.10498
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  13.5,
+                  13.52
+                ],
+                "logged_amplitude": 10.104057
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.001,
+            "logged_rms": 2.52236,
+            "logged_range": [
+              -11.0,
+              12.0
+            ],
+            "rounding": 0.499996
+          },
+          "filtered": {
+            "tones": [
+              {
+                "hz": 200.0,
+                "amplitude": 2.0,
+                "amplitude_db": 6.0206,
+                "power_db": 3.0103,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 2.005282
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.003517,
+            "logged_rms": 1.528508,
+            "logged_range": [
+              -4.0,
+              4.0
+            ],
+            "rounding": 0.499998
+          }
+        },
+        {
+          "axis": "pitch",
+          "purpose": "unfiltered: a tone of 10 deg/s that climbs evenly from 50 to 450 Hz over the flight: where a moment of the flight lies on the time axis; filtered: pairs of tones 4, 8 and 16 Hz apart: the rows",
+          "unfiltered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.002283,
+            "logged_rms": 7.094224,
+            "logged_range": [
+              -12.0,
+              12.0
+            ],
+            "rounding": 0.499997
+          },
+          "filtered": {
+            "tones": [
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 10.006327
+              },
+              {
+                "hz": 104.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 9.996542
+              },
+              {
+                "hz": 200.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 10.005215
+              },
+              {
+                "hz": 208.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 10.002432
+              },
+              {
+                "hz": 300.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 9.99607
+              },
+              {
+                "hz": 316.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 10.002414
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": -0.0004,
+            "logged_rms": 17.332645,
+            "logged_range": [
+              -51.0,
+              51.0
+            ],
+            "rounding": 0.499996
+          }
+        },
+        {
+          "axis": "yaw",
+          "purpose": "unfiltered: white noise of 5 deg/s RMS: the floor; filtered: noise of the same density between 100 and 300 Hz only: smoothing along the frequency",
+          "unfiltered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 5.0,
+            "noise_density": 0.025,
+            "noise_density_db": -16.0206,
+            "logged_mean": -0.005733,
+            "logged_rms": 4.982359,
+            "logged_range": [
+              -19.0,
+              20.0
+            ],
+            "rounding": 0.499994
+          },
+          "filtered": {
+            "tones": [],
+            "bands": [
+              {
+                "from_hz": 100.0,
+                "to_hz": 300.0,
+                "rms": 2.236068,
+                "density": 0.025,
+                "density_db": -16.0206,
+                "logged_rms": 2.253864
+              }
+            ],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.0019,
+            "logged_rms": 2.312465,
+            "logged_range": [
+              -9.0,
+              10.0
+            ],
+            "rounding": 0.499994
+          }
+        }
+      ],
+      "flight": {
+        "fs": 2000.0,
+        "duration_s": 30.0,
+        "roll": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 3.0,
+              "to_s": 3.5
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 6.0,
+              "to_s": 7.0
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 9.0,
+              "to_s": 11.0
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 12.5,
+              "to_s": 12.6
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 13.5,
+              "to_s": 13.52
+            },
+            {
+              "kind": "noise",
+              "rms": 0.5,
+              "seed": 1001
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "tone",
+                "hz": 200.0,
+                "amplitude": 2.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1002
+              }
+            ]
+          }
+        },
+        "pitch": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "chirp",
+              "from_hz": 50.0,
+              "to_hz": 450.0,
+              "amplitude": 10.0
+            },
+            {
+              "kind": "noise",
+              "rms": 0.5,
+              "seed": 1003
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "tone",
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 104.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 200.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 208.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 300.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 316.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1004
+              }
+            ]
+          }
+        },
+        "yaw": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "noise",
+              "rms": 5.0,
+              "seed": 1005
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "band",
+                "from_hz": 100.0,
+                "to_hz": 300.0,
+                "rms": 2.23606797749979,
+                "seed": 1006
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1007
+              }
+            ]
+          }
+        },
+        "throttle": {
+          "kind": "constant",
+          "percent": 50.0
+        }
+      }
+    },
+    {
+      "id": "g2-len8-2k",
+      "file": "g2-len8-2k.bbl",
+      "bytes": 491282,
+      "fnv1a64": "a556677913bc3498",
+      "area": "time",
+      "title": "A tone that comes and goes, a tone that climbs, close pairs of tones and noise: the columns and the rows of the map of frequency against time, and what a cell reads",
+      "fs": 2000.0,
+      "duration_s": 8.0,
+      "samples": 16000,
+      "axes": [
+        {
+          "axis": "roll",
+          "purpose": "unfiltered: 100 Hz at 10 deg/s from 3 to 3.5 s, 6 to 7 s, 9 to 11 s, 12.5 to 12.6 s and 13.5 to 13.52 s: how long a column is and how far a short tone spreads; filtered: 200 Hz at 2 deg/s all the time: the level of a steady tone",
+          "unfiltered": {
+            "tones": [
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  3.0,
+                  3.5
+                ],
+                "logged_amplitude": 10.044189
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  6.0,
+                  7.0
+                ],
+                "logged_amplitude": 10.005508
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  9.0,
+                  8.0
+                ],
+                "logged_amplitude": 0.0
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  12.5,
+                  8.0
+                ],
+                "logged_amplitude": 0.0
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  13.5,
+                  8.0
+                ],
+                "logged_amplitude": 0.0
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.005438,
+            "logged_rms": 3.121243,
+            "logged_range": [
+              -11.0,
+              11.0
+            ],
+            "rounding": 0.499996
+          },
+          "filtered": {
+            "tones": [
+              {
+                "hz": 200.0,
+                "amplitude": 2.0,
+                "amplitude_db": 6.0206,
+                "power_db": 3.0103,
+                "span_s": [
+                  0.0,
+                  8.0
+                ],
+                "logged_amplitude": 2.002957
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.004,
+            "logged_rms": 1.526674,
+            "logged_range": [
+              -4.0,
+              4.0
+            ],
+            "rounding": 0.499998
+          }
+        },
+        {
+          "axis": "pitch",
+          "purpose": "unfiltered: a tone of 10 deg/s that climbs evenly from 50 to 450 Hz over the flight: where a moment of the flight lies on the time axis; filtered: pairs of tones 4, 8 and 16 Hz apart: the rows",
+          "unfiltered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": -0.000438,
+            "logged_rms": 7.106515,
+            "logged_range": [
+              -12.0,
+              11.0
+            ],
+            "rounding": 0.499895
+          },
+          "filtered": {
+            "tones": [
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  8.0
+                ],
+                "logged_amplitude": 10.021207
+              },
+              {
+                "hz": 104.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  8.0
+                ],
+                "logged_amplitude": 10.002746
+              },
+              {
+                "hz": 200.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  8.0
+                ],
+                "logged_amplitude": 10.008855
+              },
+              {
+                "hz": 208.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  8.0
+                ],
+                "logged_amplitude": 9.999584
+              },
+              {
+                "hz": 300.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  8.0
+                ],
+                "logged_amplitude": 10.003442
+              },
+              {
+                "hz": 316.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  8.0
+                ],
+                "logged_amplitude": 10.002423
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.006313,
+            "logged_rms": 17.34123,
+            "logged_range": [
+              -51.0,
+              51.0
+            ],
+            "rounding": 0.499996
+          }
+        },
+        {
+          "axis": "yaw",
+          "purpose": "unfiltered: white noise of 5 deg/s RMS: the floor; filtered: noise of the same density between 100 and 300 Hz only: smoothing along the frequency",
+          "unfiltered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 5.0,
+            "noise_density": 0.025,
+            "noise_density_db": -16.0206,
+            "logged_mean": -0.001375,
+            "logged_rms": 4.971481,
+            "logged_range": [
+              -19.0,
+              18.0
+            ],
+            "rounding": 0.499958
+          },
+          "filtered": {
+            "tones": [],
+            "bands": [
+              {
+                "from_hz": 100.0,
+                "to_hz": 300.0,
+                "rms": 2.236068,
+                "density": 0.025,
+                "density_db": -16.0206,
+                "logged_rms": 2.248725
+              }
+            ],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": -0.003875,
+            "logged_rms": 2.308189,
+            "logged_range": [
+              -9.0,
+              8.0
+            ],
+            "rounding": 0.499997
+          }
+        }
+      ],
+      "flight": {
+        "fs": 2000.0,
+        "duration_s": 8.0,
+        "roll": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 3.0,
+              "to_s": 3.5
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 6.0,
+              "to_s": 7.0
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 9.0,
+              "to_s": 11.0
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 12.5,
+              "to_s": 12.6
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 13.5,
+              "to_s": 13.52
+            },
+            {
+              "kind": "noise",
+              "rms": 0.5,
+              "seed": 1001
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "tone",
+                "hz": 200.0,
+                "amplitude": 2.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1002
+              }
+            ]
+          }
+        },
+        "pitch": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "chirp",
+              "from_hz": 50.0,
+              "to_hz": 450.0,
+              "amplitude": 10.0
+            },
+            {
+              "kind": "noise",
+              "rms": 0.5,
+              "seed": 1003
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "tone",
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 104.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 200.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 208.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 300.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 316.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1004
+              }
+            ]
+          }
+        },
+        "yaw": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "noise",
+              "rms": 5.0,
+              "seed": 1005
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "band",
+                "from_hz": 100.0,
+                "to_hz": 300.0,
+                "rms": 2.23606797749979,
+                "seed": 1006
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1007
+              }
+            ]
+          }
+        },
+        "throttle": {
+          "kind": "constant",
+          "percent": 50.0
+        }
+      }
+    },
+    {
+      "id": "g3-len45-2k",
+      "file": "g3-len45-2k.bbl",
+      "bytes": 2736757,
+      "fnv1a64": "5b7d23e9dc732624",
+      "area": "time",
+      "title": "A tone that comes and goes, a tone that climbs, close pairs of tones and noise: the columns and the rows of the map of frequency against time, and what a cell reads",
+      "fs": 2000.0,
+      "duration_s": 45.0,
+      "samples": 90000,
+      "axes": [
+        {
+          "axis": "roll",
+          "purpose": "unfiltered: 100 Hz at 10 deg/s from 3 to 3.5 s, 6 to 7 s, 9 to 11 s, 12.5 to 12.6 s and 13.5 to 13.52 s: how long a column is and how far a short tone spreads; filtered: 200 Hz at 2 deg/s all the time: the level of a steady tone",
+          "unfiltered": {
+            "tones": [
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  3.0,
+                  3.5
+                ],
+                "logged_amplitude": 10.044189
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  6.0,
+                  7.0
+                ],
+                "logged_amplitude": 10.005508
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  9.0,
+                  11.0
+                ],
+                "logged_amplitude": 9.97757
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  12.5,
+                  12.6
+                ],
+                "logged_amplitude": 10.10498
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  13.5,
+                  13.52
+                ],
+                "logged_amplitude": 10.104057
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.001833,
+            "logged_rms": 2.086104,
+            "logged_range": [
+              -11.0,
+              12.0
+            ],
+            "rounding": 0.499996
+          },
+          "filtered": {
+            "tones": [
+              {
+                "hz": 200.0,
+                "amplitude": 2.0,
+                "amplitude_db": 6.0206,
+                "power_db": 3.0103,
+                "span_s": [
+                  0.0,
+                  45.0
+                ],
+                "logged_amplitude": 2.005378
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.002667,
+            "logged_rms": 1.529122,
+            "logged_range": [
+              -4.0,
+              4.0
+            ],
+            "rounding": 0.499998
+          }
+        },
+        {
+          "axis": "pitch",
+          "purpose": "unfiltered: a tone of 10 deg/s that climbs evenly from 50 to 450 Hz over the flight: where a moment of the flight lies on the time axis; filtered: pairs of tones 4, 8 and 16 Hz apart: the rows",
+          "unfiltered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.002822,
+            "logged_rms": 7.09649,
+            "logged_range": [
+              -12.0,
+              12.0
+            ],
+            "rounding": 0.499996
+          },
+          "filtered": {
+            "tones": [
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  45.0
+                ],
+                "logged_amplitude": 10.004063
+              },
+              {
+                "hz": 104.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  45.0
+                ],
+                "logged_amplitude": 10.000745
+              },
+              {
+                "hz": 200.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  45.0
+                ],
+                "logged_amplitude": 10.00408
+              },
+              {
+                "hz": 208.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  45.0
+                ],
+                "logged_amplitude": 10.005209
+              },
+              {
+                "hz": 300.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  45.0
+                ],
+                "logged_amplitude": 9.998394
+              },
+              {
+                "hz": 316.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  45.0
+                ],
+                "logged_amplitude": 10.005428
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": -0.000122,
+            "logged_rms": 17.335216,
+            "logged_range": [
+              -51.0,
+              51.0
+            ],
+            "rounding": 0.499996
+          }
+        },
+        {
+          "axis": "yaw",
+          "purpose": "unfiltered: white noise of 5 deg/s RMS: the floor; filtered: noise of the same density between 100 and 300 Hz only: smoothing along the frequency",
+          "unfiltered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 5.0,
+            "noise_density": 0.025,
+            "noise_density_db": -16.0206,
+            "logged_mean": -0.008922,
+            "logged_rms": 4.995447,
+            "logged_range": [
+              -20.0,
+              20.0
+            ],
+            "rounding": 0.499998
+          },
+          "filtered": {
+            "tones": [],
+            "bands": [
+              {
+                "from_hz": 100.0,
+                "to_hz": 300.0,
+                "rms": 2.236068,
+                "density": 0.025,
+                "density_db": -16.0206,
+                "logged_rms": 2.248589
+              }
+            ],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.001811,
+            "logged_rms": 2.306495,
+            "logged_range": [
+              -12.0,
+              10.0
+            ],
+            "rounding": 0.499999
+          }
+        }
+      ],
+      "flight": {
+        "fs": 2000.0,
+        "duration_s": 45.0,
+        "roll": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 3.0,
+              "to_s": 3.5
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 6.0,
+              "to_s": 7.0
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 9.0,
+              "to_s": 11.0
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 12.5,
+              "to_s": 12.6
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 13.5,
+              "to_s": 13.52
+            },
+            {
+              "kind": "noise",
+              "rms": 0.5,
+              "seed": 1001
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "tone",
+                "hz": 200.0,
+                "amplitude": 2.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1002
+              }
+            ]
+          }
+        },
+        "pitch": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "chirp",
+              "from_hz": 50.0,
+              "to_hz": 450.0,
+              "amplitude": 10.0
+            },
+            {
+              "kind": "noise",
+              "rms": 0.5,
+              "seed": 1003
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "tone",
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 104.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 200.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 208.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 300.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 316.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1004
+              }
+            ]
+          }
+        },
+        "yaw": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "noise",
+              "rms": 5.0,
+              "seed": 1005
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "band",
+                "from_hz": 100.0,
+                "to_hz": 300.0,
+                "rms": 2.23606797749979,
+                "seed": 1006
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1007
+              }
+            ]
+          }
+        },
+        "throttle": {
+          "kind": "constant",
+          "percent": 50.0
+        }
+      }
+    },
+    {
+      "id": "g4-len84-2k",
+      "file": "g4-len84-2k.bbl",
+      "bytes": 5103573,
+      "fnv1a64": "8bf7ca574828c113",
+      "area": "time",
+      "title": "A tone that comes and goes, a tone that climbs, close pairs of tones and noise: the columns and the rows of the map of frequency against time, and what a cell reads",
+      "fs": 2000.0,
+      "duration_s": 84.0,
+      "samples": 168000,
+      "axes": [
+        {
+          "axis": "roll",
+          "purpose": "unfiltered: 100 Hz at 10 deg/s from 3 to 3.5 s, 6 to 7 s, 9 to 11 s, 12.5 to 12.6 s and 13.5 to 13.52 s: how long a column is and how far a short tone spreads; filtered: 200 Hz at 2 deg/s all the time: the level of a steady tone",
+          "unfiltered": {
+            "tones": [
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  3.0,
+                  3.5
+                ],
+                "logged_amplitude": 10.044189
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  6.0,
+                  7.0
+                ],
+                "logged_amplitude": 10.005508
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  9.0,
+                  11.0
+                ],
+                "logged_amplitude": 9.97757
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  12.5,
+                  12.6
+                ],
+                "logged_amplitude": 10.10498
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  13.5,
+                  13.52
+                ],
+                "logged_amplitude": 10.104057
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.000649,
+            "logged_rms": 1.575703,
+            "logged_range": [
+              -11.0,
+              12.0
+            ],
+            "rounding": 0.499996
+          },
+          "filtered": {
+            "tones": [
+              {
+                "hz": 200.0,
+                "amplitude": 2.0,
+                "amplitude_db": 6.0206,
+                "power_db": 3.0103,
+                "span_s": [
+                  0.0,
+                  84.0
+                ],
+                "logged_amplitude": 2.00076
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.001613,
+            "logged_rms": 1.526294,
+            "logged_range": [
+              -4.0,
+              4.0
+            ],
+            "rounding": 0.499998
+          }
+        },
+        {
+          "axis": "pitch",
+          "purpose": "unfiltered: a tone of 10 deg/s that climbs evenly from 50 to 450 Hz over the flight: where a moment of the flight lies on the time axis; filtered: pairs of tones 4, 8 and 16 Hz apart: the rows",
+          "unfiltered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.002583,
+            "logged_rms": 7.093005,
+            "logged_range": [
+              -12.0,
+              12.0
+            ],
+            "rounding": 0.5
+          },
+          "filtered": {
+            "tones": [
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  84.0
+                ],
+                "logged_amplitude": 10.004635
+              },
+              {
+                "hz": 104.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  84.0
+                ],
+                "logged_amplitude": 10.000655
+              },
+              {
+                "hz": 200.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  84.0
+                ],
+                "logged_amplitude": 10.0025
+              },
+              {
+                "hz": 208.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  84.0
+                ],
+                "logged_amplitude": 10.002078
+              },
+              {
+                "hz": 300.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  84.0
+                ],
+                "logged_amplitude": 9.997254
+              },
+              {
+                "hz": 316.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  84.0
+                ],
+                "logged_amplitude": 10.001968
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": -0.001202,
+            "logged_rms": 17.332733,
+            "logged_range": [
+              -51.0,
+              51.0
+            ],
+            "rounding": 0.5
+          }
+        },
+        {
+          "axis": "yaw",
+          "purpose": "unfiltered: white noise of 5 deg/s RMS: the floor; filtered: noise of the same density between 100 and 300 Hz only: smoothing along the frequency",
+          "unfiltered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 5.0,
+            "noise_density": 0.025,
+            "noise_density_db": -16.0206,
+            "logged_mean": -0.009929,
+            "logged_rms": 4.996235,
+            "logged_range": [
+              -21.0,
+              22.0
+            ],
+            "rounding": 0.499999
+          },
+          "filtered": {
+            "tones": [],
+            "bands": [
+              {
+                "from_hz": 100.0,
+                "to_hz": 300.0,
+                "rms": 2.236068,
+                "density": 0.025,
+                "density_db": -16.0206,
+                "logged_rms": 2.251128
+              }
+            ],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.001619,
+            "logged_rms": 2.3098,
+            "logged_range": [
+              -10.0,
+              11.0
+            ],
+            "rounding": 0.499996
+          }
+        }
+      ],
+      "flight": {
+        "fs": 2000.0,
+        "duration_s": 84.0,
+        "roll": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 3.0,
+              "to_s": 3.5
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 6.0,
+              "to_s": 7.0
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 9.0,
+              "to_s": 11.0
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 12.5,
+              "to_s": 12.6
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 13.5,
+              "to_s": 13.52
+            },
+            {
+              "kind": "noise",
+              "rms": 0.5,
+              "seed": 1001
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "tone",
+                "hz": 200.0,
+                "amplitude": 2.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1002
+              }
+            ]
+          }
+        },
+        "pitch": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "chirp",
+              "from_hz": 50.0,
+              "to_hz": 450.0,
+              "amplitude": 10.0
+            },
+            {
+              "kind": "noise",
+              "rms": 0.5,
+              "seed": 1003
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "tone",
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 104.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 200.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 208.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 300.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 316.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1004
+              }
+            ]
+          }
+        },
+        "yaw": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "noise",
+              "rms": 5.0,
+              "seed": 1005
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "band",
+                "from_hz": 100.0,
+                "to_hz": 300.0,
+                "rms": 2.23606797749979,
+                "seed": 1006
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1007
+              }
+            ]
+          }
+        },
+        "throttle": {
+          "kind": "constant",
+          "percent": 50.0
+        }
+      }
+    },
+    {
+      "id": "g5-rate-1k",
+      "file": "g5-rate-1k.bbl",
+      "bytes": 926655,
+      "fnv1a64": "b041f38d1dcba8b6",
+      "area": "time",
+      "title": "A tone that comes and goes, a tone that climbs, close pairs of tones and noise: the columns and the rows of the map of frequency against time, and what a cell reads",
+      "fs": 1000.0,
+      "duration_s": 30.0,
+      "samples": 30000,
+      "axes": [
+        {
+          "axis": "roll",
+          "purpose": "unfiltered: 100 Hz at 10 deg/s from 3 to 3.5 s, 6 to 7 s, 9 to 11 s, 12.5 to 12.6 s and 13.5 to 13.52 s: how long a column is and how far a short tone spreads; filtered: 200 Hz at 2 deg/s all the time: the level of a steady tone",
+          "unfiltered": {
+            "tones": [
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  3.0,
+                  3.5
+                ],
+                "logged_amplitude": 9.995551
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  6.0,
+                  7.0
+                ],
+                "logged_amplitude": 10.015503
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  9.0,
+                  11.0
+                ],
+                "logged_amplitude": 10.004245
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  12.5,
+                  12.6
+                ],
+                "logged_amplitude": 10.046864
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  13.5,
+                  13.52
+                ],
+                "logged_amplitude": 10.23961
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.0005,
+            "noise_density_db": -33.0103,
+            "logged_mean": 0.002433,
+            "logged_rms": 2.524921,
+            "logged_range": [
+              -11.0,
+              11.0
+            ],
+            "rounding": 0.499996
+          },
+          "filtered": {
+            "tones": [
+              {
+                "hz": 200.0,
+                "amplitude": 2.0,
+                "amplitude_db": 6.0206,
+                "power_db": 3.0103,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 2.007723
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.0005,
+            "noise_density_db": -33.0103,
+            "logged_mean": 0.003433,
+            "logged_rms": 1.531107,
+            "logged_range": [
+              -4.0,
+              4.0
+            ],
+            "rounding": 0.499992
+          }
+        },
+        {
+          "axis": "pitch",
+          "purpose": "unfiltered: a tone of 10 deg/s that climbs evenly from 50 to 450 Hz over the flight: where a moment of the flight lies on the time axis; filtered: pairs of tones 4, 8 and 16 Hz apart: the rows",
+          "unfiltered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.0005,
+            "noise_density_db": -33.0103,
+            "logged_mean": -0.000267,
+            "logged_rms": 7.09738,
+            "logged_range": [
+              -12.0,
+              12.0
+            ],
+            "rounding": 0.499998
+          },
+          "filtered": {
+            "tones": [
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 10.010692
+              },
+              {
+                "hz": 104.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 10.005389
+              },
+              {
+                "hz": 200.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 9.985028
+              },
+              {
+                "hz": 208.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 10.002113
+              },
+              {
+                "hz": 300.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 10.002066
+              },
+              {
+                "hz": 316.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 9.99893
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.0005,
+            "noise_density_db": -33.0103,
+            "logged_mean": 0.0006,
+            "logged_rms": 17.331393,
+            "logged_range": [
+              -51.0,
+              52.0
+            ],
+            "rounding": 0.499955
+          }
+        },
+        {
+          "axis": "yaw",
+          "purpose": "unfiltered: white noise of 5 deg/s RMS: the floor; filtered: noise of the same density between 100 and 300 Hz only: smoothing along the frequency",
+          "unfiltered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 5.0,
+            "noise_density": 0.05,
+            "noise_density_db": -13.0103,
+            "logged_mean": 0.0056,
+            "logged_rms": 4.975035,
+            "logged_range": [
+              -19.0,
+              19.0
+            ],
+            "rounding": 0.499958
+          },
+          "filtered": {
+            "tones": [],
+            "bands": [
+              {
+                "from_hz": 100.0,
+                "to_hz": 300.0,
+                "rms": 2.236068,
+                "density": 0.025,
+                "density_db": -16.0206,
+                "logged_rms": 2.26166
+              }
+            ],
+            "noise_rms": 0.5,
+            "noise_density": 0.0005,
+            "noise_density_db": -33.0103,
+            "logged_mean": 0.000667,
+            "logged_rms": 2.305125,
+            "logged_range": [
+              -9.0,
+              9.0
+            ],
+            "rounding": 0.499988
+          }
+        }
+      ],
+      "flight": {
+        "fs": 1000.0,
+        "duration_s": 30.0,
+        "roll": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 3.0,
+              "to_s": 3.5
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 6.0,
+              "to_s": 7.0
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 9.0,
+              "to_s": 11.0
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 12.5,
+              "to_s": 12.6
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 13.5,
+              "to_s": 13.52
+            },
+            {
+              "kind": "noise",
+              "rms": 0.5,
+              "seed": 1001
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "tone",
+                "hz": 200.0,
+                "amplitude": 2.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1002
+              }
+            ]
+          }
+        },
+        "pitch": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "chirp",
+              "from_hz": 50.0,
+              "to_hz": 450.0,
+              "amplitude": 10.0
+            },
+            {
+              "kind": "noise",
+              "rms": 0.5,
+              "seed": 1003
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "tone",
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 104.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 200.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 208.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 300.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 316.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1004
+              }
+            ]
+          }
+        },
+        "yaw": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "noise",
+              "rms": 5.0,
+              "seed": 1005
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "band",
+                "from_hz": 100.0,
+                "to_hz": 300.0,
+                "rms": 2.23606797749979,
+                "seed": 1006
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1007
+              }
+            ]
+          }
+        },
+        "throttle": {
+          "kind": "constant",
+          "percent": 50.0
+        }
+      }
+    },
+    {
+      "id": "g6-rate-8k",
+      "file": "g6-rate-8k.bbl",
+      "bytes": 7226495,
+      "fnv1a64": "75cd0d057c0721d2",
+      "area": "time",
+      "title": "A tone that comes and goes, a tone that climbs, close pairs of tones and noise: the columns and the rows of the map of frequency against time, and what a cell reads",
+      "fs": 8000.0,
+      "duration_s": 30.0,
+      "samples": 240000,
+      "axes": [
+        {
+          "axis": "roll",
+          "purpose": "unfiltered: 100 Hz at 10 deg/s from 3 to 3.5 s, 6 to 7 s, 9 to 11 s, 12.5 to 12.6 s and 13.5 to 13.52 s: how long a column is and how far a short tone spreads; filtered: 200 Hz at 2 deg/s all the time: the level of a steady tone",
+          "unfiltered": {
+            "tones": [
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  3.0,
+                  3.5
+                ],
+                "logged_amplitude": 10.001779
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  6.0,
+                  7.0
+                ],
+                "logged_amplitude": 10.010745
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  9.0,
+                  11.0
+                ],
+                "logged_amplitude": 9.994068
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  12.5,
+                  12.6
+                ],
+                "logged_amplitude": 10.011841
+              },
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  13.5,
+                  13.52
+                ],
+                "logged_amplitude": 9.900513
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.000063,
+            "noise_density_db": -42.0412,
+            "logged_mean": 0.000046,
+            "logged_rms": 2.522042,
+            "logged_range": [
+              -12.0,
+              11.0
+            ],
+            "rounding": 0.499996
+          },
+          "filtered": {
+            "tones": [
+              {
+                "hz": 200.0,
+                "amplitude": 2.0,
+                "amplitude_db": 6.0206,
+                "power_db": 3.0103,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 2.002234
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.000063,
+            "noise_density_db": -42.0412,
+            "logged_mean": 0.001517,
+            "logged_rms": 1.52891,
+            "logged_range": [
+              -4.0,
+              4.0
+            ],
+            "rounding": 0.5
+          }
+        },
+        {
+          "axis": "pitch",
+          "purpose": "unfiltered: a tone of 10 deg/s that climbs evenly from 50 to 450 Hz over the flight: where a moment of the flight lies on the time axis; filtered: pairs of tones 4, 8 and 16 Hz apart: the rows",
+          "unfiltered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.000063,
+            "noise_density_db": -42.0412,
+            "logged_mean": 0.000171,
+            "logged_rms": 7.095407,
+            "logged_range": [
+              -12.0,
+              12.0
+            ],
+            "rounding": 0.499997
+          },
+          "filtered": {
+            "tones": [
+              {
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 9.999231
+              },
+              {
+                "hz": 104.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 10.000572
+              },
+              {
+                "hz": 200.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 10.001234
+              },
+              {
+                "hz": 208.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 10.000984
+              },
+              {
+                "hz": 300.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 9.997639
+              },
+              {
+                "hz": 316.0,
+                "amplitude": 10.0,
+                "amplitude_db": 20.0,
+                "power_db": 16.9897,
+                "span_s": [
+                  0.0,
+                  30.0
+                ],
+                "logged_amplitude": 10.000743
+              }
+            ],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.000063,
+            "noise_density_db": -42.0412,
+            "logged_mean": -0.000742,
+            "logged_rms": 17.330243,
+            "logged_range": [
+              -51.0,
+              51.0
+            ],
+            "rounding": 0.499998
+          }
+        },
+        {
+          "axis": "yaw",
+          "purpose": "unfiltered: white noise of 5 deg/s RMS: the floor; filtered: noise of the same density between 100 and 300 Hz only: smoothing along the frequency",
+          "unfiltered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 5.0,
+            "noise_density": 0.00625,
+            "noise_density_db": -22.0412,
+            "logged_mean": -0.016237,
+            "logged_rms": 5.002343,
+            "logged_range": [
+              -23.0,
+              22.0
+            ],
+            "rounding": 0.499999
+          },
+          "filtered": {
+            "tones": [],
+            "bands": [
+              {
+                "from_hz": 100.0,
+                "to_hz": 300.0,
+                "rms": 2.236068,
+                "density": 0.025,
+                "density_db": -16.0206,
+                "logged_rms": 2.240419
+              }
+            ],
+            "noise_rms": 0.5,
+            "noise_density": 0.000063,
+            "noise_density_db": -42.0412,
+            "logged_mean": 0.001704,
+            "logged_rms": 2.309777,
+            "logged_range": [
+              -10.0,
+              10.0
+            ],
+            "rounding": 0.499998
+          }
+        }
+      ],
+      "flight": {
+        "fs": 8000.0,
+        "duration_s": 30.0,
+        "roll": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 3.0,
+              "to_s": 3.5
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 6.0,
+              "to_s": 7.0
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 9.0,
+              "to_s": 11.0
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 12.5,
+              "to_s": 12.6
+            },
+            {
+              "kind": "tone",
+              "hz": 100.0,
+              "amplitude": 10.0,
+              "phase_deg": 0.0,
+              "from_s": 13.5,
+              "to_s": 13.52
+            },
+            {
+              "kind": "noise",
+              "rms": 0.5,
+              "seed": 1001
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "tone",
+                "hz": 200.0,
+                "amplitude": 2.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1002
+              }
+            ]
+          }
+        },
+        "pitch": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "chirp",
+              "from_hz": 50.0,
+              "to_hz": 450.0,
+              "amplitude": 10.0
+            },
+            {
+              "kind": "noise",
+              "rms": 0.5,
+              "seed": 1003
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "tone",
+                "hz": 100.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 104.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 200.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 208.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 300.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "tone",
+                "hz": 316.0,
+                "amplitude": 10.0,
+                "phase_deg": 0.0,
+                "from_s": null,
+                "to_s": null
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1004
+              }
+            ]
+          }
+        },
+        "yaw": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "noise",
+              "rms": 5.0,
+              "seed": 1005
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "band",
+                "from_hz": 100.0,
+                "to_hz": 300.0,
+                "rms": 2.23606797749979,
+                "seed": 1006
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1007
+              }
+            ]
+          }
+        },
+        "throttle": {
+          "kind": "constant",
+          "percent": 50.0
+        }
+      }
+    },
+    {
+      "id": "g7-flight-2k",
+      "file": "g7-flight-2k.bbl",
+      "bytes": 1462374,
+      "fnv1a64": "0068acf1008a86c0",
+      "area": "time",
+      "title": "A flight made for no question in particular: the throttle moves as it likes, motor noise follows it; the rule of round 10 says what the map shows",
+      "fs": 2000.0,
+      "duration_s": 24.0,
+      "samples": 48000,
+      "axes": [
+        {
+          "axis": "roll",
+          "purpose": "unfiltered: a tone of 8 deg/s at 70 Hz + 3 Hz per percent with its second harmonic at 3 deg/s, over noise of 2 deg/s RMS; filtered: the same at 3 and 1 deg/s over noise of 1 deg/s",
+          "unfiltered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 2.0,
+            "noise_density": 0.004,
+            "noise_density_db": -23.9794,
+            "logged_mean": -0.001063,
+            "logged_rms": 6.363363,
+            "logged_range": [
+              -18.0,
+              16.0
+            ],
+            "rounding": 0.499993
+          },
+          "filtered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 1.0,
+            "noise_density": 0.001,
+            "noise_density_db": -30.0,
+            "logged_mean": 0.005292,
+            "logged_rms": 2.469129,
+            "logged_range": [
+              -7.0,
+              7.0
+            ],
+            "rounding": 0.499984
+          }
+        },
+        {
+          "axis": "pitch",
+          "purpose": "unfiltered: a tone of 5 deg/s at 180 Hz, 120 Hz at 15 deg/s from 8 to 8.4 s, over noise of 3 deg/s RMS; filtered: noise of 1 deg/s RMS",
+          "unfiltered": {
+            "tones": [
+              {
+                "hz": 180.0,
+                "amplitude": 5.0,
+                "amplitude_db": 13.9794,
+                "power_db": 10.9691,
+                "span_s": [
+                  0.0,
+                  24.0
+                ],
+                "logged_amplitude": 4.978302
+              },
+              {
+                "hz": 120.0,
+                "amplitude": 15.0,
+                "amplitude_db": 23.521825,
+                "power_db": 20.511525,
+                "span_s": [
+                  8.0,
+                  8.4
+                ],
+                "logged_amplitude": 14.989751
+              }
+            ],
+            "bands": [],
+            "noise_rms": 3.0,
+            "noise_density": 0.009,
+            "noise_density_db": -20.457575,
+            "logged_mean": 0.010792,
+            "logged_rms": 4.831396,
+            "logged_range": [
+              -27.0,
+              27.0
+            ],
+            "rounding": 0.499972
+          },
+          "filtered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 1.0,
+            "noise_density": 0.001,
+            "noise_density_db": -30.0,
+            "logged_mean": -0.003,
+            "logged_rms": 1.040608,
+            "logged_range": [
+              -4.0,
+              4.0
+            ],
+            "rounding": 0.499998
+          }
+        },
+        {
+          "axis": "yaw",
+          "purpose": "unfiltered: noise between 60 and 350 Hz with a density of 0.02 (deg/s)²/Hz and a tone of 4 deg/s at 50 Hz + 2 Hz per percent; filtered: that tone at 1 deg/s",
+          "unfiltered": {
+            "tones": [],
+            "bands": [
+              {
+                "from_hz": 60.0,
+                "to_hz": 350.0,
+                "rms": 2.408319,
+                "density": 0.02,
+                "density_db": -16.9897,
+                "logged_rms": 3.742193
+              }
+            ],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.004688,
+            "logged_rms": 3.773924,
+            "logged_range": [
+              -15.0,
+              13.0
+            ],
+            "rounding": 0.499991
+          },
+          "filtered": {
+            "tones": [],
+            "bands": [],
+            "noise_rms": 0.5,
+            "noise_density": 0.00025,
+            "noise_density_db": -36.0206,
+            "logged_mean": 0.001208,
+            "logged_rms": 0.912984,
+            "logged_range": [
+              -3.0,
+              3.0
+            ],
+            "rounding": 0.499985
+          }
+        }
+      ],
+      "flight": {
+        "fs": 2000.0,
+        "duration_s": 24.0,
+        "roll": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "throttle_tone",
+              "hz_at_zero": 70.0,
+              "hz_per_percent": 3.0,
+              "amplitude": 8.0,
+              "band": null
+            },
+            {
+              "kind": "throttle_tone",
+              "hz_at_zero": 140.0,
+              "hz_per_percent": 6.0,
+              "amplitude": 3.0,
+              "band": null
+            },
+            {
+              "kind": "noise",
+              "rms": 2.0,
+              "seed": 1101
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "throttle_tone",
+                "hz_at_zero": 70.0,
+                "hz_per_percent": 3.0,
+                "amplitude": 3.0,
+                "band": null
+              },
+              {
+                "kind": "throttle_tone",
+                "hz_at_zero": 140.0,
+                "hz_per_percent": 6.0,
+                "amplitude": 1.0,
+                "band": null
+              },
+              {
+                "kind": "noise",
+                "rms": 1.0,
+                "seed": 1102
+              }
+            ]
+          }
+        },
+        "pitch": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "tone",
+              "hz": 180.0,
+              "amplitude": 5.0,
+              "phase_deg": 0.0,
+              "from_s": null,
+              "to_s": null
+            },
+            {
+              "kind": "tone",
+              "hz": 120.0,
+              "amplitude": 15.0,
+              "phase_deg": 0.0,
+              "from_s": 8.0,
+              "to_s": 8.4
+            },
+            {
+              "kind": "noise",
+              "rms": 3.0,
+              "seed": 1103
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "noise",
+                "rms": 1.0,
+                "seed": 1104
+              }
+            ]
+          }
+        },
+        "yaw": {
+          "stick": {
+            "kind": "silence"
+          },
+          "plant": {
+            "kind": "none"
+          },
+          "waves": [
+            {
+              "kind": "band",
+              "from_hz": 60.0,
+              "to_hz": 350.0,
+              "rms": 2.4083189157584592,
+              "seed": 1107
+            },
+            {
+              "kind": "throttle_tone",
+              "hz_at_zero": 50.0,
+              "hz_per_percent": 2.0,
+              "amplitude": 4.0,
+              "band": null
+            },
+            {
+              "kind": "noise",
+              "rms": 0.5,
+              "seed": 1105
+            }
+          ],
+          "filtered": {
+            "kind": "separate",
+            "waves": [
+              {
+                "kind": "throttle_tone",
+                "hz_at_zero": 50.0,
+                "hz_per_percent": 2.0,
+                "amplitude": 1.0,
+                "band": null
+              },
+              {
+                "kind": "noise",
+                "rms": 0.5,
+                "seed": 1106
+              }
+            ]
+          }
+        },
+        "throttle": {
+          "kind": "stairs",
+          "steps": [
+            [
+              40.0,
+              1.5
+            ],
+            [
+              58.0,
+              2.5
+            ],
+            [
+              25.0,
+              2.0
+            ],
+            [
+              75.0,
+              3.0
+            ],
+            [
+              50.0,
+              1.0
+            ],
+            [
+              85.0,
+              2.0
+            ],
+            [
+              33.0,
+              3.5
+            ],
+            [
+              66.0,
+              2.5
+            ],
+            [
+              45.0,
+              3.0
+            ],
+            [
+              52.0,
+              3.0
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}

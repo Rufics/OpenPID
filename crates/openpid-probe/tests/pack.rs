@@ -377,16 +377,16 @@ fn a_pack_is_written_as_files() {
 
 #[test]
 fn an_unknown_round_is_refused() {
-    let error = pack::build(11, "x").unwrap_err();
-    assert!(matches!(error, PackError::UnknownRound(11)));
+    let error = pack::build(12, "x").unwrap_err();
+    assert!(matches!(error, PackError::UnknownRound(12)));
     assert_eq!(
         error.to_string(),
         format!(
-            "there is no round 11; the rounds are {:?}",
+            "there is no round 12; the rounds are {:?}",
             catalogue::ROUNDS
         )
     );
-    assert_eq!(catalogue::ROUNDS, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    assert_eq!(catalogue::ROUNDS, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
 }
 
 #[test]
@@ -429,7 +429,7 @@ fn the_command_line() {
             &["pack", "one", "--out", "x"][..],
             "the round must be a number, not one",
         ),
-        (&["pack", "11", "--out", "x"][..], "there is no round 11"),
+        (&["pack", "12", "--out", "x"][..], "there is no round 12"),
         (&["pack", "1", "--out"][..], "--out needs a directory"),
         (
             &["pack", "1", "--built-from"][..],

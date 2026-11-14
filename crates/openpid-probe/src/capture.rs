@@ -227,6 +227,8 @@ mod time_at {
     pub const BELOW_100: (u32, u32) = (3408, 720);
     /// The box "Z min".
     pub const Z_MIN: (u32, u32) = (3500, 838);
+    /// The box "Z max".
+    pub const Z_MAX: (u32, u32) = (3611, 838);
     /// Left and right of the axes of the three plots.
     pub const SIDES: (u32, u32) = (304, 3118);
     /// Top and bottom of the axes of roll, pitch and yaw.
@@ -244,6 +246,34 @@ const TIME_CHANNELS: [(&str, usize); 2] = [("prefilt", 1), ("gyro", 0)];
 const TIME_Z_MIN: &str = "-70";
 /// The lower end of the colour scale the window comes up with, dB.
 const TIME_Z_MIN_DEFAULT: &str = "-30";
+/// The upper end of the colour scale typed for one probe in place of the
+/// 10 dB the window comes up with.
+const TIME_Z_MAX: &str = "0";
+/// The upper end of the colour scale the window comes up with, dB.
+const TIME_Z_MAX_DEFAULT: &str = "10";
+/// The first round that asks the window of frequency against time about
+/// its two smoothing lists; the round before it took a first look.
+pub const TIME_LEVELS: u32 = 11;
+/// The place of "low" in either smoothing list of that window (off, low,
+/// med, high): what both come up with.
+const TIME_LOW: usize = 1;
+/// The settings of the two smoothing lists captured for the first log
+/// beyond what the window comes up with: the name in the files, the item
+/// of the list for the frequency axis, the item of the list for the time
+/// axis. One list at a time first, then both.
+const TIME_SMOOTHING: [(&str, usize, usize); 8] = [
+    ("freq-off", 0, TIME_LOW),
+    ("freq-med", 2, TIME_LOW),
+    ("freq-high", 3, TIME_LOW),
+    ("time-off", TIME_LOW, 0),
+    ("time-med", TIME_LOW, 2),
+    ("time-high", TIME_LOW, 3),
+    ("both-off", 0, 0),
+    ("both-high", 3, 3),
+];
+/// The settings of the two lists captured for the flight of a round, to
+/// hold what the first log taught against.
+const TIME_SMOOTHING_FLIGHT: [(&str, usize, usize); 2] = [("both-med", 2, 2), ("both-high", 3, 3)];
 
 /// The smoothing levels of the window of frequency against throttle, in
 /// the order of its list. "medium" is what the window comes up with.
@@ -1100,6 +1130,83 @@ fn time_capture(steps: &mut Vec<Step>, round: u32, probe: &str, what: &str) {
     }
 }
 
+/// The window of frequency against time, opened from the spectrum window,
+/// and a picture of it as it comes up.
+fn time_open(steps: &mut Vec<Step>, round: u32) {
+    steps.push(click(SPECTRUM, "shot", "Freq x Time", time_at::OPEN));
+    steps.push(Step {
+        wait_s: Some(120),
+        ..settle(TIME, None, 1.5)
+    });
+    steps.push(shot(TIME, format!("r{round}-time-open")));
+}
+
+/// Both smoothing lists of that window set: item `freq` of the list for
+/// the frequency axis and item `time` of the list for the time axis.
+fn time_smoothing(steps: &mut Vec<Step>, freq: usize, time: usize) {
+    const LEVELS: [&str; 4] = ["off", "low", "med", "high"];
+    for ((list, at), item) in time_at::SMOOTH_LISTS.into_iter().zip([freq, time]) {
+        time_pick(steps, at, &format!("{list} {}", LEVELS[item]), item);
+    }
+}
+
+/// The steps of the window of frequency against time from round
+/// [`TIME_LEVELS`] on. For every log the maps of the unfiltered gyro as the
+/// window comes up: a Run, a picture, copies of the three plots. For the
+/// first log also the maps at every setting of [`TIME_SMOOTHING`] and with
+/// [`TIME_Z_MAX`] typed into "Z max"; for the last, the flight, also the
+/// maps of the filtered gyro and at the settings of
+/// [`TIME_SMOOTHING_FLIGHT`]. The lists and the box are put back each time.
+fn time_levels(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+    time_open(steps, round);
+    let is_time = |p: &Probe| p.area == Area::Time;
+    let first = probes.iter().position(is_time);
+    let last = probes.iter().rposition(is_time);
+    let (prefilt, prefilt_item) = TIME_CHANNELS[0];
+    for (row, probe) in probes.iter().enumerate().filter(|(_, p)| is_time(p)) {
+        time_pick(steps, time_at::LOG_LIST, &format!("log {}", probe.id), row);
+        let channel = format!("channel {prefilt}");
+        time_pick(steps, time_at::CHANNEL_LIST, &channel, prefilt_item);
+        time_capture(steps, round, probe.id, prefilt);
+        let settings: &[(&str, usize, usize)] = if first == Some(row) {
+            &TIME_SMOOTHING
+        } else if last == Some(row) {
+            let (gyro, item) = TIME_CHANNELS[1];
+            time_pick(
+                steps,
+                time_at::CHANNEL_LIST,
+                &format!("channel {gyro}"),
+                item,
+            );
+            time_capture(steps, round, probe.id, gyro);
+            time_pick(steps, time_at::CHANNEL_LIST, &channel, prefilt_item);
+            &TIME_SMOOTHING_FLIGHT
+        } else {
+            &[]
+        };
+        for (name, freq, time) in settings {
+            time_smoothing(steps, *freq, *time);
+            time_capture(steps, round, probe.id, &format!("{prefilt}-{name}"));
+        }
+        if !settings.is_empty() {
+            time_smoothing(steps, TIME_LOW, TIME_LOW);
+        }
+        if first == Some(row) {
+            let z_max = |steps: &mut Vec<Step>, text: &str| {
+                steps.push(Step {
+                    action: "type",
+                    text: Some(text.to_string()),
+                    ..time_click("Z max", time_at::Z_MAX)
+                });
+                steps.push(pause(300));
+            };
+            z_max(steps, TIME_Z_MAX);
+            time_capture(steps, round, probe.id, &format!("{prefilt}-zmax-0"));
+            z_max(steps, TIME_Z_MAX_DEFAULT);
+        }
+    }
+}
+
 /// The steps of the window of frequency against time for the probes of a
 /// round: a first look. The window is opened from the spectrum window. For
 /// every log the maps of the unfiltered and of the filtered gyro: a Run, a
@@ -1108,12 +1215,7 @@ fn time_capture(steps: &mut Vec<Step>, round: u32, probe: &str, what: &str) {
 /// below 100 Hz, and the maps with the colour scale reaching down to
 /// [`TIME_Z_MIN`] dB.
 fn time_maps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
-    steps.push(click(SPECTRUM, "shot", "Freq x Time", time_at::OPEN));
-    steps.push(Step {
-        wait_s: Some(120),
-        ..settle(TIME, None, 1.5)
-    });
-    steps.push(shot(TIME, format!("r{round}-time-open")));
+    time_open(steps, round);
     let is_time = |p: &Probe| p.area == Area::Time;
     let first = probes.iter().position(is_time);
     for (row, probe) in probes.iter().enumerate().filter(|(_, p)| is_time(p)) {
@@ -1296,7 +1398,9 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     if throttle {
         throttle_maps(&mut steps, round, probes);
     }
-    if time {
+    if time && round >= TIME_LEVELS {
+        time_levels(&mut steps, round, probes);
+    } else if time {
         time_maps(&mut steps, round, probes);
     }
     steps.push(Step {
@@ -1306,6 +1410,15 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     Plan {
         about: if probes.iter().all(|p| p.area == Area::StepResponse) {
             step_about(round, probes)
+        } else if time && round >= TIME_LEVELS {
+            format!(
+                "Round {round}: every log through one open dialog, then the window of frequency \
+                 against time: for every log the maps of the unfiltered gyro as the window \
+                 comes up; for the first also at eight other settings of its two smoothing \
+                 lists and with the colour scale ending at 0 dB; for the last, a flight, also \
+                 the maps of the filtered gyro and at two settings of the lists; a picture of \
+                 the window and a vector copy of every plot each time."
+            )
         } else if time {
             format!(
                 "Round {round}: every log through one open dialog; the window of frequency \
@@ -2327,6 +2440,99 @@ mod tests {
             note.contains("138 plots") && note.contains("saves 26 pictures"),
             "{note}"
         );
+    }
+
+    #[test]
+    fn round_11_asks_the_time_window_about_its_smoothing_lists() {
+        let probes = catalogue::round(11).unwrap_or_default();
+        let plan = plan(11, &probes);
+        assert!(plan.give_up);
+        assert!(plan.about.contains("its two smoothing lists"));
+        let names = |action: &str| -> Vec<&str> {
+            plan.steps
+                .iter()
+                .filter(|s| s.action == action)
+                .filter_map(|s| s.file.as_deref())
+                .collect()
+        };
+        // three plots at a setting: one a log, for the first log eight
+        // settings of the lists and one of the colour scale more, for the
+        // flight the other channel and two settings more
+        let copies = names("clip_save");
+        assert_eq!(copies.len(), 3 * (7 + 8 + 1 + 1 + 2));
+        for (k, name) in [
+            (0, "g1-levels-2k-time-prefilt-roll"),
+            (3, "g1-levels-2k-time-prefilt-freq-off-roll"),
+            (12, "g1-levels-2k-time-prefilt-time-off-roll"),
+            (21, "g1-levels-2k-time-prefilt-both-off-roll"),
+            (24, "g1-levels-2k-time-prefilt-both-high-roll"),
+            (27, "g1-levels-2k-time-prefilt-zmax-0-roll"),
+            (30, "g2-len8-2k-time-prefilt-roll"),
+            (45, "g7-flight-2k-time-prefilt-roll"),
+            (48, "g7-flight-2k-time-gyro-roll"),
+            (51, "g7-flight-2k-time-prefilt-both-med-roll"),
+            (56, "g7-flight-2k-time-prefilt-both-high-yaw"),
+        ] {
+            assert_eq!(copies[k], format!("r11-{name}"));
+        }
+        let shots = names("shot");
+        assert_eq!(shots.len(), 2 + 1 + copies.len() / 3);
+        assert_eq!(shots[2], "r11-time-open");
+        let mut unique: Vec<&str> = shots.iter().chain(&copies).copied().collect();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), shots.len() + copies.len());
+        for (i, step) in plan.steps.iter().enumerate() {
+            if step.action == "clip_save" {
+                assert_copy(&plan.steps, i);
+            }
+        }
+        // the throttle window is not opened; the time window once
+        let opened = |name: &str| {
+            let wanted = |s: &&Step| s.name.as_deref() == Some(name);
+            plan.steps.iter().filter(wanted).count()
+        };
+        assert_eq!(opened("Spectral Analyzer"), 1);
+        assert_eq!((opened("Freq x Throttle"), opened("Freq x Time")), (0, 1));
+        // an item of a smoothing list lies under its list, a row further
+        // down for every level, and above the switch below the lists
+        let at = |name: &str| {
+            let wanted = |s: &&Step| s.name.as_deref() == Some(name);
+            let step = plan.steps.iter().find(wanted);
+            step.and_then(|s| s.at).unwrap_or_default()
+        };
+        for list in ["smooth-freq", "smooth-time"] {
+            let ys: Vec<u32> = ["off", "low", "med", "high"]
+                .iter()
+                .map(|level| at(&format!("{list} {level}")).1)
+                .collect();
+            assert!(ys.windows(2).all(|w| w[1] > w[0] + 40), "{list}: {ys:?}");
+            let head = at(&format!("{list} low (the list)"));
+            assert!(ys[0] > head.1 && ys[3] < time_at::BELOW_100.1, "{list}");
+            assert_eq!(at(&format!("{list} off")).0, head.0);
+        }
+        // every setting of the lists is left as the window came up with it:
+        // the last pick of either list is "low", and "Z max" ends at 10
+        let last = |prefix: &str| {
+            let wanted = |s: &&Step| {
+                let name = s.name.as_deref().unwrap_or("");
+                name.starts_with(prefix) && !name.ends_with("(the list)")
+            };
+            plan.steps
+                .iter()
+                .rev()
+                .find(wanted)
+                .and_then(|s| s.name.clone())
+        };
+        assert_eq!(last("smooth-freq").as_deref(), Some("smooth-freq low"));
+        assert_eq!(last("smooth-time").as_deref(), Some("smooth-time low"));
+        let typed: Vec<&str> = plan
+            .steps
+            .iter()
+            .filter(|s| s.name.as_deref() == Some("Z max"))
+            .filter_map(|s| s.text.as_deref())
+            .collect();
+        assert_eq!(typed, ["0", "10"]);
     }
 
     #[test]
