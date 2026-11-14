@@ -31,7 +31,9 @@ COMMANDS:
              step            step response (needs --axis, default roll)
              psd             Welch power spectral density of --channel
              thr-heatmap     frequency x throttle heatmap of --channel
-             stft            frequency x time heatmap of --channel
+             stft            frequency x time map of --channel: a column per segment of
+                             0.3 s, rows to half the log rate, a power density in
+                             decibels (--smooth-freq and --smooth-time set the two levels)
              motor-noise     per-motor harmonic amplitudes on the gyro (needs gyro.raw.<axis>;
                              motor speeds from eRPM or the rpm estimate)
              rpm             motor speed estimated from the gyro's noise peaks (needs
@@ -80,7 +82,11 @@ OPTIONS:
     --example     gen: print the default spec instead of generating
     --raw         Skip firmware-profile scaling and derived channels
     --out <path>  Write to a file instead of stdout
-    --png <path>  thr-heatmap / stft: also write the grid as a PNG image (viridis)
+    --smooth-freq L  stft: smoothing along the frequency, off, low (default), med or high
+    --smooth-time L  stft: distance between the columns, off (0.3 s), low (0.15 s, the
+                  default), med (0.06 s) or high (0.03 s)
+    --png <path>  thr-heatmap / stft: also write the grid as a PNG image (viridis; stft:
+                  on -30 … 10 dB)
     --project <p> run: take the log (slot A), session, epoch and tool parameters from
                   a project file saved by the GUI; --axis / --channel / --epoch override
 ";
@@ -103,6 +109,8 @@ struct Args {
     scaled: bool,
     out: Option<PathBuf>,
     png: Option<PathBuf>,
+    smooth_freq: Option<String>,
+    smooth_time: Option<String>,
     project: Option<PathBuf>,
     file_b: Option<PathBuf>,
     session_b: Option<usize>,
@@ -123,6 +131,12 @@ fn parse_args() -> Result<Args, String> {
             "--raw" => args.raw = true,
             "--scaled" => args.scaled = true,
             "--cli" => args.cli = true,
+            "--smooth-freq" => {
+                args.smooth_freq = Some(it.next().ok_or("--smooth-freq needs a level")?);
+            }
+            "--smooth-time" => {
+                args.smooth_time = Some(it.next().ok_or("--smooth-time needs a level")?);
+            }
             "--session-b" => {
                 let v = it.next().ok_or("--session-b needs a value")?;
                 args.session_b = Some(v.parse().map_err(|_| format!("bad session index: {v}"))?);
@@ -468,6 +482,57 @@ fn parse_axis(s: Option<&str>) -> Result<openpid_core::Axis, String> {
     }
 }
 
+/// The picture of `--png`: width, height and RGBA pixels.
+type Picture = (usize, usize, Vec<u8>);
+
+/// What is wrong with a level given to `--smooth-freq` or `--smooth-time`.
+fn bad_level(option: &str, level: &str) -> String {
+    format!("bad {option} {level}: off, low, med or high")
+}
+
+/// The map of frequency against time of `run stft`: the result, and the
+/// picture of `--png`, its decibels in viridis on the fixed scale of the
+/// Freq × time tab (a cell below the scale in the lowest colour).
+/// `--smooth-freq` and `--smooth-time` win over the levels of the project.
+fn time_map(
+    ctx: &openpid_analysis::AnalysisCtx<'_>,
+    channel: ChannelId,
+    args: &Args,
+    project: openpid_analysis::StftParams,
+) -> Result<(openpid_analysis::StftOutput, Picture), String> {
+    use openpid_analysis::stft::DB_SCALE;
+    use openpid_analysis::{Analysis, FreqSmoothing, TimeSmoothing};
+    let smooth_freq = match &args.smooth_freq {
+        Some(level) => {
+            FreqSmoothing::parse(level).ok_or_else(|| bad_level("--smooth-freq", level))?
+        }
+        None => project.smooth_freq,
+    };
+    let smooth_time = match &args.smooth_time {
+        Some(level) => {
+            TimeSmoothing::parse(level).ok_or_else(|| bad_level("--smooth-time", level))?
+        }
+        None => project.smooth_time,
+    };
+    let p = openpid_analysis::StftParams {
+        channel,
+        smooth_freq,
+        smooth_time,
+        ..project
+    };
+    let out = openpid_analysis::StftAnalysis
+        .run(ctx, &p)
+        .map_err(|e| e.to_string())?;
+    // the decibels above the lower end of the scale, for a picture from 0
+    let (lo, hi) = DB_SCALE;
+    let above = openpid_core::analysis::Grid2D {
+        z: out.grid.z.iter().map(|v| (v - lo).max(1e-9)).collect(),
+        ..out.grid.clone()
+    };
+    let picture = openpid_analysis::render::grid_rgba(&above, hi - lo, 0.0);
+    Ok((out, picture))
+}
+
 fn cmd_run(args: &Args) -> Result<(), String> {
     use openpid_analysis::{Analysis, AnalysisCtx, Epoch};
     let analysis = args
@@ -550,7 +615,8 @@ fn cmd_run(args: &Args) -> Result<(), String> {
             stage: openpid_core::GyroStage::Filtered,
         },
     };
-    let mut grid: Option<openpid_core::analysis::Grid2D> = None;
+    // the image of --png: width, height and RGBA pixels
+    let mut image: Option<Picture> = None;
     let json = match analysis {
         "step" => {
             let p = openpid_analysis::StepParams { axis, ..base.step };
@@ -583,18 +649,12 @@ fn cmd_run(args: &Args) -> Result<(), String> {
             let out = openpid_analysis::ThrottleHeatmap
                 .run(&ctx, &p)
                 .map_err(|e| e.to_string())?;
-            grid = Some(out.grid.clone());
+            image = Some(openpid_analysis::render::grid_rgba(&out.grid, 0.0, 20.0));
             serde_json::to_string_pretty(&out)
         }
         "stft" => {
-            let p = openpid_analysis::StftParams {
-                channel,
-                ..base.stft
-            };
-            let out = openpid_analysis::StftAnalysis
-                .run(&ctx, &p)
-                .map_err(|e| e.to_string())?;
-            grid = Some(out.grid.clone());
+            let (out, picture) = time_map(&ctx, channel, args, base.stft)?;
+            image = Some(picture);
             serde_json::to_string_pretty(&out)
         }
         "motor-noise" => {
@@ -677,11 +737,10 @@ fn cmd_run(args: &Args) -> Result<(), String> {
     }
     .map_err(|e| e.to_string())?;
     if let Some(png) = &args.png {
-        let g = grid
+        let (w, h, rgba) = image
             .as_ref()
             .ok_or_else(|| format!("--png is for thr-heatmap and stft, not {analysis}"))?;
-        let (w, h, rgba) = openpid_analysis::render::grid_rgba(g, 0.0, 20.0);
-        std::fs::write(png, openpid_analysis::render::png_rgba(w, h, &rgba))
+        std::fs::write(png, openpid_analysis::render::png_rgba(*w, *h, rgba))
             .map_err(|e| format!("cannot write {}: {e}", png.display()))?;
     }
     if let Some(p) = &args.out {
