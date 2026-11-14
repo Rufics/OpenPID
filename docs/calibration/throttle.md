@@ -57,9 +57,11 @@ maps. It is written for arrays of samples, 0-based; `fs` is the log rate.
 1. **The stretch.** The first and the last second of the log are left
    out; the first segment starts at sample `fs + 2` (the same two samples
    the step response window starts late by).
-2. **Segments** of 0.3 s (`L = 0.3·fs` samples). In a log of 30 s the next
-   segment starts 0.1 s later; in the log of 12 s, 0.06 s later (see "Not
-   settled"). With `hop` samples between two, there are
+2. **Segments** of 0.3 s (`L = 0.3·fs` samples). How much later the next
+   segment starts depends on the length of the stretch (round 9): 0.06 s
+   for stretches of 10, 14.5 and 19 s, 0.1 s for 28, 32, 37 and 55 s,
+   0.3 s (no overlap) for 82 s; the same in seconds at 4 kHz. With `hop`
+   samples between two, there are
    `floor((len − 2·fs − 1 − L) / hop)` of them, as the step response
    window counts its windows: the last one that would still fit is not
    taken.
@@ -68,7 +70,8 @@ maps. It is written for arrays of samples, 0-based; `fs` is the log rate.
    tone of amplitude `A` on a bin reads `A / 4` there and `A / 8` on the
    bin on either side.
 4. **The throttle of a segment** is the mean of the throttle over its
-   samples, in percent.
+   samples, in percent: the throttle, not the output of the motors (round
+   9).
 5. **Columns.** Column `T` (1 … 100) holds every segment with
    `T − 1 < throttle ≤ T + 1`: a window of two percent, so a segment is in
    two columns. A cell is the mean of its segments' spectra; a column
@@ -125,15 +128,76 @@ Numbers read on the way, each as the rule gives it:
   10 deg/s tone −31.3 dB at "medium": 14 dB of signal are 2.9 dB on the
   map, because most cells under the kernel hold the floor of −40 dB.
 
-### Not settled
+### Not settled after round 8
 
 - **The distance between segments** is 0.1 s for the logs of 30 s and
   0.06 s for the log of 12 s (pixel for pixel: 99.9 % with 120 samples
   between two segments, 74 % at best with any other distance). Two
-  lengths do not give the rule.
-- **Which throttle** the tool takes. In a probe the stick, the throttle
-  after the mixer and the four motors say the same.
-- **The numbers of the view below 100 Hz** (step 9).
+  lengths do not give the rule. Round 9 asks with six more.
+- **Which throttle** the tool takes. In a probe of round 8 the stick, the
+  throttle after the mixer and the four motors say the same. Round 9
+  parts the motors from the throttle.
+- The numbers of the view below 100 Hz (step 9), the "2D" view, other
+  channels than the two gyro ones: see the end of round 9.
+
+## Round 9 (2026-11-14): confirm
+
+Nine logs (pack `6aa37ea`): the stairs of round 8 in flights of 7.5,
+16.5, 21, 39, 57 and 84 s at 2 kHz and of 16.5 s at 4 kHz; the stairs
+with the motors going down while the throttle goes up; and a flight made
+for no question, with the throttle moving between twelve levels and motor
+noise following it. For every log the maps as the window comes up and in
+decibels; for the flight the other four smoothing levels and the view
+below 100 Hz: 138 vector copies and 26 pictures, none failed. What the
+rule of round 8 says the tool prints for the flight, and for the stairs
+under either throttle, was written down before the run (2026-11-13,
+22:25 UTC), from the logs of the pack.
+
+| Asked | Came back |
+|---|---|
+| The flight, by the rule: mean and peak of six maps, linear and in decibels | all 24 printed numbers as written down (0.0322 and 0.513, −35.1 and −16.9 dB for the unfiltered roll, and so on); 99.4 … 100 % of the pixels of each map within one colour step |
+| Its other smoothing levels | 24 maps: the printed mean the same three digits on 23, the printed peak on 21, the rest one in the last digit |
+| Throttle or motors | the throttle: the stairs come out as in round 8, to the digit (0.0231 and 1.03; 0.0645 and 0.124), although the motors run the other way |
+| The distance between segments | 0.06 s for 14.5 and 19 s of stretch (and at 4 kHz), 0.1 s for 37 and 55 s, 0.3 s for 82 s: with those every map of the six logs agrees as the maps of round 8 do. A stretch of 5.5 s fits none of them, and no other distance either |
+
+Over the 120 maps outside the shortest log and the view below 100 Hz:
+the pixels within one colour step are a median of 99.92 % of a map (worst
+97.6 %), the printed mean is the same three digits on 119 and the printed
+peak on 117.
+
+**The owner's own picture.** The first picture of this window the owner
+sent (2026-11-13, a log of round 6 with the throttle held, made by hand
+before any script touched the window) prints 0.00134 and 0.0152 for
+roll, 0.00133 and 0.0151 for pitch, 0.000893 and 0.00998 for yaw. The
+rule gives the same six numbers.
+
+### The progress bars the script left behind
+
+After rounds 8 and 9 the owner found small windows of the tool left on
+the screen ("processing spectrogram... 3"), and the tool had sounded
+Windows' bell during the run. The likeliest cause, and the owner's own
+guess: the script took a window for finished when its picture had stayed
+the same for a second and a half, while this window draws its maps one
+after another with pauses (a picture of round 8 caught it half-way
+through); so the script went on clicking, a Run among the clicks, while
+the tool was still computing, the tool dropped the computation it was
+in, and its progress bar stayed. The maps
+that were read are those of the first two columns, which are drawn
+first; every copy carries its own printed mean and peak, and they are the
+rule's numbers for that very log, channel, axis and setting, which a
+stale or half-drawn map could not be. From the next round on the script
+waits for the tool's progress bar to go away before it clicks anything.
+
+### Not settled
+
+- **Where the distance between segments changes**: somewhere between 19
+  and 28 s of stretch, and between 55 and 82 s. And what the tool does
+  with a stretch shorter than 10 s.
+- **Stick or mixer**: the probes say the same on the throttle of the
+  stick and on the throttle after the mixer; only the motors were parted.
+- **The numbers of the view below 100 Hz**: the picture is the same
+  matrix (99.7 … 100 % of the pixels), but its printed mean and peak are
+  not those of any one range of rows of it.
 - **"2D"**: the line is a spectrum of the whole stretch (points 1/28 Hz
   apart), not a cut through the map, and it reads a tone higher the
   shorter it sounds (0.219 for 28 s, 0.245 for 20 s, 0.320 for 10 s of the
@@ -162,4 +226,5 @@ tool's map peaks at 0.35 in a spot 16 columns wide, OpenPID's at 4.03 in
 one 21 columns wide; white noise of 5 deg/s RMS reads 0.064 as the mean of
 the reference tool's map and about 0.5 in OpenPID's. Neither is wrong
 about the signal: they are different quantities on different grids. What
-OpenPID should show is entry D-005 of [DECISIONS.md](DECISIONS.md).
+OpenPID should show was entry D-005 of [DECISIONS.md](DECISIONS.md): the
+owner chose the reference tool's map, all of it (2026-11-14).
