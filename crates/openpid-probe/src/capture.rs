@@ -254,6 +254,10 @@ const TIME_Z_MAX_DEFAULT: &str = "10";
 /// The first round that asks the window of frequency against time about
 /// its two smoothing lists; the round before it took a first look.
 pub const TIME_LEVELS: u32 = 11;
+/// How long the script waits for the maps of that window to start changing
+/// after a setting was changed, seconds. A setting that leaves the picture
+/// as it was (the log the window came up with) costs this long.
+const TIME_CHANGE_S: f64 = 25.0;
 /// The place of "low" in either smoothing list of that window (off, low,
 /// med, high): what both come up with.
 const TIME_LOW: usize = 1;
@@ -1121,7 +1125,36 @@ fn time_capture(steps: &mut Vec<Step>, round: u32, probe: &str, what: &str) {
         mark: Some(true),
         ..time_click("Run", time_at::RUN)
     });
-    steps.push(settle(TIME, Some(60.0), 1.5));
+    time_copies(steps, round, probe, what, 60.0);
+}
+
+/// A change of the settings of that window and the maps after it. The
+/// picture is marked before the first step of `change`, not at the Run: the
+/// window redraws as soon as a list or a box is set, and a Run after that
+/// changes nothing (round 11 waited a minute for it each time). Then a Run,
+/// a wait of at most [`TIME_CHANGE_S`] seconds for the redrawing, a picture
+/// and the copies.
+fn time_changed(
+    steps: &mut Vec<Step>,
+    round: u32,
+    probe: &str,
+    what: &str,
+    change: impl FnOnce(&mut Vec<Step>),
+) {
+    let from = steps.len();
+    change(steps);
+    if let Some(first) = steps.get_mut(from) {
+        first.mark = Some(true);
+    }
+    steps.push(time_click("Run", time_at::RUN));
+    time_copies(steps, round, probe, what, TIME_CHANGE_S);
+}
+
+/// The wait for the maps of that window to be redrawn (at most `change_s`
+/// seconds for the redrawing to start), a picture of the window and copies
+/// of its three plots, all named after `what`.
+fn time_copies(steps: &mut Vec<Step>, round: u32, probe: &str, what: &str, change_s: f64) {
+    steps.push(settle(TIME, Some(change_s), 1.5));
     steps.push(shot(TIME, time_file(round, probe, what, "")));
     let (left, right) = time_at::SIDES;
     for (axis, (top, bottom)) in time_at::ROWS.into_iter().enumerate() {
@@ -1163,46 +1196,48 @@ fn time_levels(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
     let first = probes.iter().position(is_time);
     let last = probes.iter().rposition(is_time);
     let (prefilt, prefilt_item) = TIME_CHANNELS[0];
+    let channel = |steps: &mut Vec<Step>, (name, item): (&str, usize)| {
+        let name = format!("channel {name}");
+        time_pick(steps, time_at::CHANNEL_LIST, &name, item);
+    };
+    let z_max = |steps: &mut Vec<Step>, text: &str| {
+        steps.push(Step {
+            action: "type",
+            text: Some(text.to_string()),
+            ..time_click("Z max", time_at::Z_MAX)
+        });
+        steps.push(pause(300));
+    };
     for (row, probe) in probes.iter().enumerate().filter(|(_, p)| is_time(p)) {
-        time_pick(steps, time_at::LOG_LIST, &format!("log {}", probe.id), row);
-        let channel = format!("channel {prefilt}");
-        time_pick(steps, time_at::CHANNEL_LIST, &channel, prefilt_item);
-        time_capture(steps, round, probe.id, prefilt);
+        time_changed(steps, round, probe.id, prefilt, |steps| {
+            time_pick(steps, time_at::LOG_LIST, &format!("log {}", probe.id), row);
+            channel(steps, (prefilt, prefilt_item));
+        });
         let settings: &[(&str, usize, usize)] = if first == Some(row) {
             &TIME_SMOOTHING
         } else if last == Some(row) {
-            let (gyro, item) = TIME_CHANNELS[1];
-            time_pick(
-                steps,
-                time_at::CHANNEL_LIST,
-                &format!("channel {gyro}"),
-                item,
-            );
-            time_capture(steps, round, probe.id, gyro);
-            time_pick(steps, time_at::CHANNEL_LIST, &channel, prefilt_item);
+            let gyro = TIME_CHANNELS[1];
+            time_changed(steps, round, probe.id, gyro.0, |steps| channel(steps, gyro));
+            channel(steps, (prefilt, prefilt_item));
             &TIME_SMOOTHING_FLIGHT
         } else {
             &[]
         };
         for (name, freq, time) in settings {
-            time_smoothing(steps, *freq, *time);
-            time_capture(steps, round, probe.id, &format!("{prefilt}-{name}"));
-        }
-        if !settings.is_empty() {
-            time_smoothing(steps, TIME_LOW, TIME_LOW);
+            let what = format!("{prefilt}-{name}");
+            time_changed(steps, round, probe.id, &what, |steps| {
+                time_smoothing(steps, *freq, *time);
+            });
         }
         if first == Some(row) {
-            let z_max = |steps: &mut Vec<Step>, text: &str| {
-                steps.push(Step {
-                    action: "type",
-                    text: Some(text.to_string()),
-                    ..time_click("Z max", time_at::Z_MAX)
-                });
-                steps.push(pause(300));
-            };
-            z_max(steps, TIME_Z_MAX);
-            time_capture(steps, round, probe.id, &format!("{prefilt}-zmax-0"));
+            let what = format!("{prefilt}-zmax-0");
+            time_changed(steps, round, probe.id, &what, |steps| {
+                time_smoothing(steps, TIME_LOW, TIME_LOW);
+                z_max(steps, TIME_Z_MAX);
+            });
             z_max(steps, TIME_Z_MAX_DEFAULT);
+        } else if !settings.is_empty() {
+            time_smoothing(steps, TIME_LOW, TIME_LOW);
         }
     }
 }
@@ -1517,7 +1552,8 @@ pub fn files(round: u32, shots: usize, copies: usize, predicted: bool) -> Vec<(S
          script clicks where that version has its buttons; it fits no other.\n\
          3. Double-click run.cmd. After five seconds the script takes the mouse and the\n   \
          keyboard: it loads the logs of this folder and {saves}.\n   \
-         Leave both alone until it beeps twice.\n\
+         Leave both alone until it beeps twice. Now and then it stands still for up to\n   \
+         half a minute: it is waiting for the tool, and a move of the mouse stops it.\n\
          4. Send back capture-results.zip, which appears next to the script.\n\
          \n\
          To stop it, move the mouse: it stops before its next move.\n\
@@ -2516,6 +2552,24 @@ mod tests {
             let head = at(&format!("{list} low (the list)"));
             assert!(ys[0] > head.1 && ys[3] < time_at::BELOW_100.1, "{list}");
             assert_eq!(at(&format!("{list} off")).0, head.0);
+        }
+        // the picture is marked before the first step of a change of the
+        // settings, never at the Run, and waited for no longer than 25 s
+        let mut marked = 0;
+        for step in &plan.steps {
+            let name = step.name.as_deref().unwrap_or("");
+            if step.window != Some(TIME) {
+                continue;
+            }
+            if step.mark == Some(true) {
+                assert_ne!(name, "Run");
+                marked += 1;
+            }
+            if step.action == "settle" && step.change_s.is_some() {
+                assert_eq!(step.change_s, Some(25.0));
+                assert_eq!(marked, 1, "one mark for every wait");
+                marked = 0;
+            }
         }
         // every setting of the lists is left as the window came up with it:
         // the last pick of either list is "low", and "Z max" ends at 10
