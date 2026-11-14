@@ -158,6 +158,21 @@ public static class OpCapture
         return found.ToArray();
     }
 
+    // The small windows without a title that the tool shows while it
+    // computes (a progress bar): wider than a list that has dropped open,
+    // and flat.
+    public static IntPtr[] Progress(uint pid)
+    {
+        List<IntPtr> found = new List<IntPtr>();
+        foreach (IntPtr hwnd in Windows(pid))
+        {
+            if (TitleOf(hwnd).Length > 0) { continue; }
+            int[] c = Client(hwnd);
+            if (c[2] >= 400 && c[3] > 0 && c[3] <= 200) { found.Add(hwnd); }
+        }
+        return found.ToArray();
+    }
+
     // The topmost visible window whose title contains the text.
     public static IntPtr Find(string part, uint pid)
     {
@@ -461,6 +476,8 @@ $script:clip = [OpCapture]::ClipNumber()
 $script:slow = 1
 $script:failed = 0
 $script:skip = 0
+# progress bars of the tool that never went away (Wait-Idle)
+$script:leftover = @{}
 # a plan with "give_up": after a copy that failed, the steps marked "copy"
 # are passed over until the next picture
 $script:copiesOff = $false
@@ -470,6 +487,36 @@ function Show-ToolWindows {
     if ($script:toolPid -eq 0) { return }
     foreach ($w in [OpCapture]::Windows([uint32]$script:toolPid)) {
         Log ("    window " + [OpCapture]::Describe($w))
+    }
+}
+
+# Waits until the tool has finished computing: while it computes it shows a
+# progress bar in a small window of its own. A click that lands meanwhile
+# cuts the computation short; the progress bar then stays on the screen for
+# good and Windows sounds its bell. A progress bar that is still there after
+# $maxS seconds is taken for such a leftover and is not waited for again.
+function Wait-Idle($maxS) {
+    if ($script:toolPid -eq 0) { return }
+    $start = Get-Date
+    $seen = $false
+    while ($true) {
+        $busy = @()
+        foreach ($w in [OpCapture]::Progress([uint32]$script:toolPid)) {
+            if (-not $script:leftover.ContainsKey($w.ToInt64())) { $busy += $w }
+        }
+        if ($busy.Count -eq 0) { break }
+        $seen = $true
+        if (((Get-Date) - $start).TotalSeconds -ge $maxS) {
+            foreach ($w in $busy) { $script:leftover[$w.ToInt64()] = $true }
+            Log ("    a progress bar is still up after {0:n0} s: left over, not waited for again" -f $maxS)
+            break
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    if ($seen) {
+        Log ("    waited {0:n1} s for the tool to finish computing" -f ((Get-Date) - $start).TotalSeconds)
+        # what it computed is drawn a moment later
+        Start-Sleep -Milliseconds 400
     }
 }
 
@@ -545,6 +592,9 @@ function Wait-Settled($hwnd, $step) {
             $lastChange = Get-Date
         }
     }
+    # quiet is not finished: between two plots the tool draws nothing for a
+    # while. Its progress bar says when it is done
+    Wait-Idle 180
     Log ("    settled after {0:n1} s" -f ((Get-Date) - $start).TotalSeconds)
     $script:mark = $null
 }
@@ -713,6 +763,9 @@ function Invoke-Step($step, $index) {
         Log "    the tool's windows:"
         Show-ToolWindows
     }
+    # nothing is clicked while the tool computes; inside an open menu
+    # (front = false) nothing can have started
+    if ($step.front -ne $false) { Wait-Idle 180 }
     # an open list would close if its window were activated again
     if (($step.front -ne $false) -and ([OpCapture]::Foreground() -ne $hwnd.ToInt64())) {
         $front = [OpCapture]::Front($hwnd)

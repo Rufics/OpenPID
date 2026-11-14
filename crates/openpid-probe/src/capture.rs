@@ -2184,6 +2184,12 @@ mod tests {
         let script = String::from_utf8(files[0].1.clone()).unwrap_or_default();
         assert!(script.contains("function Invoke-Step"));
         assert!(script.contains("$script:skip--"));
+        // nothing is clicked while the tool shows its progress bar: a click
+        // that lands meanwhile cuts its computation short (rounds 8 and 9
+        // left such bars on the owner's screen)
+        assert!(script.contains("function Wait-Idle"));
+        assert!(script.contains("if ($step.front -ne $false) { Wait-Idle 180 }"));
+        assert!(script.contains("public static IntPtr[] Progress(uint pid)"));
         assert!(String::from_utf8_lossy(&files[1].1).contains("-Steps \"steps.json\""));
         assert!(String::from_utf8_lossy(&files[2].1).contains("saves 47 pictures"));
         let note =
