@@ -43,34 +43,43 @@ rows on 589 pixels, so a few are not drawn.
 
 ## The rule
 
-With both smoothing lists at "low":
+With both lists as the window comes up ("low"), and what the other items
+of the lists change (round 11):
 
 1. **Stretch and segments** as in the throttle window: the first and the
-   last second are left out, the first segment starts at sample `fs + 2`,
-   a segment is `L = round(0.3 · fs)` samples. The next segment starts
-   half a segment later (0.15 s), on a stretch of 14.5 s and of 28 s, at
-   2 and at 4 kHz. There are `floor((n − 2·fs − 1 − L) / (L/2))` segments:
-   184 in 30 s, 94 in 16.5 s.
+   last second are left out, and a segment is `L = round(0.3 · fs)`
+   samples. The list "smooth time axis" does not smooth: it sets how far
+   apart the segments are. "off": a segment (0.3 s); "low": half a segment
+   (0.15 s); "med": a fifth (0.06 s); "high": a tenth (0.03 s). Seen on a
+   stretch of 28 s at 2 kHz at all four, and at "low" also on 14.5 s and
+   at 4 kHz.
 2. **A cell before smoothing**: the segment under a symmetric Hann window,
    `10·log10(2·|X|² / (L·fs))`, and the bin of 0 Hz without the 2. The
    rows are the bins 0 … `L/2`. A tone of amplitude `A` on a bin reads
    `20·log10(A) − 14.3` dB on that bin and 6 dB less on the two beside it.
-3. **Smoothing along the frequency**, on the decibels: a row becomes the
-   value, at that row, of the straight line fitted to the five nearest
-   rows with the weights `(1 − (d / d_max)³)³`, where `d` is the distance
-   in rows and `d_max` the largest of the five. Away from the ends of the
-   axis that is the mean of three rows with the weights 0.286, 0.427 and
-   0.286 (the outer two of the five weigh nothing); at the two ends the
-   five rows lie to one side and the line is not level. A tone on a bin
-   loses 3.4 dB by it: it reads `20·log10(A) − 17.7` dB.
-4. **Along the time** nothing is done at "low": a column is one segment.
-5. **The columns drawn** are one more than the segments: the first
-   segment, the second, the second again, the third, and so on. The time
-   axis gives column `k` (from 0) the time `1 + 0.15·k` s. From the third
-   column on that is the middle of the segment drawn there; the first two
-   columns sit 0.15 s early.
+3. **Smoothing along the frequency** ("smooth freq axis"), on the
+   decibels: a row becomes the value, at that row, of the straight line
+   fitted to the nearest rows with the weights `(1 − (d / d_max)³)³`,
+   where `d` is the distance in rows and `d_max` the largest among them.
+   "off": nothing; "low": 5 rows; "med": 11 rows; "high": 21 rows. Away
+   from the ends of the axis that is a weighted mean (at "low" of three
+   rows with 0.286, 0.427 and 0.286: the outermost rows weigh nothing); at
+   the two ends the rows lie to one side and the line is not level. At
+   "low" a tone on a bin loses 3.4 dB by it: it reads
+   `20·log10(A) − 17.7` dB.
+4. **Along the time** nothing is smoothed at any setting: a column is one
+   segment.
+5. **The columns drawn**: column `k` (from 0) stands at the time
+   `1 + hop·k` s of the axis, up to `k = floor((n − 2·fs − 1 − L) / hop)`.
+   From column `L / hop` on it is the segment whose middle is at that
+   time (at sample `fs + 2 + hop·k`). The first `L / hop` columns (1, 2, 5
+   or 10 by the list) are the segments that *start* at their time, so
+   they sit half a segment early, and the last of them is drawn again by
+   the first of the others: at "low" the first segment, the second, the
+   second again, the third, and so on.
 6. **Colours** from −30 to 10 dB; a number typed into "Z min" moves the
-   lower end (the copies made with −70 follow the same matrix).
+   lower end (the copies made with −70 follow the same matrix), one typed
+   into "Z max" the upper end (a picture with 0, round 11).
 7. **The view below 100 Hz** is the rows 0 … 100 Hz of the same matrix.
 
 ### How well it holds
@@ -92,23 +101,48 @@ What the probes were built to show, as read from the copies:
 | White noise of 5 deg/s RMS (−16 dB per Hz) | every cell as the rule gives it; no trace of a second column in any cell (no smoothing along the time) |
 | The same at 4 kHz and in 16.5 s | the same rule: 0.3 s and 0.15 s in seconds, 184 and 94 segments |
 
+## Round 11 (2026-11-14): the two lists
+
+Seven logs (pack `a2cf0c2`): the first log of round 10 again
+(`g1-levels-2k`), the same in flights of 8, 45 and 84 s and at 1 and
+8 kHz, and a flight made for no question. Planned: for every log the maps
+as the window comes up, for the first also at eight other settings of the
+two lists and with 0 typed into "Z max", for the flight the filtered gyro
+and two settings more; 57 vector copies.
+
+**What came back is the first log only**, at all nine settings of the
+lists (27 copies), and a picture with "Z max" at 0. The script stood still
+for a minute after several of its Runs, the owner moved the mouse, and a
+move of the mouse stops the script (step 504 of 1 033). The cause is in
+the plan, not in the tool: this window redraws as soon as a list or a box
+is set, and the Run after it changes nothing; the script took its
+reference picture at the Run and then waited its full minute for a change
+that had already happened. The plan now takes the reference picture
+before the first change and waits 25 s at most.
+
+| Asked | Came back |
+|---|---|
+| "smooth freq axis" off, med, high | no smoothing; the line through 11 rows; through 21 rows. With each, every cell of the noise map (55 685 cells) is the very colour step |
+| "smooth time axis" off, med, high | 93, 462 and 924 columns in place of 185: segments 0.3, 0.06 and 0.03 s apart in place of 0.15 s. No smoothing along the time at any setting: every column is one segment of 0.3 s |
+| Both lists off, both high | the two settings together, nothing else |
+
+With the rule as it stands above, all 27 copies are the rule's, cell by
+cell: 2 922 108 cells, every one the very colour step.
+| "Z max" 0 | the colour bar ends at 0 dB |
+
 ### Not settled
 
-- **The other levels of the two lists**: "off", "med" and "high" along the
-  frequency (five rows at "low": seven and nine, or something else?) and
-  along the time, where "low" changed nothing.
-- **Why the second segment is drawn twice**, and whether that follows the
-  list for the time axis.
-- **Other lengths**: the throttle window puts its segments 0.06, 0.1 or
-  0.3 s apart by the length of the stretch; here 0.15 s was seen at 14.5
-  and at 28 s only. And the rates of 1 and 8 kHz.
-- **The first sample**: `fs + 3` in one log of four, `fs + 2` in the
-  others (the throttle window does the same on two logs of eighteen, see
-  [throttle.md](throttle.md)); what decides it was not found. It moves a
-  segment by half a millisecond.
-- "Z max", the motor, RPM and notch lines, the player, other channels.
-- A log made for no question, with what the rule gives written down
-  before the run.
+- **Other lengths and rates**: the throttle window puts its segments
+  0.06, 0.1 or 0.3 s apart by the length of the stretch; here the
+  distances of the list were seen on a stretch of 28 s (and "low" on
+  14.5 s and at 4 kHz) only. The logs for it (8, 45 and 84 s; 1 and 8 kHz) and the
+  flight made for no question are in the pack of round 11 and were not
+  reached.
+- **The first sample**: `fs + 3` in one log of four in round 10, `fs + 2`
+  in the others (the throttle window does the same on two logs of
+  eighteen, see [throttle.md](throttle.md)); what decides it was not
+  found. It moves a segment by half a millisecond.
+- The motor, RPM and notch lines, the player, other channels.
 
 ## OpenPID on the same logs
 
@@ -117,14 +151,15 @@ quantity on another grid:
 
 | | The reference tool | OpenPID |
 |---|---|---|
-| Segments | 0.3 s, every 0.15 s; the first and the last second left out | 0.2 s, every 0.05 s; the whole log |
+| Segments | 0.3 s, every 0.15 s (or 0.3, 0.06, 0.03 s); the first and the last second left out | 0.2 s, every 0.05 s; the whole log |
 | A cell | a power density in decibels: a tone of amplitude `A` reads `20·log10(A) − 14.3` dB before smoothing | an amplitude, shown as `20·log10(A)` |
-| Smoothing | along the frequency, a line through five rows, on the decibels; four levels for each axis | none |
+| Smoothing | along the frequency, a line through 5 rows on the decibels (or none, 11, 21) | none |
 | Rows | to half the log rate | to 1 000 Hz |
 | Colour scale | −30 … 10 dB unless typed | from the map: the 30th and the 99.5th percentile; or typed |
 
 The tone of 300 Hz in `f2-steps-2k` at 1, 2, 5, 10, 20 and 40 deg/s reads
 −17.7, −11.8, −3.7, 2.3, 8.4 dB and the top of the scale in the reference
 tool, and −0.1, 6.1, 14.2, 20.0, 26.0 and 32.0 dB in OpenPID: 17.7 dB
-apart, all the way. What OpenPID should show is entry D-006 of
-[DECISIONS.md](DECISIONS.md).
+apart, all the way. What OpenPID should show was entry D-006 of
+[DECISIONS.md](DECISIONS.md): the owner chose the reference tool's map
+(2026-11-14), with every column at the middle of its segment.
