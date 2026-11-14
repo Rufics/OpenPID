@@ -482,6 +482,40 @@ fn parse_axis(s: Option<&str>) -> Result<openpid_core::Axis, String> {
     }
 }
 
+/// The picture of `--png`: width, height and RGBA pixels.
+type Picture = (usize, usize, Vec<u8>);
+
+/// The map of frequency against throttle of `run thr-heatmap`: the result,
+/// and the picture of `--png`, which is what the tab draws by default: its
+/// colours on the fixed scale, in decibels with `--db`. `--smoothing` wins
+/// over the level of the project.
+fn throttle_map(
+    ctx: &openpid_analysis::AnalysisCtx<'_>,
+    channel: ChannelId,
+    args: &Args,
+    project_level: openpid_analysis::ThrottleSmoothing,
+) -> Result<(openpid_analysis::ThrottleHeatmapOutput, Picture), String> {
+    use openpid_analysis::Analysis;
+    use openpid_analysis::throttle::{DB_SCALE, LINEAR_SCALE};
+    let smoothing = match &args.smoothing {
+        Some(level) => openpid_analysis::ThrottleSmoothing::parse(level).ok_or_else(|| {
+            format!("bad --smoothing {level}: low, low-med, medium, med-high, high or 1 to 5")
+        })?,
+        None => project_level,
+    };
+    let p = openpid_analysis::ThrottleHeatmapParams { channel, smoothing };
+    let out = openpid_analysis::ThrottleHeatmap
+        .run(ctx, &p)
+        .map_err(|e| e.to_string())?;
+    let picture = openpid_analysis::render::grid_rgba_range(
+        out.view(args.db),
+        if args.db { DB_SCALE } else { LINEAR_SCALE },
+        openpid_analysis::render::Colormap::default(),
+        true,
+    );
+    Ok((out, picture))
+}
+
 fn cmd_run(args: &Args) -> Result<(), String> {
     use openpid_analysis::{Analysis, AnalysisCtx, Epoch};
     let analysis = args
@@ -565,7 +599,7 @@ fn cmd_run(args: &Args) -> Result<(), String> {
         },
     };
     // the image of --png: width, height and RGBA pixels
-    let mut image: Option<(usize, usize, Vec<u8>)> = None;
+    let mut image: Option<Picture> = None;
     let json = match analysis {
         "step" => {
             let p = openpid_analysis::StepParams { axis, ..base.step };
@@ -591,26 +625,8 @@ fn cmd_run(args: &Args) -> Result<(), String> {
             )
         }
         "thr-heatmap" => {
-            use openpid_analysis::throttle::{DB_SCALE, LINEAR_SCALE};
-            let smoothing = match &args.smoothing {
-                Some(level) => openpid_analysis::ThrottleSmoothing::parse(level).ok_or_else(|| {
-                    format!(
-                        "bad --smoothing {level}: low, low-med, medium, med-high, high or 1 to 5"
-                    )
-                })?,
-                None => base.throttle.smoothing,
-            };
-            let p = openpid_analysis::ThrottleHeatmapParams { channel, smoothing };
-            let out = openpid_analysis::ThrottleHeatmap
-                .run(&ctx, &p)
-                .map_err(|e| e.to_string())?;
-            // what the tab draws by default: its colours on the fixed scale
-            image = Some(openpid_analysis::render::grid_rgba_range(
-                out.view(args.db),
-                if args.db { DB_SCALE } else { LINEAR_SCALE },
-                openpid_analysis::render::Colormap::default(),
-                true,
-            ));
+            let (out, picture) = throttle_map(&ctx, channel, args, base.throttle.smoothing)?;
+            image = Some(picture);
             serde_json::to_string_pretty(&out)
         }
         "stft" => {
