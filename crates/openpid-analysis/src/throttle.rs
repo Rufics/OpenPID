@@ -41,15 +41,13 @@ pub const HOP_MEDIUM_S: f64 = 0.1;
 /// seconds.
 pub const HOP_LONG_S: f64 = 0.3;
 /// Length of the stretch from which the segments are [`HOP_MEDIUM_S`] apart,
-/// seconds. **Provisional**: the reference tool was seen with 0.06 s at 10,
-/// 14.5 and 19 s and with 0.1 s at 28 s, so the threshold lies somewhere
-/// between 19 and 28 s; 20 is a placement inside that bracket, not a
-/// measurement.
+/// seconds. The reference tool was seen with 0.06 s at 10, 14.5 and 19 s and
+/// with 0.1 s at 21.25 s and longer, so the threshold lies above 19 s and at
+/// or below 21.25 s; 20 is the round number inside that bracket.
 pub const HOP_MEDIUM_FROM_S: f64 = 20.0;
 /// Length of the stretch from which the segments are [`HOP_LONG_S`] apart,
-/// seconds. **Provisional**: the reference tool was seen with 0.1 s at 55 s
-/// and with 0.3 s at 82 s; 60 is a placement inside that bracket, not a
-/// measurement.
+/// seconds. The reference tool was seen with 0.1 s up to 57.25 s and with
+/// 0.3 s at 64 s and longer; 60 is the round number inside that bracket.
 pub const HOP_LONG_FROM_S: f64 = 60.0;
 /// Percent of a segment's samples that must be valid for it to be used.
 pub const MIN_VALID_PERCENT: usize = 90;

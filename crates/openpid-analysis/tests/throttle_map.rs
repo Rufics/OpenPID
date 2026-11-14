@@ -433,15 +433,21 @@ fn the_distance_between_segments_follows_the_length_of_the_stretch() {
         (10.0, 0.06),
         (14.5, 0.06),
         (19.0, 0.06),
+        (21.25, 0.1),
+        (23.5, 0.1),
+        (25.75, 0.1),
         (28.0, 0.1),
         (32.0, 0.1),
         (37.0, 0.1),
         (55.0, 0.1),
+        (57.25, 0.1),
+        (64.0, 0.3),
+        (73.0, 0.3),
         (82.0, 0.3),
     ] {
         assert_eq!(hop_seconds(seconds), hop, "{seconds} s");
     }
-    // and the two provisional thresholds, 20 and 60 s; at 1 kHz L = 300 and
+    // and the two thresholds, 20 and 60 s; at 1 kHz L = 300 and
     // there are floor((n − L) / hop) segments: the last that would still fit
     // is not taken (n = 60000, hop 300: 200 fit, 199 are used)
     for (n, hop, positions) in [
