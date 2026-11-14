@@ -249,6 +249,7 @@ fn project_file_saves_and_restores_the_view() {
         });
         a.tools.step.cutoff_hz = 31.0;
         a.tools.psd.segment_s = 0.4;
+        a.tools.throttle.smoothing = openpid_analysis::ThrottleSmoothing::MedHigh;
         a.tools.min_segments = 7;
         a.tools.filter_sim.overrides.set("lpf1_hz", 80.0).unwrap();
         a.touch_mode = true;
@@ -286,6 +287,10 @@ fn project_file_saves_and_restores_the_view() {
     assert!(a.touch_mode);
     assert_eq!(a.tools.step.cutoff_hz, 31.0);
     assert_eq!(a.tools.psd.segment_s, 0.4);
+    assert_eq!(
+        a.tools.throttle.smoothing,
+        openpid_analysis::ThrottleSmoothing::MedHigh
+    );
     assert_eq!(a.tools.min_segments, 7);
     assert_eq!(a.tools.filter_sim.overrides.lpf1_hz, Some(80.0));
     assert!(a.loaded(Slot::B).is_none());

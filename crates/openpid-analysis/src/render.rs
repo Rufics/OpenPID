@@ -106,25 +106,55 @@ pub fn grid_rgba_with(
     min_y_for_scale: f64,
     cmap: Colormap,
 ) -> (usize, usize, Vec<u8>) {
+    let max = colour_max(g, max, min_y_for_scale);
+    grid_rgba_range(g, (0.0, max), cmap, false)
+}
+
+/// A grid as an RGBA image on the colour scale `lo … hi`, one pixel per
+/// cell, rows from the highest `y` at the top. A cell at or below `lo` is
+/// transparent, or with `opaque` drawn in the lowest colour of the map (an
+/// image that stands alone has nothing behind it to show through).
+pub fn grid_rgba_range(
+    g: &Grid2D,
+    (lo, hi): (f64, f64),
+    cmap: Colormap,
+    opaque: bool,
+) -> (usize, usize, Vec<u8>) {
     let (nx, ny) = (g.x.len(), g.y.len());
-    let max = if max > 0.0 {
-        max
-    } else {
-        let rows: Vec<f64> =
-            g.y.iter()
-                .enumerate()
-                .filter(|(_, y)| **y >= min_y_for_scale)
-                .flat_map(|(iy, _)| g.z[iy * nx..(iy + 1) * nx].iter().copied())
-                .collect();
-        robust_max(if rows.is_empty() { &g.z } else { &rows })
-    };
+    let span = (hi - lo).max(1e-300);
     let mut rgba = Vec::with_capacity(nx * ny * 4);
     for iy in (0..ny).rev() {
         for ix in 0..nx {
-            rgba.extend_from_slice(&cmap.rgba(g.z[iy * nx + ix] / max));
+            let t = (g.z[iy * nx + ix] - lo) / span;
+            let t = if opaque { t.max(1e-9) } else { t };
+            rgba.extend_from_slice(&cmap.rgba(t));
         }
     }
     (nx, ny, rgba)
+}
+
+/// `v` with three significant digits and no trailing zeros, as the numbers
+/// printed on a map: `0.0322`, `0.35`, `1.05`, `-34.2`, `-40`; below `1e-4`
+/// in the form `3.21e-5`.
+pub fn sig3(v: f64) -> String {
+    // the exponent form rounds to three digits and names the decade
+    let sci = format!("{v:.2e}");
+    let parts = sci
+        .split_once('e')
+        .and_then(|(_, e)| Some((sci.parse::<f64>().ok()?, e.parse::<i32>().ok()?)));
+    let Some((rounded, exponent)) = parts.filter(|_| v != 0.0 && v.is_finite()) else {
+        return format!("{v}");
+    };
+    if exponent < -4 {
+        return sci;
+    }
+    let decimals = (2 - exponent).max(0) as usize;
+    let text = format!("{rounded:.decimals$}");
+    if text.contains('.') {
+        text.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        text
+    }
 }
 
 fn crc32(data: &[u8]) -> u32 {
@@ -210,14 +240,39 @@ pub fn colour_max(g: &Grid2D, max: f64, min_y: f64) -> f64 {
     robust_max(if rows.is_empty() { &g.z } else { &rows })
 }
 
-/// The value of the grid cell nearest to the data coordinates `(x, y)`
-/// (`None` outside the grid): what a pointer over a heatmap reads.
+/// The 99th percentile of the finite values of the rows at or above `min_y`
+/// (of every row when none is): the automatic top of a scale whose values
+/// may be negative, as decibels are. `None` for a grid without a finite value.
+pub fn percentile_99(g: &Grid2D, min_y: f64) -> Option<f64> {
+    let nx = g.x.len();
+    let of = |from: f64| -> Vec<f64> {
+        g.y.iter()
+            .enumerate()
+            .filter(|(_, y)| **y >= from)
+            .flat_map(|(iy, _)| g.z[iy * nx..(iy + 1) * nx].iter().copied())
+            .filter(|v| v.is_finite())
+            .collect()
+    };
+    let mut v = of(min_y);
+    if v.is_empty() {
+        v = of(f64::NEG_INFINITY);
+    }
+    v.sort_by(f64::total_cmp);
+    v.get(((v.len().max(1) - 1) as f64 * 0.99) as usize)
+        .copied()
+}
+
+/// The value of the grid cell under the data coordinates `(x, y)` (`None`
+/// outside the grid): what a pointer over a heatmap reads. A cell reaches
+/// half a step to either side of its coordinate, as it is drawn.
 pub fn value_at(g: &Grid2D, x: f64, y: f64) -> Option<f64> {
     let nearest = |v: &[f64], t: f64| -> Option<usize> {
-        if v.is_empty() {
-            return None;
-        }
-        let (lo, hi) = (v[0].min(v[v.len() - 1]), v[0].max(v[v.len() - 1]));
+        let (first, last) = (*v.first()?, *v.last()?);
+        let half = match v {
+            [a, b, ..] => (b - a).abs() / 2.0,
+            _ => 0.0,
+        };
+        let (lo, hi) = (first.min(last) - half, first.max(last) + half);
         if t < lo || t > hi {
             return None;
         }
@@ -372,7 +427,95 @@ mod tests {
         assert_eq!(value_at(&g, 0.0, 0.0), Some(0.0));
         assert_eq!(value_at(&g, 100.0, 500.0), Some(15.0));
         assert_eq!(value_at(&g, 52.0, 101.0), Some(5.0 + 1.0));
-        assert_eq!(value_at(&g, -1.0, 0.0), None);
-        assert_eq!(value_at(&g, 0.0, 501.0), None);
+        // the percentile of a scale that may be negative: 66 values 0 … 15
+        // shifted to −40 … −25; the rows from 400 Hz hold the largest
+        let shifted = Grid2D {
+            z: g.z.iter().map(|v| v - 40.0).collect(),
+            ..g.clone()
+        };
+        assert_eq!(percentile_99(&shifted, 0.0), Some(-26.0));
+        assert_eq!(percentile_99(&shifted, 500.0), Some(-26.0));
+        assert_eq!(
+            percentile_99(&shifted, 1e9),
+            Some(-26.0),
+            "no such row: all"
+        );
+        // a cell reaches half a step beyond its coordinate, as it is drawn
+        assert_eq!(value_at(&g, -4.0, 0.0), Some(0.0));
+        assert_eq!(value_at(&g, -6.0, 0.0), None);
+        assert_eq!(value_at(&g, 0.0, 549.0), Some(5.0));
+        assert_eq!(value_at(&g, 0.0, 551.0), None);
+        let empty = Grid2D {
+            x: Vec::new(),
+            y: Vec::new(),
+            z: Vec::new(),
+            x_label: String::new(),
+            y_label: String::new(),
+            z_label: String::new(),
+        };
+        assert_eq!(value_at(&empty, 0.0, 0.0), None);
+        assert_eq!(percentile_99(&empty, 0.0), None);
+        let one = Grid2D {
+            x: vec![3.0],
+            y: vec![7.0],
+            z: vec![9.0],
+            ..empty
+        };
+        assert_eq!(value_at(&one, 3.0, 7.0), Some(9.0));
+        assert_eq!(value_at(&one, 3.1, 7.0), None);
+    }
+
+    #[test]
+    fn a_grid_on_a_colour_range() {
+        let g = Grid2D {
+            x: vec![0.0, 1.0],
+            y: vec![0.0, 1.0],
+            z: vec![-40.0, -15.0, 10.0, 30.0],
+            x_label: String::new(),
+            y_label: String::new(),
+            z_label: String::new(),
+        };
+        let (w, h, px) = grid_rgba_range(&g, (-40.0, 10.0), Colormap::Explorer, false);
+        assert_eq!((w, h), (2, 2));
+        // the top row of the image is the highest y: 10 dB (white) and 30 dB (clamped)
+        assert_eq!(&px[..4], &[255, 255, 255, 255]);
+        assert_eq!(&px[4..8], &[255, 255, 255, 255]);
+        // the bottom row: −40 dB is the floor (transparent), −15 dB half way (red)
+        assert_eq!(&px[8..12], &[0, 0, 0, 0]);
+        assert_eq!(&px[12..16], &[255, 0, 0, 255]);
+        // an image that stands alone draws the floor in the lowest colour
+        let (_, _, px) = grid_rgba_range(&g, (-40.0, 10.0), Colormap::Explorer, true);
+        assert_eq!(&px[8..12], &[0, 0, 0, 255]);
+        // a degenerate range does not divide by zero
+        let (_, _, px) = grid_rgba_range(&g, (1.0, 1.0), Colormap::Explorer, true);
+        assert_eq!(px.len(), 16);
+    }
+
+    #[test]
+    fn three_significant_digits() {
+        // the forms the reference tool prints on its maps
+        for (v, text) in [
+            (0.000_59, "0.00059"),
+            (0.35, "0.35"),
+            (1.05, "1.05"),
+            (0.207_4, "0.207"),
+            (0.000_321_4, "0.000321"),
+            (0.070_06, "0.0701"),
+            (-40.0, "-40"),
+            (-34.249, "-34.2"),
+            (0.032_249, "0.0322"),
+            (1.2, "1.2"),
+            (0.0, "0"),
+            (123.4, "123"),
+            (1234.0, "1230"),
+            (12_345.0, "12300"),
+            (0.999_6, "1"),
+            (0.099_96, "0.1"),
+            (99.96, "100"),
+            (0.000_032_14, "3.21e-5"),
+        ] {
+            assert_eq!(sig3(v), text, "{v}");
+        }
+        assert_eq!(sig3(f64::NAN), "NaN");
     }
 }

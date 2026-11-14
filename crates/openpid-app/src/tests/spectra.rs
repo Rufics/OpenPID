@@ -89,7 +89,8 @@ fn spectrum_markers_are_placed_by_clicks() {
 #[test]
 fn throttle_heatmap_reuses_its_textures_and_names_thin_bins() {
     let mut ui = Ui::open(&[LOG_4_2], Tab::ThrottleHeatmap);
-    assert!(ui.sees("Throttle window"));
+    assert!(ui.sees("Smoothing"));
+    assert!(!ui.sees("Throttle window"), "the map has no such parameter");
     // every grid (3 axes × gyro and prefilt) is rasterised once and reused
     // frame after frame
     // (scales settle while the six jobs come in, so earlier textures remain)
@@ -147,13 +148,24 @@ fn throttle_tab_stacks_the_axes_with_prefilt_and_zooms_to_the_flown_range() {
         1,
         "prefilt and gyro share a scale"
     );
-    // 0–100 % throttle as the reference tool; btfl_027 flew 10–34 %, and
-    // "Zoom to the flown range" ends the axis at the edges of those bins
+    // 0–100 % throttle as the reference tool; btfl_027 has three or more
+    // segments in the bins from 14 to 29 %, and "Zoom to the flown range"
+    // ends the axis at the edges of those bins (bin c is c − 1 … c percent)
     assert_eq!(ui.app().throttle_view.x_range, Some((0.0, 100.0)));
     ui.check("Zoom to the flown range", true);
     let (lo, hi) = ui.app().throttle_view.x_range.expect("range applied");
+    let min = ui.app().tools.min_segments;
+    let sampled: Vec<usize> = maps(&ui)
+        .iter()
+        .flat_map(|m| m.counts.iter().enumerate())
+        .filter(|(_, c)| **c >= min)
+        .map(|(ix, _)| ix)
+        .collect();
+    let first = sampled.iter().min().copied().unwrap();
+    let last = sampled.iter().max().copied().unwrap();
+    assert_eq!((lo, hi), (first as f64, last as f64 + 1.0));
     assert!(
-        (9.0..=10.0).contains(&lo) && (34.0..=35.0).contains(&hi),
+        (13.0..=14.0).contains(&lo) && (29.0..=30.0).contains(&hi),
         "{lo}..{hi}"
     );
     // and that is what the plots show
@@ -215,6 +227,16 @@ fn rpm_overlay_on_the_throttle_heatmap_has_per_motor_toggles() {
 #[test]
 fn heatmaps_show_a_colour_scale_with_linked_maxima_and_a_hover_value() {
     let mut ui = Ui::open(&[LOG_4_2, LOG_2025], Tab::ThrottleHeatmap);
+    // by default every log is on the reference tool's scale, 0 … 0.5
+    assert!(ui.app().colour_scales.iter().all(|s| s.1 == 0.5));
+    assert!(ui.sees("colour scale 0 to 0.50"));
+    assert!(
+        !ui.is_enabled("Link scales"),
+        "nothing to link on a fixed scale"
+    );
+    ui.choose("Colour scale", "automatic");
+    assert!(ui.app().tools.throttle_display.auto_scale);
+    assert!(ui.is_enabled("Link scales"));
     // linked: both panels share the larger automatic maximum
     let linked = ui.app().colour_scales.clone();
     assert_eq!(linked.len(), 2, "{linked:?}");
@@ -404,6 +426,220 @@ fn time_heatmap_player_plays_scrubs_and_syncs_the_cursor() {
     // without a log there is no player
     let ui = Ui::open(&[], Tab::TimeHeatmap);
     assert!(!ui.has("Play"));
+}
+
+/// The six maps of one log (3 axes × prefilt and gyro), by their channel.
+fn maps(ui: &Ui) -> Vec<openpid_analysis::ThrottleHeatmapOutput> {
+    ui.app()
+        .cache
+        .values()
+        .filter_map(|c| match c {
+            crate::app::Cached::Ready(o) => match o.as_ref() {
+                Output::Throttle(t) => Some(t.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+/// The map the tab shows for slot A on the selected axis.
+fn shown_map(ui: &Ui) -> openpid_analysis::ThrottleHeatmapOutput {
+    match shown(ui).as_ref() {
+        Output::Throttle(t) => t.clone(),
+        _ => panic!("throttle output"),
+    }
+}
+
+#[test]
+fn throttle_maps_span_the_whole_range_and_print_their_mean_and_peak() {
+    use openpid_analysis::render::sig3;
+    let mut ui = Ui::open(&[LOG_2025], Tab::ThrottleHeatmap);
+    let all = maps(&ui);
+    assert_eq!(all.len(), 6);
+    for t in &all {
+        // 100 columns from 0 to 100 %, rows to half the log rate
+        assert_eq!(t.grid.x.len(), 100);
+        assert_eq!((t.grid.x[0], t.grid.x[99]), (0.5, 99.5));
+        let top = t.grid.y.last().copied().unwrap();
+        assert!((top - (t.fs / 2.0 - t.fs / t.nperseg as f64)).abs() < 1e-9);
+        // and its two numbers are on screen, three significant digits
+        let text = format!("mean={} peak={}", sig3(t.mean), sig3(t.peak));
+        assert!(ui.sees(&text), "{text}");
+    }
+    assert_eq!(ui.count_seen("mean="), 6, "on every map");
+    assert_eq!(ui.count_seen("peak="), 6);
+    // the plots show 0–100 % and the frequencies up to the last row
+    let top = all[0].grid.y.last().copied().unwrap();
+    for name in ["throttle/A/roll", "throttle/A/yaw/prefilt"] {
+        let (x0, x1) = ui.plot(name).x_range();
+        assert!(x0.abs() < 0.5 && (x1 - 100.0).abs() < 0.5, "{x0}..{x1}");
+        let (y0, y1) = ui.plot(name).y_range();
+        assert!(y0.abs() < 1.0 && (y1 - top).abs() < 1.0, "{y0}..{y1}");
+    }
+    assert_eq!(ui.app().throttle_view.y_top, Some(top));
+    // "Max frequency" lowers the top of the axis; the maps are not recomputed
+    assert_eq!(ui.app().tools.throttle_display.max_hz, None);
+    let cached = ui.app().cache.len();
+    ui.click_button("Max frequency");
+    assert_eq!(ui.app().tools.throttle_display.max_hz, Some(1000.0));
+    ui.set("Max frequency", 300.0);
+    assert_eq!(ui.app().tools.throttle_display.max_hz, Some(300.0));
+    let (_, y1) = ui.plot("throttle/A/roll").y_range();
+    assert!((y1 - 300.0).abs() < 1.0, "{y1}");
+    assert_eq!(
+        ui.count_seen("mean="),
+        6,
+        "the numbers stay: they are the map's"
+    );
+    // a top above the map ends at the map; below the lowest allowed it is held
+    ui.set("Max frequency", 9000.0);
+    let (_, y1) = ui.plot("throttle/A/roll").y_range();
+    assert!((y1 - top).abs() < 1.0, "{y1}");
+    ui.set("Max frequency", 1.0);
+    assert_eq!(ui.app().tools.throttle_display.max_hz, Some(20.0));
+    assert_eq!(
+        ui.app().cache.len(),
+        cached,
+        "a view option, not an analysis"
+    );
+    // the hint on the numbers says what they are
+    let t = shown_map(&ui);
+    ui.hover(&format!("mean={} peak={}", sig3(t.mean), sig3(t.peak)));
+    assert!(ui.sees("a cell is not the amplitude of a tone"));
+}
+
+#[test]
+fn throttle_smoothing_has_five_levels() {
+    use openpid_analysis::ThrottleSmoothing;
+    let mut ui = Ui::open(&[LOG_2025], Tab::ThrottleHeatmap);
+    assert_eq!(ui.app().tools.throttle.smoothing, ThrottleSmoothing::Medium);
+    let medium = shown_map(&ui);
+    assert_eq!(medium.smoothing, ThrottleSmoothing::Medium);
+    for (name, level) in [
+        ("low-med", ThrottleSmoothing::LowMed),
+        ("med-high", ThrottleSmoothing::MedHigh),
+        ("high", ThrottleSmoothing::High),
+        ("low", ThrottleSmoothing::Low),
+    ] {
+        ui.pick("Smoothing", name);
+        assert_eq!(ui.app().tools.throttle.smoothing, level);
+        let t = shown_map(&ui);
+        assert_eq!(t.smoothing, level);
+        // the same segments in the same columns, spread differently
+        assert_eq!(t.counts, medium.counts);
+        assert_eq!(t.segments, medium.segments);
+        // a wider kernel lowers the peak, a narrower one raises it
+        if level.level() > 3 {
+            assert!(t.peak < medium.peak, "{name}: {}", t.peak);
+        } else {
+            assert!(t.peak > medium.peak, "{name}: {}", t.peak);
+        }
+        let text = format!(
+            "mean={} peak={}",
+            openpid_analysis::render::sig3(t.mean),
+            openpid_analysis::render::sig3(t.peak)
+        );
+        assert!(ui.sees(&text), "{name}: {text}");
+    }
+    // each level is its own set of six maps
+    assert_eq!(jobs(&ui, "thr"), 30);
+    ui.hover_role(eframe::egui::accesskit::Role::ComboBox, "Smoothing");
+    assert!(ui.sees("higher reads calmer and lowers the peaks"));
+}
+
+#[test]
+fn throttle_decibels_show_the_second_matrix_of_the_same_result() {
+    use openpid_analysis::render::sig3;
+    let mut ui = Ui::open(&[LOG_2025], Tab::ThrottleHeatmap);
+    assert!(!ui.is_checked("Decibels"));
+    ui.hover("Decibels");
+    assert!(ui.sees("an empty throttle bin is −40 dB"));
+    let cached = ui.app().cache.len();
+    let textures = ui.app().heatmap_textures.len();
+    let t = shown_map(&ui);
+    assert!(ui.sees(&format!("mean={} peak={}", sig3(t.mean), sig3(t.peak))));
+    ui.check("Decibels", true);
+    assert!(ui.app().tools.throttle_display.db);
+    // no map is computed again: the decibel matrix is in the result
+    assert_eq!(ui.app().cache.len(), cached);
+    assert_eq!(ui.app().heatmap_textures.len(), textures + 6, "drawn anew");
+    // on −40 … 10 dB, with the mean and the peak of the decibel matrix
+    assert_eq!(ui.app().colour_scales, vec![(Slot::A, 10.0)]);
+    assert!(ui.sees("colour scale -40 to 10"));
+    let text = format!("mean={} peak={}", sig3(t.mean_db), sig3(t.peak_db));
+    assert!(ui.sees(&text), "{text}");
+    assert!(t.mean_db < 0.0 && t.peak_db > t.mean_db);
+    // the pointer reads decibels
+    ui.plot("throttle/A/roll").hover_middle();
+    let (_, x, y, z) = ui.app().heatmap_hover.expect("a cell under the pointer");
+    assert_eq!(
+        openpid_analysis::render::value_at(&t.grid_db, x, y),
+        Some(z)
+    );
+    assert_ne!(openpid_analysis::render::value_at(&t.grid, x, y), Some(z));
+    ui.plot("throttle/A/roll").leave();
+    // the automatic scale keeps the floor and ends at the 99th percentile
+    // above 20 Hz, on a whole decibel; a typed maximum is for the linear view
+    ui.choose("Colour scale", "automatic");
+    assert!(!ui.sees("typed in"), "not among the choices in decibels");
+    let top = maps(&ui)
+        .iter()
+        .filter_map(|m| openpid_analysis::render::percentile_99(&m.grid_db, 20.0))
+        .fold(f64::NEG_INFINITY, f64::max)
+        .ceil();
+    assert_eq!(ui.app().colour_scales, vec![(Slot::A, top)]);
+    assert!(top < 10.0 && top > -40.0, "{top}");
+    ui.app_mut().tools.heatmap_max = 5.0;
+    ui.settle();
+    assert_eq!(ui.app().colour_scales, vec![(Slot::A, top)]);
+    assert!(!ui.sees("Colour max"));
+    // back to the linear view
+    ui.app_mut().tools.heatmap_max = 0.0;
+    ui.check("Decibels", false);
+    assert!(ui.sees(&format!("mean={} peak={}", sig3(t.mean), sig3(t.peak))));
+}
+
+#[test]
+fn throttle_colour_scale_is_fixed_automatic_or_typed_in() {
+    let mut ui = Ui::open(&[LOG_2025], Tab::ThrottleHeatmap);
+    // the reference tool's scale by default
+    assert!(!ui.app().tools.throttle_display.auto_scale);
+    assert_eq!(ui.app().colour_scales, vec![(Slot::A, 0.5)]);
+    assert!(ui.sees("colour scale 0 to 0.50"));
+    assert!(!ui.sees("Colour max"));
+    // automatic: the 99th percentile above 20 Hz of the log's maps, the
+    // largest of them
+    ui.pick("Colour scale", "automatic");
+    assert!(ui.app().tools.throttle_display.auto_scale);
+    let auto = maps(&ui)
+        .iter()
+        .map(|m| openpid_analysis::render::colour_max(&m.grid, 0.0, 20.0))
+        .fold(0.0, f64::max);
+    assert_eq!(ui.app().colour_scales, vec![(Slot::A, auto)]);
+    assert!(auto > 0.0 && (auto - 0.5).abs() > 1e-6, "{auto}");
+    // typed in: starts from the scale on screen, then what is typed
+    ui.pick("Colour scale", "typed in");
+    assert_eq!(ui.app().tools.heatmap_max, auto);
+    assert!(!ui.app().tools.throttle_display.auto_scale);
+    ui.set("Colour max", 2.0);
+    assert_eq!(ui.app().colour_scales, vec![(Slot::A, 2.0)]);
+    assert!(ui.sees("colour scale 0 to 2.00"));
+    // and back to the fixed scale
+    ui.pick("Colour scale", "0 … 0.5");
+    assert_eq!(ui.app().tools.heatmap_max, 0.0);
+    assert_eq!(ui.app().colour_scales, vec![(Slot::A, 0.5)]);
+    assert!(!ui.sees("Colour max"));
+    // in decibels the fixed scale is −40 … 10
+    ui.check("Decibels", true);
+    assert_eq!(ui.app().colour_scales, vec![(Slot::A, 10.0)]);
+    assert!(ui.sees("colour scale -40 to 10"));
+    ui.pick("Colour scale", "automatic");
+    assert!(ui.app().colour_scales[0].1 < 10.0);
+    ui.pick("Colour scale", "−40 … 10");
+    assert_eq!(ui.app().colour_scales, vec![(Slot::A, 10.0)]);
+    ui.hover_role(eframe::egui::accesskit::Role::ComboBox, "Colour scale");
+    assert!(ui.sees("where the colours end"));
 }
 
 #[test]

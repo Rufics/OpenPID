@@ -30,7 +30,10 @@ COMMANDS:
     run      Run an analysis and print its result as JSON. Analyses:
              step            step response (needs --axis, default roll)
              psd             Welch power spectral density of --channel
-             thr-heatmap     frequency x throttle heatmap of --channel
+             thr-heatmap     frequency x throttle map of --channel: 100 throttle columns,
+                             rows to half the log rate, the linear and the decibel
+                             matrix with the mean and the peak printed on each
+                             (--smoothing sets the level)
              stft            frequency x time heatmap of --channel
              motor-noise     per-motor harmonic amplitudes on the gyro (needs gyro.raw.<axis>;
                              motor speeds from eRPM or the rpm estimate)
@@ -80,7 +83,12 @@ OPTIONS:
     --example     gen: print the default spec instead of generating
     --raw         Skip firmware-profile scaling and derived channels
     --out <path>  Write to a file instead of stdout
-    --png <path>  thr-heatmap / stft: also write the grid as a PNG image (viridis)
+    --smoothing L thr-heatmap: smoothing of the map, low, low-med, medium (default),
+                  med-high or high (or 1 to 5)
+    --db          thr-heatmap: --png draws the decibel matrix (-40 … 10 dB) instead of
+                  the linear one (0 … 0.5); the JSON always carries both
+    --png <path>  thr-heatmap / stft: also write the grid as a PNG image (thr-heatmap:
+                  what the Freq × throttle tab draws by default; stft: viridis)
     --project <p> run: take the log (slot A), session, epoch and tool parameters from
                   a project file saved by the GUI; --axis / --channel / --epoch override
 ";
@@ -103,6 +111,8 @@ struct Args {
     scaled: bool,
     out: Option<PathBuf>,
     png: Option<PathBuf>,
+    smoothing: Option<String>,
+    db: bool,
     project: Option<PathBuf>,
     file_b: Option<PathBuf>,
     session_b: Option<usize>,
@@ -123,6 +133,10 @@ fn parse_args() -> Result<Args, String> {
             "--raw" => args.raw = true,
             "--scaled" => args.scaled = true,
             "--cli" => args.cli = true,
+            "--db" => args.db = true,
+            "--smoothing" => {
+                args.smoothing = Some(it.next().ok_or("--smoothing needs a level")?);
+            }
             "--session-b" => {
                 let v = it.next().ok_or("--session-b needs a value")?;
                 args.session_b = Some(v.parse().map_err(|_| format!("bad session index: {v}"))?);
@@ -468,6 +482,40 @@ fn parse_axis(s: Option<&str>) -> Result<openpid_core::Axis, String> {
     }
 }
 
+/// The picture of `--png`: width, height and RGBA pixels.
+type Picture = (usize, usize, Vec<u8>);
+
+/// The map of frequency against throttle of `run thr-heatmap`: the result,
+/// and the picture of `--png`, which is what the tab draws by default: its
+/// colours on the fixed scale, in decibels with `--db`. `--smoothing` wins
+/// over the level of the project.
+fn throttle_map(
+    ctx: &openpid_analysis::AnalysisCtx<'_>,
+    channel: ChannelId,
+    args: &Args,
+    project_level: openpid_analysis::ThrottleSmoothing,
+) -> Result<(openpid_analysis::ThrottleHeatmapOutput, Picture), String> {
+    use openpid_analysis::Analysis;
+    use openpid_analysis::throttle::{DB_SCALE, LINEAR_SCALE};
+    let smoothing = match &args.smoothing {
+        Some(level) => openpid_analysis::ThrottleSmoothing::parse(level).ok_or_else(|| {
+            format!("bad --smoothing {level}: low, low-med, medium, med-high, high or 1 to 5")
+        })?,
+        None => project_level,
+    };
+    let p = openpid_analysis::ThrottleHeatmapParams { channel, smoothing };
+    let out = openpid_analysis::ThrottleHeatmap
+        .run(ctx, &p)
+        .map_err(|e| e.to_string())?;
+    let picture = openpid_analysis::render::grid_rgba_range(
+        out.view(args.db),
+        if args.db { DB_SCALE } else { LINEAR_SCALE },
+        openpid_analysis::render::Colormap::default(),
+        true,
+    );
+    Ok((out, picture))
+}
+
 fn cmd_run(args: &Args) -> Result<(), String> {
     use openpid_analysis::{Analysis, AnalysisCtx, Epoch};
     let analysis = args
@@ -550,7 +598,8 @@ fn cmd_run(args: &Args) -> Result<(), String> {
             stage: openpid_core::GyroStage::Filtered,
         },
     };
-    let mut grid: Option<openpid_core::analysis::Grid2D> = None;
+    // the image of --png: width, height and RGBA pixels
+    let mut image: Option<Picture> = None;
     let json = match analysis {
         "step" => {
             let p = openpid_analysis::StepParams { axis, ..base.step };
@@ -576,14 +625,8 @@ fn cmd_run(args: &Args) -> Result<(), String> {
             )
         }
         "thr-heatmap" => {
-            let p = openpid_analysis::ThrottleHeatmapParams {
-                channel,
-                ..base.throttle
-            };
-            let out = openpid_analysis::ThrottleHeatmap
-                .run(&ctx, &p)
-                .map_err(|e| e.to_string())?;
-            grid = Some(out.grid.clone());
+            let (out, picture) = throttle_map(&ctx, channel, args, base.throttle.smoothing)?;
+            image = Some(picture);
             serde_json::to_string_pretty(&out)
         }
         "stft" => {
@@ -594,7 +637,7 @@ fn cmd_run(args: &Args) -> Result<(), String> {
             let out = openpid_analysis::StftAnalysis
                 .run(&ctx, &p)
                 .map_err(|e| e.to_string())?;
-            grid = Some(out.grid.clone());
+            image = Some(openpid_analysis::render::grid_rgba(&out.grid, 0.0, 20.0));
             serde_json::to_string_pretty(&out)
         }
         "motor-noise" => {
@@ -677,11 +720,10 @@ fn cmd_run(args: &Args) -> Result<(), String> {
     }
     .map_err(|e| e.to_string())?;
     if let Some(png) = &args.png {
-        let g = grid
+        let (w, h, rgba) = image
             .as_ref()
             .ok_or_else(|| format!("--png is for thr-heatmap and stft, not {analysis}"))?;
-        let (w, h, rgba) = openpid_analysis::render::grid_rgba(g, 0.0, 20.0);
-        std::fs::write(png, openpid_analysis::render::png_rgba(w, h, &rgba))
+        std::fs::write(png, openpid_analysis::render::png_rgba(*w, *h, rgba))
             .map_err(|e| format!("cannot write {}: {e}", png.display()))?;
     }
     if let Some(p) = &args.out {
