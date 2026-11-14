@@ -188,11 +188,45 @@ rule's numbers for that very log, channel, axis and setting, which a
 stale or half-drawn map could not be. From the next round on the script
 waits for the tool's progress bar to go away before it clicks anything.
 
+## Round 10 (2026-11-14): the two thresholds
+
+Six logs (pack `a022b4d`): the stairs of round 8 in flights of 23.25,
+25.5, 27.75, 59.25, 66 and 75 s at 2 kHz, the lengths between those where
+round 9 saw the distance between segments change. For every log the six
+maps as the window comes up: 36 vector copies, none failed.
+
+| Stretch | Distance between segments |
+|---|---|
+| 21.25, 23.5 and 25.75 s | 0.1 s |
+| 57.25 s | 0.1 s |
+| 64 and 73 s | 0.3 s |
+
+With round 9 (0.06 s at 19 s, 0.1 s at 55 s, 0.3 s at 82 s) the first
+threshold lies above 19 s and at or below 21.25 s, the second above
+57.25 s and at or below 64 s. 20 s and 60 s are the round numbers inside
+the two brackets. With them the rule gives all 72 printed numbers of the
+36 maps, and a median of 99.96 % of the pixels of a map within one colour
+step (worst 99.86 %).
+
+The script waited for the tool before every click, as it has since round
+9. No progress bar was left on the screen at the end, and the script
+never found one to wait for: this plan pressed "Run" once per log and
+switched no view.
+
+**Two things a single sample decides.** Held against the copies pixel by
+pixel and exactly, the eighteen logs of rounds 8 to 10 show two
+departures from the rule as it is written above. The first segment starts
+at sample `fs + 3` instead of `fs + 2` in two of them (`z8-short-2k` and
+`a9-flight-2k`). And three of them (the stretches of 21.25, 25.75 and
+57.25 s) have one segment fewer at the end than
+`floor((n − 2·fs − 1 − L) / hop)`. What decides either was not found;
+neither changes a digit of a printed number.
+
 ### Not settled
 
-- **Where the distance between segments changes**: somewhere between 19
-  and 28 s of stretch, and between 55 and 82 s. And what the tool does
-  with a stretch shorter than 10 s.
+- **The exact place of the two thresholds** inside (19, 21.25] and
+  (57.25, 64] s. And what the tool does with a stretch shorter than 10 s.
+- **The first sample and the last segment**, as above.
 - **Stick or mixer**: the probes say the same on the throttle of the
   stick and on the throttle after the mixer; only the motors were parted.
 - **The numbers of the view below 100 Hz**: the picture is the same
