@@ -29,6 +29,8 @@ const SPECTRUM: &str = "Spectral Analyzer";
 const STEP: &str = "Step Response Tool";
 /// Title of its window of frequency against throttle.
 const THROTTLE: &str = "Frequency x Throttle";
+/// Title of its window of frequency against time.
+const TIME: &str = "Frequency x Time";
 
 /// The rows of plots of the step response window in a picture the script
 /// saves: top and bottom of the axes of roll, pitch and yaw.
@@ -186,6 +188,10 @@ mod throttle_at {
     pub const ROWS: [(u32, u32); 3] = [(318, 874), (994, 1553), (1672, 2229)];
     /// The list of logs above each of those columns.
     pub const LOG_LISTS: [(u32, u32); 2] = [(482, 109), (1319, 109)];
+    /// The lists of logs above the two other columns, which come up as the
+    /// two D-term channels. From round 10 on they are given the same log:
+    /// until then they kept the first log of the list.
+    pub const OTHER_LOG_LISTS: [(u32, u32); 2] = [(2156, 109), (2996, 109)];
     /// The switch "<100Hz" beside each of those lists.
     pub const BELOW_100: [(u32, u32); 2] = [(690, 109), (1540, 109)];
     /// The "scale" box of each of those columns.
@@ -203,6 +209,41 @@ mod throttle_at {
         (list.0, list.1 + ITEM_FIRST + (475 * row as u32) / 10)
     }
 }
+
+/// Controls and plots of the window of frequency against time of version
+/// 0.94, read off two half-size pictures of it (the owner, 2026-11-13
+/// before a Run and 2026-11-14 after one), so each is right to a few
+/// pixels. Round 10 is the first to click here.
+mod time_at {
+    /// "Freq x Time" of the spectrum window.
+    pub const OPEN: (u32, u32) = (3555, 1160);
+    pub const LOG_LIST: (u32, u32) = (3551, 168);
+    pub const CHANNEL_LIST: (u32, u32) = (3551, 245);
+    pub const RUN: (u32, u32) = (3463, 330);
+    /// The two smoothing lists: along the frequency, along the time.
+    pub const SMOOTH_LISTS: [(&str, (u32, u32)); 2] =
+        [("smooth-freq", (3463, 478)), ("smooth-time", (3638, 478))];
+    /// The switch "< 100Hz".
+    pub const BELOW_100: (u32, u32) = (3408, 720);
+    /// The box "Z min".
+    pub const Z_MIN: (u32, u32) = (3500, 838);
+    /// Left and right of the axes of the three plots.
+    pub const SIDES: (u32, u32) = (304, 3118);
+    /// Top and bottom of the axes of roll, pitch and yaw.
+    pub const ROWS: [(u32, u32); 3] = [(147, 753), (910, 1516), (1673, 2279)];
+}
+
+/// The channels of the window of frequency against time that are captured:
+/// the name in the files and the place in the window's list of channels,
+/// taken to be in the order of the spectrum window's list. "Gyro prefilt"
+/// is what the window comes up with.
+const TIME_CHANNELS: [(&str, usize); 2] = [("prefilt", 1), ("gyro", 0)];
+/// The lower end of the colour scale typed for one probe in place of the
+/// -30 dB the window comes up with: low enough for the floor of a quiet
+/// axis.
+const TIME_Z_MIN: &str = "-70";
+/// The lower end of the colour scale the window comes up with, dB.
+const TIME_Z_MIN_DEFAULT: &str = "-30";
 
 /// The smoothing levels of the window of frequency against throttle, in
 /// the order of its list. "medium" is what the window comes up with.
@@ -292,7 +333,7 @@ pub struct Frames {
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
 pub struct Step {
     /// What to do: `click`, `open_file`, `settle`, `shot`, `pause`,
-    /// `windows`, `hover`, `clip_wait`, `clip_save`, `type`.
+    /// `windows`, `hover`, `clip_wait`, `clip_save`, `type`, `key`.
     pub action: &'static str,
     /// Part of the title of the window the step is about.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -343,6 +384,9 @@ pub struct Step {
     /// What is typed into a text box.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// The key of a `key` step: `esc` or `enter`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<&'static str>,
     /// The step belongs to the copy of a plot: it is passed over once the
     /// copies of a picture have been given up ([`Plan::give_up`]).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -829,6 +873,12 @@ pub fn throttle_views_captured(probe: &Probe) -> bool {
     ["z3-hold-2k", "a9-flight-2k"].contains(&probe.id)
 }
 
+/// From this round on the throttle window is asked one thing only, the
+/// distance between segments in logs of other lengths: the maps as the
+/// window comes up are enough for it. The log is chosen in all four
+/// columns from here on.
+pub const THROTTLE_LENGTHS_ONLY: u32 = 10;
+
 /// The last round that captured the "2D" lines and typed a colour scale:
 /// the lines turned out to be a spectrum of the whole log, not a cut
 /// through the map, and the typed scale did not hold.
@@ -943,22 +993,6 @@ impl ThrottleLog<'_> {
 /// round, on a wider colour scale).
 fn throttle_maps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
     steps.push(click(
-        LOG_VIEWER,
-        "log",
-        "Spectral Analyzer",
-        log_at::SPECTRUM,
-    ));
-    steps.push(Step {
-        wait_s: Some(900),
-        ..settle(SPECTRUM, None, 1.5)
-    });
-    steps.push(Step {
-        mark: Some(true),
-        ..click(SPECTRUM, "shot", "Run", spectrum_at::RUN)
-    });
-    steps.push(settle(SPECTRUM, Some(60.0), 1.5));
-    steps.push(shot(SPECTRUM, format!("r{round}-spectrum-run")));
-    steps.push(click(
         SPECTRUM,
         "shot",
         "Freq x Throttle",
@@ -975,11 +1009,17 @@ fn throttle_maps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
             round,
             id: probe.id,
         };
-        for (k, list) in throttle_at::LOG_LISTS.into_iter().enumerate() {
+        let lists = throttle_at::LOG_LISTS.into_iter();
+        let others = throttle_at::OTHER_LOG_LISTS.into_iter();
+        let others = others.take(if round >= THROTTLE_LENGTHS_ONLY { 2 } else { 0 });
+        for (k, list) in lists.chain(others).enumerate() {
             let name = format!("log {} in column {}", probe.id, k + 1);
             throttle_pick(steps, list, &name, row);
         }
         log.capture(steps, "");
+        if round >= THROTTLE_LENGTHS_ONLY {
+            continue;
+        }
         log.switched(steps, "PSD", throttle_at::PSD, "psd");
         if round <= THROTTLE_FIRST_LOOK {
             log.switched(steps, "2D", throttle_at::TWO_D, "2d");
@@ -990,6 +1030,138 @@ fn throttle_maps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
         if throttle_views_captured(probe) {
             log.views(steps);
         }
+    }
+}
+
+/// The spectrum window opened from the main window, and a Run in it: the
+/// windows of frequency against throttle and against time are opened from
+/// there.
+fn open_spectrum(steps: &mut Vec<Step>, round: u32) {
+    steps.push(click(
+        LOG_VIEWER,
+        "log",
+        "Spectral Analyzer",
+        log_at::SPECTRUM,
+    ));
+    steps.push(Step {
+        wait_s: Some(900),
+        ..settle(SPECTRUM, None, 1.5)
+    });
+    steps.push(Step {
+        mark: Some(true),
+        ..click(SPECTRUM, "shot", "Run", spectrum_at::RUN)
+    });
+    steps.push(settle(SPECTRUM, Some(60.0), 1.5));
+    steps.push(shot(SPECTRUM, format!("r{round}-spectrum-run")));
+}
+
+/// Name of a picture or of a copied plot of the window of frequency against
+/// time: `what` is the setting ("prefilt", "gyro", "prefilt-sub100" …) and
+/// `plot` the axis ("" for a picture of the window).
+pub fn time_file(round: u32, probe: &str, what: &str, plot: &str) -> String {
+    let mut name = format!("r{round}-{probe}-time");
+    for part in [what, plot] {
+        if !part.is_empty() {
+            name.push('-');
+            name.push_str(part);
+        }
+    }
+    name
+}
+
+/// A click in the window of frequency against time, at a position of a
+/// picture of it.
+fn time_click(name: &str, at: (u32, u32)) -> Step {
+    click(TIME, "shot", name, at)
+}
+
+/// An item of a list of that window: a click on the list, a moment for it
+/// to open, a click on the item.
+fn time_pick(steps: &mut Vec<Step>, list: (u32, u32), name: &str, row: usize) {
+    steps.push(time_click(&format!("{name} (the list)"), list));
+    steps.push(pause(600));
+    steps.push(time_click(name, throttle_at::item(list, row)));
+    steps.push(pause(300));
+}
+
+/// A Run of the window of frequency against time, waited for, a picture of
+/// the window and copies of its three plots, all named after `what`.
+fn time_capture(steps: &mut Vec<Step>, round: u32, probe: &str, what: &str) {
+    steps.push(Step {
+        mark: Some(true),
+        ..time_click("Run", time_at::RUN)
+    });
+    steps.push(settle(TIME, Some(60.0), 1.5));
+    steps.push(shot(TIME, time_file(round, probe, what, "")));
+    let (left, right) = time_at::SIDES;
+    for (axis, (top, bottom)) in time_at::ROWS.into_iter().enumerate() {
+        let file = time_file(round, probe, what, AXES[axis]);
+        copy_axes(steps, TIME, AXES[axis], (left, top, right, bottom), file);
+    }
+}
+
+/// The steps of the window of frequency against time for the probes of a
+/// round: a first look. The window is opened from the spectrum window. For
+/// every log the maps of the unfiltered and of the filtered gyro: a Run, a
+/// picture, copies of the three plots. For the first log also a picture of
+/// each smoothing list while it is open (closed again with Esc), the maps
+/// below 100 Hz, and the maps with the colour scale reaching down to
+/// [`TIME_Z_MIN`] dB.
+fn time_maps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+    steps.push(click(SPECTRUM, "shot", "Freq x Time", time_at::OPEN));
+    steps.push(Step {
+        wait_s: Some(120),
+        ..settle(TIME, None, 1.5)
+    });
+    steps.push(shot(TIME, format!("r{round}-time-open")));
+    let is_time = |p: &Probe| p.area == Area::Time;
+    let first = probes.iter().position(is_time);
+    for (row, probe) in probes.iter().enumerate().filter(|(_, p)| is_time(p)) {
+        let name = format!("log {}", probe.id);
+        time_pick(steps, time_at::LOG_LIST, &name, row);
+        for (channel, item) in TIME_CHANNELS {
+            let name = format!("channel {channel}");
+            time_pick(steps, time_at::CHANNEL_LIST, &name, item);
+            time_capture(steps, round, probe.id, channel);
+        }
+        // back to the channel the window came up with
+        let (channel, item) = TIME_CHANNELS[0];
+        time_pick(
+            steps,
+            time_at::CHANNEL_LIST,
+            &format!("channel {channel}"),
+            item,
+        );
+        if first != Some(row) {
+            continue;
+        }
+        for (list, at) in time_at::SMOOTH_LISTS {
+            steps.push(time_click(&format!("{list} (the list)"), at));
+            steps.push(pause(800));
+            steps.push(shot(TIME, time_file(round, probe.id, "list", list)));
+            steps.push(Step {
+                action: "key",
+                key: Some("esc"),
+                ..Step::default()
+            });
+            steps.push(pause(400));
+        }
+        steps.push(time_click("< 100Hz on", time_at::BELOW_100));
+        steps.push(pause(300));
+        time_capture(steps, round, probe.id, "prefilt-sub100");
+        steps.push(time_click("< 100Hz off", time_at::BELOW_100));
+        steps.push(pause(300));
+        let z_min = |steps: &mut Vec<Step>, text: &str| {
+            steps.push(Step {
+                action: "type",
+                text: Some(text.to_string()),
+                ..time_click("Z min", time_at::Z_MIN)
+            });
+            steps.push(pause(300));
+        };
+        z_min(steps, TIME_Z_MIN);
+        time_capture(steps, round, probe.id, "prefilt-zmin-70");
+        z_min(steps, TIME_Z_MIN_DEFAULT);
     }
 }
 
@@ -1116,8 +1288,16 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     if probes.iter().any(|p| p.area == Area::StepResponse) {
         step_response(&mut steps, round, probes);
     }
-    if probes.iter().any(|p| p.area == Area::Throttle) {
+    let throttle = probes.iter().any(|p| p.area == Area::Throttle);
+    let time = probes.iter().any(|p| p.area == Area::Time);
+    if throttle || time {
+        open_spectrum(&mut steps, round);
+    }
+    if throttle {
         throttle_maps(&mut steps, round, probes);
+    }
+    if time {
+        time_maps(&mut steps, round, probes);
     }
     steps.push(Step {
         action: "windows",
@@ -1126,6 +1306,15 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     Plan {
         about: if probes.iter().all(|p| p.area == Area::StepResponse) {
             step_about(round, probes)
+        } else if time {
+            format!(
+                "Round {round}: every log through one open dialog; the window of frequency \
+                 against throttle for the logs of other lengths (the maps as it comes up); \
+                 then a first look at the window of frequency against time: for every log of \
+                 its own the maps of the unfiltered and of the filtered gyro, for the first \
+                 also its two smoothing lists, the view below 100 Hz and a colour scale down \
+                 to -70 dB; a picture of the window and a vector copy of every plot each time."
+            )
         } else if probes.iter().all(|p| p.area == Area::Throttle) {
             throttle_about(round, probes)
         } else if round < 2 {
@@ -1142,7 +1331,7 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
         },
         // the plots of the window of frequency against throttle had never
         // been copied when its first round was planned
-        give_up: probes.iter().any(|p| p.area == Area::Throttle),
+        give_up: throttle || time,
         refs: Frames {
             log: Frame {
                 left: 1,
@@ -2138,6 +2327,156 @@ mod tests {
             note.contains("138 plots") && note.contains("saves 26 pictures"),
             "{note}"
         );
+    }
+
+    #[test]
+    fn round_10_asks_the_throttle_window_once_and_looks_at_the_time_window() {
+        let probes = catalogue::round(10).unwrap_or_default();
+        let plan = plan(10, &probes);
+        assert!(plan.give_up);
+        assert!(
+            plan.about
+                .contains("a first look at the window of frequency against time")
+        );
+        let names = |action: &str| -> Vec<&str> {
+            plan.steps
+                .iter()
+                .filter(|s| s.action == action)
+                .filter_map(|s| s.file.as_deref())
+                .collect()
+        };
+        // the throttle window: six plots a log, as it comes up; the time
+        // window: three plots at a setting, two channels a log and two
+        // views more for the first
+        let copies = names("clip_save");
+        assert_eq!(copies.len(), 6 * 6 + 3 * (4 * 2 + 2));
+        assert!(
+            !copies
+                .iter()
+                .any(|c| c.contains("-psd-") || c.contains("-2d-"))
+        );
+        for (k, name) in [
+            (0, "e1-len23-2k-throttle-roll-prefilt"),
+            (35, "e6-len75-2k-throttle-yaw-gyro"),
+            (36, "f1-bursts-2k-time-prefilt-roll"),
+            (39, "f1-bursts-2k-time-gyro-roll"),
+            (42, "f1-bursts-2k-time-prefilt-sub100-roll"),
+            (45, "f1-bursts-2k-time-prefilt-zmin-70-roll"),
+            (48, "f2-steps-2k-time-prefilt-roll"),
+            (65, "f4-short-2k-time-gyro-yaw"),
+        ] {
+            assert_eq!(copies[k], format!("r10-{name}"));
+        }
+        let shots = names("shot");
+        assert_eq!(
+            shots[9..14],
+            [
+                "r10-time-open",
+                "r10-f1-bursts-2k-time-prefilt",
+                "r10-f1-bursts-2k-time-gyro",
+                "r10-f1-bursts-2k-time-list-smooth-freq",
+                "r10-f1-bursts-2k-time-list-smooth-time",
+            ]
+        );
+        assert_eq!(shots.len(), 3 + 6 + 1 + 4 * 2 + 4);
+        let mut unique: Vec<&str> = shots.iter().chain(&copies).copied().collect();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), shots.len() + copies.len());
+        for (i, step) in plan.steps.iter().enumerate() {
+            if step.action == "clip_save" {
+                assert_copy(&plan.steps, i);
+            }
+        }
+        // the spectrum window is opened once, and both windows from it
+        let position = |name: &str| {
+            let wanted = |s: &Step| s.name.as_deref() == Some(name);
+            plan.steps.iter().position(wanted)
+        };
+        let opened = |name: &str| {
+            let wanted = |s: &&Step| s.name.as_deref() == Some(name);
+            plan.steps.iter().filter(wanted).count()
+        };
+        assert_eq!(opened("Spectral Analyzer"), 1);
+        assert!(position("Freq x Throttle") < position("Freq x Time"));
+        let open = position("Freq x Time").unwrap_or(0);
+        assert_eq!(plan.steps[open].window, Some(SPECTRUM));
+        assert_eq!(plan.steps[open + 1].window, Some(TIME));
+        // the throttle window: the log in all four columns, one Run a log
+        let columns = |log: &str| -> Vec<(u32, u32)> {
+            plan.steps
+                .iter()
+                .filter(|s| {
+                    s.name
+                        .as_deref()
+                        .is_some_and(|n| n.starts_with(log) && n.contains("in column"))
+                        && !s.name.as_deref().is_some_and(|n| n.ends_with("(the list)"))
+                })
+                .filter_map(|s| s.at)
+                .collect()
+        };
+        assert_eq!(
+            columns("log e2-len25-2k"),
+            [(482, 199), (1319, 199), (2156, 199), (2996, 199)]
+        );
+        let runs = |window: &str| {
+            plan.steps
+                .iter()
+                .filter(|s| s.name.as_deref() == Some("Run") && s.window == Some(window))
+                .count()
+        };
+        assert_eq!((runs(THROTTLE), runs(TIME)), (6, 10));
+        // the time window: the seventh log of the list, then the channels
+        let log = position("log f1-bursts-2k").unwrap_or(0);
+        assert_eq!(plan.steps[log].at, Some((3551, 496)));
+        assert_eq!(plan.steps[log].window, Some(TIME));
+        let channel = |name: &str| position(name).and_then(|i| plan.steps[i].at);
+        assert_eq!(channel("channel prefilt"), Some((3551, 335)));
+        assert_eq!(channel("channel gyro"), Some((3551, 288)));
+        // an open list is photographed and closed with Esc
+        let keys: Vec<&Step> = plan.steps.iter().filter(|s| s.action == "key").collect();
+        assert_eq!(keys.len(), 2);
+        assert!(keys.iter().all(|s| s.key == Some("esc")));
+        let typed: Vec<&str> = plan
+            .steps
+            .iter()
+            .filter(|s| s.action == "type")
+            .filter_map(|s| s.text.as_deref())
+            .collect();
+        assert_eq!(typed, ["-70", "-30"]);
+        // the toolbar button of the first plot of the time window
+        let toolbar = plan
+            .steps
+            .iter()
+            .position(|s| s.window == Some(TIME) && s.name.as_deref() == Some("roll toolbar"));
+        assert_eq!(plan.steps[toolbar.unwrap_or(0)].at, Some((3104, 132)));
+        // every action of the plan is one the script knows, the key too
+        let json = serde_json::to_value(&plan).unwrap_or_default();
+        for step in json["steps"].as_array().map_or(&[][..], Vec::as_slice) {
+            let action = step["action"].as_str().unwrap_or("");
+            assert!(
+                SCRIPT.contains(&format!("$action -eq \"{action}\"")),
+                "{action}"
+            );
+        }
+        assert!(SCRIPT.contains("\"esc\" = 0x1B"));
+        assert_eq!(time_file(10, "f", "", ""), "r10-f-time");
+        // a round of the throttle window alone still has its decibels
+        let earlier = super::plan(9, &catalogue::round(9).unwrap_or_default());
+        assert!(
+            names_of(&earlier, "clip_save")
+                .iter()
+                .any(|c| c.contains("-psd-"))
+        );
+    }
+
+    /// The files of the steps of `plan` with `action`.
+    fn names_of<'a>(plan: &'a Plan, action: &str) -> Vec<&'a str> {
+        plan.steps
+            .iter()
+            .filter(|s| s.action == action)
+            .filter_map(|s| s.file.as_deref())
+            .collect()
     }
 
     #[test]

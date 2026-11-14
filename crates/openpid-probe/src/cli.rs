@@ -38,6 +38,10 @@ ROUNDS:
     9        The same map: flights of six other lengths (how far apart its segments
              are), the motors going against the throttle (which of the two it reads),
              and a flight made for no question, to hold the rule of round 8 against.
+    10       Six more lengths for the throttle map (where the distance between its
+             segments changes) and a first look at the map of frequency against time:
+             tones that come and go, a tone that climbs, steps of frequency and of
+             loudness, noise.
 ";
 
 /// Runs the tool with `args` (without the program name), printing to `out`.

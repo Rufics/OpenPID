@@ -20,6 +20,8 @@ pub enum Area {
     StepResponse,
     /// The map of the spectrum against the throttle.
     Throttle,
+    /// The map of the spectrum against the time.
+    Time,
 }
 
 /// One log of a round.
@@ -1463,6 +1465,138 @@ fn round_9() -> Vec<Probe> {
     ]
 }
 
+/// The first probe of the map of frequency against time, the same six
+/// experiments at any log rate and length: everything it holds happens in
+/// the first 14 s.
+fn time_bursts(id: &'static str, fs: f64, duration_s: f64) -> Probe {
+    Probe {
+        id,
+        area: Area::Time,
+        title: "A tone that comes and goes, a tone that climbs, close pairs of tones and noise: \
+                the columns and the rows of the map of frequency against time, and what a cell \
+                reads",
+        purpose: [
+            "unfiltered: 100 Hz at 10 deg/s from 3 to 3.5 s, 6 to 7 s, 9 to 11 s, 12.5 to 12.6 s \
+             and 13.5 to 13.52 s: how long a column is and how far a short tone spreads; \
+             filtered: 200 Hz at 2 deg/s all the time: the level of a steady tone",
+            "unfiltered: a tone of 10 deg/s that climbs evenly from 50 to 450 Hz over the flight: \
+             where a moment of the flight lies on the time axis; filtered: pairs of tones 4, 8 \
+             and 16 Hz apart: the rows",
+            "unfiltered: white noise of 5 deg/s RMS: the floor; filtered: noise of the same \
+             density between 100 and 300 Hz only: smoothing along the frequency",
+        ],
+        flight: FlightSpec {
+            roll: two_channels(
+                1001,
+                vec![
+                    burst(100.0, 10.0, 3.0, 3.5),
+                    burst(100.0, 10.0, 6.0, 7.0),
+                    burst(100.0, 10.0, 9.0, 11.0),
+                    burst(100.0, 10.0, 12.5, 12.6),
+                    burst(100.0, 10.0, 13.5, 13.52),
+                ],
+                vec![Wave::tone(200.0, 2.0)],
+            ),
+            pitch: two_channels(
+                1003,
+                vec![Wave::Chirp {
+                    from_hz: 50.0,
+                    to_hz: 450.0,
+                    amplitude: 10.0,
+                }],
+                [100.0, 104.0, 200.0, 208.0, 300.0, 316.0]
+                    .map(|hz| Wave::tone(hz, 10.0))
+                    .to_vec(),
+            ),
+            yaw: AxisSpec {
+                filtered: Filtered::Separate {
+                    waves: vec![band(100.0, 300.0, 0.025, 1006), dither(1007)],
+                },
+                ..AxisSpec::of(vec![Wave::Noise {
+                    rms: 5.0,
+                    seed: 1005,
+                }])
+            },
+            ..FlightSpec::quiet(fs, duration_s)
+        },
+    }
+}
+
+/// Round 10: where the distance between the segments of the throttle map
+/// changes, and a first look at the map of frequency against time.
+fn round_10() -> Vec<Probe> {
+    // a tone of 300 Hz that is `amplitude` deg/s for five seconds
+    let loud = |k: u32, amplitude: f64| {
+        burst(300.0, amplitude, 5.0 * f64::from(k), 5.0 * f64::from(k + 1))
+    };
+    vec![
+        stairs_of("e1-len23-2k", 2000.0, 2.25),
+        stairs_of("e2-len25-2k", 2000.0, 2.5),
+        stairs_of("e3-len27-2k", 2000.0, 2.75),
+        stairs_of("e4-len59-2k", 2000.0, 6.25),
+        stairs_of("e5-len66-2k", 2000.0, 7.0),
+        stairs_of("e6-len75-2k", 2000.0, 8.0),
+        time_bursts("f1-bursts-2k", 2000.0, 30.0),
+        Probe {
+            id: "f2-steps-2k",
+            area: Area::Time,
+            title: "A tone whose frequency jumps every three seconds and a tone that gets louder \
+                    every five: the time axis and the scale of the map of frequency against time",
+            purpose: [
+                "unfiltered: a tone of 10 deg/s whose frequency jumps with the stairs of the \
+                 throttle, at 1.5 s and every 3 s from there (250, 90, 130 … 410, 250 Hz): where \
+                 a jump lies on the time axis; filtered: 300 Hz at 1, 2, 5, 10, 20 and 40 deg/s, \
+                 five seconds each: the decibels of a tone and where the colour scale ends",
+                "unfiltered: an offset of 30 deg/s and a tone of 10 deg/s at 20 Hz: the lowest \
+                 rows; filtered: a drift from -50 to 50 deg/s and the same tone",
+                "unfiltered: white noise of 20 deg/s RMS; filtered: white noise of 1 deg/s RMS: \
+                 two floors 26 dB apart",
+            ],
+            flight: FlightSpec {
+                roll: two_channels(
+                    1011,
+                    vec![throttle_tone(50.0, 4.0, 10.0)],
+                    vec![
+                        loud(0, 1.0),
+                        loud(1, 2.0),
+                        loud(2, 5.0),
+                        loud(3, 10.0),
+                        loud(4, 20.0),
+                        loud(5, 40.0),
+                    ],
+                ),
+                pitch: two_channels(
+                    1013,
+                    vec![Wave::Offset { value: 30.0 }, Wave::tone(20.0, 10.0)],
+                    vec![
+                        Wave::Ramp {
+                            from: -50.0,
+                            to: 50.0,
+                        },
+                        Wave::tone(20.0, 10.0),
+                    ],
+                ),
+                yaw: AxisSpec {
+                    filtered: Filtered::Separate {
+                        waves: vec![Wave::Noise {
+                            rms: 1.0,
+                            seed: 1016,
+                        }],
+                    },
+                    ..AxisSpec::of(vec![Wave::Noise {
+                        rms: 20.0,
+                        seed: 1015,
+                    }])
+                },
+                throttle: stairs(3.0, 30.0),
+                ..FlightSpec::quiet(2000.0, 30.0)
+            },
+        },
+        time_bursts("f3-bursts-4k", 4000.0, 30.0),
+        time_bursts("f4-short-2k", 2000.0, 16.5),
+    ]
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
@@ -1475,12 +1609,13 @@ pub fn round(round: u32) -> Option<Vec<Probe>> {
         7 => Some(round_7()),
         8 => Some(round_8()),
         9 => Some(round_9()),
+        10 => Some(round_10()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9];
+pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 #[cfg(test)]
 mod tests {
@@ -2120,5 +2255,105 @@ mod tests {
         let text = serde_json::to_string(&stairs).unwrap();
         assert!(!text.contains("motors"));
         assert!(serde_json::to_string(sources).unwrap().contains("motors"));
+    }
+
+    #[test]
+    fn round_10_has_six_lengths_and_four_flights_for_the_map_against_time() {
+        let probes = round(10).unwrap();
+        let shape: Vec<(&str, Area, f64, f64)> = probes
+            .iter()
+            .map(|p| (p.id, p.area, p.flight.fs, p.flight.duration_s))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("e1-len23-2k", Area::Throttle, 2000.0, 23.25),
+                ("e2-len25-2k", Area::Throttle, 2000.0, 25.5),
+                ("e3-len27-2k", Area::Throttle, 2000.0, 27.75),
+                ("e4-len59-2k", Area::Throttle, 2000.0, 59.25),
+                ("e5-len66-2k", Area::Throttle, 2000.0, 66.0),
+                ("e6-len75-2k", Area::Throttle, 2000.0, 75.0),
+                ("f1-bursts-2k", Area::Time, 2000.0, 30.0),
+                ("f2-steps-2k", Area::Time, 2000.0, 30.0),
+                ("f3-bursts-4k", Area::Time, 4000.0, 30.0),
+                ("f4-short-2k", Area::Time, 2000.0, 16.5),
+            ]
+        );
+        // the names are in the order of the list the tool shows them in
+        let mut sorted: Vec<&str> = probes.iter().map(|p| p.id).collect();
+        sorted.sort_unstable();
+        assert_eq!(sorted, probes.iter().map(|p| p.id).collect::<Vec<_>>());
+        // the lengths lie between those round 9 found a change between
+        let stretch = |p: &Probe| p.flight.duration_s - 2.0;
+        assert!(
+            probes[..3]
+                .iter()
+                .all(|p| stretch(p) > 19.0 && stretch(p) < 28.0)
+        );
+        assert!(
+            probes[3..6]
+                .iter()
+                .all(|p| stretch(p) > 55.0 && stretch(p) < 82.0)
+        );
+        let stairs = round(8).unwrap().remove(0).flight;
+        for p in &probes[..6] {
+            let same = FlightSpec {
+                duration_s: stairs.duration_s,
+                throttle: stairs.throttle.clone(),
+                ..p.flight.clone()
+            };
+            assert_eq!(same, stairs, "{}", p.id);
+        }
+        // the flights for the map against time keep the sticks still and
+        // their tones below the Nyquist frequency; the bursts end before
+        // the shortest flight does
+        for p in &probes[6..] {
+            for axis in Axis::ALL {
+                let spec = p.flight.axis(axis);
+                assert_eq!(spec.stick, Stick::Silence, "{}", p.id);
+                let filtered: &[Wave] = match &spec.filtered {
+                    Filtered::Same => &[],
+                    Filtered::Separate { waves } => waves,
+                };
+                for wave in spec.waves.iter().chain(filtered) {
+                    match wave {
+                        Wave::Tone { hz, to_s, .. } => {
+                            assert!(*hz < 500.0, "{} {hz}", p.id);
+                            assert!(to_s.is_none_or(|t| t <= p.flight.duration_s), "{}", p.id);
+                        }
+                        Wave::Chirp { to_hz, .. } | Wave::Band { to_hz, .. } => {
+                            assert!(*to_hz < 500.0, "{}", p.id);
+                        }
+                        _ => {}
+                    }
+                }
+                let s = p.flight.samples(axis);
+                let peak = s
+                    .unfiltered
+                    .iter()
+                    .chain(&s.filtered)
+                    .fold(0.0f64, |m, v| m.max(v.abs()));
+                assert!(peak > 2.0 && peak < 200.0, "{} {axis:?}: {peak}", p.id);
+            }
+        }
+        let bursts = &probes[6].flight;
+        for (k, fs, duration_s) in [(8, 4000.0, 30.0), (9, 2000.0, 16.5)] {
+            let same = FlightSpec {
+                fs: bursts.fs,
+                duration_s: bursts.duration_s,
+                ..probes[k].flight.clone()
+            };
+            assert_eq!(&same, bursts, "{}", probes[k].id);
+            assert_eq!(
+                (probes[k].flight.fs, probes[k].flight.duration_s),
+                (fs, duration_s)
+            );
+        }
+        // a burst is there when its title says so
+        let roll = bursts.samples(Axis::Roll).unfiltered;
+        let loud =
+            |from: usize, to: usize| roll[from..to].iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        assert!(loud(6000, 7000) > 9.0 && loud(7100, 11_900) < 3.0);
+        assert!(loud(25_000, 25_200) > 9.0 && loud(27_000, 27_040) > 5.0);
     }
 }
