@@ -203,7 +203,49 @@ use the log.
 So a spectrum of the reference tool is always a smoothed curve; the least
 smoothed one is "low". Its step response is not smoothed unless asked.
 
+## Version 0.94: the three windows of round 12 (2026-11-15)
+
+The window titles end in "Log Viewer", "Spectral Analyzer", "Frequency x
+Time Spectrogram", "PID slider tool", "Filter Simulator" and "Setup Info".
+
+**PID slider tool.** A small window of its own (1152 × 1025 pixels on the
+owner's screen; the others fill it). "Reset", "Quick Guide", a list that
+reads "Betaflight", "PID start values" with three empty boxes P, I and D,
+and five sliders, each labelled with its value: "PD ratio: 1", "PI ratio:
+1", "Roll-Pitch ratio: 1", "Yaw ratio: 1", "Master Multiplier: 1". No plot,
+and nothing of the log in it as it comes up.
+
+**Filter Simulator.** As in version 0.9 (above). As it comes up: loop rate
+8k, two low-passes "pt1" at 250 and 500 Hz, RPM notches from 100 Hz with
+"RPM Q" 500, a notch with "Notch Q" 500, "Notch Center" 500 and "Notch
+Cutoff" 452. It prints "delay: 0.63662ms" and "delay: 0.31831ms" on the
+low-passes, "LOWPASS FILTERS | Delay 0.95492ms"; "RPM notch: 100Hz | delay:
+0.31818ms", 200 Hz 0.15883 ms, 300 Hz 0.10561 ms, "notch center: 500Hz |
+delay: 0.062842ms", "NOTCH FILTERS | Delay 2.3933ms"; "Filter Delay Total
+3.3483ms".
+
+Those numbers are what the usual filters give at 8 kHz, computed here
+from the formulas (not yet from copies of its curves):
+
+- a first-order low-pass `y += k·(x − y)`, `k = dt / (1/(2π·fc) + dt)`: its
+  delay at the lowest frequency is `1/(2π·fc)`, 0.63662 and 0.31831 ms;
+- a second-order notch with a Q of 5 (the boxes hold a hundred times the
+  Q): 0.15883 and 0.10561 ms at 200 and 300 Hz, 0.062842 ms at 500 Hz, and
+  0.31815 ms at 100 Hz where it prints 0.31818. The static notch follows
+  its "Notch Q", not the centre and cut-off: those two give a Q of 4.95
+  and 0.0635 ms;
+- "Filter Delay (ms)" is a phase delay (the curve of the low-pass at
+  250 Hz reads 0.15 ms at 1 000 Hz, as the phase of that filter at 8 kHz
+  does; a group delay would read 0.04 ms), and the printed delay is its
+  value at the left end of the curve;
+- the title of a column is the sum of its printed delays, the RPM notches
+  counted once per motor: 4 × (0.31818 + 0.15883 + 0.10561) + 0.062842 =
+  2.3933 ms; the total is the sum of the two columns.
+
+**Setup Info.** As in version 0.9: the headers of a log as numbered rows
+`name:value`, "Show Differences Only", a list of the logs. With one log
+loaded the right half of the window is not drawn.
+
 ## Not captured so far
 
-- The PID slider tool as its own window.
 - "Period", "Markup", "Expand", "Y corr." and "RPM est." in use.
