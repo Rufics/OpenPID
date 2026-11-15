@@ -125,6 +125,7 @@ static UA: &[(&str, &str)] = &[
     ),
     ("Colour", "Колір"),
     ("Colour max", "Макс. кольору"),
+    ("Colour scale", "Шкала кольору"),
     ("Colour-blind safe", "Для дальтоніків"),
     ("Control panel", "Панель керування"),
     ("Copy", "Копіювати"),
@@ -352,6 +353,8 @@ static UA: &[(&str, &str)] = &[
     ("Skipped bytes", "Пропущені байти"),
     ("Sliders", "Повзунки"),
     ("Slot", "Слот"),
+    ("Smooth frequency", "Згладж. частоти"),
+    ("Smooth time", "Згладж. часу"),
     ("Smoothing", "Згладжування"),
     ("Spectrum", "Спектр"),
     ("Speed", "Швидкість"),
@@ -414,6 +417,10 @@ static UA: &[(&str, &str)] = &[
     ("Z min", "Z мін."),
     ("Zoom to the flown range", "Лише діапазон польоту"),
     (
+        "a cell is the power of the signal per Hz in decibels, smoothed along the frequency; it is not the amplitude of a tone",
+        "комірка — це потужність сигналу на Гц у децибелах, згладжена вздовж частоти; це не амплітуда тону",
+    ),
+    (
         "a coloured line per motor and harmonic instead of one line at the mean of the motors",
         "кольорова лінія на кожен мотор і гармоніку замість однієї лінії за середнім моторів",
     ),
@@ -468,6 +475,7 @@ static UA: &[(&str, &str)] = &[
     ("as flown:", "як у польоті:"),
     ("at", "при"),
     ("auto", "авто"),
+    ("automatic", "автоматична"),
     ("axes", "осі"),
     ("axis", "вісь"),
     (
@@ -499,10 +507,6 @@ static UA: &[(&str, &str)] = &[
     (
         "copy the rows shown as tab-separated text, to paste into a spreadsheet or a message",
         "скопіювати показані рядки як текст із табуляцією, щоб вставити в таблицю чи повідомлення",
-    ),
-    (
-        "dB (20·log10 of the amplitude) shows weak and strong lines at once, as the reference tool; linear shows the strongest only",
-        "dB (20·log10 амплітуди) показує слабкі й сильні лінії разом, як в еталонному інструменті; лінійна — лише найсильніші",
     ),
     ("debug", "налагодження"),
     ("delay", "затримка"),
@@ -560,6 +564,10 @@ static UA: &[(&str, &str)] = &[
         "наведіть на карту, щоб побачити значення",
     ),
     (
+        "how close the columns are: each is the spectrum of 0.3 s of the log, 0.3 s apart (off), 0.15 (low), 0.06 (medium) or 0.03 s (high); nothing is averaged along the time",
+        "наскільки щільно стоять стовпці: кожен — спектр 0.3 с логу, через 0.3 с (вимк.), 0.15 (низька), 0.06 (середня) або 0.03 с (висока); уздовж часу нічого не усереднюється",
+    ),
+    (
         "how far a noise peak must stand above the spectrum around it to count",
         "наскільки пік шуму має підніматися над спектром довкола, щоб його врахувати",
     ),
@@ -578,6 +586,10 @@ static UA: &[(&str, &str)] = &[
     (
         "how many harmonics per motor; 0 = as many as the RPM filter removes",
         "скільки гармонік на мотор; 0 = стільки, скільки знімає RPM-фільтр",
+    ),
+    (
+        "how many rows a cell is smoothed over along the frequency: off none, low 5, medium 11, high 21; higher reads calmer and lowers and widens the lines",
+        "на скільки рядків згладжується комірка вздовж частоти: вимк. — жодного, низька — 5, середня — 11, висока — 21; вище дає спокійнішу карту, нижчі й ширші лінії",
     ),
     (
         "how much D is raised in one proposal; small steps keep the motors cool",
@@ -619,10 +631,6 @@ static UA: &[(&str, &str)] = &[
         "довжина кожного шматка логу, на якому рахується відгук; довші вікна бачать повільне встановлення, коротші дають більше вікон",
     ),
     (
-        "length of each spectrum along the log: longer gives finer frequency steps and coarser time steps",
-        "довжина кожного спектра вздовж логу: довший дає дрібніший крок частоти й грубший крок часу",
-    ),
-    (
         "length of each spectrum along the log: longer gives finer frequency steps, fewer segments per throttle bin",
         "довжина кожного спектра вздовж логу: довший дає дрібніший крок частоти й менше сегментів на бін газу",
     ),
@@ -630,7 +638,6 @@ static UA: &[(&str, &str)] = &[
         "length of each spectrum segment: longer gives finer frequency steps and fewer averages",
         "довжина сегмента спектра: довший дає дрібніший крок частоти і менше усереднень",
     ),
-    ("linear", "лінійна"),
     ("loading", "завантаження"),
     ("log ok", "лог ок"),
     ("log shorter than 20 s", "лог коротший за 20 с"),
@@ -746,6 +753,7 @@ static UA: &[(&str, &str)] = &[
         "position in % (100 = the gains as flown)",
         "позиція у % (100 = коефіцієнти як у польоті)",
     ),
+    ("power density (dB)", "густина потужності (дБ)"),
     (
         "power in decibels (10·log10) instead of unit²/Hz",
         "потужність у децибелах (10·log10) замість одиниця²/Гц",
@@ -971,13 +979,10 @@ static UA: &[(&str, &str)] = &[
         "the unit of the gyro and setpoint traces in the log viewer",
         "одиниця кривих гіроскопа та уставки в перегляді логу",
     ),
+    ("the value drawn black", "значення, що малюється чорним"),
     (
-        "the value drawn black; auto: the background noise of the maps",
-        "значення, що малюється чорним; авто: фоновий шум карт",
-    ),
-    (
-        "the value drawn brightest; auto: the strongest lines of the maps",
-        "значення, що малюється найяскравішим; авто: найсильніші лінії карт",
+        "the value drawn brightest; at least 1 dB above Z min",
+        "значення, що малюється найяскравішим; щонайменше на 1 дБ вище за Z мін.",
     ),
     (
         "the verdict table: every log and axis against the targets",
@@ -998,13 +1003,14 @@ static UA: &[(&str, &str)] = &[
     ("timeline", "таймлайн"),
     ("top of the frequency axis", "верх осі частот"),
     (
-        "top of the frequency axis, at most half the logging rate",
-        "верх осі частот, не більше половини частоти запису",
+        "top of the frequency axis; auto: half the logging rate, as far as the map goes",
+        "верх осі частот; авто: половина частоти запису, доки сягає карта",
     ),
     ("top peak", "головний пік"),
     ("total", "разом"),
     ("total as flown", "разом, як у польоті"),
     ("type", "тип"),
+    ("typed in", "задана вручну"),
     (
         "under the proposals, what every other rule saw: satisfied, or not judged and why",
         "під пропозиціями — що побачило кожне інше правило: виконано або не оцінено й чому",
@@ -1035,6 +1041,10 @@ static UA: &[(&str, &str)] = &[
         "що прочитано з файлу: семпли, кадри і те, що прочитати не вдалося",
     ),
     ("what-if", "що-якщо"),
+    (
+        "where the colours end, in decibels: the fixed scale, on which every log reads alike; automatic, from the background noise to the strongest lines of the maps, for a quiet log; or two ends typed in",
+        "де закінчуються кольори, у децибелах: фіксована шкала, на якій усі логи читаються однаково; автоматична, від фонового шуму до найсильніших ліній карт, для тихого логу; або два краї, задані вручну",
+    ),
     (
         "whether the log is fit for analysis: its rate, length, what was logged, and the fix where something is missing",
         "чи придатний лог для аналізу: частота, тривалість, що записано, і як виправити, якщо чогось бракує",

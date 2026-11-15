@@ -3,8 +3,8 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 use openpid_analysis::{
-    Analysis, AnalysisCtx, AnalysisError, PsdAnalysis, PsdParams, StepAnalysis, StepParams,
-    StftAnalysis, StftParams, ThrottleHeatmap, ThrottleHeatmapParams,
+    Analysis, AnalysisCtx, AnalysisError, FreqSmoothing, PsdAnalysis, PsdParams, StepAnalysis,
+    StepParams, StftAnalysis, StftParams, ThrottleHeatmap, ThrottleHeatmapParams, TimeSmoothing,
 };
 use openpid_core::{Axis, ChannelId, GyroStage, LogFormat, OpenOptions};
 use openpid_dsp::Window;
@@ -63,14 +63,42 @@ fn params_hash_by_value() {
             ..Default::default()
         })
     );
+    // the map of frequency against time: by default both lists at "low" and
+    // the rows to half the sample rate; every level is a job of its own
     let s = StftParams::default();
-    assert_ne!(
-        hash(&s),
-        hash(&StftParams {
-            hop: 0.5,
-            ..Default::default()
-        })
+    assert_eq!(
+        (s.smooth_freq, s.smooth_time, s.max_hz),
+        (FreqSmoothing::Low, TimeSmoothing::Low, None)
     );
+    let mut seen = vec![hash(&s)];
+    for smooth_freq in FreqSmoothing::ALL {
+        for smooth_time in TimeSmoothing::ALL {
+            let h = hash(&StftParams {
+                smooth_freq,
+                smooth_time,
+                ..Default::default()
+            });
+            if (smooth_freq, smooth_time) == (s.smooth_freq, s.smooth_time) {
+                assert_eq!(h, seen[0]);
+            } else {
+                assert!(!seen.contains(&h), "{smooth_freq:?} {smooth_time:?}");
+                seen.push(h);
+            }
+        }
+    }
+    assert_eq!(seen.len(), 16);
+    for other in [
+        StftParams {
+            max_hz: Some(500.0),
+            ..Default::default()
+        },
+        StftParams {
+            channel: ChannelId::Throttle,
+            ..Default::default()
+        },
+    ] {
+        assert!(!seen.contains(&hash(&other)));
+    }
     assert_eq!(StepAnalysis.id(), "step-response");
     assert_eq!(PsdAnalysis.id(), "psd");
     assert_eq!(ThrottleHeatmap.id(), "throttle-heatmap");
@@ -112,20 +140,6 @@ fn validation_and_variants() {
         &ctx,
         &PsdParams {
             segment_s: 0.0,
-            ..Default::default()
-        }
-    )));
-    assert!(bad(StftAnalysis.run(
-        &ctx,
-        &StftParams {
-            hop: 0.0,
-            ..Default::default()
-        }
-    )));
-    assert!(bad(StftAnalysis.run(
-        &ctx,
-        &StftParams {
-            segment_s: -1.0,
             ..Default::default()
         }
     )));
@@ -210,19 +224,33 @@ fn validation_and_variants() {
         .unwrap();
     assert!((psd.freq.last().unwrap() - 500.0).abs() < 1e-9);
     assert!((psd.power_db[10] - 10.0 * psd.power[10].log10()).abs() < 1e-9);
-    // STFT without a bound and with a different window
+    // the map of frequency against time goes to half the sample rate unless
+    // it is bound, at every level of its two lists
     let st = StftAnalysis
         .run(
             &ctx,
             &StftParams {
                 channel: gyro.clone(),
+                smooth_freq: FreqSmoothing::High,
+                smooth_time: TimeSmoothing::Medium,
                 max_hz: None,
-                window: Window::Hamming,
-                ..Default::default()
             },
         )
         .unwrap();
     assert!((st.grid.y.last().unwrap() - 500.0).abs() < 1e-9);
+    assert_eq!((st.nperseg, st.hop), (300, 60));
+    let bound = StftAnalysis
+        .run(
+            &ctx,
+            &StftParams {
+                channel: gyro.clone(),
+                max_hz: Some(200.0),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!((bound.grid.y.last().unwrap() - 200.0).abs() < 1e-9);
+    assert_eq!(bound.hop, 150);
     // throttle heatmap on a short epoch with no complete segment
     let short = AnalysisCtx {
         session: s,

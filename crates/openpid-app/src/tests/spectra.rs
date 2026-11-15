@@ -1,12 +1,14 @@
 //! The spectral tabs: Spectrum, Freq × throttle and Freq × time with its
 //! player; their colour scales and overlays.
 
-use super::{LOG_4_2, LOG_4_5_1, LOG_2025, jobs, result, shown, temp_dir};
+use super::{LOG_4_2, LOG_4_5_1, LOG_2025, jobs, result, set_epoch, shown, temp_dir};
 use crate::app::Tab;
 use crate::spectrum_tab::Quantity;
 use crate::testkit::{Ui, at_every_size};
+use crate::time_tab::ColourScale;
 use crate::worker::{Output, Slot};
 use eframe::egui::Key;
+use openpid_analysis::{FreqSmoothing, TimeSmoothing};
 use openpid_core::{Axis, ChannelId, GyroStage};
 use std::path::Path;
 
@@ -130,7 +132,7 @@ fn throttle_heatmap_reuses_its_textures_and_names_thin_bins() {
     )));
     assert_eq!(ui.app().cache.len(), cached);
     ui.tab(Tab::TimeHeatmap);
-    assert!(ui.sees("Segment"));
+    assert!(ui.sees("Smooth frequency"));
 }
 
 #[test]
@@ -248,15 +250,19 @@ fn heatmaps_show_a_colour_scale_with_linked_maxima_and_a_hover_value() {
     assert!(ui.sees("Hz:"));
     ui.plot("throttle/A/roll").leave();
     assert!(ui.app().heatmap_hover.is_none());
-    // the same scale and read-out on freq × time (linear; it shows the
-    // docked log, here A)
-    ui.app_mut().tools.time_display.db = false;
+    // freq × time shows the docked log, here A, on its own scale in
+    // decibels (the colour max is the throttle maps'), with the same read-out
     ui.app_mut().dock = Some(Slot::A);
     ui.tab(Tab::TimeHeatmap);
-    assert_eq!(ui.app().colour_scales.len(), 1, "the docked log");
-    assert!(ui.app().colour_scales.iter().all(|s| s.1 == 5.0));
+    assert_eq!(ui.app().colour_scales, [(Slot::A, 10.0)], "the docked log");
     ui.plot("time/roll").hover_middle();
-    assert!(ui.app().heatmap_hover.is_some());
+    let (slot, x, y, z) = ui.app().heatmap_hover.expect("a cell under the pointer");
+    assert_eq!(slot, Slot::A);
+    let result = shown(&ui);
+    let Output::Stft(t) = result.as_ref() else {
+        panic!("the map of frequency against time")
+    };
+    assert_eq!(openpid_analysis::render::value_at(&t.grid, x, y), Some(z));
     assert!(ui.sees(" s, "));
     // the project keeps the link setting
     assert!(!ui.app().project(Path::new("p.openpid.json")).heatmap_link);
@@ -265,14 +271,17 @@ fn heatmaps_show_a_colour_scale_with_linked_maxima_and_a_hover_value() {
 #[test]
 fn time_tab_stacks_the_axes_in_db_with_the_throttle_under_them() {
     // docs/design/time-tab (F2): roll, pitch and yaw spectrograms of the
-    // docked log (the unfiltered gyro by default), in dB, the spectrum at
-    // the position beside each row, the throttle under them
+    // docked log (the unfiltered gyro by default), the spectrum at the
+    // position beside each row, the throttle under them. The map is the one
+    // of DESIGN §6.5: a power density in decibels on −30 … 10 dB
     let mut ui = Ui::open(&[LOG_2025], Tab::TimeHeatmap);
     assert_eq!(jobs(&ui, "stft"), 3, "one spectrogram per axis");
     for axis in ["roll", "pitch", "yaw"] {
         assert!(ui.has_plot(&format!("time/{axis}")), "{axis}");
     }
-    assert!(ui.app().tools.time_display.db && ui.app().tools.time_display.prefilt);
+    let display = ui.app().tools.time_display.clone();
+    assert!(display.prefilt);
+    assert_eq!(display.scale, ColourScale::Fixed);
     assert_eq!(
         ui.app().tools.stft.channel,
         ChannelId::Gyro {
@@ -282,20 +291,271 @@ fn time_tab_stacks_the_axes_in_db_with_the_throttle_under_them() {
         "prefilt by default, as the reference tool"
     );
     assert!(ui.sees("A prefilt"));
-    // the dB range comes from the maps: negative floor, top above it
-    let (_, top) = ui.app().colour_scales[0];
-    assert!(ui.sees("colour scale -"), "a dB floor below 0");
-    assert!(top.is_finite());
-    // a fixed floor and top take over
-    ui.app_mut().tools.time_display.z_min = Some(-30.0);
-    ui.app_mut().tools.time_display.z_max = Some(10.0);
-    ui.settle();
-    assert_eq!(ui.app().colour_scales[0].1, 10.0);
+    assert!(ui.sees("power density (dB)"));
+    assert!(
+        !ui.has("dB"),
+        "no switch to a linear colour: decibels always"
+    );
+    assert_eq!(ui.app().colour_scales, [(Slot::A, 10.0)]);
     assert!(ui.sees("colour scale -30 to 10"));
+    // both lists at "low", the rows to half the log rate
+    let (stft, t) = (ui.app().tools.stft.clone(), time_map(&ui));
+    assert_eq!(
+        (stft.smooth_freq, stft.smooth_time, stft.max_hz),
+        (FreqSmoothing::Low, TimeSmoothing::Low, None)
+    );
+    assert_eq!(t.hop * 2, t.nperseg);
+    assert!((t.grid.y.last().unwrap() - t.fs / 2.0).abs() < 1e-6);
+    let (_, top) = ui.plot("time/roll").y_range();
+    assert!((top - t.fs / 2.0).abs() < 0.01 * t.fs, "{top}");
     // filtered gyro: three new jobs
     ui.check("Prefilt", false);
     assert_eq!(jobs(&ui, "stft"), 6);
     assert!(ui.sees("A Gyro"));
+}
+
+/// The map the Freq × time tab shows for roll.
+fn time_map(ui: &Ui) -> openpid_analysis::StftOutput {
+    match shown(ui).as_ref() {
+        Output::Stft(t) => t.clone(),
+        _ => panic!("the map of frequency against time"),
+    }
+}
+
+#[test]
+fn time_tab_lists_set_the_two_levels_of_the_map() {
+    let mut ui = Ui::open(&[LOG_2025], Tab::TimeHeatmap);
+    let low = time_map(&ui);
+    let columns = |t: &openpid_analysis::StftOutput| t.grid.x.len();
+    assert!(ui.sees(&format!("column 1 of {}", columns(&low))));
+    // along the frequency: the same grid, other cells; a job per axis
+    for (name, level) in [
+        ("high", FreqSmoothing::High),
+        ("medium", FreqSmoothing::Medium),
+        ("off", FreqSmoothing::Off),
+    ] {
+        let before = jobs(&ui, "stft");
+        ui.pick("Smooth frequency", name);
+        assert_eq!(ui.app().tools.stft.smooth_freq, level);
+        assert_eq!(jobs(&ui, "stft"), before + 3, "{name}");
+        let t = time_map(&ui);
+        assert_eq!(t.smooth_freq, level);
+        assert_eq!(
+            (t.grid.x.len(), t.grid.y.len()),
+            (columns(&low), low.grid.y.len())
+        );
+        assert_ne!(t.grid.z, low.grid.z, "{name}");
+    }
+    ui.pick("Smooth frequency", "low");
+    assert_eq!(time_map(&ui).grid.z, low.grid.z, "the first result again");
+    // along the time: the distance between the columns, so their number
+    for (name, level, per_segment) in [
+        ("off", TimeSmoothing::Off, 1),
+        ("medium", TimeSmoothing::Medium, 5),
+        ("high", TimeSmoothing::High, 10),
+    ] {
+        ui.pick("Smooth time", name);
+        assert_eq!(ui.app().tools.stft.smooth_time, level);
+        let t = time_map(&ui);
+        assert_eq!(t.smooth_time, level);
+        assert_eq!(t.hop * per_segment, t.nperseg, "{name}");
+        assert!(
+            ui.sees(&format!("of {}", columns(&t))),
+            "the player counts them"
+        );
+        assert_eq!(ui.app().time_view.columns, columns(&t));
+        for axis in ["roll", "pitch", "yaw"] {
+            assert!(ui.has_plot(&format!("time/{axis}")), "{name} {axis}");
+        }
+    }
+    // ten columns a segment: about five times those of "low", all drawn
+    let high = time_map(&ui);
+    assert!(columns(&high) > 4 * columns(&low));
+    let widest = ui
+        .app()
+        .heatmap_textures
+        .values()
+        .map(|t| t.size()[0])
+        .max()
+        .unwrap();
+    let limit = ui.ctx().input(|i| i.max_texture_side);
+    assert!(widest <= limit, "{widest} pixels, the limit is {limit}");
+    // the project keeps both levels
+    let saved = ui.app().project(Path::new("p.openpid.json"));
+    assert_eq!(
+        (saved.stft.smooth_freq, saved.stft.smooth_time),
+        (FreqSmoothing::Low, TimeSmoothing::High)
+    );
+    // the lists in the other language of the interface
+    ui.pick("Smooth time", "low");
+    ui.app_mut().prefs.lang = crate::i18n::Lang::Ua;
+    ui.settle();
+    assert!(ui.has("Згладж. частоти") && ui.has("Згладж. часу"));
+    assert!(ui.has("Шкала кольору") && ui.sees("густина потужності (дБ)"));
+    ui.pick("Згладж. частоти", "висока");
+    assert_eq!(ui.app().tools.stft.smooth_freq, FreqSmoothing::High);
+}
+
+#[test]
+fn time_tab_colour_scale_is_fixed_automatic_or_typed() {
+    let mut ui = Ui::open(&[LOG_2025], Tab::TimeHeatmap);
+    let scale = |ui: &Ui| ui.app().time_view.range.expect("a scale on screen");
+    let textures = |ui: &Ui| ui.app().heatmap_textures.len();
+    // the reference tool's scale by default, with no ends to type
+    assert_eq!(scale(&ui), (-30.0, 10.0));
+    assert!(!ui.has("Z min") && !ui.has("Z max"));
+    let fixed = textures(&ui);
+    // automatic: from the maps of the log, one scale for the three rows
+    ui.pick("Colour scale", "automatic");
+    assert_eq!(ui.app().tools.time_display.scale, ColourScale::Automatic);
+    let (lo, hi) = scale(&ui);
+    assert!(lo.is_finite() && hi >= lo + 1.0, "{lo} … {hi}");
+    assert_ne!((lo, hi), (-30.0, 10.0));
+    assert_eq!((lo.fract(), hi.fract()), (0.0, 0.0), "whole decibels");
+    let ranges: Vec<(f64, f64)> = [Axis::Roll, Axis::Pitch, Axis::Yaw]
+        .into_iter()
+        .map(|axis| {
+            let channel = ChannelId::Gyro {
+                axis,
+                stage: GyroStage::Raw,
+            };
+            let grid = result(&ui, |o| match o {
+                Output::Stft(t) if t.channel == channel => Some(t.grid.clone()),
+                _ => None,
+            })
+            .unwrap();
+            crate::time_tab::auto_db_range(&grid)
+        })
+        .collect();
+    assert_eq!(lo, ranges.iter().map(|r| r.0).fold(f64::INFINITY, f64::min));
+    assert_eq!(
+        hi,
+        ranges.iter().map(|r| r.1).fold(f64::NEG_INFINITY, f64::max)
+    );
+    assert_eq!(ui.app().colour_scales, [(Slot::A, hi)]);
+    assert!(ui.sees(&format!("colour scale {lo:.0} to {hi:.0}")));
+    assert_eq!(textures(&ui), fixed + 3, "the maps are drawn anew");
+    // typed in: the two ends start from the scale on screen
+    ui.pick("Colour scale", "typed in");
+    let d = ui.app().tools.time_display.clone();
+    assert_eq!((d.scale, d.z_min, d.z_max), (ColourScale::Typed, lo, hi));
+    assert_eq!(scale(&ui), (lo, hi));
+    ui.set("Z min", -70.0);
+    ui.set("Z max", -5.0);
+    assert_eq!(scale(&ui), (-70.0, -5.0));
+    assert!(ui.sees("colour scale -70 to -5"));
+    assert_eq!(ui.app().colour_scales, [(Slot::A, -5.0)]);
+    // the top stays a decibel above the floor
+    ui.set("Z max", -90.0);
+    assert_eq!(ui.app().tools.time_display.z_max, -90.0);
+    assert_eq!(scale(&ui), (-70.0, -69.0));
+    // back to the fixed scale; the typed ends are kept for the next time
+    ui.pick("Colour scale", "−30 … 10 dB");
+    assert_eq!(scale(&ui), (-30.0, 10.0));
+    assert!(!ui.has("Z min"));
+    ui.pick("Colour scale", "typed in");
+    assert_eq!(scale(&ui), (-30.0, 10.0), "from the scale on screen again");
+    // the spectrum beside a row is drawn on the scale of the maps
+    assert!(ui.sees("A spectrum at"));
+}
+
+#[test]
+fn time_tab_max_frequency_lowers_the_top_of_the_maps() {
+    let mut ui = Ui::open(&[LOG_2025], Tab::TimeHeatmap);
+    let whole = time_map(&ui);
+    let half_rate = whole.fs / 2.0;
+    assert_eq!(ui.app().tools.stft.max_hz, None);
+    // "auto" is half the log rate; a click fixes the top at 1000 Hz
+    ui.click_button("Max frequency");
+    assert_eq!(ui.app().tools.stft.max_hz, Some(1000.0));
+    ui.set("Max frequency", 300.0);
+    assert_eq!(ui.app().tools.stft.max_hz, Some(300.0));
+    let cut = time_map(&ui);
+    let rows = cut.grid.y.len();
+    assert!(rows < whole.grid.y.len());
+    assert!(*cut.grid.y.last().unwrap() <= 300.0);
+    assert!(whole.grid.y[rows] > 300.0, "the next row is above the top");
+    // the rows kept are those of the whole map: cut after the smoothing
+    let nt = whole.grid.x.len();
+    assert_eq!(cut.grid.z[..], whole.grid.z[..rows * nt]);
+    let (_, top) = ui.plot("time/roll").y_range();
+    assert!(top <= 300.0 + whole.fs / whole.nperseg as f64, "{top}");
+    // out of range: held to 20 Hz … 16 kHz
+    ui.set("Max frequency", 1.0);
+    assert_eq!(ui.app().tools.stft.max_hz, Some(20.0));
+    ui.set("Max frequency", 1e6);
+    assert_eq!(ui.app().tools.stft.max_hz, Some(16_000.0));
+    assert_eq!(time_map(&ui).grid.y.len(), whole.grid.y.len());
+    // "auto" beside the number goes back
+    ui.click("auto");
+    assert_eq!(ui.app().tools.stft.max_hz, None);
+    let (_, top) = ui.plot("time/roll").y_range();
+    assert!((top - half_rate).abs() < 0.01 * whole.fs, "{top}");
+}
+
+#[test]
+fn time_tab_says_when_the_window_is_too_short_for_a_segment() {
+    // a 1 kHz log: a segment is 300 samples, and at "low" the first column
+    // needs 150 + 300 + 1 of them; a window of 0.3 s has too few
+    let mut ui = Ui::open(&[LOG_4_2], Tab::TimeHeatmap);
+    assert!(ui.has_plot("time/roll"));
+    set_epoch(&mut ui, Some((2.0, 2.3)));
+    assert!(ui.sees("A: not enough data"));
+    assert!(ui.sees("the first segment of 300 needs 451"));
+    assert!(!ui.has_plot("time/roll"));
+    // a window with room for the columns brings the maps back
+    set_epoch(&mut ui, Some((2.0, 6.0)));
+    assert!(ui.has_plot("time/roll") && !ui.sees("not enough data"));
+    assert!(time_map(&ui).grid.x.len() > 20);
+}
+
+#[test]
+fn a_map_wider_than_a_texture_is_drawn_by_the_largest_cell_of_a_group() {
+    use openpid_analysis::render::Colormap;
+    use openpid_core::analysis::Grid2D;
+    // 5 columns × 3 rows, the cell of column c and row r holding 10·r + c
+    let grid = Grid2D {
+        x: (0..5).map(f64::from).collect(),
+        y: (0..3).map(f64::from).collect(),
+        z: (0..3)
+            .flat_map(|r| (0..5).map(move |c| f64::from(10 * r + c)))
+            .collect(),
+        x_label: String::new(),
+        y_label: String::new(),
+        z_label: String::new(),
+    };
+    let cmap = Colormap::Explorer;
+    let colour = |v: f64| cmap.rgba((v / 24.0).max(1e-6));
+    let scale = (0.0, 24.0);
+    // it fits: a pixel per cell, the highest row first
+    let (w, h, rgba) = crate::time_tab::pixels(&grid, scale, cmap, 8);
+    assert_eq!((w, h), (5, 3));
+    assert_eq!(rgba.len(), 4 * 15);
+    assert_eq!(rgba[..4], colour(20.0));
+    assert_eq!(rgba[4 * 14..], colour(4.0));
+    // at most 2 pixels a side: 3 columns and 2 rows in a pixel, each pixel
+    // the largest of its cells; the last pixel of a row holds what is left
+    let (w, h, rgba) = crate::time_tab::pixels(&grid, scale, cmap, 2);
+    assert_eq!((w, h), (2, 2));
+    let pixel = |i: usize| -> [u8; 4] { rgba[4 * i..4 * i + 4].try_into().unwrap() };
+    // top row of pixels: grid row 2 alone; bottom: rows 0 and 1
+    assert_eq!(pixel(0), colour(22.0));
+    assert_eq!(pixel(1), colour(24.0));
+    assert_eq!(pixel(2), colour(12.0));
+    assert_eq!(pixel(3), colour(14.0));
+    // below the scale is the lowest colour, not transparent
+    let (_, _, rgba) = crate::time_tab::pixels(&grid, (30.0, 40.0), cmap, 8);
+    assert!(rgba.chunks(4).all(|p| p[3] == 255 && p == cmap.rgba(1e-6)));
+    // the automatic scale of a grid: of its values above 20 Hz (here the
+    // ten values 10 … 14 and 20 … 24 of the rows at 100 and 200 Hz) the 30th
+    // percentile, the third of them, and the 99.5th, the ninth; the fixed
+    // scale when no row is above 20 Hz
+    let range = crate::time_tab::auto_db_range(&Grid2D {
+        y: vec![0.0, 100.0, 200.0],
+        ..grid.clone()
+    });
+    assert_eq!(range, (12.0, 23.0));
+    assert_eq!(crate::time_tab::auto_db_range(&grid), (-30.0, 10.0));
 }
 
 #[test]

@@ -285,6 +285,15 @@ impl Ui {
         self.settle();
     }
 
+    /// Clicks the button named `label`, when a text beside it has the same
+    /// name (a panel row whose control is a button).
+    pub fn click_button(&mut self, label: &str) {
+        self.h
+            .get_by_role_and_label(Role::Button, label)
+            .click_accesskit();
+        self.settle();
+    }
+
     /// Clicks the one control whose name contains `text`.
     pub fn click_containing(&mut self, text: &str) {
         self.h.get_by_label_contains(text).click_accesskit();
@@ -368,6 +377,18 @@ impl Ui {
             .click_accesskit();
         self.settle();
         self.click_containing(option);
+    }
+
+    /// Picks the option named exactly `option` in the combo box named
+    /// `label` and closes its list: a click through `AccessKit` leaves the
+    /// list open, and the next click on the box would only close it. For a
+    /// test that picks more than once.
+    pub fn pick(&mut self, label: &str, option: &str) {
+        self.choose_exact(label, option);
+        self.h
+            .get_by_role_and_label(Role::ComboBox, label)
+            .click_accesskit();
+        self.settle();
     }
 
     /// Picks the option named exactly `option` in the combo box named

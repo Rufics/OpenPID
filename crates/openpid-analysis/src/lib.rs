@@ -35,6 +35,6 @@ pub use psd::{PsdAnalysis, PsdOutput, PsdParams};
 pub use recommend::{Finding, FindingStatus, Recommend, RecommendOutput, RecommendParams};
 pub use rpm::{RpmEstimateOutput, RpmEstimateParams, RpmEstimator};
 pub use step::{StepAnalysis, StepMetrics, StepOutput, StepParams, StepSpread};
-pub use stft::{StftAnalysis, StftOutput, StftParams};
+pub use stft::{FreqSmoothing, StftAnalysis, StftOutput, StftParams, TimeSmoothing};
 pub use targets::{StepTargets, TargetPreset, Verdict, VerdictLevel, verdicts};
 pub use throttle::{RpmOverlay, ThrottleHeatmap, ThrottleHeatmapOutput, ThrottleHeatmapParams};

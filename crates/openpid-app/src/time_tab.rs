@@ -1,8 +1,10 @@
 //! The Freq × time tab in the axis-row layout (docs/design/time-tab, F2):
 //! roll / pitch / yaw spectrograms of the docked log, the spectrum at the
 //! player's position beside each row, and the throttle under them on the
-//! same time axis; the colour in dB by default, as the reference tool. Every
-//! control, the player's included, is in the panel on the right.
+//! same time axis. Every map is the one of DESIGN §6.5, computed as the
+//! reference tool computes its own: a power density in decibels, on
+//! −30 … 10 dB unless another scale is chosen (there is no linear colour).
+//! Every control, the player's included, is in the panel on the right.
 
 use crate::app::App;
 use crate::axis_layout::{PlotCell, control_panel};
@@ -12,13 +14,15 @@ use crate::panel;
 use crate::shortcuts::{self, Action};
 use crate::spectrum_tab::Quantity;
 use crate::views::{
-    BAR_W, PlayerRequest, colour_bar_range, effective_max, heatmap_hover, hover_label,
-    marker_hlines, nearest_column, show_error, slot_color,
+    BAR_W, PlayerRequest, colour_bar_range, heatmap_hover, hover_label, marker_hlines,
+    nearest_column, show_error, slot_color,
 };
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{Line, PlotPoint, PlotPoints, VLine};
-use openpid_analysis::{StftOutput, StftParams};
+use openpid_analysis::render::Colormap;
+use openpid_analysis::stft::DB_SCALE;
+use openpid_analysis::{FreqSmoothing, StftOutput, StftParams, TimeSmoothing};
 use openpid_core::analysis::Grid2D;
 use openpid_core::{Axis, ChannelId};
 use std::collections::HashMap;
@@ -37,6 +41,24 @@ const SCALE_MIN_HZ: f64 = 20.0;
 /// floor sits on the background noise, the top on the strongest lines.
 const DB_LOW_PCT: f64 = 0.30;
 const DB_HIGH_PCT: f64 = 0.995;
+/// The lowest and the highest top of the frequency axis that can be typed in.
+const MIN_TOP_HZ: f64 = 20.0;
+const MAX_TOP_HZ: f64 = 16_000.0;
+/// The ends of the colour scale that can be typed in, dB.
+const TYPED_DB: std::ops::RangeInclusive<f64> = -300.0..=300.0;
+
+/// What ends the colour scale of the maps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ColourScale {
+    /// The reference tool's scale, −30 … 10 dB.
+    #[default]
+    Fixed,
+    /// From the maps: the 30th and the 99.5th percentile of their decibels
+    /// above 20 Hz.
+    Automatic,
+    /// The two ends typed in the panel.
+    Typed,
+}
 
 /// Display options of the tab (not analysis parameters).
 #[derive(Debug, Clone, PartialEq)]
@@ -44,20 +66,20 @@ pub struct TimeDisplay {
     /// For the gyro: the unfiltered gyro (as the reference tool's default),
     /// where the motor noise shows.
     pub prefilt: bool,
-    /// Colour in dB (`20·log10` of the amplitude) instead of linear.
-    pub db: bool,
-    /// Fixed ends of the dB colour range; `None` = automatic.
-    pub z_min: Option<f64>,
-    pub z_max: Option<f64>,
+    /// What ends the colour scale.
+    pub scale: ColourScale,
+    /// The ends of the typed colour scale, dB.
+    pub z_min: f64,
+    pub z_max: f64,
 }
 
 impl Default for TimeDisplay {
     fn default() -> Self {
         TimeDisplay {
             prefilt: true,
-            db: true,
-            z_min: None,
-            z_max: None,
+            scale: ColourScale::default(),
+            z_min: DB_SCALE.0,
+            z_max: DB_SCALE.1,
         }
     }
 }
@@ -70,6 +92,8 @@ pub struct TimeView {
     /// player (drawn before the rows).
     pub span: Option<(f64, f64)>,
     pub columns: usize,
+    /// The colour scale the maps were last drawn with, dB.
+    pub range: Option<(f64, f64)>,
 }
 
 /// One row: the axis and its spectrogram.
@@ -168,27 +192,20 @@ pub fn time(app: &mut App, ui: &mut Ui) {
                 first: false,
                 ..cell
             };
-            slice(ui, beside, t, column, range, &display);
+            slice(ui, beside, t, column, range);
             colour_bar_range(ui, range.0, range.1, row_h);
         });
     }
     if strip_h > 0.0 {
         throttle_strip(app, ui, slot, pos, span, egui::vec2(plot_w, strip_h));
     }
-    let hover = app
-        .heatmap_hover
-        .map(|(s, x, y, z)| (s, x, y, if display.db { db(z) } else { z }));
-    hover_label(ui, hover, true);
+    hover_label(ui, app.heatmap_hover, true);
     if let Some(x) = clicked_at {
         pos = x.clamp(span.0, span.1);
     }
     app.player.pos_s = Some(pos);
     app.player.synced_cursor = Some(pos);
     app.viewer.cursor_s = Some(pos);
-}
-
-fn db(v: f64) -> f64 {
-    20.0 * v.max(1e-9).log10()
 }
 
 /// The player's position this frame: follows a cursor moved on the log
@@ -228,47 +245,37 @@ fn advance(app: &mut App, ui: &Ui, (x0, x1): (f64, f64), columns: &[f64]) -> f64
     pos
 }
 
-/// The colour range of every row: fixed ends from the panel, else the
-/// automatic dB range of the rows (shared, so the rows compare); linear: 0
-/// to the colour max (automatic: the largest robust maximum of the rows).
+/// The colour scale of every row (shared, so the rows compare): the
+/// reference tool's fixed −30 … 10 dB, the two ends typed in the panel, or
+/// the automatic range of the rows.
 fn colour_range(app: &mut App, rows: &[Row], d: &TimeDisplay) -> (f64, f64) {
-    let grids: Vec<(usize, &Grid2D)> = rows
-        .iter()
-        .filter_map(|r| r.stft().map(|t| (Arc::as_ptr(&r.out) as usize, &t.grid)))
-        .collect();
-    let range = if d.db {
-        let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
-        if app.time_view.ranges.len() > 64 {
-            app.time_view.ranges.clear();
-        }
-        for (key, g) in &grids {
-            let (a, b) = *app
-                .time_view
-                .ranges
-                .entry(*key)
-                .or_insert_with(|| auto_db_range(g));
-            lo = lo.min(a);
-            hi = hi.max(b);
-        }
-        let (lo, hi) = if lo.is_finite() {
-            (lo, hi)
-        } else {
-            (-40.0, 0.0)
-        };
-        let lo = d.z_min.unwrap_or(lo);
-        (lo, d.z_max.unwrap_or(hi).max(lo + 1.0))
-    } else {
-        let fixed = app.tools.heatmap_max;
-        let hi = grids
-            .iter()
-            .map(|(_, g)| effective_max(g, fixed, SCALE_MIN_HZ))
-            .fold(0.0_f64, f64::max);
-        (0.0, hi.max(1e-12))
+    let range = match d.scale {
+        ColourScale::Fixed => DB_SCALE,
+        ColourScale::Typed => (d.z_min, d.z_max.max(d.z_min + 1.0)),
+        ColourScale::Automatic => automatic_range(app, rows),
     };
     if let Some(slot) = app.dock_slot() {
         app.colour_scales = vec![(slot, range.1)];
     }
+    app.time_view.range = Some(range);
     range
+}
+
+/// The lowest floor and the highest top of the rows' own ranges
+/// ([`auto_db_range`], once per result).
+fn automatic_range(app: &mut App, rows: &[Row]) -> (f64, f64) {
+    if app.time_view.ranges.len() > 64 {
+        app.time_view.ranges.clear();
+    }
+    let ranges = &mut app.time_view.ranges;
+    rows.iter()
+        .filter_map(|row| {
+            let grid = &row.stft()?.grid;
+            let key = Arc::as_ptr(&row.out) as usize;
+            Some(*ranges.entry(key).or_insert_with(|| auto_db_range(grid)))
+        })
+        .reduce(|a, b| (a.0.min(b.0), a.1.max(b.1)))
+        .unwrap_or(DB_SCALE)
 }
 
 /// Percentiles of the dB values above `SCALE_MIN_HZ`: the floor on the
@@ -279,11 +286,11 @@ pub fn auto_db_range(g: &Grid2D) -> (f64, f64) {
         g.y.iter()
             .enumerate()
             .filter(|(_, f)| **f >= SCALE_MIN_HZ)
-            .flat_map(|(iy, _)| g.z[iy * nx..(iy + 1) * nx].iter().map(|z| db(*z)))
+            .flat_map(|(iy, _)| g.z[iy * nx..(iy + 1) * nx].iter().copied())
             .filter(|x| x.is_finite())
             .collect();
     if v.is_empty() {
-        return (-40.0, 0.0);
+        return DB_SCALE;
     }
     v.sort_by(f64::total_cmp);
     let at = |p: f64| v[((v.len() - 1) as f64 * p) as usize];
@@ -291,7 +298,7 @@ pub fn auto_db_range(g: &Grid2D) -> (f64, f64) {
     (lo.floor(), hi.ceil().max(lo.floor() + 1.0))
 }
 
-/// "A prefilt · roll, pitch, yaw · spectrum at 24.00 s" over the rows.
+/// "A prefilt · power density (dB) · spectrum at 24.00 s" over the rows.
 fn title(ui: &mut Ui, slot: Slot, q: Quantity, d: &TimeDisplay, pos: f64) {
     let what = if d.prefilt && q.prefilt(Axis::Roll).is_some() {
         tr("prefilt").to_string()
@@ -304,6 +311,14 @@ fn title(ui: &mut Ui, slot: Slot, q: Quantity, d: &TimeDisplay, pos: f64) {
                 .color(slot_color(slot))
                 .size(12.5),
         );
+        ui.label(
+            RichText::new(tr("power density (dB)"))
+                .color(MUTED)
+                .size(12.5),
+        )
+        .on_hover_text(tr(
+            "a cell is the power of the signal per Hz in decibels, smoothed along the frequency; it is not the amplitude of a tone",
+        ));
         ui.label(
             RichText::new(format!("{} {} {pos:.2} s", slot.name(), tr("spectrum at")))
                 .color(MUTED)
@@ -375,6 +390,38 @@ fn spectrogram(
     drawn
 }
 
+/// The pixels of a grid on the colour scale `lo … hi`: width, height and
+/// RGBA, the highest row first. One pixel per cell while the grid fits in
+/// `max_side` pixels either way; a larger grid gets `group` cells along that
+/// axis in a pixel, drawn in the colour of the largest of them, so that a
+/// short burst of noise stays in sight. A cell below the scale is black, not
+/// transparent.
+pub(crate) fn pixels(
+    g: &Grid2D,
+    (lo, hi): (f64, f64),
+    cmap: Colormap,
+    max_side: usize,
+) -> (usize, usize, Vec<u8>) {
+    let (nx, ny) = (g.x.len(), g.y.len());
+    let max_side = max_side.max(1);
+    let (gx, gy) = (nx.div_ceil(max_side).max(1), ny.div_ceil(max_side).max(1));
+    let (w, h) = (nx.div_ceil(gx), ny.div_ceil(gy));
+    let mut rgba = Vec::with_capacity(w * h * 4);
+    for py in (0..h).rev() {
+        for px in 0..w {
+            let mut v = f64::NEG_INFINITY;
+            for iy in py * gy..((py + 1) * gy).min(ny) {
+                for z in &g.z[iy * nx + px * gx..iy * nx + ((px + 1) * gx).min(nx)] {
+                    v = v.max(*z);
+                }
+            }
+            let t = ((v - lo) / (hi - lo)).max(1e-6);
+            rgba.extend_from_slice(&cmap.rgba(t));
+        }
+    }
+    (w, h, rgba)
+}
+
 /// The grid as a texture in the colour range, once per result and range.
 fn texture(
     app: &mut App,
@@ -388,15 +435,14 @@ fn texture(
     if nx < 2 || ny < 2 {
         return None;
     }
-    let db_scale = app.tools.time_display.db;
     let cmap = crate::colormap::heatmap();
+    let max_side = ctx.input(|i| i.max_texture_side);
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     (
         "time",
         Arc::as_ptr(owner) as usize,
         lo.to_bits(),
         hi.to_bits(),
-        db_scale,
         cmap,
     )
         .hash(&mut hasher);
@@ -405,28 +451,24 @@ fn texture(
         if app.heatmap_textures.len() >= 96 {
             app.heatmap_textures.clear();
         }
-        let mut rgba = Vec::with_capacity(nx * ny * 4);
-        for iy in (0..ny).rev() {
-            for ix in 0..nx {
-                let z = g.z[iy * nx + ix];
-                let v = if db_scale { db(z) } else { z };
-                // below the range is black, not transparent
-                let t = ((v - lo) / (hi - lo)).max(1e-6);
-                rgba.extend_from_slice(&cmap.rgba(t));
-            }
-        }
-        let image = egui::ColorImage::from_rgba_unmultiplied([nx, ny], &rgba);
+        let (w, h, rgba) = pixels(g, (lo, hi), cmap, max_side);
+        let image = egui::ColorImage::from_rgba_unmultiplied([w, h], &rgba);
         let handle = ctx.load_texture(format!("time-{key:x}"), image, egui::TextureOptions::LINEAR);
         app.heatmap_textures.insert(key, handle);
     }
     let tex = &app.heatmap_textures[&key];
+    // the cells a pixel holds (`pixels` makes at most `max_side` pixels of
+    // equal groups, so the group is the cells over the pixels, rounded up);
+    // the last pixel may reach past the grid
+    let [w, h] = tex.size();
+    let (gx, gy) = (nx.div_ceil(w), ny.div_ceil(h));
     let dx = g.x[1] - g.x[0];
     let dy = g.y[1] - g.y[0];
-    let (x0, x1) = (g.x[0] - dx / 2.0, g.x[nx - 1] + dx / 2.0);
-    let (y0, y1) = (g.y[0] - dy / 2.0, g.y[ny - 1] + dy / 2.0);
+    let (x0, y0) = (g.x[0] - dx / 2.0, g.y[0] - dy / 2.0);
+    let (x1, y1) = (x0 + dx * (w * gx) as f64, y0 + dy * (h * gy) as f64);
     Some(
         egui_plot::PlotImage::new(
-            "amplitude",
+            "power density",
             tex.id(),
             PlotPoint::new(f64::midpoint(x0, x1), f64::midpoint(y0, y1)),
             egui::vec2((x1 - x0) as f32, (y1 - y0) as f32),
@@ -435,16 +477,9 @@ fn texture(
     )
 }
 
-/// The spectrum at the player's column beside a row: frequency up, value
+/// The spectrum at the player's column beside a row: frequency up, decibels
 /// across, on the colour range of the maps.
-fn slice(
-    ui: &mut Ui,
-    cell: PlotCell,
-    t: &StftOutput,
-    column: Option<usize>,
-    (lo, hi): (f64, f64),
-    d: &TimeDisplay,
-) {
+fn slice(ui: &mut Ui, cell: PlotCell, t: &StftOutput, column: Option<usize>, (lo, hi): (f64, f64)) {
     let PlotCell {
         slot, axis, size, ..
     } = cell;
@@ -455,10 +490,7 @@ fn slice(
                 .y
                 .iter()
                 .enumerate()
-                .map(|(iy, f)| {
-                    let z = t.grid.z[iy * nx + c];
-                    [if d.db { db(z) } else { z }, *f]
-                })
+                .map(|(iy, f)| [t.grid.z[iy * nx + c], *f])
                 .collect()
         })
         .unwrap_or_default();
@@ -565,75 +597,108 @@ fn controls(app: &mut App, ui: &mut Ui) {
         tr("Prefilt"),
         tr("the unfiltered gyro, where the motor noise shows; off: the filtered gyro"),
     );
+    colour_scale_rows(app, ui);
+    player_rows(app, ui);
+    panel::section(ui, tr("Analysis"));
+    level_choice(
+        ui,
+        "time-smooth-freq",
+        tr("Smooth frequency"),
+        tr(
+            "how many rows a cell is smoothed over along the frequency: off none, low 5, medium 11, high 21; higher reads calmer and lowers and widens the lines",
+        ),
+        &mut app.tools.stft.smooth_freq,
+        &FreqSmoothing::ALL.map(|level| (level, level.name())),
+    );
+    level_choice(
+        ui,
+        "time-smooth-time",
+        tr("Smooth time"),
+        tr(
+            "how close the columns are: each is the spectrum of 0.3 s of the log, 0.3 s apart (off), 0.15 (low), 0.06 (medium) or 0.03 s (high); nothing is averaged along the time",
+        ),
+        &mut app.tools.stft.smooth_time,
+        &TimeSmoothing::ALL.map(|level| (level, level.name())),
+    );
+    let mut top = app.tools.stft.max_hz;
+    panel::optional(
+        ui,
+        tr("Max frequency"),
+        tr("top of the frequency axis; auto: half the logging rate, as far as the map goes"),
+        &mut top,
+        1000.0,
+        "Hz",
+    );
+    app.tools.stft.max_hz = top.map(|hz| hz.clamp(MIN_TOP_HZ, MAX_TOP_HZ));
+}
+
+/// One of the two lists of levels (off, low, medium, high), named in the
+/// interface language.
+fn level_choice<T: PartialEq + Copy>(
+    ui: &mut Ui,
+    id: &str,
+    label: &str,
+    hint: &str,
+    value: &mut T,
+    levels: &[(T, &'static str)],
+) {
+    let options: Vec<(T, String)> = levels
+        .iter()
+        .map(|(level, name)| (*level, tr(name).to_string()))
+        .collect();
+    panel::choice(ui, id, label, hint, value, &options);
+}
+
+/// "Colour scale" and, for a typed one, its two ends.
+fn colour_scale_rows(app: &mut App, ui: &mut Ui) {
     panel::section(ui, tr("Colour"));
+    let d = &mut app.tools.time_display;
+    let was = d.scale;
+    let options = [
+        (
+            ColourScale::Fixed,
+            format!("{:.0} … {:.0} dB", DB_SCALE.0, DB_SCALE.1).replace('-', "−"),
+        ),
+        (ColourScale::Automatic, tr("automatic").to_string()),
+        (ColourScale::Typed, tr("typed in").to_string()),
+    ];
     panel::choice(
         ui,
         "time-scale",
-        tr("Scale"),
+        tr("Colour scale"),
         tr(
-            "dB (20·log10 of the amplitude) shows weak and strong lines at once, as the reference tool; linear shows the strongest only",
+            "where the colours end, in decibels: the fixed scale, on which every log reads alike; automatic, from the background noise to the strongest lines of the maps, for a quiet log; or two ends typed in",
         ),
-        &mut d.db,
-        &[(true, "dB".to_string()), (false, tr("linear").to_string())],
+        &mut d.scale,
+        &options,
     );
-    if d.db {
-        panel::optional(
-            ui,
-            tr("Z min"),
-            tr("the value drawn black; auto: the background noise of the maps"),
-            &mut d.z_min,
-            -40.0,
-            "",
-        );
-        panel::optional(
-            ui,
-            tr("Z max"),
-            tr("the value drawn brightest; auto: the strongest lines of the maps"),
-            &mut d.z_max,
-            0.0,
-            "",
-        );
-    } else {
-        let mut max = (app.tools.heatmap_max > 0.0).then_some(app.tools.heatmap_max);
-        panel::optional(
-            ui,
-            tr("Colour max"),
-            tr(
-                "the amplitude drawn in the brightest colour; auto: the 99th percentile above 20 Hz",
-            ),
-            &mut max,
-            10.0,
-            "",
-        );
-        app.tools.heatmap_max = max.unwrap_or(0.0);
+    if d.scale != ColourScale::Typed {
+        return;
     }
-    player_rows(app, ui);
-    panel::section(ui, tr("Analysis"));
+    if was != ColourScale::Typed
+        && let Some((lo, hi)) = app.time_view.range
+    {
+        // start from the scale on screen
+        (d.z_min, d.z_max) = (lo, hi);
+    }
     panel::drag(
         ui,
-        tr("Segment"),
-        tr(
-            "length of each spectrum along the log: longer gives finer frequency steps and coarser time steps",
-        ),
-        &mut app.tools.stft.segment_s,
-        0.01,
-        0.02..=1.0,
-        "s",
+        tr("Z min"),
+        tr("the value drawn black"),
+        &mut d.z_min,
+        1.0,
+        TYPED_DB,
+        "dB",
     );
-    let mut top = app.tools.stft.max_hz.unwrap_or(1000.0);
-    if panel::drag(
+    panel::drag(
         ui,
-        tr("Max frequency"),
-        tr("top of the frequency axis, at most half the logging rate"),
-        &mut top,
-        10.0,
-        50.0..=8000.0,
-        "Hz",
-    )
-    .changed()
-    {
-        app.tools.stft.max_hz = Some(top);
-    }
+        tr("Z max"),
+        tr("the value drawn brightest; at least 1 dB above Z min"),
+        &mut d.z_max,
+        1.0,
+        TYPED_DB,
+        "dB",
+    );
 }
 
 /// The player's controls: play / pause, to start, a column either way, the
