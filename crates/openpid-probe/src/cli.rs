@@ -50,6 +50,9 @@ ROUNDS:
     13       Those three windows asked: the slider tool with start gains and its sliders
              moved, the filter simulator's plots, lists, switches and four values typed
              in, the list of the setup with two logs.
+    14       The filter simulator's other filter types and loop rates, its notch by the
+             cut-off, its impulse response and chirp, a set of filters made for no
+             question; the other entries of the slider tool's list.
 ";
 
 /// Runs the tool with `args` (without the program name), printing to `out`.

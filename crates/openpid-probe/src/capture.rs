@@ -1352,6 +1352,9 @@ pub fn spectrum_shot(round: u32, probe: &str, smoothing: &str) -> String {
 
 /// The first round that clicks inside the windows round 12 looked at.
 pub const WINDOWS_ASK: u32 = 13;
+/// The first round that sets the lists of the filter simulator and of the
+/// slider tool, which round 13 only photographed.
+pub const WINDOWS_MORE: u32 = 14;
 /// Part of the title of the slider tool's window.
 const SLIDERS: &str = "PID slider tool";
 /// Part of the title of the filter simulator's window.
@@ -1371,6 +1374,17 @@ mod sliders_at {
         ("P", (401, 127), "45"),
         ("I", (401, 177), "80"),
         ("D", (401, 229), "30"),
+    ];
+    /// The first item of the open list; the next ones follow 46 pixels
+    /// apart: Betaflight, INAV, FETTEC, `KISS_ULTRA`, `QuickSilver`, Ardupilot.
+    pub const FIRMWARE_ITEM: (u32, u32) = (143, 258);
+    pub const FIRMWARE: [&str; 6] = [
+        "betaflight",
+        "inav",
+        "fettec",
+        "kiss-ultra",
+        "quicksilver",
+        "ardupilot",
     ];
     /// The arrows at the two ends of a slider.
     pub const DOWN_X: u32 = 355;
@@ -1441,6 +1455,20 @@ mod filters_at {
         typed("notch-q-300", (3622, 630), "300", "500", 1),
         typed("notch-center-300", (3622, 708), "300", "500", 1),
     ];
+    /// The boxes of the cut-off of low-pass 1 and 2, of the lowest RPM
+    /// notch and its Q, and of the static notch's Q, centre and cut-off.
+    pub const LOWPASS_1_HZ: (u32, u32) = (3622, 245);
+    pub const LOWPASS_2_HZ: (u32, u32) = (3622, 321);
+    pub const RPM_HZ: (u32, u32) = (3622, 397);
+    pub const RPM_Q: (u32, u32) = (3622, 476);
+    pub const NOTCH_Q: (u32, u32) = (3622, 630);
+    pub const NOTCH_CENTER: (u32, u32) = (3622, 708);
+    pub const NOTCH_CUTOFF: (u32, u32) = (3622, 785);
+    /// The place of a list by its name in [`LISTS`].
+    pub fn list(name: &str) -> (u32, u32) {
+        let found = LISTS.iter().find(|(n, _)| *n == name);
+        found.map_or(LISTS[0].1, |(_, at)| *at)
+    }
     /// The two columns of plots: the name, left and right of the axes.
     pub const COLUMNS: [(&str, u32, u32); 2] = [("lowpass", 267, 1661), ("notch", 1891, 3288)];
     /// The four rows of plots: the name, top and bottom of the axes.
@@ -1590,6 +1618,181 @@ fn filters_ask(steps: &mut Vec<Step>, round: u32) {
     }
 }
 
+/// The rest of the slider tool: the start gains of round 13 typed in, the
+/// PD ratio moved to 1.25, and then every other entry of its list chosen
+/// in turn, a picture after each; the list is put back on its first entry.
+fn sliders_more(steps: &mut Vec<Step>, round: u32) {
+    let (button, _, at) = log_at::OTHERS[0];
+    let file = |what: &str| format!("r{round}-sliders-{what}");
+    let inside = |name: &str, at: (u32, u32)| click(SLIDERS, "slider", name, at);
+    steps.push(click(LOG_VIEWER, "log", button, at));
+    steps.push(pause(4000));
+    for (name, at, text) in sliders_at::START {
+        steps.push(Step {
+            action: "type",
+            text: Some(text.to_string()),
+            ..inside(&format!("start {name}"), at)
+        });
+        steps.push(pause(300));
+    }
+    let (name, y) = sliders_at::ROWS[0];
+    for _ in 0..5 {
+        steps.push(inside(&format!("{name} up"), (sliders_at::UP_X, y)));
+        steps.push(pause(300));
+    }
+    steps.push(shot(SLIDERS, file("betaflight")));
+    let (x, first) = sliders_at::FIRMWARE_ITEM;
+    let pick = |steps: &mut Vec<Step>, row: usize| {
+        let name = sliders_at::FIRMWARE[row];
+        steps.push(inside(
+            &format!("{name} (the list)"),
+            sliders_at::FIRMWARE_LIST,
+        ));
+        steps.push(pause(600));
+        steps.push(inside(name, (x, first + 46 * row as u32)));
+        steps.push(pause(1000));
+    };
+    for row in 1..sliders_at::FIRMWARE.len() {
+        pick(steps, row);
+        steps.push(shot(SLIDERS, file(sliders_at::FIRMWARE[row])));
+    }
+    pick(steps, 0);
+}
+
+/// An item of a list of the filter simulator chosen; the picture is marked
+/// before the list is opened when `mark` says so.
+fn filters_pick(steps: &mut Vec<Step>, list: &str, row: usize, mark: bool) {
+    let at = filters_at::list(list);
+    steps.push(Step {
+        mark: mark.then_some(true),
+        ..click(FILTERS, "shot", &format!("{list} (the list)"), at)
+    });
+    steps.push(pause(600));
+    let item = throttle_at::item(at, row);
+    steps.push(click(FILTERS, "shot", &format!("{list} item {row}"), item));
+    steps.push(pause(400));
+}
+
+/// A value typed into a box of the filter simulator.
+fn filters_type(steps: &mut Vec<Step>, name: &str, at: (u32, u32), text: &str, mark: bool) {
+    steps.push(Step {
+        action: "type",
+        text: Some(text.to_string()),
+        mark: mark.then_some(true),
+        ..click(FILTERS, "shot", name, at)
+    });
+    steps.push(pause(400));
+}
+
+/// The wait for the plots of the filter simulator after a change, and a
+/// picture of the window named after `what`.
+fn filters_shot(steps: &mut Vec<Step>, round: u32, what: &str) {
+    steps.push(settle(FILTERS, Some(TIME_CHANGE_S), 1.5));
+    steps.push(shot(FILTERS, format!("r{round}-filters-{what}")));
+}
+
+/// The rest of the filter simulator, by the lists round 13 photographed.
+/// Low-pass 1 as each of its other four types, with the plots of its
+/// column copied; the other four loop rates, the same; one motor, one
+/// harmonic, the RPM filter off, the notch off, a picture each; the notch
+/// set by its cut-off; the impulse response and the chirp generator with
+/// noise and with the filtered signal only; and a set of filters made for
+/// no question, with all eight plots copied. Every list and box is put
+/// back before the next is touched.
+fn filters_more(steps: &mut Vec<Step>, round: u32) {
+    let (button, _, at) = log_at::OTHERS[1];
+    steps.push(click(LOG_VIEWER, "log", button, at));
+    steps.push(Step {
+        wait_s: Some(120),
+        ..settle(FILTERS, None, 1.5)
+    });
+    steps.push(shot(FILTERS, format!("r{round}-filters-open")));
+    for (row, name) in [
+        (2, "pt2"),
+        (3, "pt3"),
+        (4, "biquad-butter"),
+        (5, "biquad-bessel"),
+    ] {
+        let what = format!("lowpass-1-{name}");
+        filters_pick(steps, "lowpass-1", row, true);
+        filters_shot(steps, round, &what);
+        filters_copies(steps, round, &what, 0);
+    }
+    filters_pick(steps, "lowpass-1", 1, false);
+    for (row, name) in [(1, "4k"), (2, "3k2"), (3, "2k"), (4, "1k")] {
+        let what = format!("looprate-{name}");
+        filters_pick(steps, "looprate", row, true);
+        filters_shot(steps, round, &what);
+        filters_copies(steps, round, &what, 0);
+    }
+    filters_pick(steps, "looprate", 0, false);
+    // a list, the item for the picture, the item it came up with
+    for (list, row, back, what) in [
+        ("motors", 0, 3, "motors-1"),
+        ("rpm-harmonics", 1, 3, "harmonics-1"),
+        ("rpm-harmonics", 0, 3, "rpm-off"),
+        ("notch-f", 0, 1, "notch-off"),
+    ] {
+        filters_pick(steps, list, row, true);
+        filters_shot(steps, round, what);
+        filters_pick(steps, list, back, false);
+    }
+    filters_pick(steps, "notch-q", 1, true);
+    filters_type(
+        steps,
+        "Notch Cutoff",
+        filters_at::NOTCH_CUTOFF,
+        "400",
+        false,
+    );
+    filters_shot(steps, round, "notch-cutoff-400");
+    filters_copies(steps, round, "notch-cutoff-400", 1);
+    filters_type(
+        steps,
+        "Notch Cutoff",
+        filters_at::NOTCH_CUTOFF,
+        "452",
+        false,
+    );
+    filters_pick(steps, "notch-q", 0, false);
+    filters_pick(steps, "signal", 1, true);
+    filters_shot(steps, round, "impulse");
+    for column in 0..filters_at::COLUMNS.len() {
+        let (name, left, right) = filters_at::COLUMNS[column];
+        let (row, top, bottom) = filters_at::ROWS[3];
+        let file = format!("r{round}-filters-impulse-{name}-{row}");
+        let plot = format!("{name} {row}");
+        copy_axes(steps, FILTERS, &plot, (left, top, right, bottom), file);
+    }
+    filters_pick(steps, "signal", 2, true);
+    filters_shot(steps, round, "chirp");
+    filters_pick(steps, "noise", 2, true);
+    filters_shot(steps, round, "chirp-noise-med");
+    filters_pick(steps, "show", 0, true);
+    filters_shot(steps, round, "chirp-noise-med-filtered");
+    filters_pick(steps, "show", 2, false);
+    filters_pick(steps, "noise", 0, false);
+    filters_pick(steps, "signal", 0, false);
+    // the set made for no question
+    filters_pick(steps, "looprate", 1, true);
+    filters_pick(steps, "motors", 5, false);
+    filters_pick(steps, "rpm-harmonics", 2, false);
+    for (name, at, text) in [
+        ("lowpass 1 Hz", filters_at::LOWPASS_1_HZ, "180"),
+        ("lowpass 2 Hz", filters_at::LOWPASS_2_HZ, "320"),
+        ("RPM Hz", filters_at::RPM_HZ, "130"),
+        ("RPM Q", filters_at::RPM_Q, "300"),
+        ("Notch Q", filters_at::NOTCH_Q, "350"),
+        ("Notch Center", filters_at::NOTCH_CENTER, "240"),
+    ] {
+        filters_type(steps, name, at, text, false);
+    }
+    filters_shot(steps, round, "holdout");
+    for column in 0..filters_at::COLUMNS.len() {
+        filters_copies(steps, round, "holdout", column);
+    }
+}
+
 /// The list of the setup asked: the window opened from the main window, a
 /// picture as it comes up, a picture with "Show Differences Only" set (and
 /// the switch put back), and a picture of its list of logs held open.
@@ -1636,6 +1839,16 @@ fn windows_look(steps: &mut Vec<Step>, round: u32) {
 /// What the plan of a round does, for the reader of `steps.json`.
 fn about(round: u32, probes: &[Probe]) -> String {
     let time = probes.iter().any(|p| p.area == Area::Time);
+    if probes.iter().all(|p| p.area == Area::Windows) && round >= WINDOWS_MORE {
+        return format!(
+            "Round {round}: the log through the open dialog, then two windows of the main \
+             window. The slider tool: start gains, one slider moved, and every entry of its \
+             list in turn, a picture each. The filter simulator: low-pass 1 as each of its \
+             types and at each loop rate with its plots copied, the motors, the harmonics \
+             and the notch switched, the notch set by its cut-off, the impulse response and \
+             the chirp, and a set of filters made for no question with all its plots copied."
+        );
+    }
     if probes.iter().all(|p| p.area == Area::Windows) && round >= WINDOWS_ASK {
         return format!(
             "Round {round}: the logs through the open dialog, then three windows of the main \
@@ -1786,7 +1999,10 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     }
     let windows = probes.iter().any(|p| p.area == Area::Windows);
     let asked = windows && round >= WINDOWS_ASK;
-    if asked {
+    if windows && round >= WINDOWS_MORE {
+        sliders_more(&mut steps, round);
+        filters_more(&mut steps, round);
+    } else if asked {
         sliders_ask(&mut steps, round);
         filters_ask(&mut steps, round);
         setup_ask(&mut steps, round);
@@ -2808,6 +3024,85 @@ mod tests {
         assert!(
             note.contains("138 plots") && note.contains("saves 26 pictures"),
             "{note}"
+        );
+    }
+
+    #[test]
+    fn round_14_sets_the_lists_of_the_filters_and_of_the_sliders() {
+        let probes = catalogue::round(14).unwrap_or_default();
+        let plan = plan(14, &probes);
+        assert!(plan.give_up && plan.refs.slider.is_some());
+        assert!(plan.about.contains("a set of filters made for no question"));
+        let names = |action: &str| -> Vec<&str> {
+            plan.steps
+                .iter()
+                .filter(|s| s.action == action)
+                .filter_map(|s| s.file.as_deref())
+                .collect()
+        };
+        // four types and four loop rates with the low-pass column, the
+        // notch by its cut-off, two impulse responses, the eight plots of
+        // the set made for no question
+        let copies = names("clip_save");
+        assert_eq!(copies.len(), 4 * 4 + 4 * 4 + 4 + 2 + 8);
+        assert_eq!(copies[0], "r14-filters-lowpass-1-pt2-lowpass-magnitude");
+        assert_eq!(copies[16], "r14-filters-looprate-4k-lowpass-magnitude");
+        assert_eq!(copies[36], "r14-filters-impulse-lowpass-step");
+        assert_eq!(copies[45], "r14-filters-holdout-notch-step");
+        for (i, step) in plan.steps.iter().enumerate() {
+            if step.action == "clip_save" {
+                assert_copy(&plan.steps, i);
+            }
+        }
+        let shots = names("shot");
+        assert_eq!(shots.len(), 1 + 6 + 1 + 4 + 4 + 4 + 1 + 4 + 1);
+        assert_eq!(shots[1], "r14-sliders-betaflight");
+        assert_eq!(shots[6], "r14-sliders-ardupilot");
+        assert_eq!(shots[shots.len() - 1], "r14-filters-holdout");
+        let mut unique: Vec<&str> = shots.iter().chain(&copies).copied().collect();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), shots.len() + copies.len());
+        // an item of a list lies under its list, and every wait for a
+        // change has a mark before it
+        let mut marked = false;
+        for pair in plan.steps.windows(3) {
+            let (list, item) = (&pair[0], &pair[2]);
+            let name = list.name.as_deref().unwrap_or("");
+            if list.window == Some(FILTERS) && name.ends_with("(the list)") {
+                let (at, under) = (list.at.unwrap_or_default(), item.at.unwrap_or_default());
+                assert_eq!(under.0, at.0, "{name}");
+                assert!(under.1 > at.1 + 40 && under.1 < at.1 + 300, "{name}");
+            }
+        }
+        for step in plan.steps.iter().filter(|s| s.window == Some(FILTERS)) {
+            marked |= step.mark == Some(true);
+            if step.action == "settle" && step.change_s.is_some() {
+                assert!(marked, "a wait for a change without a mark");
+                marked = false;
+            }
+        }
+        // the entries of the slider tool's list, one below the other
+        let entries: Vec<u32> = sliders_at::FIRMWARE
+            .iter()
+            .filter_map(|name| {
+                let wanted = |s: &&Step| s.name.as_deref() == Some(*name);
+                plan.steps
+                    .iter()
+                    .find(wanted)
+                    .and_then(|s| s.at)
+                    .map(|a| a.1)
+            })
+            .collect();
+        assert_eq!(entries.len(), 6);
+        assert!(entries.windows(2).all(|w| w[1] == w[0] + 46));
+        assert!(entries[0] > sliders_at::FIRMWARE_LIST.1 && entries[5] < sliders_at::SIZE.1);
+        // round 13 keeps its plan
+        let asked = super::plan(13, &catalogue::round(13).unwrap_or_default());
+        assert!(
+            asked
+                .about
+                .contains("The slider tool: start gains typed in")
         );
     }
 
