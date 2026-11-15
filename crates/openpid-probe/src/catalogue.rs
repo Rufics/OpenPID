@@ -22,6 +22,8 @@ pub enum Area {
     Throttle,
     /// The map of the spectrum against the time.
     Time,
+    /// The windows of the tool that no round has asked yet: a first look.
+    Windows,
 }
 
 /// One log of a round.
@@ -1677,6 +1679,20 @@ fn round_11() -> Vec<Probe> {
     ]
 }
 
+/// Round 12: a first look at the windows no round has asked yet (the
+/// sliders, the filters, the setup), with the first flight of round 6:
+/// stick moves, a plant of its own on every axis and a little gyro noise.
+fn round_12() -> Vec<Probe> {
+    let flight = round_6().remove(0);
+    vec![Probe {
+        id: "k1-look-2k",
+        area: Area::Windows,
+        title: "A flight with stick moves, for a first look at the windows of the sliders, of \
+                the filters and of the setup",
+        ..flight
+    }]
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
@@ -1691,12 +1707,13 @@ pub fn round(round: u32) -> Option<Vec<Probe>> {
         9 => Some(round_9()),
         10 => Some(round_10()),
         11 => Some(round_11()),
+        12 => Some(round_12()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 #[cfg(test)]
 mod tests {
@@ -2336,6 +2353,18 @@ mod tests {
         let text = serde_json::to_string(&stairs).unwrap();
         assert!(!text.contains("motors"));
         assert!(serde_json::to_string(sources).unwrap().contains("motors"));
+    }
+
+    #[test]
+    fn round_12_takes_a_flight_of_round_6_to_the_other_windows() {
+        let probes = round(12).unwrap();
+        assert_eq!(probes.len(), 1);
+        let look = &probes[0];
+        assert_eq!((look.id, look.area), ("k1-look-2k", Area::Windows));
+        let flight = round(6).unwrap().remove(0);
+        assert_eq!(look.flight, flight.flight);
+        assert_eq!(look.purpose, flight.purpose);
+        assert_ne!(look.title, flight.title);
     }
 
     #[test]

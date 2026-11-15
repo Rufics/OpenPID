@@ -158,6 +158,13 @@ mod log_at {
     pub const OPEN_FILE: (u32, u32) = (3437, 227);
     pub const SPECTRUM: (u32, u32) = (3556, 871);
     pub const STEP: (u32, u32) = (3556, 962);
+    /// The buttons under it that no round has pressed before round 12: the
+    /// name on the button, the name in the files, the position.
+    pub const OTHERS: [(&str, &str, (u32, u32)); 3] = [
+        ("PID slider tool", "sliders", (3556, 1056)),
+        ("Filter Sim", "filters", (3556, 1148)),
+        ("Setup Info", "setup", (3556, 1240)),
+    ];
 }
 
 /// Controls of the spectrum window, in a picture the script saves.
@@ -1339,9 +1346,41 @@ pub fn spectrum_shot(round: u32, probe: &str, smoothing: &str) -> String {
     format!("r{round}-{probe}-spectrum-{smoothing}")
 }
 
+/// How long a window that was never opened by the script is given to come
+/// up before its picture is taken, milliseconds.
+const LOOK_MS: u32 = 10_000;
+
+/// A first look at the windows the main window opens and no round has
+/// asked: for each a click on its button, a wait, the list of the tool's
+/// windows into the log (their titles are not known yet) and a picture of
+/// the place of the main window on the screen, with whatever lies there
+/// (the main window is not brought to the front for it).
+fn windows_look(steps: &mut Vec<Step>, round: u32) {
+    for (name, file, at) in log_at::OTHERS {
+        steps.push(click(LOG_VIEWER, "log", name, at));
+        steps.push(pause(LOOK_MS));
+        steps.push(Step {
+            action: "windows",
+            ..Step::default()
+        });
+        steps.push(Step {
+            front: Some(false),
+            ..shot(LOG_VIEWER, format!("r{round}-look-{file}"))
+        });
+    }
+}
+
 /// What the plan of a round does, for the reader of `steps.json`.
 fn about(round: u32, probes: &[Probe]) -> String {
     let time = probes.iter().any(|p| p.area == Area::Time);
+    if probes.iter().all(|p| p.area == Area::Windows) {
+        return format!(
+            "Round {round}: the log through the open dialog, then a first look at three windows \
+             of the main window that were never opened by the script (the sliders, the \
+             filters, the setup): a click on the button, ten seconds, a picture of the screen \
+             where the main window is. Nothing is clicked inside those windows."
+        );
+    }
     if probes.iter().all(|p| p.area == Area::StepResponse) {
         step_about(round, probes)
     } else if time && round >= TIME_LEVELS {
@@ -1471,6 +1510,9 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     }
     if throttle {
         throttle_maps(&mut steps, round, probes);
+    }
+    if probes.iter().any(|p| p.area == Area::Windows) {
+        windows_look(&mut steps, round);
     }
     if time && round >= TIME_LEVELS {
         time_levels(&mut steps, round, probes);
@@ -2482,6 +2524,50 @@ mod tests {
             note.contains("138 plots") && note.contains("saves 26 pictures"),
             "{note}"
         );
+    }
+
+    #[test]
+    fn round_12_looks_at_three_windows_without_clicking_inside_them() {
+        let probes = catalogue::round(12).unwrap_or_default();
+        let plan = plan(12, &probes);
+        assert!(!plan.give_up);
+        assert!(plan.about.contains("a first look at three windows"));
+        let shots: Vec<&str> = plan
+            .steps
+            .iter()
+            .filter(|s| s.action == "shot")
+            .filter_map(|s| s.file.as_deref())
+            .collect();
+        assert_eq!(
+            shots,
+            [
+                "r12-log-loaded",
+                "r12-look-sliders",
+                "r12-look-filters",
+                "r12-look-setup"
+            ]
+        );
+        assert!(!plan.steps.iter().any(|s| s.action == "clip_save"));
+        // every click after the log is loaded is on a button of the main
+        // window, one below the other, under the two the rounds have used
+        let clicks: Vec<&Step> = plan.steps.iter().filter(|s| s.action == "click").collect();
+        assert_eq!(clicks.len(), 4);
+        assert!(clicks.iter().all(|s| s.window == Some(LOG_VIEWER)));
+        let ys: Vec<u32> = clicks[1..]
+            .iter()
+            .filter_map(|s| s.at)
+            .map(|a| a.1)
+            .collect();
+        assert!(ys[0] > log_at::STEP.1 + 60);
+        assert!(ys.windows(2).all(|w| w[1] > w[0] + 60 && w[1] < w[0] + 120));
+        // the pictures of the look are of the screen as it is: the main
+        // window is not brought back over the window that came up
+        for step in plan.steps.iter().filter(|s| s.action == "shot").skip(1) {
+            assert_eq!(step.front, Some(false));
+        }
+        // the titles of the windows go into the log after every click
+        let listed = plan.steps.iter().filter(|s| s.action == "windows").count();
+        assert_eq!(listed, 1 + 3 + 1);
     }
 
     #[test]

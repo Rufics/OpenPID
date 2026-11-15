@@ -45,6 +45,8 @@ ROUNDS:
     11       The map of frequency against time again: what its two smoothing lists do,
              flights of other lengths and rates, and a flight made for no question, to
              hold the rule of round 10 against.
+    12       A first look at the windows of the sliders, of the filters and of the setup:
+             one flight with stick moves, a picture of each window as it comes up.
 ";
 
 /// Runs the tool with `args` (without the program name), printing to `out`.
