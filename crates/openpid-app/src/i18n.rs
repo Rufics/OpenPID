@@ -494,6 +494,7 @@ static UA: &[(&str, &str)] = &[
         "commands to apply (select all, copy)",
         "команди для застосування (виділити все, скопіювати)",
     ),
+    ("computed at", "обчислено на"),
     ("confidence", "впевненість"),
     ("copy", "скопіювати"),
     (
@@ -507,6 +508,7 @@ static UA: &[(&str, &str)] = &[
     ("debug", "налагодження"),
     ("delay", "затримка"),
     ("delay (ms)", "затримка (мс)"),
+    ("delay at 1 Hz", "затримка на 1 Гц"),
     ("delay at 100 Hz", "затримка на 100 Гц"),
     (
         "drag a handle or the window; double-click = whole log",
@@ -595,6 +597,8 @@ static UA: &[(&str, &str)] = &[
         "how the craft was set up, in plain words: firmware, rates, PID gains, filters, motors",
         "як налаштовано апарат, простими словами: прошивка, частоти, PID, фільтри, мотори",
     ),
+    ("its PID loop rate", "частота його PID-циклу"),
+    ("its gyro rate", "частота його гіроскопа"),
     ("judged", "оцінено"),
     (
         "keys: Right / Enter, Left, Esc",
@@ -642,6 +646,7 @@ static UA: &[(&str, &str)] = &[
     ("logged filtered", "записаний відфільтрований"),
     ("low", "низька"),
     ("low-med", "нижче середньої"),
+    ("low-pass", "low-pass"),
     (
         "low-pass on setpoint and gyro before the deconvolution: noise above it is ignored",
         "фільтр нижніх частот на уставці й гіро перед деконволюцією: шум вище нього ігнорується",
@@ -694,6 +699,7 @@ static UA: &[(&str, &str)] = &[
         "не оцінено: у тексті сказано чому",
     ),
     ("not logged", "не записано"),
+    ("notch", "notch"),
     (
         "notches per motor, at the motor frequency and its multiples; 0 switches them off",
         "notch на мотор, на частоті мотора та її кратних; 0 вимикає їх",
@@ -779,6 +785,10 @@ static UA: &[(&str, &str)] = &[
     ("sim", "sim"),
     ("sim as flown", "sim як у польоті"),
     ("sim as flown (dashed)", "sim як у польоті (пунктир)"),
+    (
+        "sim: the same filters at the rate of the log,",
+        "sim: ті самі фільтри на частоті логу,",
+    ),
     ("smooth", "згладжування"),
     ("smoothing", "згладжування"),
     ("solo", "лише цей"),
@@ -814,6 +824,10 @@ static UA: &[(&str, &str)] = &[
     (
         "the colours of the logs' lines and of the heatmaps",
         "кольори ліній логів і теплових карт",
+    ),
+    (
+        "the craft's filters, computed at",
+        "фільтри апарата, обчислені на",
     ),
     ("the cut-off at full throttle", "зріз на повному газі"),
     (
@@ -905,6 +919,18 @@ static UA: &[(&str, &str)] = &[
         "the notch quality: higher is narrower, with less delay and less removed",
         "добротність notch: вища — вужчий, з меншою затримкою і меншим вирізанням",
     ),
+    (
+        "the phase delay of each filter at 1 Hz, the low end of the curve, as the reference tool prints it: the low-passes together, the notches (RPM, static, dynamic) together, and both; each filter's own stands beside its name",
+        "фазова затримка кожного фільтра на 1 Гц, нижньому кінці кривої, як її друкує еталонний інструмент: усі low-pass разом, усі notch (RPM, статичні, динамічні) разом і все разом; затримка кожного фільтра — біля його назви",
+    ),
+    (
+        "the rate of the log: the headers give a loop rate below it",
+        "частота логу: частота циклу в заголовках нижча за неї",
+    ),
+    (
+        "the rate of the log: the headers give no loop rate",
+        "частота логу: у заголовках немає частоти циклу",
+    ),
     ("the rate the pilot asked for", "швидкість, яку задав пілот"),
     (
         "the response of each filter at a typical moment of the flight: the mean throttle, the mean motor speeds, the median dynamic-notch centres",
@@ -918,6 +944,10 @@ static UA: &[(&str, &str)] = &[
     (
         "the same for the unfiltered gyro: what the filters remove",
         "те саме для нефільтрованого гіро: що прибирають фільтри",
+    ),
+    (
+        "the simulation runs on the samples of the log, so at the rate of the log; the curves on the left are the craft's filters at the rate of its loops, which is usually faster, so the two part towards half the rate of the log",
+        "симуляція працює на семплах логу, тобто на частоті логу; криві ліворуч — фільтри апарата на частоті його циклів, зазвичай вищій, тож ближче до половини частоти логу вони розходяться",
     ),
     (
         "the static notches, the dynamic-notch band and the RPM filter minimum",
@@ -982,6 +1012,10 @@ static UA: &[(&str, &str)] = &[
     (
         "the verdict table: every log and axis against the targets",
         "таблиця вердиктів: кожен лог і вісь проти цілей",
+    ),
+    (
+        "these curves are the filters as the craft runs them, each at the rate of the loop it runs in there, from the log's headers; the simulation on the right runs the same filters on the samples of the log, at the rate of the log",
+        "ці криві — фільтри так, як їх виконує апарат, кожен на частоті свого циклу із заголовків логу; симуляція праворуч пропускає семпли логу через ті самі фільтри на частоті логу",
     ),
     (
         "this log has no such row",

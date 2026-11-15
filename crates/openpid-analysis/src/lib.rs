@@ -20,7 +20,7 @@ pub mod throttle;
 
 pub use filter_sim::{
     ChainResponse, FilterFit, FilterOverrides, FilterSimAnalysis, FilterSimOutput, FilterSimParams,
-    PartResponse,
+    PartRate, PartResponse, RateSource, curve_rate,
 };
 pub use fitness::{Check, Fitness, Level as FitnessLevel, check_session};
 pub use motor_noise::{

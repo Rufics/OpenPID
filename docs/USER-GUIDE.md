@@ -310,6 +310,27 @@ the batch sampler.
   The delay is the phase delay: how many milliseconds a sine of that
   frequency comes out late; the line above it gives it at 100 Hz. A notch
   delays the frequencies below its centre and leads those above it.
+- **The printed delays** (the line "delay at 1 Hz"): the phase delay at 1 Hz,
+  the low end of the curve, as the reference tool prints it. Each part has
+  its own beside its name in the legend (the RPM part adds every motor's
+  notches); the line gives the sum of the low-passes, the sum of the notches
+  (RPM, static and dynamic) and both. These are the numbers to compare with
+  the reference tool's filter simulator set to the same filters and loop
+  rate.
+- **Two rates.** The curves on the left are the craft's filters as the craft
+  runs them: each at the rate of the loop it runs in, read from the log's
+  headers. On Betaflight 4.2 and later the second low-pass runs at the gyro
+  rate and everything else at the PID loop rate; on older Betaflight and on
+  every other firmware all of them are taken to run at the gyro rate (an
+  assumption, not something the log says). The simulation on the right runs
+  the same filters on the samples of the log, so at the rate of the log,
+  which is usually lower. The two agree at low frequencies and part towards
+  half the rate of the log, where a filter computed at the log rate is no
+  longer the craft's. The line under the delays names the rates the curves
+  were computed at, the line under the fit the rate of the simulation; hover
+  over a part's name for its own rate. When the headers give no usable loop
+  rate (none, or one below the rate of the log), the curves are computed at
+  the rate of the log and the line says so.
 - **On the log** (right): the spectrum and the time trace of the unfiltered
   gyro, the filtered gyro the log carries and the simulation. The **fit**
   line gives the residual `gyro.sim − gyro.filtered` in % of the filtered RMS
@@ -518,7 +539,7 @@ with a new log.
 | Spectrum | `openpid run psd <log> --channel gyro.raw.roll` |
 | Freq × throttle | `openpid run thr-heatmap <log> [--png out.png]` |
 | Freq × time | `openpid run stft <log> --channel motor.0` |
-| Filter Sim | `openpid run filter-sim <log> --set lpf1_hz=100,lpf1_type=1` |
+| Filter Sim | `openpid run filter-sim <log> --set lpf1_hz=100,lpf1_type=1` (`response` carries, per part, `rate` — the rate its curves were computed at and where it comes from — and `delay_1hz_ms`, with `delay_lowpass_1hz_ms`, `delay_notch_1hz_ms`, `delay_total_1hz_ms` and `delay_100hz_ms` of the chain; `fs` is the rate of the simulation) |
 | Motor noise (no tab) | `openpid run motor-noise <log>` |
 | Motor speed without eRPM | `openpid run rpm <log>` |
 | PID sliders | `openpid sliders <log> --set …` |

@@ -283,6 +283,53 @@ fn filter_sim_command() {
         v["model"], v["whatif"],
         "no overrides: the what-if chain is the log's"
     );
+    // the curves are the craft's filters at the rates of its loops (an 8 kHz
+    // gyro and a PID loop at 4 kHz in this log's headers; Betaflight runs
+    // only its second low-pass at the gyro rate), the simulation ran at the
+    // 1 kHz of the log
+    assert_eq!(v["fs"], 1000.0);
+    let response = &v["response"];
+    let parts = response["parts"].as_array().unwrap();
+    let rate_of = |prefix: &str| {
+        let part = parts
+            .iter()
+            .find(|p| p["label"].as_str().unwrap().starts_with(prefix))
+            .unwrap_or_else(|| panic!("no part {prefix}"));
+        (
+            part["rate"]["hz"].as_f64().unwrap(),
+            part["rate"]["source"].as_str().unwrap().to_string(),
+        )
+    };
+    assert_eq!(rate_of("LPF2"), (8000.0, "gyro_rate".to_string()));
+    for prefix in ["RPM", "LPF1", "Dyn notch"] {
+        assert_eq!(
+            rate_of(prefix),
+            (4000.0, "pid_loop_rate".to_string()),
+            "{prefix}"
+        );
+    }
+    assert!(response["total"]["rate"].is_null());
+    // the printed delays: each part at 1 Hz, the low-passes, the notches,
+    // and both
+    let printed = |group: &str| -> f64 {
+        parts
+            .iter()
+            .filter(|p| p["group"] == group)
+            .map(|p| p["delay_1hz_ms"].as_f64().unwrap())
+            .sum()
+    };
+    let field = |name: &str| response[name].as_f64().unwrap();
+    assert!(printed("Lowpass") > 0.5 && printed("Notch") > 0.5);
+    assert!((field("delay_lowpass_1hz_ms") - printed("Lowpass")).abs() < 1e-12);
+    assert!((field("delay_notch_1hz_ms") - printed("Notch")).abs() < 1e-12);
+    assert!((field("delay_total_1hz_ms") - printed("Lowpass") - printed("Notch")).abs() < 1e-12);
+    // the second low-pass is a PT1 at 500 Hz: 1 / (2π·500) s = 1 / π ms = 0.3183 ms
+    let lpf2 = parts
+        .iter()
+        .find(|p| p["label"] == "LPF2 PT1 500 Hz")
+        .expect("the second low-pass");
+    assert!((lpf2["delay_1hz_ms"].as_f64().unwrap() - std::f64::consts::FRAC_1_PI).abs() < 1e-4);
+    assert!(field("delay_100hz_ms") > 0.0, "it stays beside them");
     let (ok, out, err) = run(&[
         "run",
         "filter-sim",
@@ -341,6 +388,8 @@ fn gen_command_writes_a_session_openpid_can_analyse() {
     let v: serde_json::Value = serde_json::from_str(&out).expect("json");
     assert_eq!(v["description"], serde_json::json!(["no filters"]));
     assert_eq!(v["fit"]["residual_rel"], v["fit"]["unfiltered_rel"]);
+    assert_eq!(v["response"]["parts"], serde_json::json!([]));
+    assert_eq!(v["response"]["delay_total_1hz_ms"], 0.0);
     // an edited spec
     let spec_path = temp("spec.json");
     std::fs::write(

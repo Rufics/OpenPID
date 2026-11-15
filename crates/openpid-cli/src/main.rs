@@ -37,7 +37,10 @@ COMMANDS:
              rpm             motor speed estimated from the gyro's noise peaks (needs
                              gyro.raw.<axis>; validated against motor_rpm when logged)
              filter-sim      unfiltered gyro through the modelled filter chain (needs
-                             gyro.raw.<axis>; --set lpf1_hz=…,lpf1_type=… for what-if)
+                             gyro.raw.<axis>; --set lpf1_hz=…,lpf1_type=… for what-if);
+                             `response` holds the curves of the craft's filters at its
+                             loop rates (each part with its `rate` and its delay at 1 Hz,
+                             and their sums), the simulation runs at the log rate `fs`
              recommend       rule-based tuning proposals with their evidence (overshoot →
                              more D, an uncovered spectrum peak → a notch, headroom above
                              the gyro LPF → a higher cutoff); --cli prints them as

@@ -54,6 +54,66 @@ pub struct LoopRates {
     pub pid_hz: Option<f64>,
     /// Rate at which main frames were logged.
     pub log_hz: Option<f64>,
+    /// Which of the two loops the gyro's filters run in, as the firmware
+    /// profile knows it of this firmware and version.
+    #[serde(default)]
+    pub gyro_filter_layout: GyroFilterLayout,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+/// How a firmware spreads the filters of its gyro over the gyro loop and the
+/// PID loop. A firmware profile picks one (ADR-0015);
+/// [`Settings::gyro_filter_rate`] turns it into the rate of a stage.
+pub enum GyroFilterLayout {
+    /// Every gyro filter runs at the gyro rate. This is also what is taken
+    /// for a firmware whose arrangement is not known: an assumption, not a
+    /// fact of that firmware.
+    #[default]
+    AllAtGyroRate,
+    /// The second low-pass runs at the gyro rate, as the anti-aliasing
+    /// filter before the gyro is brought down to the PID loop; every other
+    /// gyro filter (RPM notches, static notches, the first low-pass, dynamic
+    /// notches) runs at the PID loop rate. Betaflight 4.2 and later, by its
+    /// 4.2 tuning notes.
+    PidLoopAfterLowpass2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+/// A stage of the gyro filter chain, in the order the signal passes them.
+pub enum FilterStage {
+    /// The RPM notches (every motor and harmonic).
+    RpmNotch,
+    /// The static notches.
+    StaticNotch,
+    /// The first low-pass.
+    Lowpass1,
+    /// The second low-pass.
+    Lowpass2,
+    /// The dynamic notches.
+    DynNotch,
+}
+
+impl FilterStage {
+    /// Every stage, in signal order.
+    pub const ALL: [FilterStage; 5] = [
+        FilterStage::RpmNotch,
+        FilterStage::StaticNotch,
+        FilterStage::Lowpass1,
+        FilterStage::Lowpass2,
+        FilterStage::DynNotch,
+    ];
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+/// One of the two loops of a flight controller.
+pub enum ControlLoop {
+    /// The gyro loop (the rate the gyro is sampled at).
+    Gyro,
+    /// The PID loop.
+    Pid,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -222,6 +282,29 @@ pub struct Settings {
     pub extra: BTreeMap<String, String>,
 }
 impl Settings {
+    /// The loop a stage of the gyro filter chain runs in on this craft, and
+    /// the rate of that loop when the headers give it.
+    ///
+    /// This is the one place that says which stage runs at which rate:
+    ///
+    /// | Layout | Low-pass 2 | Every other stage |
+    /// |---|---|---|
+    /// | [`GyroFilterLayout::PidLoopAfterLowpass2`] (Betaflight 4.2 and later) | gyro rate | PID loop rate |
+    /// | [`GyroFilterLayout::AllAtGyroRate`] (Betaflight before 4.2; every other firmware, where it is taken to be so, not known) | gyro rate | gyro rate |
+    ///
+    /// The rate is `None` when the headers do not give that loop's rate;
+    /// whether a rate can be used (it cannot be below the rate of the log) is
+    /// for the caller to judge.
+    pub fn gyro_filter_rate(&self, stage: FilterStage) -> (ControlLoop, Option<f64>) {
+        let rates = &self.loop_rates;
+        match (rates.gyro_filter_layout, stage) {
+            (GyroFilterLayout::AllAtGyroRate, _) | (_, FilterStage::Lowpass2) => {
+                (ControlLoop::Gyro, rates.gyro_hz)
+            }
+            (GyroFilterLayout::PidLoopAfterLowpass2, _) => (ControlLoop::Pid, rates.pid_hz),
+        }
+    }
+
     /// The smallest step of a PID gain (1 when the profile gave none).
     pub fn gain_step(&self) -> f64 {
         self.pid_step
@@ -267,6 +350,46 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_gyro_filter_runs_in_the_loop_its_firmware_puts_it_in() {
+        let mut s = Settings::default();
+        s.loop_rates.gyro_hz = Some(8000.0);
+        s.loop_rates.pid_hz = Some(4000.0);
+        // not known, or known to be so: every stage at the gyro rate
+        assert_eq!(
+            s.loop_rates.gyro_filter_layout,
+            GyroFilterLayout::AllAtGyroRate
+        );
+        for stage in FilterStage::ALL {
+            assert_eq!(
+                s.gyro_filter_rate(stage),
+                (ControlLoop::Gyro, Some(8000.0)),
+                "{stage:?}"
+            );
+        }
+        // Betaflight 4.2 and later: the second low-pass before the gyro is
+        // brought down to the PID loop, everything else after
+        s.loop_rates.gyro_filter_layout = GyroFilterLayout::PidLoopAfterLowpass2;
+        for stage in FilterStage::ALL {
+            let expected = if stage == FilterStage::Lowpass2 {
+                (ControlLoop::Gyro, Some(8000.0))
+            } else {
+                (ControlLoop::Pid, Some(4000.0))
+            };
+            assert_eq!(s.gyro_filter_rate(stage), expected, "{stage:?}");
+        }
+        // a rate the headers do not give stays unknown, per loop
+        s.loop_rates.pid_hz = None;
+        assert_eq!(
+            s.gyro_filter_rate(FilterStage::Lowpass1),
+            (ControlLoop::Pid, None)
+        );
+        assert_eq!(
+            s.gyro_filter_rate(FilterStage::Lowpass2),
+            (ControlLoop::Gyro, Some(8000.0))
+        );
+    }
 
     #[test]
     fn gains_are_written_at_the_firmware_step() {

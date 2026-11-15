@@ -2,15 +2,20 @@
 //! the parts that move while flying (throttle-driven low-pass cutoff, RPM
 //! notches following the motors, dynamic notches following spectral peaks).
 //!
-//! The model is an approximation (documented per stage below): it runs at
-//! the log's sample rate, not the gyro's, and the dynamic-notch tracker is a
-//! plain STFT peak picker rather than the firmware's SDFT. Stage order is the
-//! Betaflight gyro order: RPM notches → static notches → low-pass 1 (dynamic)
-//! → low-pass 2 → dynamic notches; linear stages commute, so the order only
-//! matters for the weighted and retuned ones.
+//! The model is an approximation (documented per stage below): it runs a
+//! signal at the log's sample rate, not the gyro's, and the dynamic-notch
+//! tracker is a plain STFT peak picker rather than the firmware's SDFT. Stage
+//! order is the Betaflight gyro order: RPM notches → static notches →
+//! low-pass 1 (dynamic) → low-pass 2 → dynamic notches; linear stages
+//! commute, so the order only matters for the weighted and retuned ones.
+//!
+//! The frequency response of the chain does not need the log's samples, so
+//! it can be asked for at the rate each stage runs at on the craft
+//! ([`ChainModel::parts_at_rates`]) as well as at the rate the model runs a
+//! signal at ([`ChainModel::parts_at`]).
 
 use crate::filter::{Biquad, Chain, Filter, Pt1, Ptn, Stage};
-use openpid_core::settings::{FilterChain, Lowpass, LowpassKind, Notch, Settings};
+use openpid_core::settings::{FilterChain, FilterStage, Lowpass, LowpassKind, Notch, Settings};
 use openpid_dsp::{Complex, Fft, Window, next_smooth, spectrum::amplitude_spectrum};
 use serde::{Deserialize, Serialize};
 
@@ -148,6 +153,8 @@ pub struct ChainPart {
     pub label: String,
     /// Low-pass or notch.
     pub group: PartGroup,
+    /// Which stage of the chain the part is.
+    pub stage: FilterStage,
     /// The stages and their weights.
     pub stages: Vec<(Stage, f64)>,
 }
@@ -320,16 +327,31 @@ impl ChainModel {
     /// signal passes them: RPM notches (per motor and harmonic, faded and
     /// weighted as in [`ChainModel::run`]), static notches, the low-passes
     /// (a dynamic one at the cutoff for `op.throttle`), dynamic notches.
+    /// Every stage at the rate the model runs a signal at, [`ChainModel::fs`].
     pub fn parts_at(&self, op: &OperatingPoint) -> Vec<ChainPart> {
-        let fs = self.fs;
-        let nyq = MAX_NOTCH_FRACTION * fs;
+        self.parts_at_rates(op, &|_| self.fs)
+    }
+
+    /// [`ChainModel::parts_at`] with every stage at a rate of its own,
+    /// `rate_hz(stage)`: the chain as it runs on the craft, whose loops are
+    /// usually faster than its log. A notch at or above 0.48 of its stage's
+    /// rate is left out and a low-pass cut-off is held below it, as the model
+    /// does at its own rate.
+    pub fn parts_at_rates(
+        &self,
+        op: &OperatingPoint,
+        rate_hz: &dyn Fn(FilterStage) -> f64,
+    ) -> Vec<ChainPart> {
         let mut parts = Vec::new();
-        parts.extend(self.rpm_part(op));
+        parts.extend(self.rpm_part(op, rate_hz(FilterStage::RpmNotch)));
+        let fs = rate_hz(FilterStage::StaticNotch);
+        let nyq = MAX_NOTCH_FRACTION * fs;
         for n in &self.notches {
             if n.center_hz > 0.0 && n.center_hz < nyq {
                 parts.push(ChainPart {
                     label: format!("Notch {:.0} Hz", n.center_hz),
                     group: PartGroup::Notch,
+                    stage: FilterStage::StaticNotch,
                     stages: vec![(
                         Stage::Biquad(Biquad::notch(n.center_hz, n.cutoff_hz, fs)),
                         1.0,
@@ -337,33 +359,40 @@ impl ChainModel {
                 });
             }
         }
-        for (i, l) in [&self.lowpass1, &self.lowpass2].into_iter().enumerate() {
+        let lowpasses = [
+            (&self.lowpass1, FilterStage::Lowpass1),
+            (&self.lowpass2, FilterStage::Lowpass2),
+        ];
+        for (i, (l, stage)) in lowpasses.into_iter().enumerate() {
             let Some(l) = l else { continue };
+            let fs = rate_hz(stage);
             let cutoff = match (&l.dynamic, op.throttle) {
                 (Some(d), Some(t)) => d.cutoff_hz(t.clamp(0.0, 1.0)),
                 (Some(d), None) => d.min_hz,
                 (None, _) => l.cutoff_hz,
             };
-            if let Some(stage) = lowpass_stage(l, cutoff, fs) {
+            if let Some(filter) = lowpass_stage(l, cutoff, fs) {
                 parts.push(ChainPart {
                     label: format!("LPF{} {} {cutoff:.0} Hz", i + 1, kind_label(&l.kind)),
                     group: PartGroup::Lowpass,
-                    stages: vec![(stage, 1.0)],
+                    stage,
+                    stages: vec![(filter, 1.0)],
                 });
             }
         }
-        parts.extend(self.dyn_part(op));
+        parts.extend(self.dyn_part(op, rate_hz(FilterStage::DynNotch)));
         parts
     }
 
     /// The RPM notches at the motor frequencies of `op`, one stage per motor
-    /// and harmonic, faded and weighted as in [`ChainModel::run`].
-    fn rpm_part(&self, op: &OperatingPoint) -> Option<ChainPart> {
+    /// and harmonic, faded and weighted as in [`ChainModel::run`], at the
+    /// rate `fs`.
+    fn rpm_part(&self, op: &OperatingPoint, fs: f64) -> Option<ChainPart> {
         let r = self.rpm_notch.as_ref()?;
         if op.motor_hz.is_empty() {
             return None;
         }
-        let nyq = MAX_NOTCH_FRACTION * self.fs;
+        let nyq = MAX_NOTCH_FRACTION * fs;
         let stages: Vec<(Stage, f64)> = op
             .motor_hz
             .iter()
@@ -371,7 +400,7 @@ impl ChainModel {
             .filter_map(|(f, k)| {
                 let weight = rpm_fade(r, f) * r.weights.get(k as usize).copied().unwrap_or(1.0);
                 (f < nyq && f > 0.0 && weight > 0.0).then(|| {
-                    let notch = Biquad::notch_q(f.max(r.min_hz), r.q, self.fs);
+                    let notch = Biquad::notch_q(f.max(r.min_hz), r.q, fs);
                     (Stage::Biquad(notch), weight)
                 })
             })
@@ -387,19 +416,20 @@ impl ChainModel {
                 op.motor_hz.len()
             ),
             group: PartGroup::Notch,
+            stage: FilterStage::RpmNotch,
             stages,
         })
     }
 
-    /// The dynamic notches at the centres of `op`.
-    fn dyn_part(&self, op: &OperatingPoint) -> Option<ChainPart> {
+    /// The dynamic notches at the centres of `op`, at the rate `fs`.
+    fn dyn_part(&self, op: &OperatingPoint, fs: f64) -> Option<ChainPart> {
         let d = self.dyn_notch.as_ref()?;
-        let nyq = MAX_NOTCH_FRACTION * self.fs;
+        let nyq = MAX_NOTCH_FRACTION * fs;
         let stages: Vec<(Stage, f64)> = op
             .dyn_hz
             .iter()
             .filter(|f| **f > 0.0 && **f < nyq)
-            .map(|f| (Stage::Biquad(Biquad::notch_q(*f, d.q, self.fs)), 1.0))
+            .map(|f| (Stage::Biquad(Biquad::notch_q(*f, d.q, fs)), 1.0))
             .collect();
         if stages.is_empty() {
             return None;
@@ -408,6 +438,7 @@ impl ChainModel {
         Some(ChainPart {
             label: format!("Dyn notch {} Hz", centres.join(", ")),
             group: PartGroup::Notch,
+            stage: FilterStage::DynNotch,
             stages,
         })
     }
@@ -780,6 +811,85 @@ mod tests {
                 .iter()
                 .all(|p| !p.label.starts_with("Notch"))
         );
+    }
+
+    /// Phase delay of `part` at `f_hz`, ms.
+    fn delay_ms(part: &ChainPart, f_hz: f64) -> f64 {
+        -part.response(f_hz).arg() / (2.0 * std::f64::consts::PI * f_hz) * 1000.0
+    }
+
+    #[test]
+    fn parts_at_the_rates_of_the_craft() {
+        // a log at 2 kHz of a craft whose gyro runs at 8 kHz and whose PID
+        // loop runs at 4 kHz
+        let s = settings_with(|s| {
+            s.gyro_filters.lowpass1.as_mut().unwrap().dyn_min_hz = None;
+            s.gyro_filters.notches[0] = Notch {
+                center_hz: 500.0,
+                cutoff_hz: 452.0,
+            };
+        });
+        let m = ChainModel::from_settings(&s, ChainKind::Gyro, 2000.0);
+        let op = OperatingPoint {
+            throttle: None,
+            motor_hz: vec![150.0],
+            dyn_hz: vec![320.0],
+        };
+        // every stage at the model's own rate is `parts_at`
+        assert_eq!(m.parts_at_rates(&op, &|_| 2000.0), m.parts_at(&op));
+        let craft = m.parts_at_rates(&op, &|stage| match stage {
+            FilterStage::Lowpass2 => 8000.0,
+            _ => 4000.0,
+        });
+        let log = m.parts_at(&op);
+        let stages: Vec<FilterStage> = craft.iter().map(|p| p.stage).collect();
+        assert_eq!(
+            stages,
+            [
+                FilterStage::RpmNotch,
+                FilterStage::StaticNotch,
+                FilterStage::Lowpass1,
+                FilterStage::Lowpass2,
+                FilterStage::DynNotch
+            ]
+        );
+        // each stage carries the rate it was asked at
+        let rates: Vec<f64> = craft.iter().map(|p| p.stages[0].0.sample_rate()).collect();
+        assert_eq!(rates, [4000.0, 4000.0, 4000.0, 8000.0, 4000.0]);
+        // same labels: the rate changes the curve, not what the filter is
+        for (a, b) in craft.iter().zip(&log) {
+            assert_eq!(a.label, b.label);
+        }
+        // the first low-pass (PT1, 250 Hz) at 1 000 Hz, with
+        // k = dt / (1 / (2π·250) + dt): at 2 kHz that is half the rate,
+        // z⁻¹ = −1 and |H| = k / (2 − k) = 0.4399 / 1.5601 = 0.2820; at
+        // 4 kHz it is a quarter of the rate, z⁻¹ = −j and
+        // |H| = k / sqrt(1 + (1 − k)²) = 0.2820 / 1.2311 = 0.2290. The
+        // curves part towards half the rate and agree at the low end
+        let k = |fs: f64| (1.0 / fs) / (1.0 / (2.0 * std::f64::consts::PI * 250.0) + 1.0 / fs);
+        let at_log = k(2000.0) / (2.0 - k(2000.0));
+        let at_craft = k(4000.0) / (1.0 + (1.0 - k(4000.0)).powi(2)).sqrt();
+        assert!((log[2].response(1000.0).norm() - at_log).abs() < 1e-12);
+        assert!((at_log - 0.2820).abs() < 5e-5);
+        assert!((craft[2].response(1000.0).norm() - at_craft).abs() < 1e-12);
+        assert!((at_craft - 0.2290).abs() < 5e-5);
+        assert!((delay_ms(&craft[2], 1.0) - delay_ms(&log[2], 1.0)).abs() < 1e-4);
+        // the static notch at 500 Hz, with a Q of 500·452 / (500² − 452²) =
+        // 4.946 from its cut-off: towards 0 Hz a notch delays by
+        // dt · cot(w / 2) / (2·Q), w = 2π·500 / fs. At 2 kHz w is π/2 and
+        // that is 0.5 ms / 9.891 = 0.0506 ms; at 4 kHz, where the craft runs
+        // it, cot(π/8) = 2.414 and it is 0.25 ms · 2.414 / 9.891 = 0.0610 ms
+        assert!((delay_ms(&log[1], 1.0) - 0.0506).abs() < 1e-4);
+        assert!((delay_ms(&craft[1], 1.0) - 0.0610).abs() < 1e-4);
+        // a notch the log's rate cannot hold is there at the craft's
+        let mut far = m.clone();
+        far.notches[0] = Notch {
+            center_hz: 1200.0,
+            cutoff_hz: 1000.0,
+        };
+        let has_notch = |parts: &[ChainPart]| parts.iter().any(|p| p.label == "Notch 1200 Hz");
+        assert!(!has_notch(&far.parts_at(&op)));
+        assert!(has_notch(&far.parts_at_rates(&op, &|_| 8000.0)));
     }
 
     #[test]

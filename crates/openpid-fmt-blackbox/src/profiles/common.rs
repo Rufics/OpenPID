@@ -3,8 +3,8 @@
 //! [`Scales`] and overrides the few fields that differ.
 
 use openpid_core::settings::{
-    DebugMode, DynNotch, FilterChain, LoopRates, Lowpass, LowpassKind, MotorConfig, Notch, PerAxis,
-    PidGains, RpmNotch,
+    DebugMode, DynNotch, FilterChain, GyroFilterLayout, LoopRates, Lowpass, LowpassKind,
+    MotorConfig, Notch, PerAxis, PidGains, RpmNotch,
 };
 use openpid_core::{
     Axis, BatteryField, Channel, ChannelId, FieldMapping, FirmwareInfo, FirmwareVendor,
@@ -424,6 +424,20 @@ fn protocol_name(code: f64) -> String {
     .to_string()
 }
 
+/// Which loop the gyro filters of `fw` run in. Betaflight 4.2 brought the
+/// gyro down to the PID loop behind its second low-pass (its 4.2 tuning
+/// notes), so from then on only that low-pass runs at the gyro rate. Before
+/// 4.2, and on every other firmware of the family, every gyro filter is
+/// taken to run at the gyro rate: an assumption, to be corrected here when a
+/// firmware is known to do otherwise.
+pub fn gyro_filter_layout(fw: &FirmwareInfo) -> GyroFilterLayout {
+    if fw.vendor == FirmwareVendor::Betaflight && fw.is_at_least(4, 2) {
+        GyroFilterLayout::PidLoopAfterLowpass2
+    } else {
+        GyroFilterLayout::AllAtGyroRate
+    }
+}
+
 /// Settings common to Betaflight-like header layouts (old and new key names).
 pub fn settings(fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
     let pid = match (
@@ -518,6 +532,7 @@ pub fn settings(fw: &FirmwareInfo, h: &RawHeaders) -> Settings {
             gyro_hz,
             pid_hz,
             log_hz,
+            gyro_filter_layout: gyro_filter_layout(fw),
         },
         motor: MotorConfig {
             // Rotorflight 4.3 prints a pointer here (0x2000_xxxx): keep only plausible counts
@@ -850,6 +865,61 @@ mod tests {
         // a scale of nothing is no scale
         let broken = headers(&[("rc_command_scale", "0")]);
         assert_eq!(value(&broken, "rcCommand[0]", 500.0), 500.0);
+    }
+
+    #[test]
+    fn the_gyro_filter_layout_follows_the_firmware_and_its_version() {
+        let fw = |vendor, version: Option<(u32, u32, u32)>| FirmwareInfo {
+            vendor,
+            version: version.map(|(a, b, c)| FirmwareVersion::new(a, b, c)),
+            ..FirmwareInfo::unknown()
+        };
+        let behind_lowpass2 = GyroFilterLayout::PidLoopAfterLowpass2;
+        let gyro_rate = GyroFilterLayout::AllAtGyroRate;
+        // Betaflight from 4.2 on, the date-based versions included
+        for v in [(4, 2, 0), (4, 2, 11), (4, 5, 1), (2025, 12, 2)] {
+            assert_eq!(
+                gyro_filter_layout(&fw(FirmwareVendor::Betaflight, Some(v))),
+                behind_lowpass2,
+                "{v:?}"
+            );
+        }
+        // before 4.2, or a version that could not be read
+        for v in [Some((4, 1, 7)), Some((3, 5, 7)), None] {
+            assert_eq!(
+                gyro_filter_layout(&fw(FirmwareVendor::Betaflight, v)),
+                gyro_rate,
+                "{v:?}"
+            );
+        }
+        // the other firmwares, whatever their version number
+        for vendor in [
+            FirmwareVendor::Inav,
+            FirmwareVendor::Emuflight,
+            FirmwareVendor::Rotorflight,
+            FirmwareVendor::Cleanflight,
+            FirmwareVendor::Unknown("other".into()),
+        ] {
+            assert_eq!(
+                gyro_filter_layout(&fw(vendor.clone(), Some((9, 0, 1)))),
+                gyro_rate,
+                "{vendor:?}"
+            );
+        }
+        // and it reaches the settings with the rates of the headers: an
+        // 8 kHz gyro with the PID loop at half of it
+        let h = RawHeaders(vec![
+            ("looptime".to_string(), "125".to_string()),
+            ("pid_process_denom".to_string(), "2".to_string()),
+        ]);
+        let s = settings(&fw(FirmwareVendor::Betaflight, Some((4, 5, 0))), &h);
+        assert_eq!(s.loop_rates.gyro_filter_layout, behind_lowpass2);
+        assert_eq!(
+            (s.loop_rates.gyro_hz, s.loop_rates.pid_hz),
+            (Some(8000.0), Some(4000.0))
+        );
+        let s = settings(&fw(FirmwareVendor::Inav, Some((9, 0, 1))), &h);
+        assert_eq!(s.loop_rates.gyro_filter_layout, gyro_rate);
     }
 
     #[test]

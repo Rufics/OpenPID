@@ -2,11 +2,18 @@
 //! controller's own filter chain (`openpid-sim`), validated against the
 //! filtered gyro the log carries, and through a what-if chain with the
 //! user's overrides.
+//!
+//! Two rates are at work (decision D-007). The response curves of the chain
+//! (magnitude, phase, delay and the delays printed with them) are those of
+//! the craft's filters, each computed at the rate of the loop it runs in on
+//! the craft ([`curve_rate`]). The simulated gyro, its spectra and the fit
+//! run the same filters on the samples of the log, so at the rate of the
+//! log.
 
 use crate::prepare::{Prepared, prepare};
 use openpid_core::analysis::{Analysis, AnalysisCtx, AnalysisError, Requirement};
-use openpid_core::settings::{LowpassKind, Notch};
-use openpid_core::{Axis, ChannelId, GyroStage, Unit};
+use openpid_core::settings::{ControlLoop, FilterStage, LowpassKind, Notch};
+use openpid_core::{Axis, ChannelId, GyroStage, Settings, Unit};
 use openpid_dsp::spectrum::{WelchParams, welch};
 use openpid_dsp::xcorr::lag_of_max;
 use openpid_dsp::{Fft, Window};
@@ -328,6 +335,72 @@ pub struct FilterFit {
     pub delay_ms: f64,
 }
 
+/// Where the rate a part's curves were computed at comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RateSource {
+    /// The craft's gyro rate, from the log's headers.
+    GyroRate,
+    /// The craft's PID loop rate, from the log's headers.
+    PidLoopRate,
+    /// The rate of the log, because the headers do not give the rate of the
+    /// loop the part runs in.
+    LogRateNoLoopRate,
+    /// The rate of the log, because the headers give the loop a rate below
+    /// that of the log, which a loop that writes the log cannot have.
+    LogRateLoopBelowLog,
+}
+
+impl RateSource {
+    /// Whether the rate is the craft's own (not the fallback to the log's).
+    pub fn is_craft_rate(self) -> bool {
+        matches!(self, RateSource::GyroRate | RateSource::PidLoopRate)
+    }
+}
+
+/// The rate the curves of one part of the chain were computed at, and why
+/// that one.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PartRate {
+    /// The rate, Hz.
+    pub hz: f64,
+    /// Where it comes from.
+    pub source: RateSource,
+}
+
+/// How far below the rate of the log a loop rate of the headers may read and
+/// still be used: the headers give a nominal rate and the log's is measured
+/// from its time stamps, so a log written at the loop rate can read a little
+/// above it.
+const LOOP_RATE_TOLERANCE: f64 = 0.05;
+
+/// The rate the curves of `stage` are computed at for a log sampled at
+/// `log_hz`: the rate of the loop the stage runs in on the craft
+/// ([`Settings::gyro_filter_rate`]), or the rate of the log when the headers
+/// give that loop no usable rate (none, zero, or one below the log's).
+pub fn curve_rate(settings: &Settings, stage: FilterStage, log_hz: f64) -> PartRate {
+    let (control_loop, hz) = settings.gyro_filter_rate(stage);
+    let Some(hz) = hz.filter(|hz| hz.is_finite() && *hz > 0.0) else {
+        return PartRate {
+            hz: log_hz,
+            source: RateSource::LogRateNoLoopRate,
+        };
+    };
+    if hz < log_hz * (1.0 - LOOP_RATE_TOLERANCE) {
+        return PartRate {
+            hz: log_hz,
+            source: RateSource::LogRateLoopBelowLog,
+        };
+    }
+    PartRate {
+        hz,
+        source: match control_loop {
+            ControlLoop::Gyro => RateSource::GyroRate,
+            ControlLoop::Pid => RateSource::PidLoopRate,
+        },
+    }
+}
+
 /// Frequency response of one part of a chain (or of the whole chain).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PartResponse {
@@ -335,6 +408,9 @@ pub struct PartResponse {
     pub label: String,
     /// Low-pass or notch; `None` for the whole chain.
     pub group: Option<PartGroup>,
+    /// The rate the part's curves were computed at; `None` for the whole
+    /// chain, whose parts each have their own.
+    pub rate: Option<PartRate>,
     /// Magnitude at [`ChainResponse::freq`], dB.
     pub magnitude_db: Vec<f64>,
     /// Phase (unwrapped), degrees.
@@ -342,6 +418,10 @@ pub struct PartResponse {
     /// Phase delay `−phase / (2π f)`, ms: how late a sine of that frequency
     /// comes out.
     pub delay_ms: Vec<f64>,
+    /// The delay printed for the part: its phase delay at 1 Hz, the low end
+    /// of the curve, ms. A part that holds several filters (every motor's
+    /// RPM notches) adds the delays of all of them.
+    pub delay_1hz_ms: f64,
 }
 
 /// A chain's frequency response, part by part, at the flight's typical
@@ -363,15 +443,34 @@ pub struct ChainResponse {
     pub dyn_hz: Vec<f64>,
     /// Phase delay of the whole chain at 100 Hz, ms.
     pub delay_100hz_ms: f64,
+    /// Sum of the printed delays ([`PartResponse::delay_1hz_ms`]) of the
+    /// low-pass parts, ms.
+    pub delay_lowpass_1hz_ms: f64,
+    /// Sum of the printed delays of the notch parts (RPM, static and
+    /// dynamic), ms.
+    pub delay_notch_1hz_ms: f64,
+    /// Sum of the two: the printed delay of the whole chain, ms.
+    pub delay_total_1hz_ms: f64,
 }
 
 /// Points of the response plots.
 const RESPONSE_POINTS: usize = 400;
 
-/// Magnitude, unwrapped phase and phase delay of `h` at `freq`.
+/// The frequency the printed delay of a part is read at, Hz: the low end of
+/// the curve, as the reference tool prints it.
+const PRINTED_DELAY_HZ: f64 = 1.0;
+
+/// Phase delay of `h` at `f_hz`, ms.
+fn phase_delay_ms(h: impl Fn(f64) -> Complex<f64>, f_hz: f64) -> f64 {
+    -h(f_hz).arg() / (2.0 * std::f64::consts::PI * f_hz) * 1000.0
+}
+
+/// Magnitude, unwrapped phase and phase delay of `h` at `freq`, and its
+/// printed delay.
 fn part_response(
     label: String,
     group: Option<PartGroup>,
+    rate: Option<PartRate>,
     freq: &[f64],
     h: impl Fn(f64) -> Complex<f64>,
 ) -> PartResponse {
@@ -394,26 +493,50 @@ fn part_response(
     PartResponse {
         label,
         group,
+        rate,
         magnitude_db,
         phase_deg,
         delay_ms,
+        delay_1hz_ms: phase_delay_ms(&h, PRINTED_DELAY_HZ),
     }
 }
 
-/// The response of `model` at `op` on `freq`, part by part.
-fn chain_response(model: &ChainModel, op: &OperatingPoint, freq: &[f64]) -> ChainResponse {
-    let parts_at = model.parts_at(op);
+/// The response of `model` at `op` on `freq`, part by part, every part at
+/// the rate `rate` gives its stage.
+fn chain_response(
+    model: &ChainModel,
+    op: &OperatingPoint,
+    freq: &[f64],
+    rate: &dyn Fn(FilterStage) -> PartRate,
+) -> ChainResponse {
+    let parts_at = model.parts_at_rates(op, &|stage| rate(stage).hz);
     let parts: Vec<PartResponse> = parts_at
         .iter()
-        .map(|p| part_response(p.label.clone(), Some(p.group), freq, |f| p.response(f)))
+        .map(|p| {
+            part_response(
+                p.label.clone(),
+                Some(p.group),
+                Some(rate(p.stage)),
+                freq,
+                |f| p.response(f),
+            )
+        })
         .collect();
     let all = |f: f64| {
         parts_at
             .iter()
             .fold(Complex::new(1.0, 0.0), |h, p| h * p.response(f))
     };
-    let total = part_response("total".into(), None, freq, all);
-    let at100 = part_response(String::new(), None, &[100.0_f64.min(model.fs * 0.45)], all);
+    let total = part_response("total".into(), None, None, freq, all);
+    let printed = |group: PartGroup| -> f64 {
+        parts
+            .iter()
+            .filter(|p| p.group == Some(group))
+            .map(|p| p.delay_1hz_ms)
+            .sum()
+    };
+    let (delay_lowpass_1hz_ms, delay_notch_1hz_ms) =
+        (printed(PartGroup::Lowpass), printed(PartGroup::Notch));
     ChainResponse {
         freq: freq.to_vec(),
         parts,
@@ -421,7 +544,10 @@ fn chain_response(model: &ChainModel, op: &OperatingPoint, freq: &[f64]) -> Chai
         throttle: op.throttle,
         motor_hz: op.motor_hz.clone(),
         dyn_hz: op.dyn_hz.clone(),
-        delay_100hz_ms: at100.delay_ms[0],
+        delay_100hz_ms: phase_delay_ms(all, 100.0_f64.min(model.fs * 0.45)),
+        delay_lowpass_1hz_ms,
+        delay_notch_1hz_ms,
+        delay_total_1hz_ms: delay_lowpass_1hz_ms + delay_notch_1hz_ms,
     }
 }
 
@@ -471,7 +597,9 @@ fn operating_point(
 pub struct FilterSimOutput {
     /// Simulated axis.
     pub axis: Axis,
-    /// Sample rate the model ran at (the log's).
+    /// Sample rate of the log: the rate the simulated gyro, its spectra and
+    /// the fit were computed at. The curves of [`FilterSimOutput::response`]
+    /// have their own ([`PartResponse::rate`]).
     pub fs: f64,
     /// Seconds from the start of the session, per sample.
     pub time_s: Vec<f64>,
@@ -493,10 +621,12 @@ pub struct FilterSimOutput {
     pub psd_sim_db: Vec<f64>,
     /// Welch PSD of `sim_as_flown` in dB.
     pub psd_as_flown_db: Vec<f64>,
-    /// Magnitude of the what-if chain's static part at `freq`, dB.
+    /// Magnitude of the what-if chain's static part at `freq`, dB, at the
+    /// rate of the log: what the simulation applies to the spectra beside it.
     pub response_db: Vec<f64>,
     /// The what-if chain's response, part by part, at the flight's typical
-    /// operating point.
+    /// operating point, every part at the rate of the loop it runs in on the
+    /// craft.
     pub response: ChainResponse,
     /// The chain as flown, whole, when there are overrides.
     pub response_as_flown: Option<PartResponse>,
@@ -648,11 +778,13 @@ impl Analysis for FilterSimAnalysis {
         let rfreq: Vec<f64> = (1..=RESPONSE_POINTS)
             .map(|i| top * i as f64 / RESPONSE_POINTS as f64)
             .collect();
+        // the curves: the craft's filters, each at the rate of its loop
+        let rate = |stage| curve_rate(&ctx.session.settings, stage, fs);
         let op = operating_point(&whatif, &x, throttle.as_deref(), &rpm);
-        let response = chain_response(&whatif, &op, &rfreq);
+        let response = chain_response(&whatif, &op, &rfreq, &rate);
         let response_as_flown = (!p.overrides.is_empty()).then(|| {
             let op = operating_point(&model, &x, throttle.as_deref(), &rpm);
-            let mut r = chain_response(&model, &op, &rfreq).total;
+            let mut r = chain_response(&model, &op, &rfreq, &rate).total;
             r.label = "total as flown".into();
             r
         });
@@ -711,7 +843,7 @@ mod tests {
     use super::*;
 
     fn model() -> ChainModel {
-        let mut s = openpid_core::Settings::default();
+        let mut s = Settings::default();
         s.gyro_filters.lowpass1 = Some(openpid_core::settings::Lowpass {
             kind: Some(LowpassKind::Pt1),
             cutoff_hz: 250.0,
@@ -724,6 +856,14 @@ mod tests {
             cutoff_hz: 150.0,
         });
         ChainModel::from_settings(&s, ChainKind::Gyro, 1000.0)
+    }
+
+    /// Every stage at the rate of the log, as when the headers give none.
+    fn at_log_rate(fs: f64) -> PartRate {
+        PartRate {
+            hz: fs,
+            source: RateSource::LogRateNoLoopRate,
+        }
     }
 
     #[test]
@@ -844,7 +984,7 @@ mod tests {
             ..OperatingPoint::default()
         };
         let freq: Vec<f64> = (1..=500).map(f64::from).collect();
-        let r = chain_response(&m, &op, &freq);
+        let r = chain_response(&m, &op, &freq, &|_| at_log_rate(m.fs));
         let labels: Vec<&str> = r.parts.iter().map(|p| p.label.as_str()).collect();
         assert_eq!(labels, ["Notch 200 Hz", "LPF1 PT1 250 Hz"]);
         assert_eq!(r.total.group, None);
@@ -864,6 +1004,377 @@ mod tests {
         assert!((r.delay_100hz_ms - r.total.delay_ms[99]).abs() < 1e-9);
         assert_eq!(median(vec![]), 0.0);
         assert_eq!(median(vec![3.0, 1.0, 2.0]), 2.0);
+    }
+
+    // ---- the curves at the craft's rates and the printed delays (D-007)
+
+    /// Every stage at `hz`, as a craft whose two loops run at one rate.
+    fn at_gyro_rate(hz: f64) -> PartRate {
+        PartRate {
+            hz,
+            source: RateSource::GyroRate,
+        }
+    }
+
+    /// Whether `value` prints as `text`, at the decimals `text` is given to.
+    fn prints(value: f64, text: &str) -> bool {
+        let decimals = text.split('.').nth(1).map_or(0, str::len);
+        format!("{value:.decimals$}") == text
+    }
+
+    /// `e^(−j·2π·f / fs)` at the 1 Hz the printed delay is read at.
+    fn z1(fs: f64) -> Complex<f64> {
+        Complex::from_polar(1.0, -2.0 * std::f64::consts::PI * PRINTED_DELAY_HZ / fs)
+    }
+
+    /// The printed delay of a first-order low-pass, from its definition and
+    /// nothing of the model: `H = k / (1 − (1 − k)·z⁻¹)` with
+    /// `k = dt / (1 / (2π·fc) + dt)`. Towards 0 Hz this is the time constant
+    /// `1 / (2π·fc)` (0.63662 ms at 250 Hz); at 1 Hz it is a hair less.
+    fn pt1_ms(fc: f64, fs: f64) -> f64 {
+        let dt = 1.0 / fs;
+        let k = dt / (1.0 / (2.0 * std::f64::consts::PI * fc) + dt);
+        let h = Complex::new(k, 0.0) / (Complex::new(1.0, 0.0) - z1(fs) * (1.0 - k));
+        phase_delay_ms(|_| h, PRINTED_DELAY_HZ)
+    }
+
+    /// The printed delay of a notch, from its definition: `b = [1, −2·cos w,
+    /// 1]`, `a = [1 + α, −2·cos w, 1 − α]`, `w = 2π·f0 / fs`,
+    /// `α = sin w / (2·Q)`. Towards 0 Hz this is `dt · cot(w / 2) / (2·Q)`
+    /// (0.31815 ms at 100 Hz, Q 5, 8 kHz); at 1 Hz it is a hair more.
+    fn notch_ms(f0: f64, q: f64, fs: f64) -> f64 {
+        let w = 2.0 * std::f64::consts::PI * f0 / fs;
+        let (alpha, c) = (w.sin() / (2.0 * q), w.cos());
+        let (z, one) = (z1(fs), Complex::new(1.0, 0.0));
+        let h = (one - z * (2.0 * c) + z * z)
+            / (one * (1.0 + alpha) - z * (2.0 * c) + z * z * (1.0 - alpha));
+        phase_delay_ms(|_| h, PRINTED_DELAY_HZ)
+    }
+
+    /// The cut-off that gives a notch at `centre` the quality `q`: the
+    /// positive root of `Q = fc·fcut / (fc² − fcut²)`.
+    fn cutoff_for_q(centre: f64, q: f64) -> f64 {
+        centre * ((1.0 + 4.0 * q * q).sqrt() - 1.0) / (2.0 * q)
+    }
+
+    fn lowpass_of(kind: LowpassKind, cutoff_hz: f64) -> LowpassModel {
+        LowpassModel {
+            kind,
+            cutoff_hz,
+            dynamic: None,
+        }
+    }
+
+    /// A chain of two first-order low-passes, RPM notches switched hard at
+    /// 50 Hz and one static notch given by its quality, in a log at `log_hz`.
+    fn typed_chain(
+        log_hz: f64,
+        lowpass_hz: (f64, f64),
+        rpm: (u32, f64),
+        notch: (f64, f64),
+    ) -> ChainModel {
+        ChainModel {
+            fs: log_hz,
+            kind: ChainKind::Gyro,
+            lowpass1: Some(lowpass_of(LowpassKind::Pt1, lowpass_hz.0)),
+            lowpass2: Some(lowpass_of(LowpassKind::Pt1, lowpass_hz.1)),
+            notches: vec![Notch {
+                center_hz: notch.0,
+                cutoff_hz: cutoff_for_q(notch.0, notch.1),
+            }],
+            rpm_notch: Some(RpmNotchModel {
+                harmonics: rpm.0,
+                q: rpm.1,
+                min_hz: 50.0,
+                fade_range_hz: 0.0,
+                weights: vec![1.0; rpm.0 as usize],
+                rpm_lpf_hz: 150.0,
+            }),
+            dyn_notch: None,
+        }
+    }
+
+    /// The printed delays of `model` with `motors` motors at `motor_hz`,
+    /// every stage at `rate_hz`.
+    fn printed(model: &ChainModel, motors: usize, motor_hz: f64, rate_hz: f64) -> ChainResponse {
+        let op = OperatingPoint {
+            throttle: None,
+            motor_hz: vec![motor_hz; motors],
+            dyn_hz: Vec::new(),
+        };
+        chain_response(model, &op, &[100.0], &|_| at_gyro_rate(rate_hz))
+    }
+
+    #[test]
+    fn the_formulas_give_the_figures_the_reference_tool_prints() {
+        // the definitions alone, before any of the model: loop rate 8 kHz
+        assert!(prints(pt1_ms(250.0, 8000.0), "0.63662"));
+        assert!(prints(pt1_ms(500.0, 8000.0), "0.31831"));
+        assert!(prints(pt1_ms(100.0, 8000.0), "1.5915"));
+        assert!(prints(notch_ms(100.0, 5.0, 8000.0), "0.31818"));
+        assert!(prints(notch_ms(200.0, 5.0, 8000.0), "0.15883"));
+        assert!(prints(notch_ms(300.0, 5.0, 8000.0), "0.10561"));
+        assert!(prints(notch_ms(500.0, 5.0, 8000.0), "0.062842"));
+        // the same notch at a loop rate of 2 kHz
+        assert!(prints(notch_ms(500.0, 5.0, 2000.0), "0.0500"));
+        // loop rate 4 kHz
+        assert!(prints(pt1_ms(180.0, 4000.0), "0.88418"));
+        assert!(prints(pt1_ms(320.0, 4000.0), "0.49736"));
+        assert!(prints(notch_ms(130.0, 3.0, 4000.0), "0.40669"));
+        assert!(prints(notch_ms(260.0, 3.0, 4000.0), "0.2012"));
+        assert!(prints(notch_ms(240.0, 3.5, 4000.0), "0.18722"));
+        // the helper of these tests: 500 Hz with a Q of 5 has its cut-off at
+        // 452.49 Hz, and 452 Hz is a Q of 500·452 / (500² − 452²) = 4.946
+        assert!((cutoff_for_q(500.0, 5.0) - 452.494).abs() < 1e-3);
+    }
+
+    #[test]
+    fn printed_delays_at_8_khz_are_the_reference_figures() {
+        // the reference tool's window as it comes up: low-passes at 250 and
+        // 500 Hz, three RPM harmonics from 100 Hz with a Q of 5 on four
+        // motors, a notch at 500 Hz with a Q of 5; the log itself at 2 kHz
+        let m = typed_chain(2000.0, (250.0, 500.0), (3, 5.0), (500.0, 5.0));
+        let r = printed(&m, 4, 100.0, 8000.0);
+        let labels: Vec<&str> = r.parts.iter().map(|p| p.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "RPM 3 × 4 motors, 100 Hz",
+                "Notch 500 Hz",
+                "LPF1 PT1 250 Hz",
+                "LPF2 PT1 500 Hz"
+            ]
+        );
+        let (rpm, notch, lpf1, lpf2) = (&r.parts[0], &r.parts[1], &r.parts[2], &r.parts[3]);
+        // each part is the definition's figure, to the last digit
+        assert!((lpf1.delay_1hz_ms - pt1_ms(250.0, 8000.0)).abs() < 1e-12);
+        assert!(
+            prints(lpf1.delay_1hz_ms, "0.63662"),
+            "{}",
+            lpf1.delay_1hz_ms
+        );
+        assert!(
+            prints(lpf2.delay_1hz_ms, "0.31831"),
+            "{}",
+            lpf2.delay_1hz_ms
+        );
+        assert!((notch.delay_1hz_ms - notch_ms(500.0, 5.0, 8000.0)).abs() < 1e-12);
+        assert!(
+            prints(notch.delay_1hz_ms, "0.062842"),
+            "{}",
+            notch.delay_1hz_ms
+        );
+        // the RPM part is the product of its twelve notches, so its delay is
+        // the sum of theirs: four motors × (0.31818 + 0.15883 + 0.10561)
+        let per_motor: f64 = [100.0, 200.0, 300.0]
+            .iter()
+            .map(|f| notch_ms(*f, 5.0, 8000.0))
+            .sum();
+        assert!((rpm.delay_1hz_ms - 4.0 * per_motor).abs() < 1e-9);
+        assert!(prints(rpm.delay_1hz_ms, "2.3305"), "{}", rpm.delay_1hz_ms);
+        // the sums: 0.63662 + 0.31831; 2.3305 + 0.062842; both
+        assert!(prints(r.delay_lowpass_1hz_ms, "0.95492"));
+        assert!(prints(r.delay_notch_1hz_ms, "2.3933"));
+        assert!(prints(r.delay_total_1hz_ms, "3.3483"));
+        // the sum of the parts is the delay of the whole chain: phases add
+        assert!((r.total.delay_1hz_ms - r.delay_total_1hz_ms).abs() < 1e-9);
+        assert_eq!(r.total.rate, None);
+        assert!(r.parts.iter().all(|p| p.rate == Some(at_gyro_rate(8000.0))));
+        // the delay at 100 Hz stays beside them, a figure of its own
+        assert!((r.delay_100hz_ms - r.total.delay_ms[0]).abs() < 1e-12);
+        assert!((r.delay_100hz_ms - r.delay_total_1hz_ms).abs() > 0.1);
+
+        // one motor: 0.58262 + 0.062842
+        assert!(prints(
+            printed(&m, 1, 100.0, 8000.0).delay_notch_1hz_ms,
+            "0.64546"
+        ));
+        // a harmonic alone, at 100, 200 and 300 Hz
+        let one = typed_chain(2000.0, (250.0, 500.0), (1, 5.0), (500.0, 5.0));
+        for (hz, text) in [(100.0, "0.31818"), (200.0, "0.15883"), (300.0, "0.10561")] {
+            let rpm = printed(&one, 1, hz, 8000.0).parts[0].delay_1hz_ms;
+            assert!(prints(rpm, text), "{hz} Hz: {rpm}");
+        }
+        // the same chain computed at the 2 kHz of the log, as before this
+        // decision: the notch at 500 Hz reads 0.0500 ms, the sums 0.95492
+        // and 2.3210 ms (the reference tool set to 2 kHz prints 3.276 ms)
+        let at_log = printed(&m, 4, 100.0, 2000.0);
+        assert!(prints(at_log.parts[1].delay_1hz_ms, "0.0500"));
+        assert!(prints(at_log.delay_lowpass_1hz_ms, "0.95492"));
+        assert!(prints(at_log.delay_notch_1hz_ms, "2.3210"));
+        assert!(prints(at_log.delay_total_1hz_ms, "3.276"));
+    }
+
+    #[test]
+    fn printed_delays_of_the_other_types_and_of_a_4_khz_loop() {
+        // a first-order low-pass at 100 Hz; the static notch as the headers
+        // give it, by its cut-off: 500 and 452 Hz are a Q of 4.946
+        let mut m = typed_chain(2000.0, (100.0, 500.0), (3, 5.0), (500.0, 5.0));
+        m.notches[0].cutoff_hz = 452.0;
+        let r = printed(&m, 4, 100.0, 8000.0);
+        assert!(prints(r.parts[2].delay_1hz_ms, "1.5915"));
+        assert!((r.parts[1].delay_1hz_ms - notch_ms(500.0, 4.945_728, 8000.0)).abs() < 1e-8);
+        assert!(prints(r.parts[1].delay_1hz_ms, "0.063532"));
+        // two and three first-order stages at fc / sqrt(2^(1/n) − 1) (388.4
+        // and 490.4 Hz for 250 Hz), and the second-order low-pass
+        let pt2 = 2.0 * pt1_ms(250.0 / (2f64.sqrt() - 1.0).sqrt(), 8000.0);
+        let pt3 = 3.0 * pt1_ms(250.0 / (2f64.cbrt() - 1.0).sqrt(), 8000.0);
+        for (kind, text, reference) in [
+            (LowpassKind::Pt2, "0.81945", Some(pt2)),
+            (LowpassKind::Pt3, "0.97369", Some(pt3)),
+            (LowpassKind::Biquad, "0.89743", None),
+        ] {
+            m.lowpass1 = Some(lowpass_of(kind.clone(), 250.0));
+            let lpf1 = printed(&m, 4, 100.0, 8000.0).parts[2].delay_1hz_ms;
+            assert!(prints(lpf1, text), "{kind:?}: {lpf1}");
+            if let Some(reference) = reference {
+                assert!((lpf1 - reference).abs() < 1e-12, "{kind:?}");
+            }
+        }
+        // the set made for no question: a 4 kHz loop, six motors with two
+        // harmonics from 130 Hz and a Q of 3, low-passes at 180 and 320 Hz,
+        // a notch at 240 Hz with a Q of 3.5
+        let m = typed_chain(1000.0, (180.0, 320.0), (2, 3.0), (240.0, 3.5));
+        let r = printed(&m, 6, 130.0, 4000.0);
+        assert!(prints(r.parts[2].delay_1hz_ms, "0.88418"));
+        assert!(prints(r.parts[3].delay_1hz_ms, "0.49736"));
+        assert!(prints(r.delay_lowpass_1hz_ms, "1.3815"));
+        assert!(prints(r.parts[1].delay_1hz_ms, "0.18722"));
+        // six motors × (0.40669 + 0.2012) + 0.18722
+        let rpm = 6.0 * (notch_ms(130.0, 3.0, 4000.0) + notch_ms(260.0, 3.0, 4000.0));
+        assert!((r.parts[0].delay_1hz_ms - rpm).abs() < 1e-9);
+        assert!(prints(r.delay_notch_1hz_ms, "3.8346"));
+    }
+
+    #[test]
+    fn curves_at_the_loop_rate_part_from_those_at_the_log_rate_towards_its_half() {
+        // a log at 2 kHz of a craft that filters at 8 kHz
+        let m = typed_chain(2000.0, (250.0, 500.0), (3, 5.0), (500.0, 5.0));
+        let op = OperatingPoint {
+            throttle: None,
+            motor_hz: vec![100.0; 4],
+            dyn_hz: Vec::new(),
+        };
+        let freq: Vec<f64> = (1..=1000).map(f64::from).collect();
+        let craft = chain_response(&m, &op, &freq, &|_| at_gyro_rate(8000.0));
+        let log = chain_response(&m, &op, &freq, &|_| at_log_rate(2000.0));
+        let (lpf_craft, lpf_log) = (&craft.parts[2], &log.parts[2]);
+        // the low-pass at 250 Hz, at 1 000 Hz: 0.28 of magnitude at the rate
+        // of the log (half of it: z⁻¹ = −1, k / (2 − k) with k = 0.4399),
+        // 0.23 at the loop rate
+        let ratio = |db: f64| 10f64.powf(db / 20.0);
+        assert!((ratio(lpf_log.magnitude_db[999]) - 0.2820).abs() < 1e-4);
+        assert!((ratio(lpf_craft.magnitude_db[999]) - 0.2284).abs() < 1e-4);
+        // and at its cut-off it delays by 0.47 ms on the craft, 0.37 ms at
+        // the rate of the log
+        assert!(prints(lpf_craft.delay_ms[249], "0.47"));
+        assert!(prints(lpf_log.delay_ms[249], "0.37"));
+        // at the low end the two are one curve
+        assert!((lpf_craft.magnitude_db[0] - lpf_log.magnitude_db[0]).abs() < 1e-3);
+        assert!((lpf_craft.delay_ms[0] - lpf_log.delay_ms[0]).abs() < 1e-4);
+        // the notch at 500 Hz delays by 0.063 ms on the craft, 0.050 ms at
+        // the rate of the log
+        assert!(prints(craft.parts[1].delay_1hz_ms, "0.063"));
+        assert!(prints(log.parts[1].delay_1hz_ms, "0.050"));
+        // where the two rates are one, so are the curves: only the label of
+        // where the rate comes from differs
+        let same = chain_response(&m, &op, &freq, &|_| at_gyro_rate(2000.0));
+        for (a, b) in same.parts.iter().zip(&log.parts) {
+            assert_eq!(a.magnitude_db, b.magnitude_db);
+            assert_eq!(a.phase_deg, b.phase_deg);
+            assert_eq!(a.delay_ms, b.delay_ms);
+            assert_eq!(a.delay_1hz_ms, b.delay_1hz_ms);
+        }
+        assert_eq!(same.total.delay_ms, log.total.delay_ms);
+        assert_eq!(same.delay_100hz_ms, log.delay_100hz_ms);
+        // each part at the rate of its own loop: the second low-pass at
+        // 8 kHz and the rest at 4 kHz, as Betaflight 4.2 and later
+        let mixed = chain_response(&m, &op, &freq, &|stage| match stage {
+            FilterStage::Lowpass2 => at_gyro_rate(8000.0),
+            _ => PartRate {
+                hz: 4000.0,
+                source: RateSource::PidLoopRate,
+            },
+        });
+        let rates: Vec<f64> = mixed.parts.iter().map(|p| p.rate.unwrap().hz).collect();
+        assert_eq!(rates, [4000.0, 4000.0, 4000.0, 8000.0]);
+        assert_eq!(mixed.parts[3].magnitude_db, craft.parts[3].magnitude_db);
+        assert_ne!(mixed.parts[2].magnitude_db, craft.parts[2].magnitude_db);
+        assert_eq!(mixed.parts[3].rate.unwrap().source, RateSource::GyroRate);
+    }
+
+    #[test]
+    fn the_curve_rate_is_the_loop_rate_or_falls_back_to_the_log_rate() {
+        use openpid_core::settings::GyroFilterLayout;
+        let settings = |gyro_hz, pid_hz, layout| {
+            let mut s = Settings::default();
+            s.loop_rates.gyro_hz = gyro_hz;
+            s.loop_rates.pid_hz = pid_hz;
+            s.loop_rates.gyro_filter_layout = layout;
+            s
+        };
+        let rate = |hz, source| PartRate { hz, source };
+        let split = GyroFilterLayout::PidLoopAfterLowpass2;
+        // Betaflight 4.2 and later: an 8 kHz gyro, the PID loop at 4 kHz
+        let s = settings(Some(8000.0), Some(4000.0), split);
+        for stage in FilterStage::ALL {
+            let expected = if stage == FilterStage::Lowpass2 {
+                rate(8000.0, RateSource::GyroRate)
+            } else {
+                rate(4000.0, RateSource::PidLoopRate)
+            };
+            assert_eq!(curve_rate(&s, stage, 1000.0), expected, "{stage:?}");
+        }
+        // any other firmware: every stage at the gyro rate
+        let s = settings(Some(2000.0), Some(1000.0), GyroFilterLayout::AllAtGyroRate);
+        for stage in FilterStage::ALL {
+            assert_eq!(
+                curve_rate(&s, stage, 1000.0),
+                rate(2000.0, RateSource::GyroRate)
+            );
+        }
+        // no rate in the headers (a CSV), a zero or a number that is none:
+        // the rate of the log, and why
+        for missing in [None, Some(0.0), Some(f64::NAN), Some(-8000.0)] {
+            let s = settings(missing, missing, split);
+            for stage in FilterStage::ALL {
+                assert_eq!(
+                    curve_rate(&s, stage, 1000.0),
+                    rate(1000.0, RateSource::LogRateNoLoopRate),
+                    "{missing:?} {stage:?}"
+                );
+            }
+        }
+        // one loop without a rate: only its stages fall back
+        let s = settings(Some(8000.0), None, split);
+        assert_eq!(
+            curve_rate(&s, FilterStage::Lowpass1, 1000.0),
+            rate(1000.0, RateSource::LogRateNoLoopRate)
+        );
+        assert_eq!(
+            curve_rate(&s, FilterStage::Lowpass2, 1000.0),
+            rate(8000.0, RateSource::GyroRate)
+        );
+        // a loop cannot be slower than the log it writes
+        let s = settings(Some(8000.0), Some(500.0), split);
+        assert_eq!(
+            curve_rate(&s, FilterStage::RpmNotch, 1000.0),
+            rate(1000.0, RateSource::LogRateLoopBelowLog)
+        );
+        // a log written at the loop rate measures a little off the nominal
+        // rate of the headers: still the loop rate
+        let s = settings(Some(8000.0), Some(1000.0), split);
+        assert_eq!(
+            curve_rate(&s, FilterStage::RpmNotch, 1013.2),
+            rate(1000.0, RateSource::PidLoopRate)
+        );
+        assert_eq!(
+            curve_rate(&s, FilterStage::RpmNotch, 1000.0),
+            rate(1000.0, RateSource::PidLoopRate)
+        );
+        assert!(RateSource::GyroRate.is_craft_rate() && RateSource::PidLoopRate.is_craft_rate());
+        assert!(!RateSource::LogRateNoLoopRate.is_craft_rate());
+        assert!(!RateSource::LogRateLoopBelowLog.is_craft_rate());
     }
 
     #[test]
