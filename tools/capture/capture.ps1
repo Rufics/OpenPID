@@ -796,6 +796,7 @@ function Invoke-Step($step, $index) {
     } elseif ($action -eq "type") {
         # a text box: click into it, replace what it holds, Enter
         Test-Mouse
+        if ($step.mark) { $script:mark = Get-Fingerprint $hwnd $step }
         $p = Get-Point $hwnd $step $step.at
         [OpCapture]::Click($p[0], $p[1])
         $script:cursor = $p
