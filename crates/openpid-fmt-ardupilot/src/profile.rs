@@ -686,6 +686,8 @@ impl BoundProfile for Bound<'_> {
                 gyro_hz,
                 pid_hz,
                 log_hz: None,
+                // the gyro's filters are taken to run at the gyro rate
+                gyro_filter_layout: openpid_core::settings::GyroFilterLayout::AllAtGyroRate,
             },
             motor,
             gyro_filters,

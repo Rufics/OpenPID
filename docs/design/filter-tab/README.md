@@ -90,3 +90,50 @@ dynamic notch):
 Betaflight 4.5.1 (two static notches as well):
 
 ![4.5.1](second-log.jpg)
+
+## Revision: the curves at the craft's loop rate, the delays printed (2026-11-16, decision D-007)
+
+The owner decided (#166) that the curves of the chain are computed at the
+rate the craft filters at, not at the rate of its log, and that the delays
+are printed as the reference tool prints them (DESIGN §6.6). The layout S2
+stays; what changed on this tab:
+
+- **The curves** (left column) are the craft's filters, each part at the
+  rate of the loop it runs in on the craft, from the log's headers: on
+  Betaflight 4.2 and later the second low-pass at the gyro rate and every
+  other filter at the PID loop rate; on older Betaflight and the other
+  firmwares every filter at the gyro rate (taken to be so, not known).
+  Without a usable rate in the headers a part is computed at the rate of the
+  log. The frequency axis is as before, to half the rate of the log.
+- **The simulation** (right column) is unchanged: it runs the same filters
+  on the samples of the log, at the rate of the log.
+- **Each column says its rate.** Under the operating point: "the craft's
+  filters, computed at 4 kHz (its PID loop rate), 8 kHz (its gyro rate)",
+  or "… at 1 kHz (the rate of the log: the headers give no loop rate)".
+  Under the fit: "sim: the same filters at the rate of the log, 1 kHz". The
+  hints of the two lines say why the columns part towards half the log rate.
+- **The printed delays**: a line "delay at 1 Hz: low-pass 0.803 ms + notch
+  1.567 ms = 2.369 ms" (the sum of the low-pass parts, of the notch parts,
+  and both), and each part's own delay beside its name in the legend ("LPF2
+  PT1 500 Hz: 0.318 ms"), whose hint names the rate the part was computed
+  at. A legend entry no longer breaks in the middle. "Delay at 100 Hz" stays
+  on the line of the operating point.
+- **Not taken over** from the reference tool's filter screen: the step
+  response of a single filter, the chirp, the magnitude as a ratio.
+- No mathematics in the app: the rates, their reasons and the delays come in
+  `FilterSimOutput::response` (`PartResponse::rate`, `delay_1hz_ms`, the
+  three sums); `filter_tab.rs` puts them in words (`i18n.rs`, English and
+  Ukrainian).
+
+Tests: `a_gyro_filter_runs_in_the_loop_its_firmware_puts_it_in`
+(`openpid-core`), `the_gyro_filter_layout_follows_the_firmware_and_its_version`
+(`openpid-fmt-blackbox`), `parts_at_the_rates_of_the_craft` (`openpid-sim`),
+`the_formulas_give_the_figures_the_reference_tool_prints`,
+`printed_delays_at_8_khz_are_the_reference_figures`,
+`printed_delays_of_the_other_types_and_of_a_4_khz_loop`,
+`curves_at_the_loop_rate_part_from_those_at_the_log_rate_towards_its_half`,
+`the_curve_rate_is_the_loop_rate_or_falls_back_to_the_log_rate` and
+`filter_curves_follow_the_loop_rate_and_the_simulation_the_log_rate`
+(`openpid-analysis`), `filter_sim_tab_prints_the_delays_and_says_which_rate_is_which`
+(`openpid-app`), `filter_sim_command` (`openpid-cli`). The pictures above show
+the tab before this revision; `docs/screenshots/filter.png` shows it after.

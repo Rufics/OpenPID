@@ -4,6 +4,11 @@
 //! draws its filters); on the right the docked log's unfiltered gyro through
 //! that chain against the filtered gyro it logged. Every control, the
 //! what-if values of each filter included, is in the panel on the right.
+//!
+//! The two columns are at two rates and each says its own: the curves on the
+//! left are the craft's filters at the rate of its loops, with the delays
+//! the reference tool prints; the simulation on the right runs the same
+//! filters on the samples of the log, at the rate of the log.
 
 use crate::app::App;
 use crate::axis_layout::control_panel;
@@ -14,7 +19,9 @@ use crate::views::{decimate, has_raw_gyro, no_raw_gyro, show_error, slot_color};
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{Line, LineStyle, PlotPoints};
-use openpid_analysis::{FilterOverrides, FilterSimOutput, PartResponse};
+use openpid_analysis::{
+    ChainResponse, FilterOverrides, FilterSimOutput, PartRate, PartResponse, RateSource,
+};
 use openpid_core::Axis;
 use openpid_core::settings::LowpassKind;
 use openpid_sim::{ChainModel, LowpassModel};
@@ -135,6 +142,88 @@ impl Curve {
     }
 }
 
+/// A rate in words: "8 kHz", "3.2 kHz", "997 Hz".
+fn rate_text(hz: f64) -> String {
+    if hz < 1000.0 {
+        return format!("{hz:.0} Hz");
+    }
+    let khz = format!("{:.3}", hz / 1000.0);
+    format!("{} kHz", khz.trim_end_matches('0').trim_end_matches('.'))
+}
+
+/// Where a rate comes from, in words.
+fn source_text(source: RateSource) -> &'static str {
+    match source {
+        RateSource::GyroRate => tr("its gyro rate"),
+        RateSource::PidLoopRate => tr("its PID loop rate"),
+        RateSource::LogRateNoLoopRate => tr("the rate of the log: the headers give no loop rate"),
+        RateSource::LogRateLoopBelowLog => {
+            tr("the rate of the log: the headers give a loop rate below it")
+        }
+    }
+}
+
+/// A rate and where it comes from: "8 kHz (its gyro rate)".
+fn rate_and_source(rate: PartRate) -> String {
+    format!("{} ({})", rate_text(rate.hz), source_text(rate.source))
+}
+
+/// Which rates the curves of the chain were computed at, each named once in
+/// the order of the parts; `None` for a chain without parts.
+pub(crate) fn curve_rates_text(r: &ChainResponse) -> Option<String> {
+    let mut rates: Vec<PartRate> = Vec::new();
+    for rate in r.parts.iter().filter_map(|p| p.rate) {
+        if !rates.contains(&rate) {
+            rates.push(rate);
+        }
+    }
+    if rates.is_empty() {
+        return None;
+    }
+    let listed: Vec<String> = rates.into_iter().map(rate_and_source).collect();
+    Some(format!(
+        "{} {}",
+        tr("the craft's filters, computed at"),
+        listed.join(", ")
+    ))
+}
+
+/// The delays the reference tool prints: the low-passes, the notches and
+/// both, each the sum of its parts' phase delays at 1 Hz.
+pub(crate) fn printed_delays_text(r: &ChainResponse) -> String {
+    format!(
+        "{}: {} {:.3} ms + {} {:.3} ms = {:.3} ms",
+        tr("delay at 1 Hz"),
+        tr("low-pass"),
+        r.delay_lowpass_1hz_ms,
+        tr("notch"),
+        r.delay_notch_1hz_ms,
+        r.delay_total_1hz_ms
+    )
+}
+
+/// A part in the legend: its name and its printed delay.
+fn part_text(p: &PartResponse) -> String {
+    format!("{}: {:.3} ms", p.label, p.delay_1hz_ms)
+}
+
+/// The printed delays and the rates of the curves, under the operating point.
+fn delays_and_rates(ui: &mut Ui, r: &ChainResponse) {
+    if r.parts.is_empty() {
+        return;
+    }
+    ui.label(RichText::new(printed_delays_text(r)).color(MUTED))
+        .on_hover_text(tr(
+            "the phase delay of each filter at 1 Hz, the low end of the curve, as the reference tool prints it: the low-passes together, the notches (RPM, static, dynamic) together, and both; each filter's own stands beside its name",
+        ));
+    if let Some(rates) = curve_rates_text(r) {
+        ui.label(RichText::new(rates).color(MUTED).size(12.0))
+            .on_hover_text(tr(
+                "these curves are the filters as the craft runs them, each at the rate of the loop it runs in there, from the log's headers; the simulation on the right runs the same filters on the samples of the log, at the rate of the log",
+            ));
+    }
+}
+
 /// The chain, part by part: magnitude, delay and phase.
 fn chain_column(ui: &mut Ui, f: &FilterSimOutput) {
     let r = &f.response;
@@ -164,7 +253,8 @@ fn chain_column(ui: &mut Ui, f: &FilterSimOutput) {
         ))
         .color(MUTED),
     );
-    // the parts' names in their colours: the legend
+    delays_and_rates(ui, r);
+    // the parts' names in their colours, each with its printed delay: the legend
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
         ui.label(
@@ -173,7 +263,17 @@ fn chain_column(ui: &mut Ui, f: &FilterSimOutput) {
                 .strong(),
         );
         for (i, p) in r.parts.iter().enumerate() {
-            ui.label(RichText::new(&p.label).color(part_colour(i)).size(12.0));
+            // a name and its delay stay on one line: an entry wraps whole
+            let text = RichText::new(part_text(p)).color(part_colour(i)).size(12.0);
+            let name = ui.add(egui::Label::new(text).wrap_mode(egui::TextWrapMode::Extend));
+            if let Some(rate) = p.rate {
+                name.on_hover_text(format!(
+                    "{} · {} {}",
+                    tr("delay at 1 Hz"),
+                    tr("computed at"),
+                    rate_and_source(rate)
+                ));
+            }
         }
         if f.response_as_flown.is_some() {
             ui.label(
@@ -256,6 +356,18 @@ fn log_column(app: &App, ui: &mut Ui, slot: Slot, f: &FilterSimOutput) {
         None => tr("no gyro.filtered in the log to validate against").to_string(),
     };
     ui.label(RichText::new(fit).color(MUTED));
+    ui.label(
+        RichText::new(format!(
+            "{} {}",
+            tr("sim: the same filters at the rate of the log,"),
+            rate_text(f.fs)
+        ))
+        .color(MUTED)
+        .size(12.0),
+    )
+    .on_hover_text(tr(
+        "the simulation runs on the samples of the log, so at the rate of the log; the curves on the left are the craft's filters at the rate of its loops, which is usually faster, so the two part towards half the rate of the log",
+    ));
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
         ui.label(RichText::new(tr("raw")).color(colour.gamma_multiply(0.45)));
