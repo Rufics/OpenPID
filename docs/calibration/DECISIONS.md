@@ -155,6 +155,21 @@ Taken by the owner on 2026-11-11:
 | The owner's decision | **A**, 2026-11-14: as the reference tool, every column at the middle of its segment |
 | Carried out by | #196 (on its own from `master`). Its map is the reference tool's, cell by cell, on a log of round 11 at nine settings of the two lists (2.9 million cells, each the very colour step), but for the reference tool's first columns, which are not copied. The second run of round 11 saw the same rule on stretches of 43 and 82 s and at 1 and 8 kHz |
 
+### D-007 At which rate the filter curves are computed, and which delays are printed
+
+| Field | |
+|---|---|
+| Id | D-007 |
+| Area | Filter Sim, X1–X4 and X6: the magnitude, phase and delay curves of the filter chain and the delay printed with them |
+| Probe | the filter simulator of the reference tool with filters typed in (rounds 13 and 14, packs `959ad7c` and `b7990bb`): its copied curves and the delays it prints, nine settings of them written down before the run |
+| The reference tool shows | every filter computed at the loop rate chosen in its list (8 kHz as it comes up), with the same formulas OpenPID has ([filters.md](filters.md)); per filter its phase delay at 1 Hz, per column their sum (an RPM notch once per motor) and the total: for two first-order low-passes at 250 and 500 Hz, RPM notches from 100 Hz on four motors and a notch at 500 Hz, 0.955 + 2.393 = 3.348 ms at 8 kHz |
+| OpenPID shows | the same filters computed at the rate of the log, whatever the loop rate of the craft, and one figure, "delay at 100 Hz", of the whole chain. For a log at 2 kHz of a craft that filters at 8 kHz, the low-pass at 250 Hz reads 0.28 of magnitude at 1 000 Hz in place of 0.23, and the notch at 500 Hz delays by 0.050 ms in place of 0.063; the reference tool itself, set to 2 kHz, prints 3.276 ms for the chain above |
+| The exact value | the craft's filters run at its loop rate, which the log's headers give; a curve computed at the rate of the log is that of another filter above a few hundred Hz. Which single delay to print has no exact value: a display choice |
+| Options | **A.** The curves of the chain (magnitude, phase, delay) computed at the craft's loop rate from the headers, and the delays printed as the reference tool prints them: per part at the low end of the curve, the sum of the low-passes, of the notches and in total; "delay at 100 Hz" stays beside them. The simulated gyro, which runs on the samples of the log, stays at the rate of the log, and the tab says so. A user reads the numbers the reference tool gives for the same filters. **B.** Keep OpenPID as it is and say in the user guide that its curves are those of the filters at the rate of the log. **C.** Only the rate: the curves at the loop rate, OpenPID's own "delay at 100 Hz" as the one printed figure |
+| Recommendation | A. The rate is a matter of being right about the craft's filters, whatever the reference tool does; the printed sums cost little and are what a user would compare. The two things the reference tool has and OpenPID does not need — a filter drawn alone with its step response, and the chirp — are left out |
+| The owner's decision | open |
+| Carried out by | — |
+
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
 call.

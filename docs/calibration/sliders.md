@@ -49,7 +49,21 @@ own, where the reference tool takes one typed triple for the three axes
 and gives yaw no D; and a slider holds the value it shows, so the hair
 under 0.9 does not arise.
 
-### Not settled
+## Round 14 (2026-11-15): the other entries of the list
 
-- The other five entries of the list: whether they change the step of a
-  gain or the rounding.
+With the PD ratio at 1.25, each entry of the list chosen in turn (pack
+`b7990bb`; six pictures). An entry brings start gains and a number format
+of its own; the gains typed before are replaced:
+
+| Entry | Start gains P, I, D | Roll and pitch | Yaw |
+|---|---|---|---|
+| Betaflight (typed: 45, 80, 30) | whole numbers | 45 80 38 | 45 80 0 |
+| INAV | 40, 75, 20 | 40 75 25 | 40 75 0 |
+| FETTEC | 1.00, 0.01, 2.50 | 1.00 0.010 3.12 | 1.00 0.010 0.25 |
+| KISS_ULTRA | 1.5, 0.05, 5.0 | 1.50 0.050 6.25 | 1.50 0.050 2.50 |
+| QuickSilver | 45, 40, 30 | 45 40 38 | 45 40 0 |
+| Ardupilot | 0.06, 0.04, 0.002 | 0.060 0.040 0.0025 | 0.060 0.040 0.0000 |
+
+The products are those of the rule. Yaw has no D for Betaflight, INAV,
+QuickSilver and Ardupilot; for FETTEC and KISS_ULTRA its D is a tenth and
+a half of the start D, and the PD ratio does not act on it.
