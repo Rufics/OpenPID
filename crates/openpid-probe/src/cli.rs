@@ -47,6 +47,9 @@ ROUNDS:
              hold the rule of round 10 against.
     12       A first look at the windows of the sliders, of the filters and of the setup:
              one flight with stick moves, a picture of each window as it comes up.
+    13       Those three windows asked: the slider tool with start gains and its sliders
+             moved, the filter simulator's plots, lists, switches and four values typed
+             in, the list of the setup with two logs.
 ";
 
 /// Runs the tool with `args` (without the program name), printing to `out`.

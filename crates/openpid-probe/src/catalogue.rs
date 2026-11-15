@@ -1693,6 +1693,30 @@ fn round_12() -> Vec<Probe> {
     }]
 }
 
+/// Round 13: the three windows of round 12 asked for the first time, with
+/// the first two flights of round 6 (the list of the setup compares logs).
+fn round_13() -> Vec<Probe> {
+    let mut flights = round_6();
+    let second = flights.remove(1);
+    let first = flights.remove(0);
+    let title = "A flight with stick moves, for the windows of the sliders, of the filters and \
+                 of the setup";
+    vec![
+        Probe {
+            id: "m1-ask-2k",
+            area: Area::Windows,
+            title,
+            ..first
+        },
+        Probe {
+            id: "m2-ask-1k",
+            area: Area::Windows,
+            title,
+            ..second
+        },
+    ]
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
@@ -1708,12 +1732,13 @@ pub fn round(round: u32) -> Option<Vec<Probe>> {
         10 => Some(round_10()),
         11 => Some(round_11()),
         12 => Some(round_12()),
+        13 => Some(round_13()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 
 #[cfg(test)]
 mod tests {
@@ -2353,6 +2378,20 @@ mod tests {
         let text = serde_json::to_string(&stairs).unwrap();
         assert!(!text.contains("motors"));
         assert!(serde_json::to_string(sources).unwrap().contains("motors"));
+    }
+
+    #[test]
+    fn round_13_takes_two_flights_of_round_6_to_the_other_windows() {
+        let probes = round(13).unwrap();
+        let flights = round(6).unwrap();
+        assert_eq!(probes.len(), 2);
+        for (probe, flight) in probes.iter().zip(&flights) {
+            assert_eq!(probe.area, Area::Windows);
+            assert_eq!(probe.flight, flight.flight);
+        }
+        assert_eq!((probes[0].id, probes[1].id), ("m1-ask-2k", "m2-ask-1k"));
+        // at the rates their names say
+        assert_eq!((probes[0].flight.fs, probes[1].flight.fs), (2000.0, 1000.0));
     }
 
     #[test]

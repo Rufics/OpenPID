@@ -386,7 +386,10 @@ fn an_unknown_round_is_refused() {
             catalogue::ROUNDS
         )
     );
-    assert_eq!(catalogue::ROUNDS, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    assert_eq!(
+        catalogue::ROUNDS,
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+    );
 }
 
 #[test]
