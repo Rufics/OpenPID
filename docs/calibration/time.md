@@ -50,9 +50,9 @@ of the lists change (round 11):
    last second are left out, and a segment is `L = round(0.3 · fs)`
    samples. The list "smooth time axis" does not smooth: it sets how far
    apart the segments are. "off": a segment (0.3 s); "low": half a segment
-   (0.15 s); "med": a fifth (0.06 s); "high": a tenth (0.03 s). Seen on a
-   stretch of 28 s at 2 kHz at all four, and at "low" also on 14.5 s and
-   at 4 kHz.
+   (0.15 s); "med": a fifth (0.06 s); "high": a tenth (0.03 s), whatever
+   the length of the stretch (seen from 14.5 to 82 s) and the rate (1, 2,
+   4 and 8 kHz).
 2. **A cell before smoothing**: the segment under a symmetric Hann window,
    `10·log10(2·|X|² / (L·fs))`, and the bin of 0 Hz without the 2. The
    rows are the bins 0 … `L/2`. A tone of amplitude `A` on a bin reads
@@ -128,20 +128,30 @@ before the first change and waits 25 s at most.
 
 With the rule as it stands above, all 27 copies are the rule's, cell by
 cell: 2 922 108 cells, every one the very colour step.
-| "Z max" 0 | the colour bar ends at 0 dB |
+
+**The second run** (2026-11-15, the same logs, the plan of `3edc5a2`):
+all 1 033 steps in six minutes, 54 of the 57 copies; the script waited
+for no Run longer than 19 s. What the rule gives for every log but the
+first had been written down before the run (2026-11-14, 18:26 UTC).
+
+| Asked | Came back |
+|---|---|
+| Flights of 45 and 84 s (stretches of 43 and 82 s) | as written down, every cell: 285 and 545 columns, the segments 0.15 s apart. This window does not change the distance with the length of the stretch, as the throttle window does |
+| 1 and 8 kHz | as written down, every cell: 151 and 1 201 rows, 185 columns |
+| A flight of 8 s (a stretch of 6 s) | no map: the window stays empty, and nothing could be copied |
+| The flight made for no question, both gyro channels, and both lists at "med" and at "high" | 85 … 99.9 % of the cells as written down, the rest one colour step off: the whole log lies one sample later than written down (the first segment at `fs + 3`). With that, all twelve maps are the rule's, 1 242 528 cells, every one the very colour step |
+| The first log again, at its nine settings | the same 27 copies, cell by cell |
+| "Z max" 0, as copies | the same matrix on a scale of −30 … 0 dB, every cell |
 
 ### Not settled
 
-- **Other lengths and rates**: the throttle window puts its segments
-  0.06, 0.1 or 0.3 s apart by the length of the stretch; here the
-  distances of the list were seen on a stretch of 28 s (and "low" on
-  14.5 s and at 4 kHz) only. The logs for it (8, 45 and 84 s; 1 and 8 kHz) and the
-  flight made for no question are in the pack of round 11 and were not
-  reached.
-- **The first sample**: `fs + 3` in one log of four in round 10, `fs + 2`
-  in the others (the throttle window does the same on two logs of
-  eighteen, see [throttle.md](throttle.md)); what decides it was not
-  found. It moves a segment by half a millisecond.
+- **The first sample**: `fs + 3` instead of `fs + 2` in two logs of the
+  eleven this window was given (`f4-short-2k` and the flight of round
+  11), as in two logs of eighteen in the throttle window (see
+  [throttle.md](throttle.md)). The whole log is then one sample later;
+  what decides it was not found, and it may lie in how the tool reads a
+  log rather than in the map. It moves a segment by half a millisecond.
+- **How short a log may be**: 16.5 s gives a map, 8 s gives none.
 - The motor, RPM and notch lines, the player, other channels.
 
 ## OpenPID on the same logs
