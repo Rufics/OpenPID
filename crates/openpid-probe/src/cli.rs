@@ -53,6 +53,9 @@ ROUNDS:
     14       The filter simulator's other filter types and loop rates, its notch by the
              cut-off, its impulse response and chirp, a set of filters made for no
              question; the other entries of the slider tool's list.
+    15       The main window, which draws the channels of a log as lines: one log whose
+             every channel holds a known constant or step, every line of its check-list
+             switched on, its four plots copied.
 ";
 
 /// Runs the tool with `args` (without the program name), printing to `out`.

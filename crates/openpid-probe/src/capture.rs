@@ -1488,6 +1488,73 @@ mod setup_at {
     pub const LOG_LIST: (u32, u32) = (1015, 43);
 }
 
+/// Controls and plots of the main window of version 0.94. Its check-list is
+/// measured in the reference screenshot (the frame `log`), everything else
+/// in a picture of the window as the script saves one (the frame `shot`,
+/// which fits the main window as it fits the others).
+mod viewer_at {
+    /// Left and right of the axes of the four plots.
+    pub const SIDES: (u32, u32) = (510, 3307);
+    /// The plots from the top: the name in the files, top and bottom of the
+    /// axes.
+    pub const ROWS: [(&str, u32, u32); 4] = [
+        ("roll", 133, 655),
+        ("pitch", 668, 1190),
+        ("yaw", 1203, 1723),
+        ("throttle", 1833, 2173),
+    ];
+    /// The column of the boxes of the check-list, in the frame `log`.
+    pub const BOX_X: u32 = 67;
+    /// The lines of the check-list from the top: the name beside the box,
+    /// the row of the box in the frame `log`, and whether the line is on
+    /// as the window comes up.
+    pub const LINES: [(&str, u32, bool); 20] = [
+        ("Gyro(pf)", 384, false),
+        ("Gyro", 445, true),
+        ("P-term", 506, false),
+        ("I-term", 566, false),
+        ("D-term(pf)", 627, false),
+        ("D-term", 688, false),
+        ("F-term", 748, false),
+        ("Set point", 809, true),
+        ("PID sum", 870, false),
+        ("PID error", 930, false),
+        ("Motor 1/5", 991, true),
+        ("Motor 2/6", 1052, true),
+        ("Motor 3/7", 1112, true),
+        ("Motor 4/8", 1173, true),
+        ("RPS 1/5", 1234, false),
+        ("RPS 2/6", 1294, false),
+        ("RPS 3/7", 1355, false),
+        ("RPS 4/8", 1416, false),
+        ("Throttle", 1476, true),
+        ("Debug", 1537, false),
+    ];
+    /// The box of the y scale, what round 15 types into it and what it
+    /// holds as the window comes up.
+    pub const Y_SCALE: (u32, u32) = (132, 241);
+    pub const Y_SCALE_TYPED: &str = "1000";
+    pub const Y_SCALE_DEFAULT: &str = "500";
+    /// The list "line smoothing".
+    pub const SMOOTHING_LIST: (u32, u32) = (3468, 628);
+    /// Where round 15 clicks into the roll plot, seconds of the flight.
+    pub const CURSOR_S: f64 = 6.0;
+    /// The button ">".
+    pub const NEXT: (u32, u32) = (3642, 1607);
+    /// The buttons "Markup" and "Period".
+    pub const MARKUP: (u32, u32) = (3650, 457);
+    pub const PERIOD: (u32, u32) = (3468, 457);
+
+    /// The middle of the roll plot at `seconds` of a flight of `duration_s`
+    /// that fills the time axis from side to side.
+    pub fn roll_at(seconds: f64, duration_s: f64) -> (u32, u32) {
+        let (left, right) = SIDES;
+        let (_, top, bottom) = ROWS[0];
+        let along = f64::from(right - left) * seconds / duration_s;
+        (left + along.round() as u32, u32::midpoint(top, bottom))
+    }
+}
+
 /// A list held open for a picture and closed again with Esc.
 fn list_shot(steps: &mut Vec<Step>, list: Step, file: String) {
     let window = list.window.unwrap_or(LOG_VIEWER);
@@ -1812,6 +1879,96 @@ fn setup_ask(steps: &mut Vec<Step>, round: u32) {
     list_shot(steps, list, file("list-logs"));
 }
 
+/// Copies of the four plots of the main window, named after `what`.
+fn viewer_copies(steps: &mut Vec<Step>, round: u32, what: &str) {
+    let (left, right) = viewer_at::SIDES;
+    for (name, top, bottom) in viewer_at::ROWS {
+        let file = format!("r{round}-log-{what}-{name}");
+        copy_axes(steps, LOG_VIEWER, name, (left, top, right, bottom), file);
+    }
+}
+
+/// The two buttons of the main window whose effect is not known, last in
+/// the plan for that reason. "Markup": a click, a picture, a second click.
+/// "Period": a click, the titles of the tool's windows into the log, a
+/// picture, Esc. Both pictures are of the screen where the main window is,
+/// as it is: should a button bring up a window, the main window is not
+/// brought back over it.
+fn viewer_unknown(steps: &mut Vec<Step>, round: u32) {
+    let inside = |name: &str, at: (u32, u32)| click(LOG_VIEWER, "shot", name, at);
+    let as_it_is = |what: &str| Step {
+        front: Some(false),
+        ..shot(LOG_VIEWER, format!("r{round}-log-{what}"))
+    };
+    steps.push(inside("Markup", viewer_at::MARKUP));
+    steps.push(pause(1000));
+    steps.push(as_it_is("markup"));
+    steps.push(inside("Markup (again)", viewer_at::MARKUP));
+    steps.push(pause(1000));
+    steps.push(inside("Period", viewer_at::PERIOD));
+    steps.push(pause(2000));
+    steps.push(Step {
+        action: "windows",
+        ..Step::default()
+    });
+    steps.push(as_it_is("period"));
+    steps.push(Step {
+        action: "key",
+        key: Some("esc"),
+        ..Step::default()
+    });
+    steps.push(pause(400));
+}
+
+/// The main window asked what its lines read, when the round has a probe
+/// for it (the first such probe is the log it shows); says whether it has.
+/// Copies of its four plots as it comes up; every line of its check-list
+/// that is off switched on, a picture and the four copies again; the y
+/// scale typed and put back; the list of the line smoothing held open; a
+/// click into the roll plot and one on the button ">", a picture each; and
+/// the two buttons of [`viewer_unknown`].
+fn viewer_lines(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) -> bool {
+    let Some(probe) = probes.iter().find(|p| p.area == Area::LogViewer) else {
+        return false;
+    };
+    let file = |what: &str| format!("r{round}-log-{what}");
+    let inside = |name: &str, at: (u32, u32)| click(LOG_VIEWER, "shot", name, at);
+    viewer_copies(steps, round, "open");
+    for (name, y, _) in viewer_at::LINES.into_iter().filter(|(_, _, on)| !on) {
+        steps.push(click(LOG_VIEWER, "log", name, (viewer_at::BOX_X, y)));
+        steps.push(pause(400));
+    }
+    steps.push(settle(LOG_VIEWER, None, 1.5));
+    steps.push(shot(LOG_VIEWER, file("all")));
+    viewer_copies(steps, round, "all");
+    let typed = |text: &str| Step {
+        action: "type",
+        text: Some(text.to_string()),
+        ..inside("y scale", viewer_at::Y_SCALE)
+    };
+    steps.push(Step {
+        mark: Some(true),
+        ..typed(viewer_at::Y_SCALE_TYPED)
+    });
+    steps.push(settle(LOG_VIEWER, Some(TIME_CHANGE_S), 1.5));
+    let name = format!("yscale-{}", viewer_at::Y_SCALE_TYPED);
+    steps.push(shot(LOG_VIEWER, file(&name)));
+    steps.push(typed(viewer_at::Y_SCALE_DEFAULT));
+    steps.push(pause(1500));
+    let list = inside("line smoothing (the list)", viewer_at::SMOOTHING_LIST);
+    list_shot(steps, list, file("list-smoothing"));
+    let at = viewer_at::roll_at(viewer_at::CURSOR_S, probe.flight.duration_s);
+    steps.push(inside("roll plot", at));
+    steps.push(pause(600));
+    let name = format!("cursor-{}s", viewer_at::CURSOR_S);
+    steps.push(shot(LOG_VIEWER, file(&name)));
+    steps.push(inside(">", viewer_at::NEXT));
+    steps.push(pause(600));
+    steps.push(shot(LOG_VIEWER, file("cursor-next")));
+    viewer_unknown(steps, round);
+    true
+}
+
 /// How long a window that was never opened by the script is given to come
 /// up before its picture is taken, milliseconds.
 const LOOK_MS: u32 = 10_000;
@@ -1839,6 +1996,17 @@ fn windows_look(steps: &mut Vec<Step>, round: u32) {
 /// What the plan of a round does, for the reader of `steps.json`.
 fn about(round: u32, probes: &[Probe]) -> String {
     let time = probes.iter().any(|p| p.area == Area::Time);
+    if probes.iter().all(|p| p.area == Area::LogViewer) {
+        return format!(
+            "Round {round}: the log through the open dialog, then the main window itself, \
+             which draws the channels of the log as lines. Its four plots copied as it comes \
+             up; every line of its check-list switched on, a picture and the four plots \
+             copied again; its y scale typed as 1000 and put back; its list of the line \
+             smoothing held open; a click into the roll plot at 6 s and one on the button \
+             \">\", a picture each; last the buttons \"Markup\" and \"Period\", whose effect \
+             is not known, a picture each."
+        );
+    }
     if probes.iter().all(|p| p.area == Area::Windows) && round >= WINDOWS_MORE {
         return format!(
             "Round {round}: the log through the open dialog, then two windows of the main \
@@ -2014,6 +2182,7 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     } else if time {
         time_maps(&mut steps, round, probes);
     }
+    let viewer = viewer_lines(&mut steps, round, probes);
     steps.push(Step {
         action: "windows",
         ..Step::default()
@@ -2021,8 +2190,9 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
     Plan {
         about: about(round, probes),
         // the plots of the window of frequency against throttle had never
-        // been copied when its first round was planned
-        give_up: throttle || time || asked,
+        // been copied when its first round was planned; nor had those of
+        // the main window
+        give_up: throttle || time || asked || viewer,
         refs: Frames {
             log: Frame {
                 left: 1,
@@ -3025,6 +3195,221 @@ mod tests {
             note.contains("138 plots") && note.contains("saves 26 pictures"),
             "{note}"
         );
+    }
+
+    /// The plan of round 15.
+    fn round_15() -> Plan {
+        plan(15, &catalogue::round(15).unwrap_or_default())
+    }
+
+    #[test]
+    fn round_15_copies_the_plots_of_the_main_window_with_every_line_on() {
+        let plan = round_15();
+        assert!(plan.give_up && plan.refs.slider.is_none());
+        assert!(plan.about.contains("the main window itself"));
+        assert_eq!(
+            names_of(&plan, "shot"),
+            [
+                "r15-log-loaded",
+                "r15-log-all",
+                "r15-log-yscale-1000",
+                "r15-log-list-smoothing",
+                "r15-log-cursor-6s",
+                "r15-log-cursor-next",
+                "r15-log-markup",
+                "r15-log-period"
+            ]
+        );
+        // the four plots as the window comes up, and with every line on
+        assert_eq!(
+            names_of(&plan, "clip_save"),
+            [
+                "r15-log-open-roll",
+                "r15-log-open-pitch",
+                "r15-log-open-yaw",
+                "r15-log-open-throttle",
+                "r15-log-all-roll",
+                "r15-log-all-pitch",
+                "r15-log-all-yaw",
+                "r15-log-all-throttle"
+            ]
+        );
+        let place = |file: &str| {
+            let wanted = |s: &Step| s.file.as_deref() == Some(file);
+            plan.steps.iter().position(wanted).unwrap_or(usize::MAX)
+        };
+        let (loaded, all) = (place("r15-log-loaded"), place("r15-log-all"));
+        assert!(loaded < place("r15-log-open-roll") && place("r15-log-open-throttle") < all);
+        assert!(all < place("r15-log-all-roll"));
+        assert!(place("r15-log-all-throttle") < place("r15-log-yscale-1000"));
+        for (i, step) in plan.steps.iter().enumerate() {
+            if step.action == "clip_save" {
+                assert_copy(&plan.steps, i);
+            }
+        }
+        // each copy is of its own plot: the button of its toolbar is above
+        // the top right corner of the axes, one plot below the other
+        let buttons: Vec<(u32, u32)> = plan
+            .steps
+            .iter()
+            .filter(|s| s.name.as_deref().is_some_and(|n| n.ends_with(" toolbar")))
+            .filter(|s| s.front.is_none())
+            .filter_map(|s| s.at)
+            .collect();
+        let rows = [133 - 15, 668 - 15, 1203 - 15, 1833 - 15];
+        let twice: Vec<(u32, u32)> = rows.iter().chain(&rows).map(|y| (3307 - 14, *y)).collect();
+        assert_eq!(buttons, twice);
+        // one log, and nothing but the main window
+        let windows: Vec<&str> = plan.steps.iter().filter_map(|s| s.window).collect();
+        assert!(windows.iter().all(|w| *w == LOG_VIEWER));
+        assert_eq!(plan.steps[1].paths, Some(vec!["q1-values-2k.bbl".into()]));
+        // rounds 12 to 14 keep their plans
+        for (round, said) in [
+            (12, "a first look at three windows"),
+            (13, "The slider tool: start gains typed in"),
+            (14, "a set of filters made for no question"),
+        ] {
+            let earlier = super::plan(round, &catalogue::round(round).unwrap_or_default());
+            assert!(earlier.about.contains(said), "round {round}");
+            assert!(!earlier.about.contains("the main window itself"));
+            let files = names_of(&earlier, "shot");
+            assert!(files.iter().all(|f| !f.contains("-log-all")), "{round}");
+        }
+    }
+
+    #[test]
+    fn round_15_clicks_the_thirteen_lines_that_are_off() {
+        let plan = round_15();
+        let boxes: Vec<&Step> = plan
+            .steps
+            .iter()
+            .filter(|s| s.action == "click" && s.frame == Some("log"))
+            .skip(1)
+            .collect();
+        let clicked: Vec<(&str, u32)> = boxes
+            .iter()
+            .map(|s| (s.name.as_deref().unwrap_or(""), s.at.unwrap_or_default().1))
+            .collect();
+        assert_eq!(
+            clicked,
+            [
+                ("Gyro(pf)", 384),
+                ("P-term", 506),
+                ("I-term", 566),
+                ("D-term(pf)", 627),
+                ("D-term", 688),
+                ("F-term", 748),
+                ("PID sum", 870),
+                ("PID error", 930),
+                ("RPS 1/5", 1234),
+                ("RPS 2/6", 1294),
+                ("RPS 3/7", 1355),
+                ("RPS 4/8", 1416),
+                ("Debug", 1537)
+            ]
+        );
+        assert!(boxes.iter().all(|s| s.at.map(|a| a.0) == Some(67)));
+        // none of the seven that are on as the window comes up
+        for on in ["Gyro", "Set point", "Throttle"] {
+            assert!(!clicked.iter().any(|(name, _)| *name == on), "{on}");
+        }
+        assert!(!clicked.iter().any(|(name, _)| name.starts_with("Motor")));
+        assert_eq!(viewer_at::LINES.iter().filter(|l| l.2).count(), 7);
+        // the boxes of the list are about 61 pixels apart, top to bottom
+        let rows: Vec<u32> = viewer_at::LINES.iter().map(|l| l.1).collect();
+        assert!(rows.windows(2).all(|w| (60..=61).contains(&(w[1] - w[0]))));
+        // a pause after each, and the picture only once the plots are quiet
+        let first = plan.steps.iter().position(|s| s == boxes[0]).unwrap_or(0);
+        let after = &plan.steps[first..first + 28];
+        for pair in after[..26].chunks(2) {
+            assert_eq!((pair[0].action, pair[1].ms), ("click", Some(400)));
+        }
+        assert_eq!(
+            (after[26].action, after[26].change_s, after[26].quiet_s),
+            ("settle", None, Some(1.5))
+        );
+        assert_eq!(after[27].file.as_deref(), Some("r15-log-all"));
+    }
+
+    #[test]
+    fn round_15_puts_back_what_it_sets_in_the_main_window() {
+        let plan = round_15();
+        // the y scale is typed and put back, with a wait for the plots
+        let typed: Vec<&Step> = plan.steps.iter().filter(|s| s.action == "type").collect();
+        let texts: Vec<&str> = typed.iter().filter_map(|s| s.text.as_deref()).collect();
+        assert_eq!(texts, ["1000", "500"]);
+        assert!(typed.iter().all(|s| s.at == Some((132, 241))));
+        assert!(typed.iter().all(|s| s.frame == Some("shot")));
+        assert_eq!((typed[0].mark, typed[1].mark), (Some(true), None));
+        let mut marked = false;
+        for step in &plan.steps {
+            marked |= step.mark == Some(true);
+            if step.action == "settle" && step.change_s.is_some() {
+                assert!(marked, "a wait for a change without a mark");
+                marked = false;
+            }
+        }
+        // the list that is opened is closed with Esc, after its picture
+        let at = |name: &str| {
+            let wanted = |s: &Step| s.name.as_deref() == Some(name);
+            plan.steps.iter().position(wanted).unwrap_or(usize::MAX - 8)
+        };
+        let list = at("line smoothing (the list)");
+        assert_eq!(plan.steps[list].at, Some((3468, 628)));
+        assert_eq!(plan.steps[list + 1].ms, Some(800));
+        let picture = plan.steps[list + 2].file.as_deref();
+        assert_eq!(picture, Some("r15-log-list-smoothing"));
+        assert_eq!(plan.steps[list + 3].key, Some("esc"));
+        // the click into the roll plot is at 6 of its 20 seconds, half way up
+        let cursor = at("roll plot");
+        assert_eq!(plan.steps[cursor].at, Some((1349, 394)));
+        assert_eq!(plan.steps[cursor].at, Some((510 + 2797 * 6 / 20, 394)));
+        assert_eq!(plan.steps[at(">")].at, Some((3642, 1607)));
+        // the buttons whose effect is not known come last: "Markup" twice,
+        // then "Period" with the titles of the windows and Esc
+        let (markup, again, period) = (at("Markup"), at("Markup (again)"), at("Period"));
+        assert!(at(">") < markup && markup < again && again < period);
+        assert_eq!(plan.steps[markup].at, Some((3650, 457)));
+        assert_eq!(plan.steps[again].at, plan.steps[markup].at);
+        assert_eq!(plan.steps[period].at, Some((3468, 457)));
+        assert_eq!(plan.steps[markup + 1].ms, Some(1000));
+        assert_eq!(plan.steps[period + 1].ms, Some(2000));
+        let rest: Vec<&str> = plan.steps[period + 2..].iter().map(|s| s.action).collect();
+        assert_eq!(rest, ["windows", "shot", "key", "pause", "windows"]);
+        assert_eq!(plan.steps[period + 4].key, Some("esc"));
+        let closed = plan.steps.iter().filter(|s| s.key == Some("esc")).count();
+        assert_eq!(closed, 2);
+        // their pictures are of the screen as it is
+        for file in ["r15-log-markup", "r15-log-period"] {
+            let wanted = |s: &&Step| s.file.as_deref() == Some(file);
+            let picture = plan.steps.iter().find(wanted);
+            assert_eq!(picture.and_then(|s| s.front), Some(false), "{file}");
+        }
+    }
+
+    #[test]
+    fn every_position_of_every_round_lies_inside_its_frame() {
+        for round in catalogue::ROUNDS {
+            let plan = plan(*round, &catalogue::round(*round).unwrap_or_default());
+            let mut positions = 0;
+            for step in &plan.steps {
+                let Some((x, y)) = step.at else { continue };
+                let frame = match step.frame {
+                    Some("log") => Some(&plan.refs.log),
+                    Some("shot") => Some(&plan.refs.shot),
+                    Some("slider") => plan.refs.slider.as_ref(),
+                    _ => None,
+                };
+                let Some(f) = frame else {
+                    panic!("round {round}: no frame for {step:?}");
+                };
+                let inside = (f.left..f.left + f.width).contains(&x)
+                    && (f.top..f.top + f.height).contains(&y);
+                assert!(inside, "round {round}: {step:?} is outside {f:?}");
+                positions += 1;
+            }
+            assert!(positions > 0, "round {round}");
+        }
     }
 
     #[test]

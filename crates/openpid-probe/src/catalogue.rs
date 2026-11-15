@@ -7,7 +7,9 @@
 //! belong to any log; a new question gets a new probe in a later round
 //! (`docs/calibration/ROUNDS.md`).
 
-use crate::signal::{AxisSpec, Filtered, FlightSpec, Plant, Stick, Throttle, Wave};
+use crate::signal::{
+    AxisSpec, DebugValues, Filtered, FlightSpec, Modes, PidTerms, Plant, Stick, Throttle, Wave,
+};
 use serde::Serialize;
 
 /// The part of the tools a probe is about.
@@ -24,6 +26,8 @@ pub enum Area {
     Time,
     /// The windows of the tool that no round has asked yet: a first look.
     Windows,
+    /// The main window: the channels of a log drawn as lines against time.
+    LogViewer,
 }
 
 /// One log of a round.
@@ -391,8 +395,6 @@ fn flight(id: &'static str, title: &'static str, fs: f64, duration_s: f64) -> Pr
             "the same with stick moves of up to 120 deg/s and the resonance at 330 Hz",
         ],
         flight: FlightSpec {
-            fs,
-            duration_s,
             roll: flown(91, 300.0, 410.0),
             pitch: flown(92, 250.0, 380.0),
             yaw: flown(93, 120.0, 330.0),
@@ -406,7 +408,7 @@ fn flight(id: &'static str, title: &'static str, fs: f64, duration_s: f64) -> Pr
                     (55.0, 3.0),
                 ],
             },
-            motors: None,
+            ..FlightSpec::quiet(fs, duration_s)
         },
     }
 }
@@ -1732,6 +1734,94 @@ fn round_14() -> Vec<Probe> {
     }]
 }
 
+/// Length of the flight of round 15, seconds.
+const VALUES_S: f64 = 20.0;
+/// The debug mode the log of round 15 names. A firmware logs its debug
+/// values only while a mode is set, so one has to be: the first after
+/// "none". The values of the log do not depend on which; it is not mode 6,
+/// which the reader of this repository takes for the unfiltered gyro in
+/// logs of older releases.
+const VALUES_DEBUG_MODE: u32 = 1;
+
+/// An axis of round 15: the gyro does not follow the stick. The unfiltered
+/// gyro holds `unfiltered`, the filtered one `filtered` plus `more`.
+fn held(stick: Stick, unfiltered: f64, filtered: f64, more: Vec<Wave>) -> AxisSpec {
+    let mut waves = vec![Wave::Offset { value: filtered }];
+    waves.extend(more);
+    AxisSpec {
+        stick,
+        plant: Plant::None,
+        waves: vec![Wave::Offset { value: unfiltered }],
+        filtered: Filtered::Separate { waves },
+    }
+}
+
+/// Round 15: the main window, which draws the channels of a log as lines.
+/// One log in which every channel holds a constant or steps of its own, so
+/// that each line can be told from every other by its value and its scale
+/// and its unit be read off it.
+fn round_15() -> Vec<Probe> {
+    // a stick that asks for one rate over the whole flight
+    let steady = |rate: f64| Stick::Steps {
+        start_s: 0.0,
+        every_s: VALUES_S,
+        levels: vec![rate],
+    };
+    let stairs = Stick::Steps {
+        start_s: 4.0,
+        every_s: 4.0,
+        levels: vec![100.0, 200.0, 400.0, 0.0],
+    };
+    let spike = Wave::Spike {
+        at_s: 15.0,
+        value: 900.0,
+    };
+    vec![Probe {
+        id: "q1-values-2k",
+        area: Area::LogViewer,
+        title: "Every channel at a constant or a step of its own, for what the lines of the \
+                main window read: motors 1 to 4 at 0, 25, 50 and 100 % of the range between \
+                the craft's motor outputs, turning at 6000, 12000, 18000 and 24000 rpm; the \
+                throttle at 50 %, at 20 % from 10 to 12 s; the debug values 123, -45, 6 and 0 \
+                (debug mode 1); armed from 2 s, angle mode from 5 to 9 s",
+        purpose: [
+            "filtered gyro 100 deg/s, and 1000 deg/s in the one sample at 15 s; unfiltered \
+             gyro 120 deg/s; setpoint 0, from 4 s 100, 200 and 400 deg/s for four seconds \
+             each, 0 from 16 s; P 100, I 20, D -30, F 5",
+            "filtered gyro 200 deg/s, unfiltered gyro 230 deg/s; setpoint 60 deg/s; P -50, \
+             I 10, D 15, F 0",
+            "filtered gyro -150 deg/s, unfiltered gyro -170 deg/s; setpoint -40 deg/s; P 25, \
+             I -5, F 0, and no D term: the craft has no D gain on yaw, so its log has no \
+             such field",
+        ],
+        flight: FlightSpec {
+            roll: held(stairs, 120.0, 100.0, vec![spike]),
+            pitch: held(steady(60.0), 230.0, 200.0, Vec::new()),
+            yaw: held(steady(-40.0), -170.0, -150.0, Vec::new()),
+            throttle: Throttle::Stairs {
+                steps: vec![(50.0, 10.0), (20.0, 2.0), (50.0, 8.0)],
+            },
+            motor_levels: Some([0.0, 25.0, 50.0, 100.0]),
+            pid_terms: Some(PidTerms {
+                p: [100.0, -50.0, 25.0],
+                i: [20.0, 10.0, -5.0],
+                d: [-30.0, 15.0, 0.0],
+                f: [5.0, 0.0, 0.0],
+            }),
+            motor_rpm: Some([6000.0, 12_000.0, 18_000.0, 24_000.0]),
+            debug: Some(DebugValues {
+                mode: VALUES_DEBUG_MODE,
+                values: vec![123.0, -45.0, 6.0, 0.0],
+            }),
+            modes: Some(Modes {
+                armed_from_s: 2.0,
+                angle_s: Some((5.0, 9.0)),
+            }),
+            ..FlightSpec::quiet(2000.0, VALUES_S)
+        },
+    }]
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
@@ -1749,17 +1839,22 @@ pub fn round(round: u32) -> Option<Vec<Probe>> {
         12 => Some(round_12()),
         13 => Some(round_13()),
         14 => Some(round_14()),
+        15 => Some(round_15()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openpid_core::Axis;
+    use openpid_core::modes::modes_at;
+    use openpid_core::{
+        Axis, ChannelId, FlightMode, FlightSession, GyroStage, LogFormat, OpenOptions, PidTerm,
+    };
+    use openpid_fmt_blackbox::BlackboxFormat;
     use std::collections::BTreeSet;
 
     #[test]
@@ -2394,6 +2489,323 @@ mod tests {
         let text = serde_json::to_string(&stairs).unwrap();
         assert!(!text.contains("motors"));
         assert!(serde_json::to_string(sources).unwrap().contains("motors"));
+    }
+
+    /// Where a channel changes its value: the first sample and every
+    /// sample that differs from the one before it, with the new value.
+    fn steps(values: &[f64]) -> Vec<(usize, f64)> {
+        let mut out: Vec<(usize, f64)> = Vec::new();
+        for (i, value) in values.iter().enumerate() {
+            if out.last().is_none_or(|last| last.1 != *value) {
+                out.push((i, *value));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn round_15_is_one_flight_whose_every_channel_is_known() {
+        let probes = round(15).unwrap();
+        assert_eq!(probes.len(), 1);
+        let probe = &probes[0];
+        assert_eq!((probe.id, probe.area), ("q1-values-2k", Area::LogViewer));
+        let flight = &probe.flight;
+        assert_eq!((flight.fs, flight.duration_s), (2000.0, 20.0));
+        assert_eq!(flight.len(), 40_000);
+        // the gyro: constant on both channels, and on the filtered one of
+        // roll one sample of 1000 deg/s at 15 s
+        let gyro = |axis: Axis| {
+            let s = flight.samples(axis);
+            (steps(&s.unfiltered), steps(&s.filtered))
+        };
+        let spike = vec![(0, 100.0), (30_000, 1000.0), (30_001, 100.0)];
+        assert_eq!(gyro(Axis::Roll), (vec![(0, 120.0)], spike));
+        assert_eq!(gyro(Axis::Pitch), (vec![(0, 230.0)], vec![(0, 200.0)]));
+        assert_eq!(gyro(Axis::Yaw), (vec![(0, -170.0)], vec![(0, -150.0)]));
+        // the setpoint: stairs on roll, constant on pitch and yaw
+        let setpoint = |axis: Axis| steps(&flight.samples(axis).setpoint);
+        assert_eq!(
+            setpoint(Axis::Roll),
+            [
+                (0, 0.0),
+                (8000, 100.0),
+                (16_000, 200.0),
+                (24_000, 400.0),
+                (32_000, 0.0)
+            ]
+        );
+        assert_eq!(setpoint(Axis::Pitch), [(0, 60.0)]);
+        assert_eq!(setpoint(Axis::Yaw), [(0, -40.0)]);
+        // the throttle dips for two seconds; each motor keeps its own level
+        assert_eq!(
+            steps(&flight.throttle_samples()),
+            [(0, 50.0), (20_000, 20.0), (24_000, 50.0)]
+        );
+        for (idx, level) in [0.0, 25.0, 50.0, 100.0].into_iter().enumerate() {
+            assert_eq!(steps(&flight.motor_samples_of(idx)), [(0, level)], "{idx}");
+        }
+        // the terms of the controller, the speeds, the debug values
+        let pid = flight.pid_terms.unwrap();
+        assert_eq!(pid.p, [100.0, -50.0, 25.0]);
+        assert_eq!(pid.i, [20.0, 10.0, -5.0]);
+        assert_eq!(pid.d, [-30.0, 15.0, 0.0]);
+        assert_eq!(pid.f, [5.0, 0.0, 0.0]);
+        assert_eq!(
+            flight.motor_rpm,
+            Some([6000.0, 12_000.0, 18_000.0, 24_000.0])
+        );
+        let debug = flight.debug.clone().unwrap();
+        assert_eq!(
+            (debug.mode, debug.values),
+            (1, vec![123.0, -45.0, 6.0, 0.0])
+        );
+        // no mode at first, armed from 2 s, angle mode from 5 to 9 s
+        let modes: Vec<(usize, Vec<FlightMode>)> = flight
+            .mode_changes()
+            .into_iter()
+            .map(|change| (change.sample_index, change.modes))
+            .collect();
+        assert_eq!(
+            modes,
+            [
+                (0, vec![]),
+                (4000, vec![FlightMode::Arm]),
+                (10_000, vec![FlightMode::Arm, FlightMode::Angle]),
+                (18_000, vec![FlightMode::Arm]),
+            ]
+        );
+        // the texts say what the log holds
+        assert!(probe.title.contains("0, 25, 50 and 100 %"));
+        assert!(probe.title.contains("6000, 12000, 18000 and 24000 rpm"));
+        assert!(probe.title.contains("at 20 % from 10 to 12 s"));
+        assert!(probe.title.contains("123, -45, 6 and 0"));
+        assert!(
+            probe
+                .title
+                .contains("armed from 2 s, angle mode from 5 to 9 s")
+        );
+        assert!(probe.purpose[0].contains("1000 deg/s in the one sample at 15 s"));
+        assert!(probe.purpose[0].contains("P 100, I 20, D -30, F 5"));
+        assert!(probe.purpose[1].contains("P -50, I 10, D 15, F 0"));
+        assert!(probe.purpose[2].contains("P 25, I -5, F 0, and no D term"));
+    }
+
+    /// The log of round 15 as the pack carries it, read back.
+    fn values_log() -> (String, FlightSession) {
+        let pack = crate::pack::build(15, "test").unwrap();
+        let (name, bytes) = &pack.logs[0];
+        assert_eq!(name, "q1-values-2k.bbl");
+        let head = String::from_utf8_lossy(&bytes[..bytes.len().min(40_000)]).into_owned();
+        let mut log = BlackboxFormat::new()
+            .open(bytes, &OpenOptions::default())
+            .unwrap();
+        assert_eq!(log.sessions.len(), 1);
+        (head, log.sessions.remove(0))
+    }
+
+    /// Where the channel `id` of `session` changes its value.
+    fn logged(session: &FlightSession, id: &ChannelId) -> Vec<(usize, f64)> {
+        let channel = session.channel(id);
+        let channel = channel.unwrap_or_else(|| panic!("the log has no {}", id.key()));
+        assert!(channel.data.all_valid(), "{}", id.key());
+        steps(channel.data.values())
+    }
+
+    #[test]
+    fn the_log_of_round_15_holds_the_gyro_the_setpoint_and_the_throttle() {
+        let (_, session) = values_log();
+        assert_eq!(session.len(), 40_000);
+        assert_eq!(session.diagnostics.corrupt_frames, 0);
+        let gyro = |axis: Axis, stage: GyroStage| {
+            let id = ChannelId::Gyro { axis, stage };
+            logged(&session, &id)
+        };
+        assert_eq!(gyro(Axis::Roll, GyroStage::Raw), [(0, 120.0)]);
+        assert_eq!(gyro(Axis::Pitch, GyroStage::Raw), [(0, 230.0)]);
+        assert_eq!(gyro(Axis::Yaw, GyroStage::Raw), [(0, -170.0)]);
+        assert_eq!(gyro(Axis::Pitch, GyroStage::Filtered), [(0, 200.0)]);
+        assert_eq!(gyro(Axis::Yaw, GyroStage::Filtered), [(0, -150.0)]);
+        // the one sample of 1000 deg/s is the frame 15.000 s after the first
+        assert_eq!(
+            gyro(Axis::Roll, GyroStage::Filtered),
+            [(0, 100.0), (30_000, 1000.0), (30_001, 100.0)]
+        );
+        let time = &session.timebase.time_us;
+        let since_start = |sample: usize| time[sample] - time[0];
+        assert_eq!(since_start(30_000), 15_000_000);
+        assert_eq!(since_start(39_999), 19_999_500);
+        let setpoint = |axis: Axis| logged(&session, &ChannelId::Setpoint { axis });
+        assert_eq!(
+            setpoint(Axis::Roll),
+            [
+                (0, 0.0),
+                (8000, 100.0),
+                (16_000, 200.0),
+                (24_000, 400.0),
+                (32_000, 0.0)
+            ]
+        );
+        assert_eq!(setpoint(Axis::Pitch), [(0, 60.0)]);
+        assert_eq!(setpoint(Axis::Yaw), [(0, -40.0)]);
+        assert_eq!(
+            (since_start(8000), since_start(32_000)),
+            (4_000_000, 16_000_000)
+        );
+        // the throttle, as the log holds it twice: the mixer's (`setpoint[3]`,
+        // tenths of a percent) and the stick's (`rcCommand[3]`, 1000 … 2000)
+        let dip = |high: f64, low: f64| vec![(0, high), (20_000, low), (24_000, high)];
+        assert_eq!(logged(&session, &ChannelId::Throttle), dip(50.0, 20.0));
+        let mixer = ChannelId::Custom("setpoint[3]".into());
+        assert_eq!(logged(&session, &mixer), dip(50.0, 20.0));
+        let stick = ChannelId::RcCommand { ch: 3 };
+        assert_eq!(logged(&session, &stick), dip(1500.0, 1200.0));
+        assert_eq!(
+            (since_start(20_000), since_start(24_000)),
+            (10_000_000, 12_000_000)
+        );
+        // the sticks the writer makes of the setpoints: full stick is 500
+        // units and asks for 1000 deg/s
+        let stick = |ch: u8| logged(&session, &ChannelId::RcCommand { ch });
+        assert_eq!(stick(1), [(0, 30.0)]);
+        assert_eq!(stick(2), [(0, -20.0)]);
+        assert_eq!(
+            stick(0)[1..4],
+            [(8000, 50.0), (16_000, 100.0), (24_000, 200.0)]
+        );
+    }
+
+    #[test]
+    fn the_log_of_round_15_holds_the_terms_the_motors_and_the_debug_values() {
+        let (head, session) = values_log();
+        let line = |key: &str| head.lines().find_map(|l| l.strip_prefix(key));
+        let term = |term: PidTerm, axis: Axis| {
+            let id = ChannelId::PidTerm { axis, term };
+            logged(&session, &id)
+        };
+        for (which, values) in [
+            (PidTerm::P, [100.0, -50.0, 25.0]),
+            (PidTerm::I, [20.0, 10.0, -5.0]),
+            (PidTerm::F, [5.0, 0.0, 0.0]),
+        ] {
+            for (axis, value) in Axis::ALL.into_iter().zip(values) {
+                assert_eq!(term(which, axis), [(0, value)], "{which:?} {axis:?}");
+            }
+        }
+        assert_eq!(term(PidTerm::D, Axis::Roll), [(0, -30.0)]);
+        assert_eq!(term(PidTerm::D, Axis::Pitch), [(0, 15.0)]);
+        // the craft has no D gain on yaw (`yawPID:45,80,0`), and a firmware
+        // logs no D term for such an axis
+        let yaw_d = ChannelId::PidTerm {
+            axis: Axis::Yaw,
+            term: PidTerm::D,
+        };
+        assert!(session.channel(&yaw_d).is_none());
+        let fields = line("H Field I name:").unwrap();
+        assert!(fields.contains("axisD[0],axisD[1],axisF[0]"));
+        // the motors: a share of the range of the header, in whole units
+        assert_eq!(line("H motorOutput:"), Some("158,2047"));
+        for (idx, percent, raw) in [
+            (0u8, 0.0, 158.0),
+            (1, 25.0, 630.0),
+            (2, 50.0, 1102.0),
+            (3, 100.0, 2047.0),
+        ] {
+            let read = logged(&session, &ChannelId::Motor { idx });
+            assert_eq!(read.len(), 1, "motor {idx}");
+            // 25 and 50 % of 1889 units are no whole number of them
+            assert!((read[0].1 - percent).abs() < 0.03, "motor {idx}");
+            let units = 158.0 + read[0].1 / 100.0 * (2047.0 - 158.0);
+            assert!((units - raw).abs() < 1e-9, "motor {idx}: {units}");
+        }
+        // the speeds: the electrical speed in hundreds, with 14 poles
+        assert_eq!(line("H dshot_bidir:"), Some("1"));
+        assert_eq!(line("H motor_poles:"), Some("14"));
+        for (idx, erpm) in [(0u8, 420.0), (1, 840.0), (2, 1260.0), (3, 1680.0)] {
+            assert_eq!(logged(&session, &ChannelId::Erpm { idx }), [(0, erpm)]);
+            let rpm = 6000.0 * f64::from(idx + 1);
+            assert_eq!(logged(&session, &ChannelId::MotorRpm { idx }), [(0, rpm)]);
+        }
+        // the debug values: the first four of the eight slots of the log
+        assert_eq!(line("H debug_mode:"), Some("1"));
+        let slots = [123.0, -45.0, 6.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        for (idx, value) in slots.into_iter().enumerate() {
+            let id = ChannelId::Debug { idx: idx as u8 };
+            assert_eq!(logged(&session, &id), [(0, value)], "debug {idx}");
+        }
+        assert!(fields.contains("debug[7],motor[0],motor[1],motor[2],motor[3],eRPM[0]"));
+        assert!(fields.ends_with("eRPM[3]"));
+    }
+
+    #[test]
+    fn the_log_of_round_15_holds_the_flight_modes_at_their_times() {
+        let (_, session) = values_log();
+        let time = &session.timebase.time_us;
+        // the firmware logs its modes before the first frame that is not a
+        // key frame, so the modes of the start are read at the second frame
+        let modes: Vec<(i64, Vec<FlightMode>)> = session
+            .flight_modes
+            .iter()
+            .map(|c| (time[c.sample_index] - time[0], c.modes.clone()))
+            .collect();
+        assert_eq!(
+            modes,
+            [
+                (500, vec![]),
+                (2_000_000, vec![FlightMode::Arm]),
+                (5_000_000, vec![FlightMode::Arm, FlightMode::Angle]),
+                (9_000_000, vec![FlightMode::Arm]),
+            ]
+        );
+        let at = |sample: usize| modes_at(&session.flight_modes, sample);
+        assert!(at(0).is_empty() && at(3999).is_empty());
+        assert_eq!(at(4000), [FlightMode::Arm]);
+        assert_eq!(at(9999), [FlightMode::Arm]);
+        assert_eq!(at(10_000), [FlightMode::Arm, FlightMode::Angle]);
+        assert_eq!(at(17_999), [FlightMode::Arm, FlightMode::Angle]);
+        assert_eq!(at(18_000), [FlightMode::Arm]);
+        assert_eq!(at(39_999), [FlightMode::Arm]);
+    }
+
+    #[test]
+    fn the_flights_before_round_15_say_nothing_of_its_parts() {
+        // their manifests and their logs stay what they were: a flight
+        // without the parts round 15 added is written down without them,
+        // and is given the header lines of the craft unchanged
+        let parts = [
+            "motor_levels",
+            "pid_terms",
+            "motor_rpm",
+            "debug",
+            "modes",
+            "spike",
+        ];
+        for r in ROUNDS.iter().filter(|r| **r < 15) {
+            for probe in round(*r).unwrap() {
+                let text = serde_json::to_string(&probe.flight).unwrap();
+                for part in parts {
+                    assert!(!text.contains(part), "{}: {part}", probe.id);
+                }
+                assert!(probe.flight.mode_changes().is_empty(), "{}", probe.id);
+                assert_eq!(
+                    crate::pack::probe_headers(&probe),
+                    crate::pack::craft_headers(probe.id),
+                    "{}",
+                    probe.id
+                );
+            }
+        }
+        let values = round(15).unwrap().remove(0);
+        let text = serde_json::to_string(&values.flight).unwrap();
+        for part in parts {
+            assert!(text.contains(part), "{part}");
+        }
+        let changed: Vec<(String, String)> = crate::pack::probe_headers(&values)
+            .into_iter()
+            .zip(crate::pack::craft_headers(values.id))
+            .filter(|(now, craft)| now != craft)
+            .map(|(now, _)| now)
+            .collect();
+        assert_eq!(changed, [("debug_mode".to_string(), "1".to_string())]);
     }
 
     #[test]

@@ -388,7 +388,7 @@ fn an_unknown_round_is_refused() {
     );
     assert_eq!(
         catalogue::ROUNDS,
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     );
 }
 
@@ -1038,4 +1038,79 @@ fn a_probe_log_has_the_columns_the_reference_tool_has_read() {
     assert_eq!(first(ChannelId::Acc { axis: Axis::Yaw }), 1.0);
     assert_eq!(first(ChannelId::Acc { axis: Axis::Roll }), 0.0);
     assert_eq!(first(ChannelId::Custom("imuQuaternion[2]".into())), 0.0);
+}
+
+#[test]
+fn the_pack_of_round_15_is_one_log_for_the_main_window() {
+    let pack = pack::build(15, "test").unwrap();
+    let files = pack.files();
+    let names: Vec<&str> = files.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "q1-values-2k.bbl",
+            "manifest.json",
+            "ours.json",
+            "steps.json",
+            "capture.ps1",
+            "run.cmd",
+            "README.txt"
+        ]
+    );
+    let file = |name: &str| &files.iter().find(|(n, _)| n == name).unwrap().1;
+    let json = |name: &str| serde_json::from_slice::<serde_json::Value>(file(name)).unwrap();
+    // the manifest says what the log holds beyond the gyro
+    let manifest = json("manifest.json");
+    let probe = &manifest["probes"][0];
+    assert_eq!(probe["area"], "log_viewer");
+    assert_eq!(
+        (probe["samples"].as_u64(), probe["fs"].as_f64()),
+        (Some(40_000), Some(2000.0))
+    );
+    let flight = &probe["flight"];
+    assert_eq!(
+        flight["motor_levels"],
+        serde_json::json!([0.0, 25.0, 50.0, 100.0])
+    );
+    assert_eq!(
+        flight["pid_terms"]["d"],
+        serde_json::json!([-30.0, 15.0, 0.0])
+    );
+    assert_eq!(flight["motor_rpm"][3], 24_000.0);
+    assert_eq!(
+        flight["debug"]["values"],
+        serde_json::json!([123.0, -45.0, 6.0, 0.0])
+    );
+    assert_eq!(flight["modes"]["armed_from_s"], 2.0);
+    assert_eq!(flight["modes"]["angle_s"], serde_json::json!([5.0, 9.0]));
+    let roll = &probe["axes"][0];
+    assert_eq!(
+        roll["filtered"]["logged_range"],
+        serde_json::json!([100.0, 1000.0])
+    );
+    assert_eq!(
+        roll["unfiltered"]["logged_range"],
+        serde_json::json!([120.0, 120.0])
+    );
+    assert_eq!(roll["filtered"]["rounding"], 0.0);
+    // what OpenPID computes is there for every axis, in numbers
+    let ours = json("ours.json");
+    assert_eq!(ours["probes"][0]["id"], "q1-values-2k");
+    assert_eq!(ours["probes"][0]["axes"].as_array().map(Vec::len), Some(3));
+    // the steps of the script, and the note that goes with them
+    let steps = json("steps.json");
+    assert_eq!(steps["give_up"], true);
+    let count = |action: &str| {
+        let all = steps["steps"].as_array().unwrap();
+        all.iter().filter(|s| s["action"] == action).count()
+    };
+    assert_eq!((count("shot"), count("clip_save")), (8, 8));
+    assert_eq!(steps["steps"].as_array().map(Vec::len), Some(173));
+    let note = String::from_utf8(file("README.txt").clone()).unwrap();
+    assert!(note.contains("Calibration round 15, for version 0.94 of the reference tool"));
+    assert!(note.contains("saves 8 pictures"), "{note}");
+    assert!(note.contains("8 plots copied as vector graphics"), "{note}");
+    // the same bytes when it is built again
+    let again = pack::build(15, "test").unwrap().files();
+    assert!(files == again, "round 15 differs between two builds");
 }

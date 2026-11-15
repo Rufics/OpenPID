@@ -822,6 +822,20 @@ pub fn craft_headers(id: &str) -> Vec<(String, String)> {
     std::iter::once(name).chain(craft).collect()
 }
 
+/// The header lines the log of `probe` is written with: those of the
+/// probes' craft, which has no debug mode set, and for a flight with debug
+/// values the debug mode it names. The firmware logs its debug values only
+/// while a mode is set, and the writer does as the header says.
+pub fn probe_headers(probe: &Probe) -> Vec<(String, String)> {
+    let mut headers = craft_headers(probe.id);
+    if let Some(debug) = &probe.flight.debug {
+        for (_, value) in headers.iter_mut().filter(|(key, _)| key == "debug_mode") {
+            *value = debug.mode.to_string();
+        }
+    }
+    headers
+}
+
 /// One probe: its log, its manifest entry, `OpenPID`'s results and the
 /// model's predictions.
 fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
@@ -829,7 +843,7 @@ fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
     let flight = &probe.flight;
     let options = WriteOptions {
         time_offset_us: TIME_OFFSET_US,
-        headers: craft_headers(id),
+        headers: probe_headers(probe),
         target: TARGET,
         ..WriteOptions::default()
     };

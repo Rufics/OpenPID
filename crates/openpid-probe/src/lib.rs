@@ -36,4 +36,7 @@ pub mod truth;
 
 pub use catalogue::{Area, Probe};
 pub use pack::{Manifest, Ours, Pack, PackError};
-pub use signal::{AxisSamples, AxisSpec, Filtered, FlightSpec, Plant, Stick, Throttle, Wave};
+pub use signal::{
+    AxisSamples, AxisSpec, DebugValues, Filtered, FlightSpec, Modes, PidTerms, Plant, Stick,
+    Throttle, Wave,
+};

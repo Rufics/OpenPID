@@ -11,8 +11,10 @@
 //! experiments.
 
 use openpid_core::session::{Channel, ChannelSet, Diagnostics, FirmwareInfo, Origin, Timebase};
+use openpid_core::settings::DebugMode;
 use openpid_core::{
-    Axis, BatteryField, ChannelId, FlightSession, GyroStage, Series, Settings, Unit,
+    Axis, BatteryField, ChannelId, FlightMode, FlightSession, GyroStage, ModeChange, PidTerm,
+    Series, Settings, Unit,
 };
 use openpid_dsp::{Complex, Fft};
 use serde::{Deserialize, Serialize};
@@ -133,6 +135,14 @@ pub enum Wave {
         #[serde(default)]
         band: Option<(f64, f64)>,
     },
+    /// One sample that stands out: `value` at the sample at `at_s`, nothing
+    /// at any other.
+    Spike {
+        /// The time of the sample, seconds.
+        at_s: f64,
+        /// What the sample carries, deg/s.
+        value: f64,
+    },
 }
 
 impl Wave {
@@ -223,6 +233,14 @@ impl Wave {
                         if sounds { value } else { 0.0 }
                     })
                     .collect()
+            }
+            Wave::Spike { at_s, value } => {
+                let mut out = vec![0.0; n];
+                let at = (at_s * fs).round();
+                if at >= 0.0 && (at as usize) < n {
+                    out[at as usize] = *value;
+                }
+                out
             }
         }
     }
@@ -569,6 +587,93 @@ impl Throttle {
     }
 }
 
+/// The four terms of the controller on roll, pitch and yaw, each constant
+/// over the flight, in the firmware's units.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PidTerms {
+    /// The P term of roll, pitch and yaw.
+    pub p: [f64; 3],
+    /// The I term.
+    pub i: [f64; 3],
+    /// The D term.
+    pub d: [f64; 3],
+    /// The feedforward.
+    pub f: [f64; 3],
+}
+
+impl PidTerms {
+    /// The terms as the session names them, in the order of a log.
+    pub fn terms(&self) -> [(PidTerm, char, [f64; 3]); 4] {
+        [
+            (PidTerm::P, 'P', self.p),
+            (PidTerm::I, 'I', self.i),
+            (PidTerm::D, 'D', self.d),
+            (PidTerm::F, 'F', self.f),
+        ]
+    }
+}
+
+/// The debug values of a flight: a firmware logs them only while a debug
+/// mode is set, so the flight names one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DebugValues {
+    /// The number of the debug mode the header of the log states
+    /// (`debug_mode`); not zero, which is "none".
+    pub mode: u32,
+    /// The values of the first slots, each constant over the flight. The
+    /// slots a log has beyond them hold zero.
+    pub values: Vec<f64>,
+}
+
+/// The flight modes of a flight.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Modes {
+    /// The craft is armed from here on, seconds; before, it has no mode.
+    pub armed_from_s: f64,
+    /// Angle mode from the first of these times to the second, seconds.
+    #[serde(default)]
+    pub angle_s: Option<(f64, f64)>,
+}
+
+impl Modes {
+    /// The modes in force at `t`, in the order of the firmware's flags.
+    fn at(&self, t: f64) -> Vec<FlightMode> {
+        let mut modes = Vec::new();
+        if t >= self.armed_from_s - SAME_TIME_S {
+            modes.push(FlightMode::Arm);
+        }
+        let in_angle = |(from, to): (f64, f64)| t >= from - SAME_TIME_S && t < to - SAME_TIME_S;
+        if self.angle_s.is_some_and(in_angle) {
+            modes.push(FlightMode::Angle);
+        }
+        modes
+    }
+
+    /// The changes of mode of a flight of `n` samples at `fs`: the modes of
+    /// the first sample, and those of every sample they change at.
+    fn changes(&self, fs: f64, n: usize) -> Vec<ModeChange> {
+        let (from, to) = self.angle_s.unwrap_or((0.0, 0.0));
+        let mut samples: Vec<usize> = [0.0, self.armed_from_s, from, to]
+            .into_iter()
+            .map(|t| ((t - SAME_TIME_S) * fs).ceil().max(0.0) as usize)
+            .filter(|sample| *sample < n)
+            .collect();
+        samples.sort_unstable();
+        samples.dedup();
+        let mut out: Vec<ModeChange> = Vec::new();
+        for sample_index in samples {
+            let modes = self.at(sample_index as f64 / fs);
+            if out.last().is_none_or(|last| last.modes != modes) {
+                out.push(ModeChange {
+                    sample_index,
+                    modes,
+                });
+            }
+        }
+        out
+    }
+}
+
 /// What a component needs to know about the flight.
 struct Timeline<'a> {
     /// Sample rate, Hz.
@@ -598,6 +703,23 @@ pub struct FlightSpec {
     /// tell which of the two a tool reads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motors: Option<Throttle>,
+    /// The output of each of the four motors, percent, when each holds a
+    /// level of its own over the whole flight.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motor_levels: Option<[f64; 4]>,
+    /// The terms of the controller, when the flight logs other than zeros.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid_terms: Option<PidTerms>,
+    /// The speed of each of the four motors, revolutions per minute, each
+    /// constant over the flight, when the motors report one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motor_rpm: Option<[f64; 4]>,
+    /// The debug values, when the flight logs any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub debug: Option<DebugValues>,
+    /// The flight modes, when the craft is not simply armed throughout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modes: Option<Modes>,
 }
 
 /// The samples of one axis.
@@ -625,6 +747,11 @@ impl FlightSpec {
             yaw: AxisSpec::quiet(),
             throttle: Throttle::Constant { percent: 50.0 },
             motors: None,
+            motor_levels: None,
+            pid_terms: None,
+            motor_rpm: None,
+            debug: None,
+            modes: None,
         }
     }
 
@@ -657,6 +784,22 @@ impl FlightSpec {
     pub fn motor_samples(&self) -> Vec<f64> {
         let motors = self.motors.as_ref().unwrap_or(&self.throttle);
         motors.render(self.fs, self.len(), self.duration_s)
+    }
+
+    /// The output of motor `idx` (0 … 3) at every sample, percent: its own
+    /// level when the flight gives each motor one, else what all four do.
+    pub fn motor_samples_of(&self, idx: usize) -> Vec<f64> {
+        match self.motor_levels {
+            Some(levels) => vec![levels[idx % 4]; self.len()],
+            None => self.motor_samples(),
+        }
+    }
+
+    /// The changes of flight mode, for the session: none for a flight that
+    /// names no modes, which a log writer takes as armed throughout.
+    pub fn mode_changes(&self) -> Vec<ModeChange> {
+        self.modes
+            .map_or_else(Vec::new, |modes| modes.changes(self.fs, self.len()))
     }
 
     /// The exact samples of `axis`, before anything is rounded for a log.
@@ -719,8 +862,35 @@ impl FlightSpec {
         }
     }
 
+    /// The channels of the parts only some flights have: the terms of the
+    /// controller, the speeds of the motors (mechanical, which the writer
+    /// turns into the electrical speed a log holds) and the debug values.
+    fn extra_channels(&self) -> Vec<(ChannelId, String, Unit, f64)> {
+        let mut out = Vec::new();
+        if let Some(pid) = &self.pid_terms {
+            for (term, letter, values) in pid.terms() {
+                for axis in Axis::ALL {
+                    let i = axis.index();
+                    let id = ChannelId::PidTerm { axis, term };
+                    out.push((id, format!("axis{letter}[{i}]"), Unit::Raw, values[i]));
+                }
+            }
+        }
+        for (idx, rpm) in self.motor_rpm.iter().flatten().enumerate() {
+            let id = ChannelId::MotorRpm { idx: idx as u8 };
+            out.push((id, format!("motorRPM[{idx}]"), Unit::Rpm, *rpm));
+        }
+        let debug = self.debug.iter().flat_map(|d| d.values.iter().take(8));
+        for (idx, value) in debug.enumerate() {
+            let id = ChannelId::Debug { idx: idx as u8 };
+            out.push((id, format!("debug[{idx}]"), Unit::Raw, *value));
+        }
+        out
+    }
+
     /// The flight as a session, ready for the log writer: time, the three
-    /// axes, the throttle and four motors that follow it.
+    /// axes, the throttle and four motors that follow it, and the parts
+    /// only some flights have.
     pub fn build(&self) -> FlightSession {
         let n = self.len();
         let dt_us = 1.0e6 / self.fs;
@@ -781,13 +951,12 @@ impl FlightSpec {
             );
         }
         let throttle = self.throttle_samples();
-        let motors = self.motor_samples();
         for idx in 0..4u8 {
             add(
                 ChannelId::Motor { idx },
                 format!("motor[{idx}]"),
                 Unit::Percent,
-                motors.clone(),
+                self.motor_samples_of(usize::from(idx)),
             );
         }
         add(
@@ -836,11 +1005,18 @@ impl FlightSpec {
                 still(0.0),
             );
         }
+        for (id, name, unit, value) in self.extra_channels() {
+            add(id, name, unit, still(value));
+        }
         let mut settings = Settings {
             loop_rates: openpid_fmt_blackbox::write::typical_rates(self.fs),
             ..Settings::default()
         };
         settings.motor.count = Some(4);
+        settings.debug_mode = self.debug.as_ref().map(|debug| DebugMode {
+            code: debug.mode,
+            name: None,
+        });
         let mut firmware = FirmwareInfo::parse_revision("Synthetic (openpid-probe)");
         firmware.revision = "openpid-probe".into();
         FlightSession {
@@ -854,7 +1030,7 @@ impl FlightSpec {
             channels,
             events: Vec::new(),
             aux: Vec::new(),
-            flight_modes: Vec::new(),
+            flight_modes: self.mode_changes(),
             diagnostics: Diagnostics::default(),
         }
     }
@@ -1390,6 +1566,170 @@ mod tests {
             [50.0; 2000]
         );
         // a spec survives being written down and read again
+        let text = serde_json::to_string(&spec).unwrap();
+        assert_eq!(serde_json::from_str::<FlightSpec>(&text).unwrap(), spec);
+        // the parts only some flights have are not written down for a
+        // flight without them, and the session has none of their channels
+        for part in [
+            "motors",
+            "motor_levels",
+            "pid_terms",
+            "motor_rpm",
+            "debug",
+            "modes",
+        ] {
+            assert!(!text.contains(part), "{part}");
+        }
+        assert!(session.flight_modes.is_empty() && session.settings.debug_mode.is_none());
+        let extra = [
+            ChannelId::MotorRpm { idx: 0 },
+            ChannelId::Debug { idx: 0 },
+            ChannelId::PidTerm {
+                axis: Axis::Roll,
+                term: PidTerm::P,
+            },
+        ];
+        assert!(extra.iter().all(|id| session.channel(id).is_none()));
+    }
+
+    #[test]
+    fn a_spike_is_one_sample() {
+        let spike = |at_s: f64| {
+            let wave = Wave::Spike { at_s, value: 7.0 };
+            flight_of(2000.0, 1.0, AxisSpec::of(vec![wave]))
+                .samples(Axis::Roll)
+                .unfiltered
+        };
+        let x = spike(0.25);
+        assert_eq!(x[500], 7.0);
+        assert_eq!(x.iter().filter(|v| **v != 0.0).count(), 1);
+        assert_eq!(spike(0.0)[0], 7.0);
+        // a time outside the flight leaves nothing
+        assert!(spike(1.0).iter().all(|v| *v == 0.0));
+        assert!(spike(-0.5).iter().all(|v| *v == 0.0));
+        // on top of what else the channel carries
+        let waves = vec![
+            Wave::Offset { value: 100.0 },
+            Wave::Spike {
+                at_s: 0.5,
+                value: 900.0,
+            },
+        ];
+        let x = flight_of(2000.0, 1.0, AxisSpec::of(waves))
+            .samples(Axis::Roll)
+            .unfiltered;
+        assert_eq!((x[999], x[1000], x[1001]), (100.0, 1000.0, 100.0));
+    }
+
+    #[test]
+    fn flight_modes_change_at_their_times() {
+        let modes = Modes {
+            armed_from_s: 1.0,
+            angle_s: Some((2.0, 3.0)),
+        };
+        let changes = |modes: Modes, duration_s: f64| -> Vec<(usize, Vec<FlightMode>)> {
+            let spec = FlightSpec {
+                modes: Some(modes),
+                ..FlightSpec::quiet(1000.0, duration_s)
+            };
+            spec.mode_changes()
+                .into_iter()
+                .map(|c| (c.sample_index, c.modes))
+                .collect()
+        };
+        assert_eq!(
+            changes(modes, 4.0),
+            [
+                (0, vec![]),
+                (1000, vec![FlightMode::Arm]),
+                (2000, vec![FlightMode::Arm, FlightMode::Angle]),
+                (3000, vec![FlightMode::Arm]),
+            ]
+        );
+        // a flight that ends in angle mode, and one armed from its start
+        assert_eq!(changes(modes, 2.5).len(), 3);
+        let armed = Modes {
+            armed_from_s: 0.0,
+            angle_s: None,
+        };
+        assert_eq!(changes(armed, 4.0), [(0, vec![FlightMode::Arm])]);
+        // without modes the session names none: armed throughout, for a writer
+        assert!(FlightSpec::quiet(1000.0, 4.0).mode_changes().is_empty());
+    }
+
+    #[test]
+    fn a_flight_can_hold_terms_speeds_debug_values_and_motors_of_their_own() {
+        let spec = FlightSpec {
+            motor_levels: Some([10.0, 20.0, 30.0, 40.0]),
+            pid_terms: Some(PidTerms {
+                p: [1.0, 2.0, 3.0],
+                i: [4.0, 5.0, 6.0],
+                d: [7.0, 8.0, 9.0],
+                f: [-1.0, -2.0, -3.0],
+            }),
+            motor_rpm: Some([6000.0, 7000.0, 8000.0, 9000.0]),
+            debug: Some(DebugValues {
+                mode: 3,
+                values: vec![11.0, -12.0],
+            }),
+            modes: Some(Modes {
+                armed_from_s: 0.25,
+                angle_s: None,
+            }),
+            ..FlightSpec::quiet(2000.0, 1.0)
+        };
+        let session = spec.build();
+        let held = |id: ChannelId| {
+            let channel = session.channel(&id).unwrap();
+            let values = channel.data.values();
+            assert!(values.len() == 2000 && values.iter().all(|v| *v == values[0]));
+            (channel.name.clone(), channel.unit.clone(), values[0])
+        };
+        assert_eq!(
+            held(ChannelId::Motor { idx: 2 }),
+            ("motor[2]".into(), Unit::Percent, 30.0)
+        );
+        assert_eq!(spec.motor_samples_of(3), [40.0; 2000]);
+        let term = |axis: Axis, term: PidTerm| held(ChannelId::PidTerm { axis, term });
+        assert_eq!(
+            term(Axis::Roll, PidTerm::P),
+            ("axisP[0]".into(), Unit::Raw, 1.0)
+        );
+        assert_eq!(
+            term(Axis::Pitch, PidTerm::I),
+            ("axisI[1]".into(), Unit::Raw, 5.0)
+        );
+        assert_eq!(
+            term(Axis::Yaw, PidTerm::D),
+            ("axisD[2]".into(), Unit::Raw, 9.0)
+        );
+        assert_eq!(
+            term(Axis::Yaw, PidTerm::F),
+            ("axisF[2]".into(), Unit::Raw, -3.0)
+        );
+        // the speed is the mechanical one: a log writer makes the
+        // electrical speed of it
+        assert_eq!(
+            held(ChannelId::MotorRpm { idx: 1 }),
+            ("motorRPM[1]".into(), Unit::Rpm, 7000.0)
+        );
+        assert!(session.channel(&ChannelId::Erpm { idx: 1 }).is_none());
+        assert_eq!(
+            held(ChannelId::Debug { idx: 1 }),
+            ("debug[1]".into(), Unit::Raw, -12.0)
+        );
+        assert!(session.channel(&ChannelId::Debug { idx: 2 }).is_none());
+        assert_eq!(
+            session.settings.debug_mode.as_ref().map(|d| d.code),
+            Some(3)
+        );
+        let modes = &session.flight_modes;
+        assert_eq!((modes.len(), modes[1].sample_index), (2, 500));
+        // the motors do not follow the throttle here, which stays as it was
+        assert_eq!(
+            session.channel(&ChannelId::Throttle).unwrap().data.values(),
+            [50.0; 2000]
+        );
         let text = serde_json::to_string(&spec).unwrap();
         assert_eq!(serde_json::from_str::<FlightSpec>(&text).unwrap(), spec);
     }
