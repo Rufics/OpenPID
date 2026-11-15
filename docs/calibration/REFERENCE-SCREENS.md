@@ -244,7 +244,11 @@ from the formulas (not yet from copies of its curves):
 
 **Setup Info.** As in version 0.9: the headers of a log as numbered rows
 `name:value`, "Show Differences Only", a list of the logs. With one log
-loaded the right half of the window is not drawn.
+loaded the right half of the window is not drawn. With two (round 13)
+there are two columns, each with a list to choose its log; the rows whose
+values differ are marked in both columns, and "Show Differences Only"
+leaves those rows alone, numbered anew (for two logs of the same craft at
+2 and 1 kHz: the craft's name, "P interval" and "P ratio").
 
 ## Not captured so far
 
