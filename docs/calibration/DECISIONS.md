@@ -167,8 +167,8 @@ Taken by the owner on 2026-11-11:
 | The exact value | the craft's filters run at its loop rate, which the log's headers give; a curve computed at the rate of the log is that of another filter above a few hundred Hz. Which single delay to print has no exact value: a display choice |
 | Options | **A.** The curves of the chain (magnitude, phase, delay) computed at the craft's loop rate from the headers, and the delays printed as the reference tool prints them: per part at the low end of the curve, the sum of the low-passes, of the notches and in total; "delay at 100 Hz" stays beside them. The simulated gyro, which runs on the samples of the log, stays at the rate of the log, and the tab says so. A user reads the numbers the reference tool gives for the same filters. **B.** Keep OpenPID as it is and say in the user guide that its curves are those of the filters at the rate of the log. **C.** Only the rate: the curves at the loop rate, OpenPID's own "delay at 100 Hz" as the one printed figure |
 | Recommendation | A. The rate is a matter of being right about the craft's filters, whatever the reference tool does; the printed sums cost little and are what a user would compare. The two things the reference tool has and OpenPID does not need — a filter drawn alone with its step response, and the chirp — are left out |
-| The owner's decision | open |
-| Carried out by | — |
+| The owner's decision | **A**, 2026-11-16 |
+| Carried out by | #197 (on its own from `master`): each part of the chain at the rate of the loop it runs in (Betaflight 4.2 and later: the second low-pass at the gyro rate, the others at the PID loop rate; elsewhere all at the gyro rate, which is taken to be so), the delays at 1 Hz per part, summed and in total; the simulated gyro stays at the rate of the log |
 
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's

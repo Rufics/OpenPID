@@ -142,4 +142,5 @@ rate of 8 kHz reads the same 0.637 ms at 1 Hz, but 0.28 in place of 0.23
 of magnitude at 1 000 Hz: the curves part towards half the rate, and a
 notch at 500 Hz reads 0.050 ms in place of 0.063. Whether OpenPID should
 compute its curves at the loop rate, and print the delays the reference
-tool prints, is entry D-007 of [DECISIONS.md](DECISIONS.md).
+tool prints, was entry D-007 of [DECISIONS.md](DECISIONS.md): the owner
+chose both (2026-11-16).
