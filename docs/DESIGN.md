@@ -394,6 +394,7 @@ What the reference tool shows by default, from the owner's PIDtoolbox Pro v0.9 s
 | Freq × time | Colour range | Z min −30, Z max 10 dB | automatic (the 30th and 99.5th percentile of the dB values above 20 Hz); Z min / Z max can be fixed | the dB levels differ, as on Spectrum |
 | Log viewer | Rows | roll, pitch, yaw at ± 500 °/s, throttle and motors in a row of their own | the same; "Y scale ±" in the panel | same |
 | Log viewer | Quantities shown | Gyro, Set point, Motors, Throttle | the same | same |
+| Log viewer | Motor speeds | "RPS (Hz)": revolutions per second, on the axis of the motors' percent (0 … 150) | revolutions per second (Hz), in a row of their own that follows the data | same unit (the owner's decision D-010) |
 | Log viewer | Sticks | two boxes beside the plots | a card on the throttle / motors row, with the flight modes | the owner's choice (docs/design/log-sticks) |
 | Log viewer | Flight-mode changes | a dashed line through the panels, the names under the throttle row | the same, as an option that is off | the owner: off by default |
 | Sliders | Slider tool | start gains and five ratios (P:D, P:I, roll:pitch, yaw, master) | the firmware's own sliders when the log has them, else the same five ratios over the logged gains | Betaflight's sliders give commands to paste; the ratios keep every other firmware from a dead end |

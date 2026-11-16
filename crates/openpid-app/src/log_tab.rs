@@ -9,6 +9,7 @@ use crate::axis_layout::control_panel;
 use crate::colormap::MUTED;
 use crate::i18n::tr;
 use crate::panel;
+use crate::prefs::Prefs;
 use crate::views::{
     LONG_PRESS_S, LONG_PRESS_SLOP_PX, decimate, display_unit, draw_epochs, grab_radius,
     set_epoch_bound, set_epoch_from_cursor, shade_epochs,
@@ -16,11 +17,12 @@ use crate::views::{
 use crate::worker::Slot;
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{Line, PlotPoints, PlotTransform, VLine};
+use openpid_core::units::Unit;
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, PidTerm};
 
 /// Width of the y-axis labels, the same on every row so the time axes line up.
 const Y_AXIS_W: f32 = 64.0;
-/// Height of an extra row (throttle / motors, RPM, debug, other) relative to
+/// Height of an extra row (throttle / motors, motor speeds, debug, other) relative to
 /// an axis row.
 const EXTRA_WEIGHT: f32 = 0.6;
 
@@ -73,7 +75,7 @@ impl LogQuantity {
             LogQuantity::PidError => tr("PID error"),
             LogQuantity::Motors => tr("Motors"),
             LogQuantity::Throttle => tr("Throttle"),
-            LogQuantity::MotorRpm => tr("Motor RPM"),
+            LogQuantity::MotorRpm => tr("Motor speed"),
             LogQuantity::Debug => tr("Debug"),
         }
     }
@@ -92,7 +94,7 @@ impl LogQuantity {
             LogQuantity::PidError => tr("error"),
             LogQuantity::Motors => "M",
             LogQuantity::Throttle => tr("throttle"),
-            LogQuantity::MotorRpm => "RPM",
+            LogQuantity::MotorRpm => "RPS",
             LogQuantity::Debug => tr("debug"),
         }
     }
@@ -114,9 +116,9 @@ impl LogQuantity {
             LogQuantity::PidError => tr("setpoint minus gyro"),
             LogQuantity::Motors => tr("the motor outputs, in the row under the axes (%)"),
             LogQuantity::Throttle => tr("the throttle, in the row under the axes (%)"),
-            LogQuantity::MotorRpm => {
-                tr("the motor speeds from the ESC telemetry, in a row of their own")
-            }
+            LogQuantity::MotorRpm => tr(
+                "the motor speeds from the ESC telemetry, in revolutions per second (Hz), in a row of their own",
+            ),
             LogQuantity::Debug => {
                 tr("the debug values of the log's debug mode, in a row of their own")
             }
@@ -194,6 +196,21 @@ fn colour(q: LogQuantity, k: usize) -> Color32 {
     }
 }
 
+/// The unit the motor speeds are drawn in: revolutions per second, the
+/// frequency at which a motor's noise stands in the spectrum (the reference
+/// tool's "RPS (Hz)"; the owner's decision D-010).
+const MOTOR_SPEED_UNIT: &str = "Hz";
+
+/// Scale factor and symbol a line of the viewer is drawn with: the motor
+/// speeds, logged in rpm, as revolutions per second; every other channel in
+/// the preferred display units.
+pub(crate) fn shown_unit(id: &ChannelId, unit: &Unit, prefs: &Prefs) -> (f64, String) {
+    match (id, unit) {
+        (ChannelId::MotorRpm { .. }, Unit::Rpm) => (1.0 / 60.0, MOTOR_SPEED_UNIT.to_string()),
+        _ => display_unit(unit, prefs),
+    }
+}
+
 /// Display options of the tab.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LogDisplay {
@@ -264,7 +281,7 @@ struct RowSpec {
 fn rows(app: &App, s: &FlightSession) -> Vec<RowSpec> {
     let d = &app.tools.log_display;
     let has = |id: &ChannelId| s.channel(id).is_some();
-    let rate = display_unit(&openpid_core::units::Unit::DegreesPerSecond, &app.prefs);
+    let rate = display_unit(&Unit::DegreesPerSecond, &app.prefs);
     let mut out: Vec<RowSpec> = crate::axis_layout::shown_axes(app)
         .iter()
         .map(|axis| RowSpec {
@@ -323,9 +340,9 @@ fn rows(app: &App, s: &FlightSession) -> Vec<RowSpec> {
         out.push(extra("motors", "%".to_string(), motors, Some((0.0, 100.0))));
     }
     if d.shows(LogQuantity::MotorRpm) {
-        let rpm = indexed(LogQuantity::MotorRpm, "RPM ");
+        let rpm = indexed(LogQuantity::MotorRpm, "RPS ");
         if !rpm.is_empty() {
-            out.push(extra("rpm", "rpm".to_string(), rpm, None));
+            out.push(extra("rpm", MOTOR_SPEED_UNIT.to_string(), rpm, None));
         }
     }
     if d.shows(LogQuantity::Debug) {
@@ -506,7 +523,7 @@ fn row(
             let Some(c) = s.channel(&line.id) else {
                 continue;
             };
-            let (scale, symbol) = display_unit(&c.unit, &app.prefs);
+            let (scale, symbol) = shown_unit(&line.id, &c.unit, &app.prefs);
             let v = c.data.values();
             let to = to.min(v.len());
             let from = from.min(to);
@@ -835,7 +852,7 @@ fn read_out(
     for line in &spec.series {
         let text = match (at, s.channel(&line.id)) {
             (Some(i), Some(c)) if c.data.is_valid(i) => {
-                let (scale, _) = display_unit(&c.unit, &app.prefs);
+                let (scale, _) = shown_unit(&line.id, &c.unit, &app.prefs);
                 format!("{} {:.0}", line.name, c.data.values()[i] * scale)
             }
             _ => line.name.clone(),
@@ -856,7 +873,7 @@ fn controls(app: &mut App, ui: &mut Ui) {
         .and_then(|s| app.loaded(s))
         .and_then(|l| l.current().cloned());
     crate::axis_layout::axes_row(app, ui);
-    let rate = display_unit(&openpid_core::units::Unit::DegreesPerSecond, &app.prefs);
+    let rate = display_unit(&Unit::DegreesPerSecond, &app.prefs);
     let mut y = app.tools.log_display.y_scale * rate.0;
     let r = panel::drag(
         ui,

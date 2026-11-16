@@ -226,10 +226,10 @@ static UA: &[(&str, &str)] = &[
     ("Model", "Модель"),
     ("Most active 20 s", "Найактивніші 20 с"),
     ("Motor KV", "KV моторів"),
-    ("Motor RPM", "Оберти моторів"),
     ("Motor idle", "Холостий хід моторів"),
     ("Motor output", "Вихід на мотори"),
     ("Motor poles", "Полюси мотора"),
+    ("Motor speed", "Оберти моторів"),
     ("Motors", "Мотори"),
     ("Next", "Далі"),
     ("Next tab", "Наступна вкладка"),
@@ -894,8 +894,8 @@ static UA: &[(&str, &str)] = &[
         "виходи моторів, у рядку під осями (%)",
     ),
     (
-        "the motor speeds from the ESC telemetry, in a row of their own",
-        "оберти моторів з телеметрії ESC, в окремому рядку",
+        "the motor speeds from the ESC telemetry, in revolutions per second (Hz), in a row of their own",
+        "оберти моторів з телеметрії ESC, в обертах за секунду (Гц), в окремому рядку",
     ),
     (
         "the motors' speed and its harmonics over the map: noise that follows them is motor noise",

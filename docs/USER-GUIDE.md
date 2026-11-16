@@ -79,9 +79,12 @@ cargo run --release -p openpid-app                      # or ./target/release/op
   dock at the bottom) at one scale, **Y scale ±** in the panel (500 deg/s by
   default), and under them a row for the throttle and the motors (0–100 %).
   Motor speeds, debug values and other channels get rows of their own when
-  chosen. Every row shares the time axis: zoom and pan move time only.
+  chosen. The motor speeds are in revolutions per second (Hz), the frequency
+  at which a motor's noise stands in the spectrum; a log holds them in rpm,
+  which is 60 times as much. Every row shares the time axis: zoom and pan
+  move time only.
 - **Quantities** (panel): Gyro, Gyro prefilt, P-term, I-term, D-term, F-term,
-  Setpoint, PID sum, PID error (on every axis), Motors, Throttle, Motor RPM,
+  Setpoint, PID sum, PID error (on every axis), Motors, Throttle, Motor speed,
   Debug. Their names are drawn in their line colours; one the log does not
   have is greyed. The default is Gyro, Setpoint, Motors and Throttle.
 - **At the top left of each row** the names of its lines in their colours,
