@@ -2447,6 +2447,68 @@ fn about(round: u32, probes: &[Probe]) -> String {
     }
 }
 
+/// The spectrum window: opened, and for every spectrum probe of the round
+/// the spectrum at each smoothing level, as a picture and, from round 2 on,
+/// as vector copies of its plots.
+fn spectrum_steps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+    steps.push(click(
+        LOG_VIEWER,
+        "log",
+        "Spectral Analyzer",
+        log_at::SPECTRUM,
+    ));
+    // the tool may still be decoding when the click lands: it then opens the
+    // window once it is done, however long that takes
+    steps.push(Step {
+        wait_s: Some(900),
+        ..settle(SPECTRUM, None, 1.5)
+    });
+    steps.push(shot(SPECTRUM, format!("r{round}-spectrum-open")));
+    if round >= 3 {
+        steps.push(Step {
+            action: "type",
+            text: Some(Y_MAX_DB.to_string()),
+            ..click(SPECTRUM, "shot", "Y max", spectrum_at::Y_MAX)
+        });
+        steps.push(pause(300));
+    }
+    let spectrum: Vec<&Probe> = probes.iter().filter(|p| p.area == Area::Spectrum).collect();
+    for probe in spectrum {
+        // the logs are listed in the order of their names, which is the
+        // order of the catalogue; the legend of every picture names its log
+        let row = probes.iter().position(|p| p.id == probe.id).unwrap_or(0);
+        let at = |name: &str, position: (u32, u32)| click(SPECTRUM, "shot", name, position);
+        for (k, (level, item)) in SMOOTHING.into_iter().enumerate() {
+            if k == 0 {
+                // a click selects this log alone
+                let y = log_row(spectrum_at::LOG.1, row);
+                steps.push(Step {
+                    mark: Some(true),
+                    ..at(&format!("log {}", probe.id), (spectrum_at::LOG.0, y))
+                });
+                steps.push(pause(250));
+                steps.push(at("smoothing list", spectrum_at::SMOOTHING_LIST));
+            } else {
+                steps.push(Step {
+                    mark: Some(true),
+                    ..at("smoothing list", spectrum_at::SMOOTHING_LIST)
+                });
+            }
+            steps.push(pause(600));
+            let name = format!("smoothing {level}");
+            steps.push(at(&name, (spectrum_at::SMOOTHING_X, item)));
+            steps.push(pause(200));
+            steps.push(at("Run", spectrum_at::RUN));
+            steps.push(settle(SPECTRUM, Some(20.0), 1.2));
+            steps.push(shot(SPECTRUM, spectrum_shot(round, probe.id, level)));
+            for (axis, column) in copied(round, level) {
+                let file = spectrum_copy(round, probe.id, level, axis, column);
+                copy_plot(steps, axis, column, file);
+            }
+        }
+    }
+}
+
 /// The plan of a round: load every log at once, then for every spectrum
 /// probe the spectrum at each smoothing level, as a picture and, from round
 /// 2 on, as vector copies of its plots.
@@ -2486,62 +2548,7 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
 
     // the spectrum window, when the round has probes for it
     if probes.iter().any(|p| p.area == Area::Spectrum) {
-        steps.push(click(
-            LOG_VIEWER,
-            "log",
-            "Spectral Analyzer",
-            log_at::SPECTRUM,
-        ));
-        // the tool may still be decoding when the click lands: it then opens the
-        // window once it is done, however long that takes
-        steps.push(Step {
-            wait_s: Some(900),
-            ..settle(SPECTRUM, None, 1.5)
-        });
-        steps.push(shot(SPECTRUM, format!("r{round}-spectrum-open")));
-        if round >= 3 {
-            steps.push(Step {
-                action: "type",
-                text: Some(Y_MAX_DB.to_string()),
-                ..click(SPECTRUM, "shot", "Y max", spectrum_at::Y_MAX)
-            });
-            steps.push(pause(300));
-        }
-        let spectrum: Vec<&Probe> = probes.iter().filter(|p| p.area == Area::Spectrum).collect();
-        for probe in spectrum {
-            // the logs are listed in the order of their names, which is the
-            // order of the catalogue; the legend of every picture names its log
-            let row = probes.iter().position(|p| p.id == probe.id).unwrap_or(0);
-            let at = |name: &str, position: (u32, u32)| click(SPECTRUM, "shot", name, position);
-            for (k, (level, item)) in SMOOTHING.into_iter().enumerate() {
-                if k == 0 {
-                    // a click selects this log alone
-                    let y = log_row(spectrum_at::LOG.1, row);
-                    steps.push(Step {
-                        mark: Some(true),
-                        ..at(&format!("log {}", probe.id), (spectrum_at::LOG.0, y))
-                    });
-                    steps.push(pause(250));
-                    steps.push(at("smoothing list", spectrum_at::SMOOTHING_LIST));
-                } else {
-                    steps.push(Step {
-                        mark: Some(true),
-                        ..at("smoothing list", spectrum_at::SMOOTHING_LIST)
-                    });
-                }
-                steps.push(pause(600));
-                let name = format!("smoothing {level}");
-                steps.push(at(&name, (spectrum_at::SMOOTHING_X, item)));
-                steps.push(pause(200));
-                steps.push(at("Run", spectrum_at::RUN));
-                steps.push(settle(SPECTRUM, Some(20.0), 1.2));
-                steps.push(shot(SPECTRUM, spectrum_shot(round, probe.id, level)));
-                for (axis, column) in copied(round, level) {
-                    let file = spectrum_copy(round, probe.id, level, axis, column);
-                    copy_plot(&mut steps, axis, column, file);
-                }
-            }
-        }
+        spectrum_steps(&mut steps, round, probes);
     }
     if probes.iter().any(|p| p.area == Area::StepResponse) {
         step_response(&mut steps, round, probes);
