@@ -50,8 +50,9 @@ carry a signal in those fields.
 - **Throttle** is drawn 15 … 85 %, as written. **The motors read higher than
   the throttle**: ≈ 22 … 88 % for outputs that are 15 … 85 % of the range
   between the `motorOutput` limits (158 … 2047). That fits the raw output
-  over 2047, not the range between the limits (OpenPID's reading). To be
-  measured in #175.
+  over 2047, not the range between the limits (OpenPID's reading).
+  Measured in round 15: the logged number over 20
+  ([log-viewer.md](log-viewer.md), D-008).
 - **Flight mode**: the slow-frame flags value 1 (ARM in the firmware's box
   order) is labelled `ANGLE_MODE` under the plot.
 
@@ -249,6 +250,19 @@ there are two columns, each with a list to choose its log; the rows whose
 values differ are marked in both columns, and "Show Differences Only"
 leaves those rows alone, numbered anew (for two logs of the same craft at
 2 and 1 kHz: the craft's name, "P interval" and "P ratio").
+
+## Version 0.94: the main window (round 15, 2026-11-16)
+
+As in version 0.9 (above), with these differences seen: the panel has
+"Open", "Restore" and "Reset"; the check-list ends with "Throttle" and
+"Debug" (no "Test Signal"), and "Debug: 1" under it is the debug mode of
+the log; with an RPS line ticked the lower plot becomes "Motor (%) | RPS
+(Hz)", 0 … 150. The list of the line smoothing reads "line smooth off",
+"low", "med", "med-high", "high". Under the panel: "<<", "<", "-", ">",
+">>", "time: 0.2 sec" once the player has moved, the two stick boxes, and
+"M1 … M4" in percent and "gyro R / P / Y" in deg/s at the cursor. No name
+of a flight mode appears under the plots. What the lines read is in
+[log-viewer.md](log-viewer.md).
 
 ## Not captured so far
 

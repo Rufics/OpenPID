@@ -170,6 +170,51 @@ Taken by the owner on 2026-11-11:
 | The owner's decision | **A**, 2026-11-16 |
 | Carried out by | #197 (on its own from `master`): each part of the chain at the rate of the loop it runs in (Betaflight 4.2 and later: the second low-pass at the gyro rate, the others at the PID loop rate; elsewhere all at the gyro rate, which is taken to be so), the delays at 1 Hz per part, summed and in total; the simulated gyro stays at the rate of the log |
 
+### D-008 What a motor's percent is
+
+| Field | |
+|---|---|
+| Id | D-008 |
+| Area | Log viewer, L6: the motor lines and the motors at the cursor |
+| Probe | `q1-values-2k` of round 15 (pack `fdfb71e`): motors 1 to 4 held at 158, 630, 1102 and 2047, with the header `motorOutput:158,2047` |
+| The reference tool shows | 7.88, 31.48 and 55.08 % on the copied lines and "M1: 8%", "M2: 32%", "M3: 55%", "M4: 102%" at the cursor: the logged number over 20. The fourth motor is above its plot, which ends at 100 % ([log-viewer.md](log-viewer.md)) |
+| OpenPID shows | 0, 25.0, 50.0 and 100 %: the share of the range between the two numbers of `motorOutput` (`openpid decode --scaled`) |
+| The exact value | none: a choice of what 0 % and 100 % mean. The headers say that this craft's motors go from 158 to 2047; a digital motor command as such runs from 48 to 2047, in which 158 is 5.5 % |
+| Options | **A.** Keep OpenPID's: 0 % is the lowest output of the armed craft and 100 % the highest, by its headers; a motor at its limit reads 100. The numbers are not the reference tool's (about 8 % apart at idle, 2 % at full). **B.** As the reference tool: the logged number over 20. A user reads the same percent in both programs; a motor at full reads 102 % and an idling one about 8 %. The reference tool's rule for outputs that are not digital (1000 … 2000) is not known and would need a probe first. **C.** The share of the digital command (48 … 2047): idle reads 5.5 %, full 100 %; neither program's number today |
+| Recommendation | A. The motors row is read for "is a motor at its limit" and "how far apart are the motors", and both read best on the craft's own range; the reference tool's number passes 100 % |
+| The owner's decision | |
+| Carried out by | |
+
+### D-009 The sign of the PID error
+
+| Field | |
+|---|---|
+| Id | D-009 |
+| Area | Log viewer, L5 (and the "PID error" quantity of the Spectrum, S8, where a sign does not show) |
+| Probe | `q1-values-2k` of round 15: a gyro of 100 deg/s under a setpoint of 0, 100, 200 and 400 deg/s on roll; 200 under 60 on pitch; −150 under −40 on yaw |
+| The reference tool shows | 100, 0, −100, −300 on roll, 140 on pitch, −110 on yaw: the gyro less the setpoint |
+| OpenPID shows | −100, 0, 100, 300; −140; 110: the setpoint less the gyro |
+| The exact value | the firmware's own error is the setpoint less the gyro: its P term is that error times the gain, so a craft that turns slower than asked has a positive error and a positive P |
+| Options | **A.** Keep OpenPID's sign, the firmware's: the error line and the P term point the same way. **B.** As the reference tool: the line is a mirror image of today's, and of the P term |
+| Recommendation | A. The line is read next to the P term, which is this error times a gain; the reference tool's sign puts the two on opposite sides of zero |
+| The owner's decision | |
+| Carried out by | |
+
+### D-010 The unit of the motor speed
+
+| Field | |
+|---|---|
+| Id | D-010 |
+| Area | Log viewer, L8: the motor speed lines |
+| Probe | `q1-values-2k` of round 15: motors turning at 6 000, 12 000, 18 000 and 24 000 rpm (`eRPM` 420 … 1680, 14 poles) |
+| The reference tool shows | "RPS (Hz)": the first motor at 100.0 on an axis of 0 … 150 that it shares with the motors' percent; the other three (200, 300, 400) are off that plot |
+| OpenPID shows | 6 000, 12 000, 18 000 and 24 000 rpm, in a row of their own |
+| The exact value | none: a display choice. The two are the same speed, 60 apart |
+| Options | **A.** Keep rpm. **B.** Revolutions per second (Hz), as the reference tool: the number is the frequency at which that motor's noise stands in the spectrum and in the two maps, and the one the RPM filter follows. The row of its own stays, so nothing is cut off. **C.** A unit to choose in the settings, as for the rate (deg/s or rad/s) |
+| Recommendation | B. In a tuning tool the motor speed is looked up as a frequency; rpm has to be divided by 60 every time |
+| The owner's decision | |
+| Carried out by | |
+
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
 call.
