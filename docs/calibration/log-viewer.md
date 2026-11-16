@@ -97,7 +97,9 @@ and to 0.02 % on the lower one) and, where marked *px*, from the pictures:
 | Flight modes | not shown | the modes at the cursor, marks where they change |
 
 The three differences are entries D-008, D-009 and D-010 of
-[DECISIONS.md](DECISIONS.md).
+[DECISIONS.md](DECISIONS.md). The owner's decisions of 2026-11-16: the
+motors' percent and the sign of the PID error stay OpenPID's; the motor
+speed is shown in revolutions per second, as the reference tool (#198).
 
 ## Not settled
 

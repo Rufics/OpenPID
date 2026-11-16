@@ -182,8 +182,8 @@ Taken by the owner on 2026-11-11:
 | The exact value | none: a choice of what 0 % and 100 % mean. The headers say that this craft's motors go from 158 to 2047; a digital motor command as such runs from 48 to 2047, in which 158 is 5.5 % |
 | Options | **A.** Keep OpenPID's: 0 % is the lowest output of the armed craft and 100 % the highest, by its headers; a motor at its limit reads 100. The numbers are not the reference tool's (about 8 % apart at idle, 2 % at full). **B.** As the reference tool: the logged number over 20. A user reads the same percent in both programs; a motor at full reads 102 % and an idling one about 8 %. The reference tool's rule for outputs that are not digital (1000 … 2000) is not known and would need a probe first. **C.** The share of the digital command (48 … 2047): idle reads 5.5 %, full 100 %; neither program's number today |
 | Recommendation | A. The motors row is read for "is a motor at its limit" and "how far apart are the motors", and both read best on the craft's own range; the reference tool's number passes 100 % |
-| The owner's decision | |
-| Carried out by | |
+| The owner's decision | **A**, 2026-11-16: OpenPID's percent stays |
+| Carried out by | nothing to change |
 
 ### D-009 The sign of the PID error
 
@@ -197,8 +197,8 @@ Taken by the owner on 2026-11-11:
 | The exact value | the firmware's own error is the setpoint less the gyro: its P term is that error times the gain, so a craft that turns slower than asked has a positive error and a positive P |
 | Options | **A.** Keep OpenPID's sign, the firmware's: the error line and the P term point the same way. **B.** As the reference tool: the line is a mirror image of today's, and of the P term |
 | Recommendation | A. The line is read next to the P term, which is this error times a gain; the reference tool's sign puts the two on opposite sides of zero |
-| The owner's decision | |
-| Carried out by | |
+| The owner's decision | **A**, 2026-11-16, after seeing both signs drawn on a stick move of a real log (there the P term is 1.45 times the setpoint less the gyro): OpenPID's sign stays |
+| Carried out by | nothing to change |
 
 ### D-010 The unit of the motor speed
 
@@ -212,8 +212,8 @@ Taken by the owner on 2026-11-11:
 | The exact value | none: a display choice. The two are the same speed, 60 apart |
 | Options | **A.** Keep rpm. **B.** Revolutions per second (Hz), as the reference tool: the number is the frequency at which that motor's noise stands in the spectrum and in the two maps, and the one the RPM filter follows. The row of its own stays, so nothing is cut off. **C.** A unit to choose in the settings, as for the rate (deg/s or rad/s) |
 | Recommendation | B. In a tuning tool the motor speed is looked up as a frequency; rpm has to be divided by 60 every time |
-| The owner's decision | |
-| Carried out by | |
+| The owner's decision | **B**, 2026-11-16: revolutions per second |
+| Carried out by | #198 (on its own from `master`): the lines of the motor speed row and their values at the cursor in Hz; the channel itself stays in rpm |
 
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
