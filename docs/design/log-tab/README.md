@@ -47,13 +47,14 @@ right panel as on the other reworked tabs.
 
 - `log_tab.rs`: `control_panel`; rows of the docked log: roll, pitch and yaw
   at ± `Y scale` (deg/s, 500 by default, in the chosen rate unit), then a
-  row for the throttle and the motors (0–100 %), a row for the motor speeds,
-  one for the debug values and one for "Other channels", each only when
+  row for the throttle and the motors (0–100 %), a row for the motor speeds
+  (in revolutions per second, Hz, since the owner's decision D-010 of
+  2026-11-16; the log holds rpm), one for the debug values and one for "Other channels", each only when
   chosen and logged. Every row has the same y-axis width (`Y_AXIS_W`) and
   the rows link the time axis and the pointer; pan and zoom move time only.
 - **Quantities** (`LogQuantity`, `LogDisplay::quantities`): Gyro, Gyro
   prefilt, P, I, D, F, Setpoint, PID sum, PID error on every axis; Motors,
-  Throttle, Motor RPM, Debug in their rows. Default Gyro, Setpoint, Motors,
+  Throttle, Motor speed, Debug in their rows. Default Gyro, Setpoint, Motors,
   Throttle, as the reference tool. The checkbox names carry the line colours
   (Blackbox Explorer's palette, or the colour-blind safe one); a quantity the
   log lacks is greyed with "not in this log". The setpoint is drawn under
@@ -71,8 +72,8 @@ right panel as on the other reworked tabs.
 ## Tests
 
 `log_tab_stacks_the_axes_with_the_motors_and_reads_the_cursor` (rows and
-their lines, the setpoint first, ± 500 by default, P-term and Motor RPM
-added, Debug greyed, other channels without repeats, Y scale 250, a click
+their lines, the setpoint first, ± 500 by default, P-term and Motor speed
+added, the speeds in Hz, Debug greyed, other channels without repeats, Y scale 250, a click
 places the cursor); `channel_filter_and_toggles_edit_the_channel_list`
 (folded list, filter); `cursor_buttons_set_the_epoch`,
 `epoch_bounds_can_be_dragged_on_the_plot` and
@@ -85,6 +86,7 @@ btfl_027, the cursor at 14.2 s:
 
 ![btfl_027](one-log.jpg)
 
-Betaflight 4.5.1 with P-term, D-term and Motor RPM:
+Betaflight 4.5.1 with P-term, D-term and the motor speeds (the picture is
+older than D-010: its speed row is still in rpm):
 
 ![4.5.1](terms.jpg)

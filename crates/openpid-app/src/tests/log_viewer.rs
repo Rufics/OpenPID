@@ -28,10 +28,32 @@ fn log_viewer_rows_quantities_cursor_and_sticks() {
 
         // a quantity adds a line on every axis; one the log lacks is greyed out
         ui.check("P-term", true);
-        ui.check("Motor RPM", true);
+        ui.check("Motor speed", true);
         assert!(ui.app().tools.log_display.shows(LogQuantity::PTerm));
         assert_eq!(row_summary(ui.app())[1].1, ["setpoint", "gyro", "P"]);
         assert_eq!(rows(&ui).last(), Some(&"rpm"));
+        // the motor speeds in revolutions per second: the log has them in rpm
+        assert_eq!(
+            row_summary(ui.app()).last().unwrap().1,
+            ["RPS 1", "RPS 2", "RPS 3", "RPS 4"]
+        );
+        let session = ui
+            .app()
+            .dock_slot()
+            .and_then(|slot| ui.app().loaded(slot))
+            .and_then(|log| log.current().cloned())
+            .expect("a docked log");
+        let fastest_rpm = (0..4)
+            .filter_map(|idx| session.channel(&ChannelId::MotorRpm { idx }))
+            .flat_map(|c| c.data.values().to_vec())
+            .fold(0.0_f64, f64::max);
+        assert!(fastest_rpm > 6000.0, "{fastest_rpm} rpm");
+        let (_, top) = ui.plot("log/rpm").y_range();
+        assert!(
+            top >= fastest_rpm / 60.0 && top < fastest_rpm / 60.0 * 1.2,
+            "the row ends at {top}, the fastest motor turns at {} Hz",
+            fastest_rpm / 60.0
+        );
         assert!(!ui.is_enabled("Debug"), "no debug in this log");
         ui.check("Motors", false);
         ui.check("Throttle", false);
@@ -259,5 +281,31 @@ fn mode_changes_of_a_log_without_modes() {
     assert!(
         ui.app().viewer.modes.is_none(),
         "no modes on the card either"
+    );
+}
+
+#[test]
+fn motor_speeds_are_shown_in_revolutions_per_second() {
+    use crate::log_tab::shown_unit;
+    use openpid_core::units::Unit;
+    let prefs = crate::prefs::Prefs::default();
+    // the motor speeds, which a log holds in rpm
+    let (scale, symbol) = shown_unit(&ChannelId::MotorRpm { idx: 2 }, &Unit::Rpm, &prefs);
+    assert_eq!(symbol, "Hz");
+    assert!((24_000.0 * scale - 400.0).abs() < 1e-9);
+    // nothing else in rpm is touched (a helicopter's head speed)
+    let head = ChannelId::Custom("headspeed".into());
+    assert_eq!(
+        shown_unit(&head, &Unit::Rpm, &prefs),
+        (1.0, "rpm".to_string())
+    );
+    // and the other channels keep their display units
+    let gyro = ChannelId::Gyro {
+        axis: Axis::Roll,
+        stage: GyroStage::Filtered,
+    };
+    assert_eq!(
+        shown_unit(&gyro, &Unit::DegreesPerSecond, &prefs),
+        crate::views::display_unit(&Unit::DegreesPerSecond, &prefs)
     );
 }
