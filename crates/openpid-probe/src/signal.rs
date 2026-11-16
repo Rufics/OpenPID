@@ -143,6 +143,26 @@ pub enum Wave {
         /// What the sample carries, deg/s.
         value: f64,
     },
+    /// A triangle: `from` at the first sample, a straight line to `to` over
+    /// half a period, a straight line back over the other half, and so on.
+    Triangle {
+        /// Value at the start of every period, deg/s.
+        from: f64,
+        /// Value half a period later, deg/s.
+        to: f64,
+        /// Length of a period, seconds.
+        period_s: f64,
+    },
+    /// `value` in `samples` samples in a row, the first of them the sample
+    /// at `at_s`, and nothing in any other.
+    Pulse {
+        /// The time of the first sample, seconds.
+        at_s: f64,
+        /// How many samples it lasts.
+        samples: u32,
+        /// What those samples carry, deg/s.
+        value: f64,
+    },
 }
 
 impl Wave {
@@ -242,8 +262,47 @@ impl Wave {
                 }
                 out
             }
+            Wave::Triangle { from, to, period_s } => triangle(n, period_s * fs, *from, *to),
+            Wave::Pulse {
+                at_s,
+                samples,
+                value,
+            } => {
+                let mut out = vec![0.0; n];
+                let first = (at_s * fs).round() as i64;
+                let end = (first + i64::from(*samples)).clamp(0, n as i64) as usize;
+                let first = first.clamp(0, n as i64) as usize;
+                for sample in &mut out[first..end.max(first)] {
+                    *sample = *value;
+                }
+                out
+            }
         }
     }
+}
+
+/// A triangle of `n` samples with a period of `period` samples: see
+/// [`Wave::Triangle`]. It is counted in samples, so that a period of a
+/// whole number of them repeats to the bit, and a slope of half a unit a
+/// sample lands on the halves exactly.
+fn triangle(n: usize, period: f64, from: f64, to: f64) -> Vec<f64> {
+    // a period a rounding error away from a whole number of samples is one
+    let period = if (period - period.round()).abs() < SAME_TIME_S {
+        period.round()
+    } else {
+        period
+    };
+    if period <= 0.0 {
+        return vec![from; n];
+    }
+    let half = period / 2.0;
+    (0..n)
+        .map(|i| {
+            let at = i as f64 % period;
+            let along = if at <= half { at } else { period - at };
+            from + (to - from) * along / half
+        })
+        .collect()
 }
 
 /// The bins of an `n`-sample spectrum at `fs` that lie in `from_hz .. to_hz`:
@@ -625,6 +684,29 @@ pub struct DebugValues {
     pub values: Vec<f64>,
 }
 
+/// The outputs of the motors of a flight whose ESCs are not driven
+/// digitally: the range the header of the log states (`motorOutput`) and
+/// the protocol (`motor_pwm_protocol`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MotorOutput {
+    /// The output of a motor that stands still.
+    pub low: u32,
+    /// The highest output.
+    pub high: u32,
+    /// The number of the protocol in the firmware's list: 0 for plain PWM,
+    /// 1 for `OneShot125`; 5 and above are the digital ones.
+    pub protocol: u32,
+}
+
+impl MotorOutput {
+    /// The share of the range a logged `output` is, percent: what a flight
+    /// states its motors in.
+    pub fn percent(&self, output: f64) -> f64 {
+        100.0 * (output - f64::from(self.low))
+            / f64::from(self.high.saturating_sub(self.low).max(1))
+    }
+}
+
 /// The flight modes of a flight.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Modes {
@@ -720,6 +802,15 @@ pub struct FlightSpec {
     /// The flight modes, when the craft is not simply armed throughout.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modes: Option<Modes>,
+    /// The throttle of the stick, percent, constant over the flight, when
+    /// it is not the throttle the mixer works with (`throttle`): to tell
+    /// which of the two a tool reads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stick_throttle: Option<f64>,
+    /// The outputs of the motors, when they are not the digital ones every
+    /// other flight has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motor_output: Option<MotorOutput>,
 }
 
 /// The samples of one axis.
@@ -752,6 +843,8 @@ impl FlightSpec {
             motor_rpm: None,
             debug: None,
             modes: None,
+            stick_throttle: None,
+            motor_output: None,
         }
     }
 
@@ -864,9 +957,16 @@ impl FlightSpec {
 
     /// The channels of the parts only some flights have: the terms of the
     /// controller, the speeds of the motors (mechanical, which the writer
-    /// turns into the electrical speed a log holds) and the debug values.
+    /// turns into the electrical speed a log holds), the debug values and
+    /// the throttle of the stick (in the firmware's units, 1000 … 2000: a
+    /// writer takes it for `rcCommand[3]` in place of the throttle).
     fn extra_channels(&self) -> Vec<(ChannelId, String, Unit, f64)> {
         let mut out = Vec::new();
+        if let Some(percent) = self.stick_throttle {
+            let id = ChannelId::RcCommand { ch: 3 };
+            let units = 1000.0 + 10.0 * percent;
+            out.push((id, "rcCommand[3]".into(), Unit::Raw, units));
+        }
         if let Some(pid) = &self.pid_terms {
             for (term, letter, values) in pid.terms() {
                 for axis in Axis::ALL {
@@ -1013,6 +1113,12 @@ impl FlightSpec {
             ..Settings::default()
         };
         settings.motor.count = Some(4);
+        if let Some(output) = &self.motor_output {
+            // the session names the range its motors are scaled to, and a
+            // writer states it in the header (`motorOutput`)
+            settings.motor.output_low = Some(f64::from(output.low));
+            settings.motor.output_high = Some(f64::from(output.high));
+        }
         settings.debug_mode = self.debug.as_ref().map(|debug| DebugMode {
             code: debug.mode,
             name: None,
@@ -1577,13 +1683,17 @@ mod tests {
             "motor_rpm",
             "debug",
             "modes",
+            "stick_throttle",
+            "motor_output",
         ] {
             assert!(!text.contains(part), "{part}");
         }
         assert!(session.flight_modes.is_empty() && session.settings.debug_mode.is_none());
+        assert_eq!(session.settings.motor.output_low, None);
         let extra = [
             ChannelId::MotorRpm { idx: 0 },
             ChannelId::Debug { idx: 0 },
+            ChannelId::RcCommand { ch: 3 },
             ChannelId::PidTerm {
                 axis: Axis::Roll,
                 term: PidTerm::P,
@@ -1619,6 +1729,118 @@ mod tests {
             .samples(Axis::Roll)
             .unfiltered;
         assert_eq!((x[999], x[1000], x[1001]), (100.0, 1000.0, 100.0));
+    }
+
+    #[test]
+    fn a_triangle_rises_and_falls_evenly() {
+        let triangle = |fs: f64, duration_s: f64, period_s: f64| {
+            let wave = Wave::Triangle {
+                from: -300.0,
+                to: 300.0,
+                period_s,
+            };
+            flight_of(fs, duration_s, AxisSpec::of(vec![wave]))
+                .samples(Axis::Roll)
+                .unfiltered
+        };
+        // 1.2 s at 2 kHz: 1200 samples up and 1200 down, half a deg/s each
+        let x = triangle(2000.0, 3.0, 1.2);
+        assert_eq!((x[0], x[1], x[2]), (-300.0, -299.5, -299.0));
+        assert_eq!(
+            (x[600], x[1199], x[1200], x[1201]),
+            (0.0, 299.5, 300.0, 299.5)
+        );
+        assert_eq!((x[2399], x[2400], x[2401]), (-299.5, -300.0, -299.5));
+        assert!(x.windows(2).all(|w| (w[1] - w[0]).abs() == 0.5));
+        assert_eq!(x[..2400], x[2400..4800]);
+        // the slope is the span over half a period, at any rate
+        let slow = triangle(1000.0, 4.0, 2.0);
+        assert!((slow[500] - slow[0] - 300.0).abs() < 1e-9);
+        assert!(slow.iter().all(|v| (-300.0..=300.0).contains(v)));
+        assert_eq!((slow[1000], slow[2000]), (300.0, -300.0));
+        // a period that is no whole number of samples still turns in time
+        let odd = triangle(1000.0, 1.0, 0.0125);
+        assert!((odd[25] + 300.0).abs() < 1e-9 && odd.iter().all(|v| v.abs() <= 300.0));
+        // no period: the value it starts at
+        assert_eq!(triangle(1000.0, 0.01, 0.0), [-300.0; 10]);
+    }
+
+    #[test]
+    fn a_pulse_is_its_samples_in_a_row() {
+        let pulse = |at_s: f64, samples: u32| {
+            let wave = Wave::Pulse {
+                at_s,
+                samples,
+                value: 500.0,
+            };
+            flight_of(1000.0, 2.0, AxisSpec::of(vec![wave]))
+                .samples(Axis::Roll)
+                .unfiltered
+        };
+        let held = |x: &[f64]| -> Vec<usize> { (0..x.len()).filter(|i| x[*i] != 0.0).collect() };
+        assert_eq!(held(&pulse(0.5, 1)), [500]);
+        assert_eq!(held(&pulse(0.5, 5)), [500, 501, 502, 503, 504]);
+        assert_eq!(held(&pulse(1.0, 50)), (1000..1050).collect::<Vec<_>>());
+        assert!(pulse(1.0, 50).iter().all(|v| *v == 0.0 || *v == 500.0));
+        // one that reaches past the end is a step; one outside leaves nothing
+        assert_eq!(held(&pulse(1.5, 9000)), (1500..2000).collect::<Vec<_>>());
+        assert_eq!(held(&pulse(-0.002, 5)), [0, 1, 2]);
+        assert!(held(&pulse(2.0, 5)).is_empty() && held(&pulse(-1.0, 5)).is_empty());
+        assert!(held(&pulse(0.5, 0)).is_empty());
+    }
+
+    #[test]
+    fn a_flight_can_part_the_stick_from_the_mixer_and_name_its_motor_outputs() {
+        let output = MotorOutput {
+            low: 1070,
+            high: 2000,
+            protocol: 1,
+        };
+        assert_eq!(output.percent(1070.0), 0.0);
+        assert_eq!(output.percent(1535.0), 50.0);
+        assert_eq!(output.percent(2000.0), 100.0);
+        assert!((output.percent(1300.0) - 24.731_182_795_698_924).abs() < 1e-12);
+        let spec = FlightSpec {
+            throttle: Throttle::Constant { percent: 30.0 },
+            stick_throttle: Some(50.0),
+            motor_output: Some(output),
+            ..FlightSpec::quiet(2000.0, 1.0)
+        };
+        let session = spec.build();
+        let held = |id: ChannelId| {
+            let values = session.channel(&id).unwrap().data.values();
+            assert!(values.len() == 2000 && values.iter().all(|v| *v == values[0]));
+            values[0]
+        };
+        // the stick in the firmware's units, the mixer's throttle in percent
+        assert_eq!(held(ChannelId::RcCommand { ch: 3 }), 1500.0);
+        assert_eq!(held(ChannelId::Throttle), 30.0);
+        assert!(session.channel(&ChannelId::RcCommand { ch: 0 }).is_none());
+        let motor = &session.settings.motor;
+        assert_eq!(
+            (motor.output_low, motor.output_high),
+            (Some(1070.0), Some(2000.0))
+        );
+        let text = serde_json::to_string(&spec).unwrap();
+        assert!(text.contains("\"stick_throttle\":50.0"), "{text}");
+        assert!(text.contains("\"motor_output\":{\"low\":1070,\"high\":2000,\"protocol\":1}"));
+        assert_eq!(serde_json::from_str::<FlightSpec>(&text).unwrap(), spec);
+        // the new waves are written down under names of their own
+        let waves = vec![
+            Wave::Triangle {
+                from: -1.0,
+                to: 1.0,
+                period_s: 2.0,
+            },
+            Wave::Pulse {
+                at_s: 0.5,
+                samples: 3,
+                value: 9.0,
+            },
+        ];
+        let text = serde_json::to_string(&waves).unwrap();
+        assert!(text.contains("\"kind\":\"triangle\"") && text.contains("\"kind\":\"pulse\""));
+        assert_eq!(serde_json::from_str::<Vec<Wave>>(&text).unwrap(), waves);
     }
 
     #[test]

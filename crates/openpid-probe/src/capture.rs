@@ -378,7 +378,8 @@ pub struct Frames {
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
 pub struct Step {
     /// What to do: `click`, `open_file`, `settle`, `shot`, `pause`,
-    /// `windows`, `hover`, `clip_wait`, `clip_save`, `type`, `key`.
+    /// `windows`, `hover`, `clip_wait`, `clip_save`, `type`, `key`,
+    /// `tables`.
     pub action: &'static str,
     /// Part of the title of the window the step is about.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -629,8 +630,13 @@ fn copy_axes(
 /// `what` is the setting ("", "raw", "spgyro", "smoothing-low" …) and
 /// `plot` the plot ("" for a picture of the window).
 pub fn step_file(round: u32, probe: &str, what: &str, plot: &str) -> String {
-    let mut name = format!("r{round}-{probe}-step");
-    for part in [what, plot] {
+    named(format!("r{round}-{probe}-step"), [what, plot])
+}
+
+/// `name` with those of `parts` that are not empty after it, a hyphen
+/// before each.
+fn named(mut name: String, parts: [&str; 2]) -> String {
+    for part in parts {
         if !part.is_empty() {
             name.push('-');
             name.push_str(part);
@@ -893,14 +899,7 @@ fn step_about(round: u32, probes: &[Probe]) -> String {
 /// throttle: `what` is the setting ("" as the window comes up, "psd", "2d",
 /// "smoothing-low" …) and `plot` the plot ("" for a picture of the window).
 pub fn throttle_file(round: u32, probe: &str, what: &str, plot: &str) -> String {
-    let mut name = format!("r{round}-{probe}-throttle");
-    for part in [what, plot] {
-        if !part.is_empty() {
-            name.push('-');
-            name.push_str(part);
-        }
-    }
-    name
+    named(format!("r{round}-{probe}-throttle"), [what, plot])
 }
 
 /// Whether the maps of `probe` are also captured at the four smoothing
@@ -955,19 +954,47 @@ impl ThrottleLog<'_> {
     /// A Run, waited for, a picture of the window and copies of the six
     /// plots of the first two columns, all named after the setting `what`.
     fn capture(self, steps: &mut Vec<Step>, what: &str) {
+        self.run(steps, what);
+        for column in 0..throttle_at::COLUMNS.len() {
+            for axis in 0..throttle_at::ROWS.len() {
+                self.copy(steps, what, column, axis);
+            }
+        }
+    }
+
+    /// A Run, waited for, and a picture of the window named after the
+    /// setting `what`.
+    fn run(self, steps: &mut Vec<Step>, what: &str) {
         steps.push(Step {
             mark: Some(true),
             ..throttle_click("Run", throttle_at::RUN)
         });
         steps.push(settle(THROTTLE, Some(60.0), 1.5));
         steps.push(shot(THROTTLE, throttle_file(self.round, self.id, what, "")));
-        for (column, left, right) in throttle_at::COLUMNS {
-            for (axis, (top, bottom)) in throttle_at::ROWS.into_iter().enumerate() {
-                let name = format!("{} {column}", AXES[axis]);
-                let plot = format!("{}-{column}", AXES[axis]);
-                let file = throttle_file(self.round, self.id, what, &plot);
-                copy_axes(steps, THROTTLE, &name, (left, top, right, bottom), file);
-            }
+    }
+
+    /// A copy of the plot of `axis` (0 … 2) in `column` (0 for the
+    /// unfiltered gyro, 1 for the filtered one), named after `what`.
+    fn copy(self, steps: &mut Vec<Step>, what: &str, column: usize, axis: usize) {
+        let (channel, left, right) = throttle_at::COLUMNS[column % 2];
+        let (top, bottom) = throttle_at::ROWS[axis % 3];
+        let name = format!("{} {channel}", AXES[axis % 3]);
+        let plot = format!("{}-{channel}", AXES[axis % 3]);
+        let file = throttle_file(self.round, self.id, what, &plot);
+        copy_axes(steps, THROTTLE, &name, (left, top, right, bottom), file);
+    }
+
+    /// The log chosen in the lists above the columns: in the first two, and
+    /// from [`THROTTLE_LENGTHS_ONLY`] on in all four. `row` is its place in
+    /// those lists.
+    fn choose(self, steps: &mut Vec<Step>, row: usize) {
+        let lists = throttle_at::LOG_LISTS.into_iter();
+        let others = throttle_at::OTHER_LOG_LISTS.into_iter();
+        let all = self.round >= THROTTLE_LENGTHS_ONLY;
+        let others = others.take(if all { 2 } else { 0 });
+        for (k, list) in lists.chain(others).enumerate() {
+            let name = format!("log {} in column {}", self.id, k + 1);
+            throttle_pick(steps, list, &name, row);
         }
     }
 
@@ -1027,16 +1054,9 @@ impl ThrottleLog<'_> {
     }
 }
 
-/// The steps of the window of frequency against throttle for the probes of
-/// a round. The window is opened from the spectrum window, after a Run
-/// there. For every log: the log chosen in the first two columns ("Gyro
-/// prefilt" and "Gyro"), then a Run, a picture and copies of the six plots
-/// as the window comes up, the same with "PSD" on and, up to
-/// [`THROTTLE_FIRST_LOOK`], with "2D" on; for the logs of
-/// [`throttle_smoothing_captured`] also at the other smoothing levels, and
-/// for those of [`throttle_views_captured`] below 100 Hz (and, up to that
-/// round, on a wider colour scale).
-fn throttle_maps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+/// The window of frequency against throttle, opened from the spectrum
+/// window, and a picture of it as it comes up.
+fn throttle_open(steps: &mut Vec<Step>, round: u32) {
     steps.push(click(
         SPECTRUM,
         "shot",
@@ -1048,19 +1068,26 @@ fn throttle_maps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
         ..settle(THROTTLE, None, 1.5)
     });
     steps.push(shot(THROTTLE, format!("r{round}-throttle-open")));
+}
+
+/// The steps of the window of frequency against throttle for the probes of
+/// a round. The window is opened from the spectrum window, after a Run
+/// there. For every log: the log chosen in the first two columns ("Gyro
+/// prefilt" and "Gyro"), then a Run, a picture and copies of the six plots
+/// as the window comes up, the same with "PSD" on and, up to
+/// [`THROTTLE_FIRST_LOOK`], with "2D" on; for the logs of
+/// [`throttle_smoothing_captured`] also at the other smoothing levels, and
+/// for those of [`throttle_views_captured`] below 100 Hz (and, up to that
+/// round, on a wider colour scale).
+fn throttle_maps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+    throttle_open(steps, round);
     let is_throttle = |p: &Probe| p.area == Area::Throttle;
     for (row, probe) in probes.iter().enumerate().filter(|(_, p)| is_throttle(p)) {
         let log = ThrottleLog {
             round,
             id: probe.id,
         };
-        let lists = throttle_at::LOG_LISTS.into_iter();
-        let others = throttle_at::OTHER_LOG_LISTS.into_iter();
-        let others = others.take(if round >= THROTTLE_LENGTHS_ONLY { 2 } else { 0 });
-        for (k, list) in lists.chain(others).enumerate() {
-            let name = format!("log {} in column {}", probe.id, k + 1);
-            throttle_pick(steps, list, &name, row);
-        }
+        log.choose(steps, row);
         log.capture(steps, "");
         if round >= THROTTLE_LENGTHS_ONLY {
             continue;
@@ -1104,14 +1131,7 @@ fn open_spectrum(steps: &mut Vec<Step>, round: u32) {
 /// time: `what` is the setting ("prefilt", "gyro", "prefilt-sub100" …) and
 /// `plot` the axis ("" for a picture of the window).
 pub fn time_file(round: u32, probe: &str, what: &str, plot: &str) -> String {
-    let mut name = format!("r{round}-{probe}-time");
-    for part in [what, plot] {
-        if !part.is_empty() {
-            name.push('-');
-            name.push_str(part);
-        }
-    }
-    name
+    named(format!("r{round}-{probe}-time"), [what, plot])
 }
 
 /// A click in the window of frequency against time, at a position of a
@@ -1194,6 +1214,24 @@ fn time_smoothing(steps: &mut Vec<Step>, freq: usize, time: usize) {
     }
 }
 
+/// A channel of that window chosen: its name in the files and its place in
+/// the window's list of channels.
+fn time_channel(steps: &mut Vec<Step>, (name, item): (&str, usize)) {
+    let name = format!("channel {name}");
+    time_pick(steps, time_at::CHANNEL_LIST, &name, item);
+}
+
+/// The maps of the unfiltered gyro of the log in row `row` of that window's
+/// list, as the window comes up otherwise: the log and the channel chosen,
+/// a Run, a picture, copies of the three plots.
+fn time_first(steps: &mut Vec<Step>, round: u32, id: &str, row: usize) {
+    let prefilt = TIME_CHANNELS[0];
+    time_changed(steps, round, id, prefilt.0, |steps| {
+        time_pick(steps, time_at::LOG_LIST, &format!("log {id}"), row);
+        time_channel(steps, prefilt);
+    });
+}
+
 /// The steps of the window of frequency against time from round
 /// [`TIME_LEVELS`] on. For every log the maps of the unfiltered gyro as the
 /// window comes up: a Run, a picture, copies of the three plots. For the
@@ -1207,10 +1245,7 @@ fn time_levels(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
     let first = probes.iter().position(is_time);
     let last = probes.iter().rposition(is_time);
     let (prefilt, prefilt_item) = TIME_CHANNELS[0];
-    let channel = |steps: &mut Vec<Step>, (name, item): (&str, usize)| {
-        let name = format!("channel {name}");
-        time_pick(steps, time_at::CHANNEL_LIST, &name, item);
-    };
+    let channel = time_channel;
     let z_max = |steps: &mut Vec<Step>, text: &str| {
         steps.push(Step {
             action: "type",
@@ -1220,10 +1255,7 @@ fn time_levels(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
         steps.push(pause(300));
     };
     for (row, probe) in probes.iter().enumerate().filter(|(_, p)| is_time(p)) {
-        time_changed(steps, round, probe.id, prefilt, |steps| {
-            time_pick(steps, time_at::LOG_LIST, &format!("log {}", probe.id), row);
-            channel(steps, (prefilt, prefilt_item));
-        });
+        time_first(steps, round, probe.id, row);
         let settings: &[(&str, usize, usize)] = if first == Some(row) {
             &TIME_SMOOTHING
         } else if last == Some(row) {
@@ -1537,6 +1569,23 @@ mod viewer_at {
     pub const Y_SCALE_DEFAULT: &str = "500";
     /// The list "line smoothing".
     pub const SMOOTHING_LIST: (u32, u32) = (3468, 628);
+    /// The items of that list when it is open, read from the picture round
+    /// 15 took of it: the name in the files and the place. "off" is what
+    /// the window comes up with.
+    pub const SMOOTHING: [(&str, (u32, u32)); 5] = [
+        ("off", (3468, 672)),
+        ("low", (3468, 721)),
+        ("med", (3468, 769)),
+        ("med-high", (3468, 817)),
+        ("high", (3468, 864)),
+    ];
+    /// The list of the logs at the top of the panel, at about this place:
+    /// the window has it when more than one log is open, and no round
+    /// before round 16 has clicked it. Its items are taken to lie as those
+    /// of the tool's other lists do ([`super::throttle_at::item`]).
+    pub const FILE_LIST: (u32, u32) = (3559, 262);
+    /// What round 16 types into the y scale, for a line that may be large.
+    pub const Y_SCALE_WIDE: &str = "2000";
     /// Where round 15 clicks into the roll plot, seconds of the flight.
     pub const CURSOR_S: f64 = 6.0;
     /// The button ">".
@@ -1631,6 +1680,30 @@ fn filters_copies(steps: &mut Vec<Step>, round: u32, what: &str, column: usize) 
     }
 }
 
+/// The filter simulator opened from the main window, and a picture of it
+/// as it comes up.
+fn filters_open(steps: &mut Vec<Step>, round: u32) {
+    let (button, _, at) = log_at::OTHERS[1];
+    steps.push(click(LOG_VIEWER, "log", button, at));
+    steps.push(Step {
+        wait_s: Some(120),
+        ..settle(FILTERS, None, 1.5)
+    });
+    steps.push(shot(FILTERS, format!("r{round}-filters-open")));
+}
+
+/// The types of a low-pass of the filter simulator beyond the one its lists
+/// come up with: the place in either list ("off" is the first item, "pt1",
+/// which they come up with, the second) and the name in the files.
+const LOWPASS_TYPES: [(usize, &str); 4] = [
+    (2, "pt2"),
+    (3, "pt3"),
+    (4, "biquad-butter"),
+    (5, "biquad-bessel"),
+];
+/// The place of "pt1" in those lists.
+const LOWPASS_PT1: usize = 1;
+
 /// The filter simulator asked: the window opened from the main window; a
 /// picture and copies of its eight plots as it comes up; a picture of each
 /// of its lists held open; each of its three switches set, a picture (and
@@ -1638,15 +1711,9 @@ fn filters_copies(steps: &mut Vec<Step>, round: u32, what: &str, column: usize) 
 /// typed in, each with a picture and copies of the column it changes, and
 /// put back.
 fn filters_ask(steps: &mut Vec<Step>, round: u32) {
-    let (button, _, at) = log_at::OTHERS[1];
     let file = |what: &str| format!("r{round}-filters-{what}");
     let inside = |name: &str, at: (u32, u32)| click(FILTERS, "shot", name, at);
-    steps.push(click(LOG_VIEWER, "log", button, at));
-    steps.push(Step {
-        wait_s: Some(120),
-        ..settle(FILTERS, None, 1.5)
-    });
-    steps.push(shot(FILTERS, file("open")));
+    filters_open(steps, round);
     for column in 0..filters_at::COLUMNS.len() {
         filters_copies(steps, round, "open", column);
     }
@@ -1767,25 +1834,14 @@ fn filters_shot(steps: &mut Vec<Step>, round: u32, what: &str) {
 /// no question, with all eight plots copied. Every list and box is put
 /// back before the next is touched.
 fn filters_more(steps: &mut Vec<Step>, round: u32) {
-    let (button, _, at) = log_at::OTHERS[1];
-    steps.push(click(LOG_VIEWER, "log", button, at));
-    steps.push(Step {
-        wait_s: Some(120),
-        ..settle(FILTERS, None, 1.5)
-    });
-    steps.push(shot(FILTERS, format!("r{round}-filters-open")));
-    for (row, name) in [
-        (2, "pt2"),
-        (3, "pt3"),
-        (4, "biquad-butter"),
-        (5, "biquad-bessel"),
-    ] {
+    filters_open(steps, round);
+    for (row, name) in LOWPASS_TYPES {
         let what = format!("lowpass-1-{name}");
         filters_pick(steps, "lowpass-1", row, true);
         filters_shot(steps, round, &what);
         filters_copies(steps, round, &what, 0);
     }
-    filters_pick(steps, "lowpass-1", 1, false);
+    filters_pick(steps, "lowpass-1", LOWPASS_PT1, false);
     for (row, name) in [(1, "4k"), (2, "3k2"), (3, "2k"), (4, "1k")] {
         let what = format!("looprate-{name}");
         filters_pick(steps, "looprate", row, true);
@@ -1969,6 +2025,311 @@ fn viewer_lines(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) -> bool {
     true
 }
 
+/// The round that asks every window what the rounds before it left open:
+/// its plan is made for the logs of that round and for no others.
+pub const OPEN_ENDS: u32 = 16;
+/// How long the main window is given to draw before its picture is taken,
+/// after a log or a smoothing level was chosen or a value was typed,
+/// milliseconds. A fixed time: the script cannot wait for this window to
+/// stop changing once something was typed into it, because the text cursor
+/// left in the box goes on blinking (round 15 waited 205 s for it).
+const VIEWER_DRAW_MS: u32 = 3000;
+/// The same after lines were ticked: some lines appear a few seconds after
+/// their tick (round 15: the debug lines).
+const VIEWER_TICK_MS: u32 = 4000;
+
+/// Name of a picture or of a copied plot of the main window with the log
+/// `probe` drawn: `what` is the setting ("" as the log comes up, "open",
+/// "smooth-low", "dterm" …) and `plot` the plot ("" for a picture of the
+/// window).
+pub fn viewer_file(round: u32, probe: &str, what: &str, plot: &str) -> String {
+    named(format!("r{round}-{probe}-log"), [what, plot])
+}
+
+/// A click in the main window, at a position of a picture of it.
+fn viewer_click(name: &str, at: (u32, u32)) -> Step {
+    click(LOG_VIEWER, "shot", name, at)
+}
+
+/// Clicks on the boxes of `lines` of the check-list, one after the other.
+/// A click turns a line over: with `back` unset the lines leave the state
+/// the window comes up with, with `back` set they return to it.
+fn viewer_ticks(steps: &mut Vec<Step>, lines: &[&str], back: bool) {
+    let listed = |line: &&str| {
+        viewer_at::LINES
+            .into_iter()
+            .find(|(name, _, _)| name == line)
+    };
+    for (name, y, default) in lines.iter().filter_map(listed) {
+        let state = if default == back { "on" } else { "off" };
+        let at = (viewer_at::BOX_X, y);
+        steps.push(click(LOG_VIEWER, "log", &format!("{name} {state}"), at));
+        steps.push(pause(400));
+    }
+}
+
+/// A number typed into the y scale of the main window, and the time the
+/// window is given to draw: never a wait for it to stop changing.
+fn viewer_scale(steps: &mut Vec<Step>, text: &str) {
+    steps.push(Step {
+        action: "type",
+        text: Some(text.to_string()),
+        ..viewer_click("y scale", viewer_at::Y_SCALE)
+    });
+    steps.push(pause(VIEWER_DRAW_MS));
+}
+
+/// A log of a round in the main window: its id and its row in the list of
+/// the logs.
+#[derive(Clone, Copy)]
+struct ViewerLog<'a> {
+    round: u32,
+    id: &'a str,
+    row: usize,
+}
+
+impl<'a> ViewerLog<'a> {
+    /// The first log of `probes` whose name starts with `prefix`. Its row
+    /// in the tool's lists is taken to be its place among the logs, which
+    /// are opened in the order of their names: an assumption, since no
+    /// round has opened logs in another order, and the reason a picture
+    /// follows every choice of a log (the list in it names the log drawn).
+    fn of(round: u32, probes: &'a [Probe], prefix: &str) -> Option<ViewerLog<'a>> {
+        let row = probes.iter().position(|p| p.id.starts_with(prefix))?;
+        let id = probes[row].id;
+        Some(ViewerLog { round, id, row })
+    }
+
+    /// A picture of the window named after the setting `what`.
+    fn shot(self, steps: &mut Vec<Step>, what: &str) {
+        let file = viewer_file(self.round, self.id, what, "");
+        steps.push(shot(LOG_VIEWER, file));
+    }
+
+    /// The log chosen in the list of the logs, time to draw it, a picture.
+    fn select(self, steps: &mut Vec<Step>) {
+        let list = viewer_at::FILE_LIST;
+        let name = format!("log {}", self.id);
+        steps.push(viewer_click(&format!("{name} (the list)"), list));
+        steps.push(pause(600));
+        steps.push(viewer_click(&name, throttle_at::item(list, self.row)));
+        steps.push(pause(VIEWER_DRAW_MS));
+        self.shot(steps, "");
+    }
+
+    /// Copies of the plots `plots` (places in [`viewer_at::ROWS`]), named
+    /// after the setting `what`. A rate plot is copied with four lines
+    /// ticked at most, the lower plot with the five it comes up with at
+    /// most: with every line ticked the tool copied nothing (round 15).
+    fn copies(self, steps: &mut Vec<Step>, what: &str, plots: &[usize]) {
+        let (left, right) = viewer_at::SIDES;
+        for (name, top, bottom) in plots.iter().filter_map(|k| viewer_at::ROWS.get(*k)) {
+            let file = viewer_file(self.round, self.id, what, name);
+            copy_axes(steps, LOG_VIEWER, name, (left, *top, right, *bottom), file);
+        }
+    }
+
+    /// The button ">" of the player pressed `times` times, a picture after
+    /// each: the read-out under the panel names a time and what the gyro
+    /// and the motors hold there.
+    fn next(self, steps: &mut Vec<Step>, times: usize) {
+        for k in 1..=times {
+            steps.push(viewer_click(">", viewer_at::NEXT));
+            steps.push(pause(600));
+            self.shot(steps, &format!("next-{k}"));
+        }
+    }
+
+    /// The log that counts its samples: the three rate plots as they come
+    /// up; each level of the line smoothing in turn with a picture and the
+    /// plots of the pulses (roll) and of the noise (yaw) copied, and "off"
+    /// again; ">" three times.
+    fn samples(self, steps: &mut Vec<Step>) {
+        self.select(steps);
+        self.copies(steps, "open", &[0, 1, 2]);
+        let pick = |steps: &mut Vec<Step>, (level, at): (&str, (u32, u32))| {
+            let list = viewer_at::SMOOTHING_LIST;
+            steps.push(viewer_click("line smoothing (the list)", list));
+            steps.push(pause(600));
+            steps.push(viewer_click(&format!("line smoothing {level}"), at));
+            steps.push(pause(VIEWER_DRAW_MS));
+        };
+        for item in viewer_at::SMOOTHING {
+            let what = format!("smooth-{}", item.0);
+            pick(steps, item);
+            self.shot(steps, &what);
+            self.copies(steps, &what, &[0, 2]);
+        }
+        pick(steps, viewer_at::SMOOTHING[0]);
+        self.next(steps, 3);
+    }
+
+    /// The log whose gyro rises and falls evenly: the lower plot as it
+    /// comes up (which throttle it draws); the two gyro lines and the two
+    /// D-term lines on the rate plots, at the y scale the window comes up
+    /// with and at [`viewer_at::Y_SCALE_WIDE`]; the four motor speeds alone
+    /// on the lower plot (whether its axis grows past 150). The check-list
+    /// and the y scale are put back.
+    fn derivative(self, steps: &mut Vec<Step>) {
+        // four lines on a rate plot: the setpoint makes room for the rest
+        const RATES: [&str; 4] = ["Gyro(pf)", "D-term(pf)", "D-term", "Set point"];
+        const SPEEDS: [&str; 9] = [
+            "Motor 1/5",
+            "Motor 2/6",
+            "Motor 3/7",
+            "Motor 4/8",
+            "Throttle",
+            "RPS 1/5",
+            "RPS 2/6",
+            "RPS 3/7",
+            "RPS 4/8",
+        ];
+        self.select(steps);
+        self.copies(steps, "open", &[3]);
+        viewer_ticks(steps, &RATES, false);
+        steps.push(pause(VIEWER_TICK_MS));
+        self.shot(steps, "dterm");
+        self.copies(steps, "dterm", &[0, 1]);
+        let wide = format!("dterm-yscale-{}", viewer_at::Y_SCALE_WIDE);
+        viewer_scale(steps, viewer_at::Y_SCALE_WIDE);
+        self.shot(steps, &wide);
+        self.copies(steps, &wide, &[0, 1]);
+        viewer_scale(steps, viewer_at::Y_SCALE_DEFAULT);
+        viewer_ticks(steps, &SPEEDS, false);
+        steps.push(pause(VIEWER_TICK_MS));
+        self.shot(steps, "rps");
+        self.copies(steps, "rps", &[3]);
+        viewer_ticks(steps, &SPEEDS, true);
+        viewer_ticks(steps, &RATES, true);
+        steps.push(pause(VIEWER_TICK_MS));
+    }
+
+    /// The log whose motor outputs are not digital: the lower plot as it
+    /// comes up, and ">" once for the read-out of the motors.
+    fn outputs(self, steps: &mut Vec<Step>) {
+        self.select(steps);
+        self.copies(steps, "open", &[3]);
+        self.next(steps, 1);
+    }
+}
+
+/// The two buttons of the main window whose effect is not known, tried
+/// with clicks into the roll plot (round 15 pressed each once and saw
+/// nothing change): "Markup", a click at a third and one at two thirds of
+/// the width of the plot, a picture, "Markup" again; "Period", the same two
+/// clicks, a picture, the titles of the tool's windows into the log, Esc.
+/// The pictures are of the screen where the main window is, as it is.
+fn viewer_marks(steps: &mut Vec<Step>, round: u32) {
+    let places = [viewer_at::roll_at(1.0, 3.0), viewer_at::roll_at(2.0, 3.0)];
+    let buttons = [
+        ("Markup", viewer_at::MARKUP, "markup"),
+        ("Period", viewer_at::PERIOD, "period"),
+    ];
+    for (button, at, what) in buttons {
+        steps.push(viewer_click(button, at));
+        steps.push(pause(1000));
+        for (k, place) in places.into_iter().enumerate() {
+            let name = format!("roll plot at {} of 3 ({button})", k + 1);
+            steps.push(viewer_click(&name, place));
+            steps.push(pause(600));
+        }
+        steps.push(Step {
+            front: Some(false),
+            ..shot(LOG_VIEWER, format!("r{round}-log-{what}"))
+        });
+        if button == "Markup" {
+            steps.push(viewer_click("Markup (again)", at));
+            steps.push(pause(1000));
+        }
+    }
+    steps.push(Step {
+        action: "windows",
+        ..Step::default()
+    });
+    steps.push(Step {
+        action: "key",
+        key: Some("esc"),
+        ..Step::default()
+    });
+    steps.push(pause(400));
+}
+
+/// The stairs of round [`OPEN_ENDS`]: the logs of that round whose names
+/// start with "w", each with its row in the tool's lists.
+fn open_stairs(probes: &[Probe]) -> impl Iterator<Item = (usize, &Probe)> {
+    let stairs = |(_, p): &(usize, &Probe)| p.id.starts_with('w');
+    probes.iter().enumerate().filter(stairs)
+}
+
+/// The steps of round [`OPEN_ENDS`] after the logs are open, the most
+/// valuable first.
+///
+/// 1. The main window: its list of logs held open; then the three logs
+///    made for it, each chosen in that list with a picture after the
+///    choice ([`ViewerLog::samples`], [`ViewerLog::derivative`],
+///    [`ViewerLog::outputs`]); then the two buttons of [`viewer_marks`].
+/// 2. The window of frequency against throttle, as round 10 ran it, for
+///    the eight stairs: the log in all four columns, a Run, a picture, and
+///    one map copied, the unfiltered gyro of roll (the distance between
+///    the segments is read off one map; the printed numbers of the others
+///    are in the picture). Then the first log of the main window there: a
+///    picture and the map of the unfiltered gyro of yaw, whose tone lies
+///    in the column of the throttle the window reads.
+/// 3. The window of frequency against time for the two shortest stairs, as
+///    round 11 ran it for a log: a picture and the three maps. For a log
+///    too short the window draws no map; the first copy then fails and the
+///    other two are passed over ([`Plan::give_up`]).
+/// 4. The filter simulator: low-pass 2 as each of the types beyond "pt1",
+///    a picture each (the printed delays), and "pt1" again.
+/// 5. The summary of the tables the tool has decoded the logs into, last:
+///    by then every log has been drawn.
+fn open_ends(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+    let files = viewer_click("logs (the list)", viewer_at::FILE_LIST);
+    list_shot(steps, files, format!("r{round}-log-list-files"));
+    let viewer = |prefix: &str| ViewerLog::of(round, probes, prefix);
+    if let Some(log) = viewer("v3-") {
+        log.samples(steps);
+    }
+    let derivative = viewer("v1-");
+    if let Some(log) = derivative {
+        log.derivative(steps);
+    }
+    if let Some(log) = viewer("v2-") {
+        log.outputs(steps);
+    }
+    viewer_marks(steps, round);
+
+    open_spectrum(steps, round);
+    throttle_open(steps, round);
+    let stairs = open_stairs(probes).map(|(row, p)| (row, p.id, 0));
+    // roll for the stairs, yaw (2) for the tone at a held throttle
+    let held = derivative.map(|log| (log.row, log.id, 2));
+    for (row, id, axis) in stairs.chain(held) {
+        let log = ThrottleLog { round, id };
+        log.choose(steps, row);
+        log.run(steps, "");
+        log.copy(steps, "", 0, axis);
+    }
+
+    time_open(steps, round);
+    let short = |(_, p): &(usize, &Probe)| p.flight.duration_s < 15.0;
+    for (row, probe) in open_stairs(probes).filter(short) {
+        time_first(steps, round, probe.id, row);
+    }
+
+    filters_open(steps, round);
+    for (row, name) in LOWPASS_TYPES {
+        filters_pick(steps, "lowpass-2", row, true);
+        filters_shot(steps, round, &format!("lowpass-2-{name}"));
+    }
+    filters_pick(steps, "lowpass-2", LOWPASS_PT1, false);
+
+    steps.push(Step {
+        action: "tables",
+        ..Step::default()
+    });
+}
+
 /// How long a window that was never opened by the script is given to come
 /// up before its picture is taken, milliseconds.
 const LOOK_MS: u32 = 10_000;
@@ -1995,6 +2356,21 @@ fn windows_look(steps: &mut Vec<Step>, round: u32) {
 
 /// What the plan of a round does, for the reader of `steps.json`.
 fn about(round: u32, probes: &[Probe]) -> String {
+    if round == OPEN_ENDS {
+        return format!(
+            "Round {round}: every log through one open dialog, then what the rounds before \
+             left open in each window. The main window: its list of logs held open; three \
+             logs chosen in it, a picture after each choice; for the first the levels of the \
+             line smoothing and the button \">\"; for the second the D-term lines at two y \
+             scales and the motor speeds; for the third the motor lines; then \"Markup\" and \
+             \"Period\" with two clicks into the roll plot each. The window of frequency \
+             against throttle for eight flights of other lengths and for one with the stick \
+             and the mixer at two throttles: a picture and one copied map each. The window of \
+             frequency against time for the two shortest flights. The filter simulator with \
+             low-pass 2 as each of its other types. Last a summary of the tables the tool \
+             has decoded the logs into (tables.txt)."
+        );
+    }
     let time = probes.iter().any(|p| p.area == Area::Time);
     if probes.iter().all(|p| p.area == Area::LogViewer) {
         return format!(
@@ -2094,6 +2470,19 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
         },
         shot(LOG_VIEWER, format!("r{round}-log-loaded")),
     ];
+    if round == OPEN_ENDS {
+        open_ends(&mut steps, round, probes);
+        steps.push(Step {
+            action: "windows",
+            ..Step::default()
+        });
+        return Plan {
+            about: about(round, probes),
+            give_up: true,
+            refs: frames(false),
+            steps,
+        };
+    }
 
     // the spectrum window, when the round has probes for it
     if probes.iter().any(|p| p.area == Area::Spectrum) {
@@ -2193,27 +2582,80 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
         // been copied when its first round was planned; nor had those of
         // the main window
         give_up: throttle || time || asked || viewer,
-        refs: Frames {
-            log: Frame {
-                left: 1,
-                top: 47,
-                width: 3776,
-                height: 2424,
-            },
-            shot: Frame {
-                left: 0,
-                top: 0,
-                width: 3780,
-                height: 2427,
-            },
-            slider: asked.then_some(Frame {
-                left: 0,
-                top: 0,
-                width: sliders_at::SIZE.0,
-                height: sliders_at::SIZE.1,
-            }),
-        },
+        refs: frames(asked),
         steps,
+    }
+}
+
+/// The reference screenshots of a plan; with `slider` also the inside of
+/// the slider tool's window.
+fn frames(slider: bool) -> Frames {
+    Frames {
+        log: Frame {
+            left: 1,
+            top: 47,
+            width: 3776,
+            height: 2424,
+        },
+        shot: Frame {
+            left: 0,
+            top: 0,
+            width: 3780,
+            height: 2427,
+        },
+        slider: slider.then_some(Frame {
+            left: 0,
+            top: 0,
+            width: sliders_at::SIZE.0,
+            height: sliders_at::SIZE.1,
+        }),
+    }
+}
+
+impl Plan {
+    /// How many steps of the plan do `action`.
+    pub fn count(&self, action: &str) -> usize {
+        self.steps.iter().filter(|s| s.action == action).count()
+    }
+
+    /// About how long the script takes over the plan, seconds, when every
+    /// copy comes at the first try (the second try is then passed over):
+    /// the pauses and rests as written, half a second for a click, the
+    /// quiet time and five seconds for a wait for the tool to redraw, five
+    /// seconds a log for the tool to decode it, half a minute for the
+    /// summary of the tables. With these a copy takes six seconds, as round
+    /// 4 measured it. How long the tool computes is not known beforehand: a
+    /// run takes longer when it is slow.
+    pub fn seconds(&self) -> f64 {
+        let mut total = 0.0;
+        let mut skip = 0;
+        for step in &self.steps {
+            if skip > 0 {
+                skip -= 1;
+                continue;
+            }
+            let ms = f64::from(step.ms.unwrap_or(0)) / 1000.0;
+            total += match step.action {
+                "pause" => ms,
+                "hover" => 0.4 + ms,
+                "open_file" => 4.0 + 5.0 * step.paths.as_ref().map_or(1, Vec::len) as f64,
+                "settle" => {
+                    let change = if step.change_s.is_some() { 5.0 } else { 0.0 };
+                    let window = if step.wait_s.is_some() { 3.0 } else { 0.0 };
+                    0.5 + step.quiet_s.unwrap_or(1.2) + change + window
+                }
+                "clip_wait" => {
+                    skip = step.skip.unwrap_or(0);
+                    0.7
+                }
+                "clip_save" => 1.2,
+                "type" => 1.6,
+                "shot" => 0.7,
+                "tables" => 30.0,
+                _ => 0.5,
+            };
+        }
+        total
     }
 }
 
@@ -2227,6 +2669,38 @@ fn crlf(text: &str) -> Vec<u8> {
 /// The files that make a pack runnable on the owner's machine: the script,
 /// its launcher and a note on how to run it.
 pub fn files(round: u32, shots: usize, copies: usize, predicted: bool) -> Vec<(String, Vec<u8>)> {
+    // a picture with its Run takes about five seconds, a copy six
+    // (round 4, on version 0.9 of the tool: 20 pictures and 153 copies
+    // in 17.5 minutes)
+    let minutes = (shots * 5 + copies * 6).div_ceil(60) + 1;
+    written(round, (shots, copies, minutes), predicted, false)
+}
+
+/// The files that make the pack of `plan` runnable: as [`files`], with the
+/// pictures and the copies counted in the plan. From round [`OPEN_ENDS`] on
+/// the note gives the time the steps themselves add up to
+/// ([`Plan::seconds`]): a plan with long pauses and few copies takes longer
+/// than its pictures and copies say.
+pub fn files_of(round: u32, plan: &Plan, predicted: bool) -> Vec<(String, Vec<u8>)> {
+    let (shots, copies) = (plan.count("shot"), plan.count("clip_save"));
+    if round < OPEN_ENDS {
+        return files(round, shots, copies, predicted);
+    }
+    let minutes = (plan.seconds() / 60.0).ceil() as usize;
+    let tables = plan.count("tables") > 0;
+    written(round, (shots, copies, minutes), predicted, tables)
+}
+
+/// The script, its launcher and the note for a run that saves `shots`
+/// pictures and `copies` copied plots in about `minutes` minutes; with
+/// `tables` the note says that the script also writes down a summary of the
+/// tables the tool leaves behind.
+fn written(
+    round: u32,
+    (shots, copies, minutes): (usize, usize, usize),
+    predicted: bool,
+    tables: bool,
+) -> Vec<(String, Vec<u8>)> {
     let launcher = "@echo off\n\
                     cd /d \"%~dp0\"\n\
                     powershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0capture.ps1\" \
@@ -2236,10 +2710,6 @@ pub fn files(round: u32, shots: usize, copies: usize, predicted: bool) -> Vec<(S
     let saves = if copies == 0 {
         format!("saves {shots} pictures of the\n   tool's windows")
     } else {
-        // a picture with its Run takes about five seconds, a copy six
-        // (round 4, on version 0.9 of the tool: 20 pictures and 153 copies
-        // in 17.5 minutes)
-        let minutes = (shots * 5 + copies * 6).div_ceil(60) + 1;
         format!(
             "saves {shots} pictures of the\n   \
              tool's windows and {copies} plots copied as vector graphics, in about\n   \
@@ -2250,6 +2720,13 @@ pub fn files(round: u32, shots: usize, copies: usize, predicted: bool) -> Vec<(S
         ""
     } else {
         "The copied plots replace what was on the clipboard.\n\n"
+    };
+    let summary = if tables {
+        "The script also writes down a summary of the tables (*.csv) the tool leaves next\n\
+         to the logs: tables.txt, inside capture-results.zip. It copies, moves and\n\
+         changes none of them.\n\n"
+    } else {
+        ""
     };
     let predictions = if predicted {
         " predictions.json is what the\nmodel of the reference tool expects it to show;"
@@ -2272,6 +2749,7 @@ pub fn files(round: u32, shots: usize, copies: usize, predicted: bool) -> Vec<(S
          To stop it, move the mouse: it stops before its next move.\n\
          \n\
          {clipboard}\
+         {summary}\
          What the files are: *.bbl are the probe logs; manifest.json says what is true\n\
          about each; ours.json is what OpenPID computes for them;{predictions} steps.json\n\
          is what the script does, step by step; capture.ps1 is the script.\n"
@@ -3385,6 +3863,571 @@ mod tests {
             let picture = plan.steps.iter().find(wanted);
             assert_eq!(picture.and_then(|s| s.front), Some(false), "{file}");
         }
+    }
+
+    /// The plan of round 16.
+    fn round_16() -> Plan {
+        plan(16, &catalogue::round(16).unwrap_or_default())
+    }
+
+    /// The first step of `plan` called `name`.
+    fn step_named<'a>(plan: &'a Plan, name: &str) -> &'a Step {
+        let wanted = |s: &&Step| s.name.as_deref() == Some(name);
+        let found = plan.steps.iter().find(wanted);
+        found.unwrap_or_else(|| panic!("no step {name}"))
+    }
+
+    #[test]
+    fn round_16_takes_its_pictures_and_copies_in_the_order_of_their_worth() {
+        let plan = round_16();
+        assert!(plan.give_up && plan.refs.slider.is_none());
+        assert!(plan.about.contains("what the rounds before left open"));
+        let shots = names_of(&plan, "shot");
+        let log = |id: &str, what: &[&str]| -> Vec<String> {
+            what.iter()
+                .map(|w| viewer_file(16, id, w, ""))
+                .collect::<Vec<_>>()
+        };
+        let stairs = [
+            "w1-len21-2k",
+            "w2-len22-2k",
+            "w3-len22h-2k",
+            "w4-len61-2k",
+            "w5-len62-2k",
+            "w6-len63-2k",
+            "w7-len10-2k",
+            "w8-len14-2k",
+        ];
+        let mut want: Vec<String> = vec!["r16-log-loaded".into(), "r16-log-list-files".into()];
+        want.extend(log(
+            "v3-samp-1k",
+            &[
+                "",
+                "smooth-off",
+                "smooth-low",
+                "smooth-med",
+                "smooth-med-high",
+                "smooth-high",
+                "next-1",
+                "next-2",
+                "next-3",
+            ],
+        ));
+        want.extend(log(
+            "v1-deriv-2k",
+            &["", "dterm", "dterm-yscale-2000", "rps"],
+        ));
+        want.extend(log("v2-out-2k", &["", "next-1"]));
+        want.extend(["r16-log-markup", "r16-log-period", "r16-spectrum-run"].map(String::from));
+        want.push("r16-throttle-open".into());
+        want.extend(stairs.map(|id| throttle_file(16, id, "", "")));
+        want.push("r16-v1-deriv-2k-throttle".into());
+        want.push("r16-time-open".into());
+        want.extend(
+            stairs[6..]
+                .iter()
+                .map(|id| time_file(16, id, "prefilt", "")),
+        );
+        want.push("r16-filters-open".into());
+        want.extend(
+            ["pt2", "pt3", "biquad-butter", "biquad-bessel"]
+                .map(|kind| format!("r16-filters-lowpass-2-{kind}")),
+        );
+        assert_eq!(shots, want);
+        assert_eq!(shots.len(), 38);
+        assert_eq!(shots[2], "r16-v3-samp-1k-log");
+
+        let copies = names_of(&plan, "clip_save");
+        let mut want: Vec<String> = ["roll", "pitch", "yaw"]
+            .map(|plot| viewer_file(16, "v3-samp-1k", "open", plot))
+            .to_vec();
+        for level in ["off", "low", "med", "med-high", "high"] {
+            let what = format!("smooth-{level}");
+            want.extend(["roll", "yaw"].map(|plot| viewer_file(16, "v3-samp-1k", &what, plot)));
+        }
+        let derivative = |what: &str, plot: &str| viewer_file(16, "v1-deriv-2k", what, plot);
+        want.extend([
+            derivative("open", "throttle"),
+            derivative("dterm", "roll"),
+            derivative("dterm", "pitch"),
+            derivative("dterm-yscale-2000", "roll"),
+            derivative("dterm-yscale-2000", "pitch"),
+            derivative("rps", "throttle"),
+            viewer_file(16, "v2-out-2k", "open", "throttle"),
+        ]);
+        want.extend(stairs.map(|id| throttle_file(16, id, "", "roll-prefilt")));
+        want.push("r16-v1-deriv-2k-throttle-yaw-prefilt".into());
+        for id in &stairs[6..] {
+            want.extend(AXES.map(|axis| time_file(16, id, "prefilt", axis)));
+        }
+        assert_eq!(copies, want);
+        assert_eq!(copies.len(), 35);
+        assert_eq!(copies[13], "r16-v1-deriv-2k-log-open-throttle");
+        let mut unique: Vec<&str> = shots.iter().chain(&copies).copied().collect();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), shots.len() + copies.len());
+        for (i, step) in plan.steps.iter().enumerate() {
+            if step.action == "clip_save" {
+                assert_copy(&plan.steps, i);
+            }
+        }
+        // every copy follows a picture of its window, so that a copy that
+        // fails gives up only the copies up to the next picture
+        let mut pictured = None;
+        for step in &plan.steps {
+            match step.action {
+                "shot" => pictured = step.window,
+                "click" if step.copy == Some(true) => assert_eq!(step.window, pictured),
+                _ => {}
+            }
+        }
+        // the summary of the tables once, after the last picture, and only
+        // the list of the windows after it
+        let rest: Vec<&str> = plan.steps.iter().rev().take(2).map(|s| s.action).collect();
+        assert_eq!(rest, ["windows", "tables"]);
+        assert_eq!(plan.count("tables"), 1);
+        assert_eq!(plan.steps.len(), 874);
+        // every action of the plan is one the script knows
+        let json = serde_json::to_value(&plan).unwrap_or_default();
+        for step in json["steps"].as_array().map_or(&[][..], Vec::as_slice) {
+            let action = step["action"].as_str().unwrap_or("");
+            assert!(
+                SCRIPT.contains(&format!("$action -eq \"{action}\"")),
+                "{action}"
+            );
+        }
+        // the round before keeps its plan
+        let earlier = round_15();
+        assert_eq!((earlier.steps.len(), earlier.count("tables")), (173, 0));
+    }
+
+    #[test]
+    fn round_16_takes_a_log_by_its_row_and_looks_after_every_choice() {
+        let plan = round_16();
+        let probes = catalogue::round(16).unwrap_or_default();
+        // the fourteen logs through one dialog, in the order of their names
+        let paths = plan.steps[1].paths.clone().unwrap_or_default();
+        assert_eq!(paths.len(), 14);
+        let mut sorted = paths.clone();
+        sorted.sort();
+        assert_eq!(paths, sorted);
+        // the list of the logs is held open once, with a picture, and closed
+        let list = plan
+            .steps
+            .iter()
+            .position(|s| s.name.as_deref() == Some("logs (the list)"));
+        let list = list.unwrap_or(usize::MAX - 8);
+        assert_eq!(plan.steps[list].at, Some((3559, 262)));
+        assert_eq!(plan.steps[list].frame, Some("shot"));
+        let picture = plan.steps[list + 2].file.as_deref();
+        assert_eq!(picture, Some("r16-log-list-files"));
+        assert_eq!(plan.steps[list + 3].key, Some("esc"));
+        // a log of the main window: the list, its row (the sixth, the
+        // fourth, the fifth log), three seconds, a picture named after it
+        for (id, row, y) in [
+            ("v3-samp-1k", 5, 542),
+            ("v1-deriv-2k", 3, 447),
+            ("v2-out-2k", 4, 495),
+        ] {
+            assert_eq!(probes[row].id, id);
+            let name = format!("log {id}");
+            let wanted = |s: &Step| s.name.as_deref() == Some(name.as_str());
+            let at = plan.steps.iter().position(wanted).unwrap_or(usize::MAX - 8);
+            let open = &plan.steps[at - 2];
+            assert_eq!(open.name, Some(format!("{name} (the list)")));
+            assert_eq!(
+                (open.at, open.window),
+                (Some((3559, 262)), Some(LOG_VIEWER))
+            );
+            assert_eq!(plan.steps[at].at, Some((3559, y)));
+            assert_eq!(y, 262 + 43 + 475 * row as u32 / 10);
+            assert_eq!(plan.steps[at + 1].ms, Some(3000));
+            assert_eq!(plan.steps[at + 2].file, Some(format!("r16-{id}-log")));
+            assert_eq!(plan.steps[at + 2].action, "shot");
+        }
+        let chosen = |id: &str| {
+            let name = format!("log {id}");
+            plan.steps
+                .iter()
+                .position(|s| s.name.as_deref() == Some(name.as_str()))
+        };
+        assert!(chosen("v3-samp-1k") < chosen("v1-deriv-2k"));
+        assert!(chosen("v1-deriv-2k") < chosen("v2-out-2k"));
+        // the levels of the line smoothing where round 15 saw them, each
+        // with its picture, and "off" at the end
+        let picked: Vec<(&str, (u32, u32))> = plan
+            .steps
+            .iter()
+            .filter(|s| {
+                s.name
+                    .as_deref()
+                    .is_some_and(|n| n.starts_with("line smoothing "))
+            })
+            .filter(|s| s.name.as_deref() != Some("line smoothing (the list)"))
+            .map(|s| (s.name.as_deref().unwrap_or(""), s.at.unwrap_or_default()))
+            .collect();
+        assert_eq!(
+            picked,
+            [
+                ("line smoothing off", (3468, 672)),
+                ("line smoothing low", (3468, 721)),
+                ("line smoothing med", (3468, 769)),
+                ("line smoothing med-high", (3468, 817)),
+                ("line smoothing high", (3468, 864)),
+                ("line smoothing off", (3468, 672)),
+            ]
+        );
+        let lists = plan
+            .steps
+            .iter()
+            .filter(|s| s.name.as_deref() == Some("line smoothing (the list)"));
+        assert!(lists.clone().count() == 6 && lists.clone().all(|s| s.at == Some((3468, 628))));
+        // ">" three times for the first log and once for the third
+        let next: Vec<&Step> = plan
+            .steps
+            .iter()
+            .filter(|s| s.name.as_deref() == Some(">"))
+            .collect();
+        assert!(next.len() == 4 && next.iter().all(|s| s.at == Some((3642, 1607))));
+        // nothing waits for the main window to stop changing once the logs
+        // are open: a typed number leaves its text cursor blinking
+        let waits = plan
+            .steps
+            .iter()
+            .skip(3)
+            .filter(|s| s.action == "settle" && s.window == Some(LOG_VIEWER));
+        assert_eq!(waits.count(), 0);
+        let typed: Vec<usize> = (0..plan.steps.len())
+            .filter(|i| plan.steps[*i].action == "type")
+            .collect();
+        let texts: Vec<&str> = typed
+            .iter()
+            .filter_map(|i| plan.steps[*i].text.as_deref())
+            .collect();
+        assert_eq!(texts, ["2000", "500"]);
+        for i in typed {
+            let step = &plan.steps[i];
+            assert_eq!((step.at, step.mark), (Some((132, 241)), None));
+            assert_eq!(
+                (plan.steps[i + 1].action, plan.steps[i + 1].ms),
+                ("pause", Some(3000))
+            );
+        }
+        // the two buttons whose effect is not known: two clicks into the
+        // roll plot after each, at a third and at two thirds of its width
+        let (markup, period) = (step_named(&plan, "Markup"), step_named(&plan, "Period"));
+        assert_eq!(
+            (markup.at, period.at),
+            (Some((3650, 457)), Some((3468, 457)))
+        );
+        for button in ["Markup", "Period"] {
+            let first = step_named(&plan, &format!("roll plot at 1 of 3 ({button})"));
+            let second = step_named(&plan, &format!("roll plot at 2 of 3 ({button})"));
+            assert_eq!(
+                (first.at, second.at),
+                (Some((1442, 394)), Some((2375, 394)))
+            );
+            assert_eq!(
+                first.at,
+                Some((510 + (3307 - 510) / 3, u32::midpoint(133, 655)))
+            );
+        }
+        assert_eq!(step_named(&plan, "Markup (again)").at, markup.at);
+        for file in ["r16-log-markup", "r16-log-period"] {
+            let wanted = |s: &&Step| s.file.as_deref() == Some(file);
+            let picture = plan.steps.iter().find(wanted);
+            assert_eq!(picture.and_then(|s| s.front), Some(false), "{file}");
+        }
+    }
+
+    #[test]
+    fn round_16_ticks_few_lines_for_a_copy_and_puts_the_check_list_back() {
+        let plan = round_16();
+        let rates = &viewer_at::LINES[..10];
+        let lower = &viewer_at::LINES[10..19];
+        let mut ticked: Vec<bool> = viewer_at::LINES.iter().map(|l| l.2).collect();
+        let on = |ticked: &[bool], lines: &[(&str, u32, bool)]| {
+            let listed = |name: &str| viewer_at::LINES.iter().position(|l| l.0 == name);
+            let is_on = |l: &&(&str, u32, bool)| listed(l.0).is_some_and(|k| ticked[k]);
+            lines.iter().filter(is_on).count()
+        };
+        let mut clicks = Vec::new();
+        let mut most = (0, 0);
+        for step in plan.steps.iter().filter(|s| s.window == Some(LOG_VIEWER)) {
+            let name = step.name.as_deref().unwrap_or("");
+            if step.frame == Some("log") && step.at.map(|a| a.0) == Some(67) {
+                let (line, state) = name.rsplit_once(' ').unwrap_or((name, ""));
+                let k = viewer_at::LINES.iter().position(|l| l.0 == line);
+                let k = k.unwrap_or_else(|| panic!("no line {line}"));
+                assert_eq!(step.at, Some((67, viewer_at::LINES[k].1)));
+                ticked[k] = !ticked[k];
+                // the name of the click says what the click leaves
+                assert_eq!(state, if ticked[k] { "on" } else { "off" }, "{name}");
+                clicks.push(name);
+            }
+            // the first click of a copy: on the button of the plot's toolbar
+            if step.front.is_none() && name.ends_with(" toolbar") {
+                if name == "throttle toolbar" {
+                    most.1 = on(&ticked, lower).max(most.1);
+                } else {
+                    most.0 = on(&ticked, rates).max(most.0);
+                    assert!(on(&ticked, rates) <= 4, "{name}");
+                }
+                assert!(on(&ticked, lower) <= 5, "{name}");
+                assert!(!ticked[19], "the debug line is never ticked");
+            }
+        }
+        // four lines on a rate plot at most, the five of the lower plot
+        assert_eq!(most, (4, 5));
+        assert_eq!(clicks.len(), 2 * (4 + 9));
+        assert_eq!(
+            clicks[..4],
+            ["Gyro(pf) on", "D-term(pf) on", "D-term on", "Set point off"]
+        );
+        assert_eq!(clicks[4], "Motor 1/5 off");
+        assert_eq!(clicks[12], "RPS 4/8 on");
+        // the check-list ends as the window came up with it
+        let defaults: Vec<bool> = viewer_at::LINES.iter().map(|l| l.2).collect();
+        assert_eq!(ticked, defaults);
+        // lines are given four seconds before their picture
+        let last_tick = |name: &str| {
+            let wanted = |s: &Step| s.name.as_deref() == Some(name);
+            plan.steps.iter().position(wanted).unwrap_or(usize::MAX - 8)
+        };
+        for (name, file) in [
+            ("Set point off", "r16-v1-deriv-2k-log-dterm"),
+            ("RPS 4/8 on", "r16-v1-deriv-2k-log-rps"),
+        ] {
+            let at = last_tick(name);
+            assert_eq!(plan.steps[at + 2].ms, Some(4000));
+            assert_eq!(plan.steps[at + 3].file.as_deref(), Some(file));
+        }
+    }
+
+    #[test]
+    fn round_16_asks_the_other_windows_after_the_main_window() {
+        let plan = round_16();
+        let position = |name: &str| {
+            let wanted = |s: &Step| s.name.as_deref() == Some(name);
+            plan.steps.iter().position(wanted).unwrap_or(usize::MAX)
+        };
+        let order = [
+            position("Period"),
+            position("Spectral Analyzer"),
+            position("Freq x Throttle"),
+            position("Freq x Time"),
+            position("Filter Sim"),
+        ];
+        assert!(order.windows(2).all(|w| w[0] < w[1]), "{order:?}");
+        let last_main = plan
+            .steps
+            .iter()
+            .rposition(|s| s.file.as_deref() == Some("r16-log-period"));
+        assert!(last_main.unwrap_or(usize::MAX) < order[1]);
+        // the throttle window as round 10 ran it: the log in all four
+        // columns by its row, one Run, a picture, one copy
+        let columns = |log: &str| -> Vec<(u32, u32)> {
+            let chosen = |s: &&Step| {
+                let name = s.name.as_deref().unwrap_or("");
+                name.starts_with(log) && name.contains("in column") && !name.ends_with("(the list)")
+            };
+            plan.steps
+                .iter()
+                .filter(chosen)
+                .filter_map(|s| s.at)
+                .collect()
+        };
+        // the seventh log of the list and the fourteenth
+        let row = |k: u32| 109 + 43 + 475 * k / 10;
+        assert_eq!(
+            columns("log w1-len21-2k"),
+            [
+                (482, row(6)),
+                (1319, row(6)),
+                (2156, row(6)),
+                (2996, row(6))
+            ]
+        );
+        assert_eq!(columns("log w8-len14-2k")[0], (482, row(13)));
+        assert_eq!(columns("log v1-deriv-2k in")[3], (2996, row(3)));
+        let runs = |window: &str| {
+            let run = |s: &&Step| s.name.as_deref() == Some("Run") && s.window == Some(window);
+            plan.steps.iter().filter(run).count()
+        };
+        assert_eq!((runs(THROTTLE), runs(TIME), runs(SPECTRUM)), (9, 2, 1));
+        // the copied map is the first of the first column, and for the log
+        // with a held throttle the third
+        let toolbar = |window: &str, name: &str| -> Vec<(u32, u32)> {
+            let first = |s: &&Step| {
+                s.window == Some(window) && s.front.is_none() && s.name.as_deref() == Some(name)
+            };
+            plan.steps
+                .iter()
+                .filter(first)
+                .filter_map(|s| s.at)
+                .collect()
+        };
+        assert_eq!(
+            toolbar(THROTTLE, "roll prefilt toolbar"),
+            [(848 - 14, 318 - 15); 8]
+        );
+        assert_eq!(
+            toolbar(THROTTLE, "yaw prefilt toolbar"),
+            [(848 - 14, 1672 - 15)]
+        );
+        // the time window for the two shortest flights, by their rows, with
+        // the channel it comes up with; the picture is marked before the
+        // choice and waited for no longer than 25 s
+        for (id, k) in [("w7-len10-2k", 12), ("w8-len14-2k", 13)] {
+            let at = position(&format!("log {id}"));
+            assert_eq!(plan.steps[at].window, Some(TIME));
+            assert_eq!(plan.steps[at].at, Some((3551, 168 + 43 + 475 * k / 10)));
+            assert_eq!(plan.steps[at - 2].mark, Some(true));
+            let copies: Vec<&str> = names_of(&plan, "clip_save")
+                .into_iter()
+                .filter(|f| f.starts_with(&format!("r16-{id}-time-")))
+                .collect();
+            assert_eq!(copies.len(), 3, "{id}");
+        }
+        let waits: Vec<Option<f64>> = plan
+            .steps
+            .iter()
+            .filter(|s| s.action == "settle" && s.window == Some(TIME))
+            .map(|s| s.change_s)
+            .collect();
+        assert_eq!(waits, [None, Some(25.0), Some(25.0)]);
+        assert_eq!(toolbar(TIME, "roll toolbar").len(), 2);
+        // the filter simulator: low-pass 2 as its four other types, a
+        // picture each, no copy, and "pt1" again
+        let picks: Vec<(u32, u32)> = plan
+            .steps
+            .iter()
+            .filter(|s| {
+                s.name
+                    .as_deref()
+                    .is_some_and(|n| n.starts_with("lowpass-2 item"))
+            })
+            .filter_map(|s| s.at)
+            .collect();
+        let item = |k: u32| (3466, 311 + 43 + 475 * k / 10);
+        assert_eq!(picks, [item(2), item(3), item(4), item(5), item(1)]);
+        assert_eq!(
+            step_named(&plan, "lowpass-2 (the list)").at,
+            Some((3466, 311))
+        );
+        let filters = plan.steps.iter().filter(|s| s.window == Some(FILTERS));
+        assert!(filters.clone().all(|s| s.copy.is_none()));
+        assert_eq!(filters.filter(|s| s.action == "shot").count(), 5);
+        // a wait for a change always has its mark
+        let mut marked = false;
+        for step in &plan.steps {
+            marked |= step.mark == Some(true);
+            if step.action == "settle" && step.change_s.is_some() {
+                assert!(marked, "a wait for a change without a mark");
+                marked = false;
+            }
+        }
+    }
+
+    #[test]
+    fn the_names_of_every_round_fit_the_open_dialog() {
+        // the script refuses names that make more than 250 characters: the
+        // name field of the dialog holds about 259
+        for round in catalogue::ROUNDS {
+            let plan = plan(*round, &catalogue::round(*round).unwrap_or_default());
+            let paths = plan.steps[1].paths.clone().unwrap_or_default();
+            let typed: Vec<String> = paths.iter().map(|p| format!("\"{p}\"")).collect();
+            let length = typed.join(" ").len();
+            assert!(length <= 250, "round {round}: {length} characters");
+        }
+        assert!(SCRIPT.contains("if ($path.Length -gt 250) {"));
+    }
+
+    #[test]
+    fn the_note_of_round_16_says_how_long_and_names_the_tables() {
+        let plan = round_16();
+        // under 25 minutes by the steps themselves, and more than the
+        // pictures and the copies alone would say
+        let seconds = plan.seconds();
+        assert!(seconds > 600.0 && seconds < 25.0 * 60.0, "{seconds}");
+        let files = files_of(16, &plan, false);
+        let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["capture.ps1", "run.cmd", "README.txt"]);
+        let note = String::from_utf8(files[2].1.clone()).unwrap_or_default();
+        assert!(note.is_ascii() && note.contains("Calibration round 16"));
+        assert!(note.contains("saves 38 pictures"), "{note}");
+        assert!(
+            note.contains("35 plots copied as vector graphics"),
+            "{note}"
+        );
+        let minutes = (seconds / 60.0).ceil();
+        assert!(note.contains(&format!("{minutes} minutes")), "{note}");
+        assert!(note.contains("summary of the tables"), "{note}");
+        assert!(note.contains("tables.txt") && note.contains("changes none of them"));
+        // the notes of the rounds before are what they were
+        let earlier = round_15();
+        assert_eq!(files_of(15, &earlier, false), super::files(15, 8, 8, false));
+        let note = String::from_utf8(files_of(15, &earlier, false)[2].1.clone());
+        assert!(!note.unwrap_or_default().contains("tables"));
+        // the time of a plan: a copy that comes at the first try passes
+        // over its second try, and a pause takes what it says
+        let one = |step: Step| Plan {
+            steps: vec![step],
+            ..earlier.clone()
+        };
+        assert_eq!(one(pause(2500)).seconds(), 2.5);
+        let copy: Vec<Step> = earlier
+            .steps
+            .iter()
+            .filter(|s| s.copy == Some(true))
+            .take(14)
+            .cloned()
+            .collect();
+        let copy = Plan {
+            steps: copy,
+            ..earlier.clone()
+        };
+        assert!((copy.seconds() - 5.9).abs() < 0.05, "{}", copy.seconds());
+    }
+
+    #[test]
+    fn the_script_sums_up_the_tables_without_touching_them() {
+        let from = SCRIPT.find("function Format-Plain").unwrap_or(0);
+        let to = SCRIPT.find("function Invoke-Step").unwrap_or(0);
+        assert!(from > 0 && to > from);
+        let tables = &SCRIPT[from..to];
+        assert!(tables.contains("function Add-TableSummary($text, $file)"));
+        assert!(tables.contains("function Write-Tables"));
+        // tables written since the script started, in the folder of the
+        // logs with its subfolders and in the folder of the tool's program
+        assert!(SCRIPT.contains("$script:started = Get-Date"));
+        assert!(tables.contains("$file.LastWriteTime -lt $script:started"));
+        assert!(tables.contains("-Filter \"*.csv\" -File -Recurse"));
+        assert!(tables.contains("(Get-Process -Id ([int]$script:toolPid)).Path"));
+        assert!(tables.contains("[System.IO.File]::ReadLines($file.FullName)"));
+        assert!(tables.contains("(Join-Path $outDir \"tables.txt\")"));
+        assert!(tables.contains("nothing found"));
+        // whatever goes wrong is written down, and the run goes on
+        assert!(tables.matches("} catch {").count() >= 5);
+        assert!(!tables.contains("throw"));
+        // nothing is copied, moved, changed or deleted
+        for verb in [
+            "Copy-Item",
+            "Move-Item",
+            "Remove-Item",
+            "Rename-Item",
+            "Set-Content",
+            "Add-Content",
+            "Out-File",
+            "Delete",
+            "WriteAllText",
+        ] {
+            assert!(!tables.contains(verb), "{verb}");
+        }
+        assert_eq!(tables.matches("WriteAllLines").count(), 1);
+        assert!(SCRIPT.contains("if ($action -eq \"tables\") {\n        Write-Tables"));
+        assert!(SCRIPT.is_ascii());
     }
 
     #[test]

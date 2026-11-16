@@ -8,7 +8,8 @@
 //! (`docs/calibration/ROUNDS.md`).
 
 use crate::signal::{
-    AxisSpec, DebugValues, Filtered, FlightSpec, Modes, PidTerms, Plant, Stick, Throttle, Wave,
+    AxisSpec, DebugValues, Filtered, FlightSpec, Modes, MotorOutput, PidTerms, Plant, Stick,
+    Throttle, Wave,
 };
 use serde::Serialize;
 
@@ -1369,10 +1370,16 @@ fn round_8() -> Vec<Probe> {
 /// The stairs probe in a flight of another length: nine stairs of
 /// `stair_s` between two stretches of 1.5 s at half throttle.
 fn stairs_of(id: &'static str, fs: f64, stair_s: f64) -> Probe {
+    stairs_in(id, fs, stair_s, 9.0 * stair_s + 3.0)
+}
+
+/// The stairs probe in a flight of `duration_s`: nine stairs of `stair_s`
+/// between two stretches at half throttle that fill the flight.
+fn stairs_in(id: &'static str, fs: f64, stair_s: f64, duration_s: f64) -> Probe {
     Probe {
         title: "The stairs of the throttle in a flight of another length: how far apart the \
                 segments of the map are",
-        ..throttle_stairs(id, fs, stair_s, 9.0 * stair_s + 3.0)
+        ..throttle_stairs(id, fs, stair_s, duration_s)
     }
 }
 
@@ -1756,17 +1763,20 @@ fn held(stick: Stick, unfiltered: f64, filtered: f64, more: Vec<Wave>) -> AxisSp
     }
 }
 
+/// A stick that asks for one rate over a whole flight of [`VALUES_S`].
+fn steady(rate: f64) -> Stick {
+    Stick::Steps {
+        start_s: 0.0,
+        every_s: VALUES_S,
+        levels: vec![rate],
+    }
+}
+
 /// Round 15: the main window, which draws the channels of a log as lines.
 /// One log in which every channel holds a constant or steps of its own, so
 /// that each line can be told from every other by its value and its scale
 /// and its unit be read off it.
 fn round_15() -> Vec<Probe> {
-    // a stick that asks for one rate over the whole flight
-    let steady = |rate: f64| Stick::Steps {
-        start_s: 0.0,
-        every_s: VALUES_S,
-        levels: vec![rate],
-    };
     let stairs = Stick::Steps {
         start_s: 4.0,
         every_s: 4.0,
@@ -1822,6 +1832,197 @@ fn round_15() -> Vec<Probe> {
     }]
 }
 
+/// The outputs of the motors of the probe of round 16 whose ESCs are not
+/// driven digitally: the range of an analogue protocol above a 7 % idle, as
+/// `OneShot125` (protocol 1 of the firmware's list; the probes' craft has
+/// `DShot300`, protocol 6).
+const ANALOGUE: MotorOutput = MotorOutput {
+    low: 1070,
+    high: 2000,
+    protocol: 1,
+};
+/// What the four motors of that probe log.
+const ANALOGUE_MOTORS: [f64; 4] = [1070.0, 1300.0, 1535.0, 2000.0];
+/// The seed of the noise of round 16.
+const SAMPLES_SEED: u64 = 1601;
+
+/// An axis whose filtered gyro carries `filtered` and whose unfiltered gyro
+/// carries `unfiltered`, with nothing under either: no stick, no plant, no
+/// dither. What a line of the main window draws is then the wave itself.
+fn bare(unfiltered: Vec<Wave>, filtered: Vec<Wave>) -> AxisSpec {
+    AxisSpec {
+        filtered: Filtered::Separate { waves: filtered },
+        ..AxisSpec::of(unfiltered)
+    }
+}
+
+/// The three logs of round 16 for the main window.
+fn viewer_open_ends() -> Vec<Probe> {
+    let triangle = |size: f64, period_s: f64| Wave::Triangle {
+        from: -size,
+        to: size,
+        period_s,
+    };
+    let pulse = |at_s: f64, samples: u32, value: f64| Wave::Pulse {
+        at_s,
+        samples,
+        value,
+    };
+    vec![
+        Probe {
+            id: "v1-deriv-2k",
+            area: Area::LogViewer,
+            title: "A gyro that rises and falls evenly, for the line the main window computes \
+                    from a gyro (\"D-term(pf)\"), and the throttle of the stick at 50 % \
+                    (rcCommand[3] 1500) beside the throttle of the mixer at 30 % (setpoint[3] \
+                    300), for which of the two a window reads; motors 1 to 4 at 10, 20, 60 and \
+                    70 % of the range between the craft's motor outputs, turning at 12000, \
+                    18000, 24000 and 30000 rpm (200, 300, 400 and 500 revolutions per second)",
+            purpose: [
+                "filtered gyro: a triangle between -200 and 200 deg/s with a period of 2 s, \
+                 from -200 at the first sample: 400 deg/s per second up and down (0.2 deg/s a \
+                 sample); unfiltered gyro: a triangle between -300 and 300 deg/s with a period \
+                 of 1.2 s: 1000 deg/s per second (0.5 deg/s a sample); setpoint 0; P 0, I 0, \
+                 D 40, F 0",
+                "filtered gyro: a tone of 100 deg/s at 5 Hz (at most 3142 deg/s per second); \
+                 unfiltered gyro: a tone of 100 deg/s at 2 Hz (at most 1257 deg/s per second); \
+                 setpoint 0; P 0, I 0, D 40, F 0",
+                "filtered gyro 0; unfiltered gyro: a tone of 10 deg/s at 150 Hz, for the map of \
+                 frequency against throttle: the column it lies in is the throttle that window \
+                 reads; setpoint 0; no D term, the craft has no D gain on yaw",
+            ],
+            flight: FlightSpec {
+                roll: bare(vec![triangle(300.0, 1.2)], vec![triangle(200.0, 2.0)]),
+                pitch: bare(vec![Wave::tone(2.0, 100.0)], vec![Wave::tone(5.0, 100.0)]),
+                yaw: bare(vec![Wave::tone(150.0, 10.0)], Vec::new()),
+                throttle: Throttle::Constant { percent: 30.0 },
+                stick_throttle: Some(50.0),
+                motor_levels: Some([10.0, 20.0, 60.0, 70.0]),
+                pid_terms: Some(PidTerms {
+                    p: [0.0; 3],
+                    i: [0.0; 3],
+                    d: [40.0, 40.0, 0.0],
+                    f: [0.0; 3],
+                }),
+                motor_rpm: Some([12_000.0, 18_000.0, 24_000.0, 30_000.0]),
+                ..FlightSpec::quiet(2000.0, VALUES_S)
+            },
+        },
+        Probe {
+            id: "v2-out-2k",
+            area: Area::LogViewer,
+            title: "Motor outputs that are not digital, for what the motor lines of the main \
+                    window read then: motors 1 to 4 at 1070, 1300, 1535 and 2000 with the header \
+                    motorOutput:1070,2000 (0, 24.7, 50 and 100 % of the range between the two); \
+                    the header that names the protocol, motor_pwm_protocol, is 1 (OneShot125) \
+                    in place of the craft's 6 (DShot300); the throttle at 50 %",
+            purpose: [
+                "filtered gyro 20 deg/s, unfiltered gyro 30 deg/s, setpoint 10 deg/s",
+                "filtered gyro -25 deg/s, unfiltered gyro -35 deg/s, setpoint -15 deg/s",
+                "filtered gyro 40 deg/s, unfiltered gyro 45 deg/s, setpoint 5 deg/s",
+            ],
+            flight: FlightSpec {
+                roll: held(steady(10.0), 30.0, 20.0, Vec::new()),
+                pitch: held(steady(-15.0), -35.0, -25.0, Vec::new()),
+                yaw: held(steady(5.0), 45.0, 40.0, Vec::new()),
+                motor_levels: Some(ANALOGUE_MOTORS.map(|output| ANALOGUE.percent(output))),
+                motor_output: Some(ANALOGUE),
+                ..FlightSpec::quiet(2000.0, VALUES_S)
+            },
+        },
+        Probe {
+            id: "v3-samp-1k",
+            area: Area::LogViewer,
+            title: "A gyro that counts its samples, pulses of one, five and fifty samples, and \
+                    a step under noise: which sample the read-out at the cursor shows, what the \
+                    line smoothing does, how many points a drawn line keeps; 7 s at 1 kHz, 7000 \
+                    samples",
+            purpose: [
+                "filtered gyro 0, and 500 deg/s in one sample at 2.000 s (sample 2000), in five \
+                 samples from 4.000 s (4000 to 4004) and in fifty from 5.000 s (5000 to 5049); \
+                 unfiltered gyro 0",
+                "filtered gyro: the number of the sample in deg/s, 0 at the first and one more \
+                 at every sample up to 6999 at the last; unfiltered gyro 0",
+                "filtered gyro: white noise of 20 deg/s RMS (seed 1601), and 200 deg/s more \
+                 from 3.500 s (sample 3500) to the end; unfiltered gyro 0",
+            ],
+            flight: FlightSpec {
+                roll: bare(
+                    Vec::new(),
+                    vec![
+                        pulse(2.0, 1, 500.0),
+                        pulse(4.0, 5, 500.0),
+                        pulse(5.0, 50, 500.0),
+                    ],
+                ),
+                pitch: bare(
+                    Vec::new(),
+                    vec![Wave::Ramp {
+                        from: 0.0,
+                        to: 7000.0,
+                    }],
+                ),
+                yaw: bare(
+                    Vec::new(),
+                    vec![
+                        Wave::Noise {
+                            rms: 20.0,
+                            seed: SAMPLES_SEED,
+                        },
+                        // a step: a pulse that lasts to the end of the flight
+                        pulse(3.5, 3500, 200.0),
+                    ],
+                ),
+                ..FlightSpec::quiet(1000.0, 7.0)
+            },
+        },
+    ]
+}
+
+/// Round 16: the open ends the rounds before it left in every window.
+///
+/// Three logs for the main window; the stairs of round 8 in flights of
+/// eight more lengths, for where the map of frequency against throttle
+/// changes the distance between its segments (rounds 8 to 10 left the
+/// thresholds inside (19, 21.25] and (57.25, 64] s of analysed stretch) and
+/// what it and the map against time do with a short log; and three logs of
+/// rounds 9 to 11 as they were, which the tool only has to decode: it read
+/// two of them one sample later than the third.
+///
+/// The logs are in the order of their names, which is the order they are
+/// opened in: the plan of the round takes a log by its row in the tool's
+/// lists.
+fn round_16() -> Vec<Probe> {
+    let again = |probes: Vec<Probe>, id: &str| probes.into_iter().find(|p| p.id == id);
+    let mut probes: Vec<Probe> = [
+        again(round_9(), "a2-len16-2k"),
+        again(round_10(), "f4-short-2k"),
+        again(round_11(), "g7-flight-2k"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    probes.extend(viewer_open_ends());
+    // the time on a stair and the length of the flight, seconds: the nine
+    // stairs take the same time in the flights that are compared, and the
+    // stretches at half throttle before and after them take the rest (1.25
+    // to 2.25 s each: more than the second a window leaves out)
+    probes.extend(
+        [
+            ("w1-len21-2k", 2.0, 21.5),
+            ("w2-len22-2k", 2.0, 22.0),
+            ("w3-len22h-2k", 2.0, 22.5),
+            ("w4-len61-2k", 6.5, 61.0),
+            ("w5-len62-2k", 6.5, 62.0),
+            ("w6-len63-2k", 6.5, 63.0),
+            ("w7-len10-2k", 0.75, 10.0),
+            ("w8-len14-2k", 1.25, 14.0),
+        ]
+        .map(|(id, stair_s, duration_s)| stairs_in(id, 2000.0, stair_s, duration_s)),
+    );
+    probes
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
@@ -1840,12 +2041,13 @@ pub fn round(round: u32) -> Option<Vec<Probe>> {
         13 => Some(round_13()),
         14 => Some(round_14()),
         15 => Some(round_15()),
+        16 => Some(round_16()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
 #[cfg(test)]
 mod tests {
@@ -2806,6 +3008,442 @@ mod tests {
             .map(|(now, _)| now)
             .collect();
         assert_eq!(changed, [("debug_mode".to_string(), "1".to_string())]);
+    }
+
+    /// The probe `id` of round 16.
+    fn open_end(id: &str) -> Probe {
+        let found = round(16).unwrap().into_iter().find(|p| p.id == id);
+        found.unwrap_or_else(|| panic!("round 16 has no {id}"))
+    }
+
+    /// The log of `probe` as a pack carries it, read back, and its header.
+    fn log_of(probe: &Probe) -> (String, FlightSession) {
+        let bytes = crate::pack::log_of(probe).unwrap();
+        let head = String::from_utf8_lossy(&bytes[..bytes.len().min(40_000)]).into_owned();
+        let mut log = BlackboxFormat::new()
+            .open(&bytes, &OpenOptions::default())
+            .unwrap();
+        assert_eq!(log.sessions.len(), 1);
+        let session = log.sessions.remove(0);
+        assert_eq!(session.len(), probe.flight.len(), "{}", probe.id);
+        assert_eq!(session.diagnostics.corrupt_frames, 0, "{}", probe.id);
+        (head, session)
+    }
+
+    /// The samples of a gyro channel of a log.
+    fn gyro_of(session: &FlightSession, axis: Axis, stage: GyroStage) -> Vec<f64> {
+        let channel = session.channel(&ChannelId::Gyro { axis, stage }).unwrap();
+        assert!(channel.data.all_valid());
+        channel.data.values().to_vec()
+    }
+
+    #[test]
+    fn round_16_is_fourteen_logs_in_the_order_of_their_names() {
+        let probes = round(16).unwrap();
+        let shape: Vec<(&str, Area, f64, f64)> = probes
+            .iter()
+            .map(|p| (p.id, p.area, p.flight.fs, p.flight.duration_s))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("a2-len16-2k", Area::Throttle, 2000.0, 16.5),
+                ("f4-short-2k", Area::Time, 2000.0, 16.5),
+                ("g7-flight-2k", Area::Time, 2000.0, 24.0),
+                ("v1-deriv-2k", Area::LogViewer, 2000.0, 20.0),
+                ("v2-out-2k", Area::LogViewer, 2000.0, 20.0),
+                ("v3-samp-1k", Area::LogViewer, 1000.0, 7.0),
+                ("w1-len21-2k", Area::Throttle, 2000.0, 21.5),
+                ("w2-len22-2k", Area::Throttle, 2000.0, 22.0),
+                ("w3-len22h-2k", Area::Throttle, 2000.0, 22.5),
+                ("w4-len61-2k", Area::Throttle, 2000.0, 61.0),
+                ("w5-len62-2k", Area::Throttle, 2000.0, 62.0),
+                ("w6-len63-2k", Area::Throttle, 2000.0, 63.0),
+                ("w7-len10-2k", Area::Throttle, 2000.0, 10.0),
+                ("w8-len14-2k", Area::Throttle, 2000.0, 14.0),
+            ]
+        );
+        // the plan takes a log by its row in the tool's lists: the logs are
+        // opened in the order of their names
+        let mut sorted: Vec<&str> = probes.iter().map(|p| p.id).collect();
+        sorted.sort_unstable();
+        assert_eq!(sorted, probes.iter().map(|p| p.id).collect::<Vec<_>>());
+        // three logs of earlier rounds, each the probe its own round has
+        assert_eq!(probes[0], round(9).unwrap().remove(1));
+        assert_eq!(probes[1], round(10).unwrap().remove(9));
+        assert_eq!(probes[2], round(11).unwrap().remove(6));
+        // the stairs of round 8 in eight more lengths
+        let stairs = round(8).unwrap().remove(0).flight;
+        let lengths = [
+            (2.0, 1.75),
+            (2.0, 2.0),
+            (2.0, 2.25),
+            (6.5, 1.25),
+            (6.5, 1.75),
+            (6.5, 2.25),
+            (0.75, 1.625),
+            (1.25, 1.375),
+        ];
+        for (p, (stair_s, ends_s)) in probes[6..].iter().zip(lengths) {
+            let same = FlightSpec {
+                duration_s: stairs.duration_s,
+                throttle: stairs.throttle.clone(),
+                ..p.flight.clone()
+            };
+            assert_eq!(same, stairs, "{}", p.id);
+            assert_eq!(p.title, probes[0].title);
+            assert_eq!(
+                p.flight.duration_s,
+                9.0 * stair_s + 2.0 * ends_s,
+                "{}",
+                p.id
+            );
+            // half throttle at either end for longer than the second a
+            // window leaves out, and nine stairs of one length between
+            let throttle = p.flight.throttle_samples();
+            assert_eq!(p.flight.motor_samples(), throttle, "{}", p.id);
+            let (end, stair) = ((ends_s * 2000.0) as usize, (stair_s * 2000.0) as usize);
+            let mut want = vec![(0, 50.0)];
+            want.extend((0..9).map(|k| (end + k * stair, 10.0 * (k + 1) as f64)));
+            want.push((end + 9 * stair, 50.0));
+            assert_eq!(steps(&throttle), want, "{}", p.id);
+            assert_eq!(throttle.len(), 2 * end + 9 * stair, "{}", p.id);
+            assert!(ends_s > 1.0);
+        }
+        // the stretches a window analyses: three around 20 s and three
+        // around 60 s, inside the brackets rounds 8 to 10 left, and two
+        // short ones
+        let stretch: Vec<f64> = probes[6..]
+            .iter()
+            .map(|p| p.flight.duration_s - 2.0)
+            .collect();
+        assert_eq!(stretch, [19.5, 20.0, 20.5, 59.0, 60.0, 61.0, 8.0, 12.0]);
+        assert!(stretch[..3].iter().all(|s| *s > 19.0 && *s <= 21.25));
+        assert!(stretch[3..6].iter().all(|s| *s > 57.25 && *s <= 64.0));
+    }
+
+    #[test]
+    fn the_first_log_of_round_16_rises_evenly_and_parts_the_two_throttles() {
+        let probe = open_end("v1-deriv-2k");
+        let flight = &probe.flight;
+        assert_eq!(flight.len(), 40_000);
+        // roll: 0.2 deg/s a sample on the filtered gyro, a period of 4000
+        // samples; 0.5 deg/s a sample on the unfiltered one, 2400 samples
+        let roll = flight.samples(Axis::Roll);
+        let f = &roll.filtered;
+        assert_eq!(
+            (f[0], f[1000], f[2000], f[4000]),
+            (-200.0, 0.0, 200.0, -200.0)
+        );
+        assert!((f[1] + 199.8).abs() < 1e-9 && (f[2001] - 199.8).abs() < 1e-9);
+        assert!(
+            f.windows(2)
+                .all(|w| ((w[1] - w[0]).abs() - 0.2).abs() < 1e-9)
+        );
+        assert_eq!(f[..4000], f[36_000..]);
+        let u = &roll.unfiltered;
+        assert_eq!(
+            (u[0], u[600], u[1200], u[2400]),
+            (-300.0, 0.0, 300.0, -300.0)
+        );
+        assert!(u.windows(2).all(|w| (w[1] - w[0]).abs() == 0.5));
+        assert_eq!(u[..2400], u[2400..4800]);
+        // per second: 400 and 1000 deg/s
+        assert!((f[2000] - f[0] - 400.0).abs() < 1e-9 && u[1200] - u[0] == 600.0);
+        // pitch: 5 Hz and 2 Hz at 100 deg/s; yaw: 150 Hz on the unfiltered
+        // gyro only
+        let pitch = flight.samples(Axis::Pitch);
+        let tone =
+            |hz: f64, i: usize| 100.0 * (std::f64::consts::TAU * hz * i as f64 / 2000.0).sin();
+        for i in [0, 1, 99, 100, 250, 12_345, 39_999] {
+            assert!((pitch.filtered[i] - tone(5.0, i)).abs() < 1e-9, "{i}");
+            assert!((pitch.unfiltered[i] - tone(2.0, i)).abs() < 1e-9, "{i}");
+        }
+        assert!((pitch.filtered[100] - 100.0).abs() < 1e-9);
+        assert!((pitch.unfiltered[250] - 100.0).abs() < 1e-9);
+        let yaw = flight.samples(Axis::Yaw);
+        assert!(yaw.filtered.iter().all(|v| *v == 0.0));
+        let power = yaw.unfiltered.iter().map(|v| v * v).sum::<f64>() / 40_000.0;
+        assert!((power - 50.0).abs() < 1e-6, "{power}");
+        let hundred_fifty =
+            |i: usize| 10.0 * (std::f64::consts::TAU * 150.0 * i as f64 / 2000.0).sin();
+        assert!((yaw.unfiltered[777] - hundred_fifty(777)).abs() < 1e-9);
+        for axis in Axis::ALL {
+            assert!(flight.samples(axis).setpoint.iter().all(|v| *v == 0.0));
+        }
+        // the two throttles, the motors apart from both, the terms, the speeds
+        assert_eq!(steps(&flight.throttle_samples()), [(0, 30.0)]);
+        assert_eq!(flight.stick_throttle, Some(50.0));
+        assert_eq!(flight.motor_levels, Some([10.0, 20.0, 60.0, 70.0]));
+        let pid = flight.pid_terms.unwrap();
+        assert_eq!((pid.p, pid.i, pid.f), ([0.0; 3], [0.0; 3], [0.0; 3]));
+        assert_eq!(pid.d, [40.0, 40.0, 0.0]);
+        let rpm = flight.motor_rpm.unwrap();
+        assert_eq!(rpm, [12_000.0, 18_000.0, 24_000.0, 30_000.0]);
+        // every motor turns faster than 150 revolutions per second
+        assert_eq!(rpm.map(|r| r / 60.0), [200.0, 300.0, 400.0, 500.0]);
+        assert!(flight.debug.is_none() && flight.modes.is_none() && flight.motor_output.is_none());
+        assert!(
+            probe.title.contains("rcCommand[3] 1500")
+                && probe.title.contains(
+                    "setpoint[3] \
+             300"
+                )
+        );
+        assert!(probe.purpose[0].contains("400 deg/s per second"));
+        assert!(probe.purpose[0].contains("1000 deg/s per second"));
+    }
+
+    #[test]
+    fn the_log_of_the_first_log_of_round_16_holds_both_throttles() {
+        let probe = open_end("v1-deriv-2k");
+        let (head, session) = log_of(&probe);
+        let line = |key: &str| head.lines().find_map(|l| l.strip_prefix(key));
+        // the stick at 1500 (`rcCommand[3]`), the mixer at 30 % (`setpoint[3]`
+        // 300, which the reader gives in percent)
+        let stick = ChannelId::RcCommand { ch: 3 };
+        assert_eq!(logged(&session, &stick), [(0, 1500.0)]);
+        let mixer = ChannelId::Custom("setpoint[3]".into());
+        assert_eq!(logged(&session, &mixer), [(0, 30.0)]);
+        for ch in 0..3 {
+            assert_eq!(logged(&session, &ChannelId::RcCommand { ch }), [(0, 0.0)]);
+        }
+        // OpenPID's own throttle is the mixer's
+        assert_eq!(logged(&session, &ChannelId::Throttle), [(0, 30.0)]);
+        // the gyro is the flight in whole deg/s: a tie goes to the even number
+        for axis in Axis::ALL {
+            let exact = probe.flight.samples(axis);
+            for (stage, want) in [
+                (GyroStage::Raw, &exact.unfiltered),
+                (GyroStage::Filtered, &exact.filtered),
+            ] {
+                let got = gyro_of(&session, axis, stage);
+                let equal = got.iter().zip(want).all(|(g, w)| *g == w.round_ties_even());
+                assert!(equal && got.len() == want.len(), "{axis:?} {stage:?}");
+            }
+        }
+        let unfiltered = gyro_of(&session, Axis::Roll, GyroStage::Raw);
+        assert_eq!(
+            unfiltered[..9],
+            [
+                -300.0, -300.0, -299.0, -298.0, -298.0, -298.0, -297.0, -296.0, -296.0
+            ]
+        );
+        let filtered = gyro_of(&session, Axis::Roll, GyroStage::Filtered);
+        assert_eq!(
+            filtered[..6],
+            [-200.0, -200.0, -200.0, -199.0, -199.0, -199.0]
+        );
+        assert_eq!((filtered[2000], filtered[4000]), (200.0, -200.0));
+        // a second of the log is 400 and 1000 deg/s on those lines
+        assert_eq!(filtered[1500] - filtered[500], 200.0);
+        assert_eq!(unfiltered[700] - unfiltered[200], 250.0);
+        // the D term on roll and pitch, none on yaw; the other terms at zero
+        let term = |term: PidTerm, axis: Axis| ChannelId::PidTerm { axis, term };
+        assert_eq!(logged(&session, &term(PidTerm::D, Axis::Roll)), [(0, 40.0)]);
+        assert_eq!(
+            logged(&session, &term(PidTerm::D, Axis::Pitch)),
+            [(0, 40.0)]
+        );
+        assert!(session.channel(&term(PidTerm::D, Axis::Yaw)).is_none());
+        assert_eq!(logged(&session, &term(PidTerm::P, Axis::Roll)), [(0, 0.0)]);
+        // the motors in the craft's digital range, and their speeds
+        assert_eq!(line("H motorOutput:"), Some("158,2047"));
+        assert_eq!(line("H motor_pwm_protocol:"), Some("6"));
+        for (idx, raw) in [(0u8, 347.0), (1, 536.0), (2, 1291.0), (3, 1480.0)] {
+            let read = logged(&session, &ChannelId::Motor { idx });
+            assert_eq!(read.len(), 1, "motor {idx}");
+            let units = 158.0 + read[0].1 / 100.0 * (2047.0 - 158.0);
+            assert!((units - raw).abs() < 1e-9, "motor {idx}: {units}");
+        }
+        for (idx, erpm) in [(0u8, 840.0), (1, 1260.0), (2, 1680.0), (3, 2100.0)] {
+            assert_eq!(logged(&session, &ChannelId::Erpm { idx }), [(0, erpm)]);
+        }
+        assert_eq!(line("H dshot_bidir:"), Some("1"));
+        assert_eq!(session.len(), 40_000);
+    }
+
+    #[test]
+    fn the_second_log_of_round_16_has_outputs_that_are_not_digital() {
+        let probe = open_end("v2-out-2k");
+        let flight = &probe.flight;
+        let output = flight.motor_output.unwrap();
+        assert_eq!((output.low, output.high, output.protocol), (1070, 2000, 1));
+        let levels = flight.motor_levels.unwrap();
+        assert_eq!((levels[0], levels[2], levels[3]), (0.0, 50.0, 100.0));
+        assert!((levels[1] - 100.0 * 230.0 / 930.0).abs() < 1e-12);
+        assert_eq!(steps(&flight.throttle_samples()), [(0, 50.0)]);
+        assert!(flight.stick_throttle.is_none() && flight.motor_rpm.is_none());
+        // the header follows the probe: the range, and the protocol in place
+        // of the craft's
+        let changed: Vec<(String, String)> = crate::pack::probe_headers(&probe)
+            .into_iter()
+            .zip(crate::pack::craft_headers(probe.id))
+            .filter(|(now, craft)| now != craft)
+            .map(|(now, _)| now)
+            .collect();
+        assert_eq!(
+            changed,
+            [("motor_pwm_protocol".to_string(), "1".to_string())]
+        );
+        let craft = crate::pack::craft_headers(probe.id);
+        let protocol = craft.iter().find(|(key, _)| key == "motor_pwm_protocol");
+        assert_eq!(protocol.map(|(_, value)| value.as_str()), Some("6"));
+        let (head, session) = log_of(&probe);
+        let line = |key: &str| head.lines().find_map(|l| l.strip_prefix(key));
+        assert_eq!(line("H motorOutput:"), Some("1070,2000"));
+        assert_eq!(line("H motor_pwm_protocol:"), Some("1"));
+        assert_eq!(line("H dshot_bidir:"), Some("0"));
+        assert!(!line("H Field I name:").unwrap().contains("eRPM"));
+        // the four motors as logged: the numbers the title names
+        for (idx, raw) in [(0u8, 1070.0), (1, 1300.0), (2, 1535.0), (3, 2000.0)] {
+            let read = logged(&session, &ChannelId::Motor { idx });
+            assert_eq!(read.len(), 1, "motor {idx}");
+            let units = 1070.0 + read[0].1 / 100.0 * 930.0;
+            assert!((units - raw).abs() < 1e-9, "motor {idx}: {units}");
+        }
+        assert!(probe.title.contains("1070, 1300, 1535 and 2000"));
+        assert!(probe.title.contains("motorOutput:1070,2000"));
+        assert!(
+            probe
+                .title
+                .contains("motor_pwm_protocol, is 1 (OneShot125)")
+        );
+        // the gyro and the setpoint at small constants of their own
+        let constants = [
+            (Axis::Roll, 30.0, 20.0, 10.0),
+            (Axis::Pitch, -35.0, -25.0, -15.0),
+            (Axis::Yaw, 45.0, 40.0, 5.0),
+        ];
+        for (axis, unfiltered, filtered, setpoint) in constants {
+            let raw = ChannelId::Gyro {
+                axis,
+                stage: GyroStage::Raw,
+            };
+            let gyro = ChannelId::Gyro {
+                axis,
+                stage: GyroStage::Filtered,
+            };
+            assert_eq!(logged(&session, &raw), [(0, unfiltered)], "{axis:?}");
+            assert_eq!(logged(&session, &gyro), [(0, filtered)], "{axis:?}");
+            let asked = logged(&session, &ChannelId::Setpoint { axis });
+            assert_eq!(asked, [(0, setpoint)], "{axis:?}");
+        }
+        assert_eq!(logged(&session, &ChannelId::Throttle), [(0, 50.0)]);
+    }
+
+    #[test]
+    fn the_third_log_of_round_16_counts_its_samples() {
+        let probe = open_end("v3-samp-1k");
+        let flight = &probe.flight;
+        assert_eq!((flight.fs, flight.len()), (1000.0, 7000));
+        let (_, session) = log_of(&probe);
+        let time = &session.timebase.time_us;
+        assert_eq!(
+            (time[2000] - time[0], time[6999] - time[0]),
+            (2_000_000, 6_999_000)
+        );
+        // pitch: the number of the sample, which the writer and the reader
+        // leave as it is
+        let pitch = gyro_of(&session, Axis::Pitch, GyroStage::Filtered);
+        assert_eq!(pitch.len(), 7000);
+        assert!(pitch.iter().enumerate().all(|(i, v)| *v == i as f64));
+        let exact = flight.samples(Axis::Pitch).filtered;
+        assert!(
+            exact
+                .iter()
+                .enumerate()
+                .all(|(i, v)| (v - i as f64).abs() < 1e-9)
+        );
+        // roll: 500 deg/s in one sample, in five and in fifty
+        let roll = gyro_of(&session, Axis::Roll, GyroStage::Filtered);
+        assert_eq!(
+            steps(&roll),
+            [
+                (0, 0.0),
+                (2000, 500.0),
+                (2001, 0.0),
+                (4000, 500.0),
+                (4005, 0.0),
+                (5000, 500.0),
+                (5050, 0.0)
+            ]
+        );
+        assert_eq!(roll, flight.samples(Axis::Roll).filtered);
+        // yaw: noise of 20 deg/s RMS, and 200 deg/s more from sample 3500 on
+        let yaw = gyro_of(&session, Axis::Yaw, GyroStage::Filtered);
+        let exact = flight.samples(Axis::Yaw).filtered;
+        assert!(
+            yaw.iter()
+                .zip(&exact)
+                .all(|(g, w)| *g == w.round_ties_even())
+        );
+        let noise = Wave::Noise {
+            rms: 20.0,
+            seed: 1601,
+        };
+        let alone = FlightSpec {
+            yaw: AxisSpec::of(vec![noise.clone()]),
+            ..FlightSpec::quiet(1000.0, 7.0)
+        };
+        let alone = alone.samples(Axis::Yaw).unfiltered;
+        for (i, (with_step, noise)) in exact.iter().zip(&alone).enumerate() {
+            let step = if i >= 3500 { 200.0 } else { 0.0 };
+            assert_eq!(*with_step, noise + step, "sample {i}");
+        }
+        let mean = |x: &[f64]| x.iter().sum::<f64>() / x.len() as f64;
+        let rms = (alone.iter().map(|v| v * v).sum::<f64>() / 7000.0).sqrt();
+        assert!((rms - 20.0).abs() < 0.5, "{rms}");
+        assert!(mean(&yaw[..3500]).abs() < 1.0 && (mean(&yaw[3500..]) - 200.0).abs() < 1.0);
+        let Filtered::Separate { waves } = &flight.yaw.filtered else {
+            panic!("the yaw of v3 has a filtered gyro of its own");
+        };
+        assert_eq!(waves[0], noise);
+        // the unfiltered gyro, the setpoint and the throttle stay as a quiet
+        // flight has them
+        for axis in Axis::ALL {
+            let raw = gyro_of(&session, axis, GyroStage::Raw);
+            assert!(raw.iter().all(|v| *v == 0.0), "{axis:?}");
+            let asked = logged(&session, &ChannelId::Setpoint { axis });
+            assert_eq!(asked, [(0, 0.0)], "{axis:?}");
+        }
+        assert_eq!(logged(&session, &ChannelId::Throttle), [(0, 50.0)]);
+        assert!(probe.purpose[0].contains("(4000 to 4004)"));
+        assert!(probe.purpose[0].contains("(5000 to 5049)"));
+        assert!(probe.purpose[2].contains("seed 1601") && probe.purpose[2].contains("sample 3500"));
+    }
+
+    #[test]
+    fn the_flights_before_round_16_say_nothing_of_its_parts() {
+        // their manifests and their logs stay what they were: a flight
+        // without the parts round 16 added is written down without them
+        let parts = ["stick_throttle", "motor_output", "triangle", "pulse"];
+        let earlier = ROUNDS.iter().filter(|r| **r < 16);
+        let again = round(16).unwrap().into_iter().take(3);
+        for probe in earlier.flat_map(|r| round(*r).unwrap()).chain(again) {
+            let text = serde_json::to_string(&probe.flight).unwrap();
+            for part in parts {
+                assert!(!text.contains(part), "{}: {part}", probe.id);
+            }
+            if probe.flight.debug.is_none() {
+                assert_eq!(
+                    crate::pack::probe_headers(&probe),
+                    crate::pack::craft_headers(probe.id),
+                    "{}",
+                    probe.id
+                );
+            }
+        }
+        let new: Vec<String> = round(16).unwrap()[3..6]
+            .iter()
+            .map(|p| serde_json::to_string(&p.flight).unwrap())
+            .collect();
+        assert!(new[0].contains("\"stick_throttle\":50.0") && new[0].contains("\"triangle\""));
+        assert!(new[1].contains("\"motor_output\":{\"low\":1070,\"high\":2000,\"protocol\":1}"));
+        assert!(new[2].contains("\"pulse\"") && !new[2].contains("stick_throttle"));
+        // the stairs of round 16 are written down as those of round 8 are
+        let stairs = serde_json::to_string(&round(16).unwrap()[6].flight).unwrap();
+        assert!(parts.iter().all(|part| !stairs.contains(part)));
     }
 
     #[test]

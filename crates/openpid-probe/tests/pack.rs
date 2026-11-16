@@ -388,7 +388,7 @@ fn an_unknown_round_is_refused() {
     );
     assert_eq!(
         catalogue::ROUNDS,
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     );
 }
 
@@ -1113,4 +1113,340 @@ fn the_pack_of_round_15_is_one_log_for_the_main_window() {
     // the same bytes when it is built again
     let again = pack::build(15, "test").unwrap().files();
     assert!(files == again, "round 15 differs between two builds");
+}
+
+/// Round 16, built once for every test.
+fn round_16() -> &'static Pack {
+    static PACK: OnceLock<Pack> = OnceLock::new();
+    PACK.get_or_init(|| pack::build(16, "test").unwrap())
+}
+
+#[test]
+fn the_pack_of_round_16_is_fourteen_logs_for_every_window() {
+    let pack = round_16();
+    let files = pack.files();
+    let names: Vec<&str> = files.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "a2-len16-2k.bbl",
+            "f4-short-2k.bbl",
+            "g7-flight-2k.bbl",
+            "v1-deriv-2k.bbl",
+            "v2-out-2k.bbl",
+            "v3-samp-1k.bbl",
+            "w1-len21-2k.bbl",
+            "w2-len22-2k.bbl",
+            "w3-len22h-2k.bbl",
+            "w4-len61-2k.bbl",
+            "w5-len62-2k.bbl",
+            "w6-len63-2k.bbl",
+            "w7-len10-2k.bbl",
+            "w8-len14-2k.bbl",
+            "manifest.json",
+            "ours.json",
+            "steps.json",
+            "capture.ps1",
+            "run.cmd",
+            "README.txt"
+        ]
+    );
+    assert!(pack.predictions.is_none());
+    let file = |name: &str| &files.iter().find(|(n, _)| n == name).unwrap().1;
+    let json = |name: &str| serde_json::from_slice::<serde_json::Value>(file(name)).unwrap();
+    // the manifest says what each log holds
+    let manifest = json("manifest.json");
+    assert_eq!(manifest["round"], 16);
+    let probe = |id: &str| {
+        let all = manifest["probes"].as_array().unwrap();
+        all.iter().find(|p| p["id"] == id).unwrap().clone()
+    };
+    let areas: Vec<&str> = manifest["probes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["area"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        areas[..6],
+        [
+            "throttle",
+            "time",
+            "time",
+            "log_viewer",
+            "log_viewer",
+            "log_viewer"
+        ]
+    );
+    assert!(areas[6..].iter().all(|a| *a == "throttle") && areas.len() == 14);
+    let v1 = probe("v1-deriv-2k");
+    assert_eq!(
+        (
+            v1["samples"].as_u64(),
+            v1["fs"].as_f64(),
+            v1["duration_s"].as_f64()
+        ),
+        (Some(40_000), Some(2000.0), Some(20.0))
+    );
+    let flight = &v1["flight"];
+    assert_eq!(flight["stick_throttle"], 50.0);
+    assert_eq!(
+        flight["throttle"],
+        serde_json::json!({"kind": "constant", "percent": 30.0})
+    );
+    assert_eq!(
+        flight["roll"]["waves"][0],
+        serde_json::json!({"kind": "triangle", "from": -300.0, "to": 300.0, "period_s": 1.2})
+    );
+    assert_eq!(
+        flight["roll"]["filtered"]["waves"][0],
+        serde_json::json!({"kind": "triangle", "from": -200.0, "to": 200.0, "period_s": 2.0})
+    );
+    assert_eq!(
+        flight["pid_terms"]["d"],
+        serde_json::json!([40.0, 40.0, 0.0])
+    );
+    assert_eq!(
+        flight["motor_rpm"],
+        serde_json::json!([12_000.0, 18_000.0, 24_000.0, 30_000.0])
+    );
+    assert_eq!(
+        flight["motor_levels"],
+        serde_json::json!([10.0, 20.0, 60.0, 70.0])
+    );
+    let roll = &v1["axes"][0];
+    assert_eq!(
+        roll["filtered"]["logged_range"],
+        serde_json::json!([-200.0, 200.0])
+    );
+    assert_eq!(
+        roll["unfiltered"]["logged_range"],
+        serde_json::json!([-300.0, 300.0])
+    );
+    // half a deg/s a sample: every other sample is a tie
+    assert_eq!(roll["unfiltered"]["rounding"], 0.5);
+    let tone = &v1["axes"][1]["filtered"]["tones"][0];
+    assert_eq!(
+        (tone["hz"].as_f64(), tone["amplitude"].as_f64()),
+        (Some(5.0), Some(100.0))
+    );
+    // whole deg/s without noise under the tone: the rounding follows the
+    // tone, and the logged samples hold it a little larger
+    assert!((tone["logged_amplitude"].as_f64().unwrap() - 100.0).abs() < 0.06);
+    let tone = &v1["axes"][2]["unfiltered"]["tones"][0];
+    assert_eq!(
+        (tone["hz"].as_f64(), tone["amplitude"].as_f64()),
+        (Some(150.0), Some(10.0))
+    );
+    let v2 = probe("v2-out-2k");
+    assert_eq!(
+        v2["flight"]["motor_output"],
+        serde_json::json!({"low": 1070, "high": 2000, "protocol": 1})
+    );
+    assert_eq!(v2["flight"]["motor_levels"][2], 50.0);
+    assert!(
+        v2["title"]
+            .as_str()
+            .unwrap()
+            .contains("motorOutput:1070,2000")
+    );
+    let v3 = probe("v3-samp-1k");
+    assert_eq!(
+        (v3["samples"].as_u64(), v3["fs"].as_f64()),
+        (Some(7000), Some(1000.0))
+    );
+    let pitch = &v3["axes"][1]["filtered"];
+    assert_eq!(pitch["logged_range"], serde_json::json!([0.0, 6999.0]));
+    assert_eq!(pitch["rounding"], 0.0);
+    assert_eq!(
+        v3["axes"][0]["filtered"]["logged_range"],
+        serde_json::json!([0.0, 500.0])
+    );
+    let yaw = &v3["flight"]["yaw"]["filtered"]["waves"];
+    assert_eq!(
+        yaw[0],
+        serde_json::json!({"kind": "noise", "rms": 20.0, "seed": 1601})
+    );
+    assert_eq!(
+        yaw[1],
+        serde_json::json!({"kind": "pulse", "at_s": 3.5, "samples": 3500, "value": 200.0})
+    );
+    assert_eq!(v3["axes"][2]["filtered"]["noise_rms"], 20.0);
+    assert_eq!(
+        v3["flight"]["roll"]["filtered"]["waves"][2],
+        serde_json::json!({"kind": "pulse", "at_s": 5.0, "samples": 50, "value": 500.0})
+    );
+    let lengths: Vec<f64> = manifest["probes"].as_array().unwrap()[6..]
+        .iter()
+        .map(|p| p["duration_s"].as_f64().unwrap())
+        .collect();
+    assert_eq!(lengths, [21.5, 22.0, 22.5, 61.0, 62.0, 63.0, 10.0, 14.0]);
+    // what OpenPID computes is there for every log
+    let ours = json("ours.json");
+    assert_eq!(ours["probes"].as_array().map(Vec::len), Some(14));
+    assert_eq!(ours["probes"][5]["id"], "v3-samp-1k");
+    assert_eq!(ours["probes"][5]["epoch_s"], serde_json::json!([1.0, 6.0]));
+    // the steps of the script, and the note that goes with them
+    let steps = json("steps.json");
+    assert_eq!(steps["give_up"], true);
+    let all = steps["steps"].as_array().unwrap();
+    let count = |action: &str| all.iter().filter(|s| s["action"] == action).count();
+    assert_eq!(
+        (count("shot"), count("clip_save"), count("tables")),
+        (38, 35, 1)
+    );
+    assert_eq!(all.len(), 874);
+    assert_eq!(
+        steps["steps"][1]["paths"].as_array().map(Vec::len),
+        Some(14)
+    );
+    assert_eq!(steps["steps"][1]["paths"][3], "v1-deriv-2k.bbl");
+    assert_eq!(all[all.len() - 2], serde_json::json!({"action": "tables"}));
+    // every action is one the script of the pack knows, and every click
+    // lies inside the picture it is measured in
+    let script = String::from_utf8(file("capture.ps1").clone()).unwrap();
+    assert!(script.is_ascii() && script.contains("function Write-Tables"));
+    let mut clicks = 0;
+    for step in all {
+        let action = step["action"].as_str().unwrap();
+        assert!(
+            script.contains(&format!("$action -eq \"{action}\"")),
+            "{action}"
+        );
+        let Some(at) = step["at"].as_array() else {
+            continue;
+        };
+        let frame = &steps["refs"][step["ref"].as_str().unwrap()];
+        let inside = |k: usize, from: &str, size: &str| {
+            let (at, from) = (at[k].as_u64().unwrap(), frame[from].as_u64().unwrap());
+            at >= from && at < from + frame[size].as_u64().unwrap()
+        };
+        assert!(
+            inside(0, "left", "width") && inside(1, "top", "height"),
+            "{step}"
+        );
+        clicks += 1;
+    }
+    assert!(clicks > 400, "{clicks}");
+    let note = String::from_utf8(file("README.txt").clone()).unwrap();
+    assert!(note.contains("Calibration round 16, for version 0.94 of the reference tool"));
+    assert!(note.contains("saves 38 pictures"), "{note}");
+    assert!(
+        note.contains("35 plots copied as vector graphics"),
+        "{note}"
+    );
+    assert!(note.contains("12 minutes"), "{note}");
+    assert!(
+        note.contains("summary of the tables") && note.contains("tables.txt"),
+        "{note}"
+    );
+    // the same bytes when it is built again
+    let again = pack::build(16, "test").unwrap().files();
+    assert!(files == again, "round 16 differs between two builds");
+}
+
+/// FNV-1a, 64 bit, a second time.
+fn fnv1a64(data: &[u8]) -> u64 {
+    data.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+#[test]
+fn the_logs_of_round_16_read_back_as_the_manifest_says() {
+    let pack = round_16();
+    let probes = catalogue::round(16).unwrap();
+    assert_eq!((pack.logs.len(), pack.manifest.probes.len()), (14, 14));
+    for ((probe, entry), (name, bytes)) in probes.iter().zip(&pack.manifest.probes).zip(&pack.logs)
+    {
+        assert_eq!((name, &entry.file), (&format!("{}.bbl", probe.id), name));
+        assert_eq!(entry.bytes, bytes.len(), "{name}");
+        assert_eq!(entry.fnv1a64, format!("{:016x}", fnv1a64(bytes)), "{name}");
+        assert_eq!(entry.flight, probe.flight, "{name}");
+        let log = BlackboxFormat::new()
+            .open(bytes, &OpenOptions::default())
+            .unwrap();
+        assert_eq!(log.sessions.len(), 1, "{name}");
+        let session = &log.sessions[0];
+        // a Betaflight 2025.12 log of the length and at the rate the
+        // manifest states, named after its probe
+        let version = session.firmware.version.unwrap();
+        assert_eq!((version.major, version.minor), (2025, 12), "{name}");
+        assert_eq!(session.len(), entry.samples, "{name}");
+        assert_eq!(
+            entry.samples,
+            (entry.fs * entry.duration_s) as usize,
+            "{name}"
+        );
+        assert_eq!(session.diagnostics.corrupt_frames, 0, "{name}");
+        assert_eq!(session.settings.craft_name.as_deref(), Some(probe.id));
+        assert_eq!(session.settings.loop_rates.log_hz, Some(entry.fs), "{name}");
+        let time = &session.timebase.time_us;
+        assert_eq!(time[0], 30_000_000, "{name}");
+        let step_us = (1.0e6 / entry.fs) as i64;
+        assert!(time.windows(2).all(|w| w[1] - w[0] == step_us), "{name}");
+        // the gyro, the setpoint and the throttle are the flight's, in the
+        // whole units a log keeps, and the manifest says what they span
+        let values = |id: ChannelId| {
+            let channel = session.channel(&id).unwrap();
+            assert!(channel.data.all_valid(), "{name} {id:?}");
+            channel.data.values().to_vec()
+        };
+        for (axis, truth) in Axis::ALL.into_iter().zip(&entry.axes) {
+            let exact = probe.flight.samples(axis);
+            for (stage, want, said) in [
+                (GyroStage::Raw, &exact.unfiltered, &truth.unfiltered),
+                (GyroStage::Filtered, &exact.filtered, &truth.filtered),
+            ] {
+                let got = values(ChannelId::Gyro { axis, stage });
+                let equal = got.iter().zip(want).all(|(g, w)| *g == w.round_ties_even());
+                assert!(
+                    equal && got.len() == want.len(),
+                    "{name} {axis:?} {stage:?}"
+                );
+                let low = got.iter().copied().fold(f64::INFINITY, f64::min);
+                let high = got.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                assert_eq!(said.logged_range, (low, high), "{name} {axis:?} {stage:?}");
+                assert!(said.rounding <= 0.5, "{name} {axis:?} {stage:?}");
+            }
+            let setpoint = values(ChannelId::Setpoint { axis });
+            assert_eq!(setpoint, exact.setpoint, "{name} {axis:?}");
+        }
+        let throttle = values(ChannelId::Throttle);
+        assert_eq!(throttle, probe.flight.throttle_samples(), "{name}");
+    }
+}
+
+#[test]
+fn round_16_carries_three_logs_of_earlier_rounds_byte_for_byte() {
+    let pack = round_16();
+    for (round, id) in [
+        (9, "a2-len16-2k"),
+        (10, "f4-short-2k"),
+        (11, "g7-flight-2k"),
+    ] {
+        // the probe as its own round has it, and the log that round writes
+        let probes = catalogue::round(round).unwrap();
+        let probe = probes.iter().find(|p| p.id == id).unwrap();
+        let own = pack::log_of(probe).unwrap();
+        let name = format!("{id}.bbl");
+        let (_, carried) = pack.logs.iter().find(|(n, _)| *n == name).unwrap();
+        assert!(*carried == own, "{name} is not the log of round {round}");
+        let entry = pack.manifest.probes.iter().find(|p| p.id == id).unwrap();
+        assert_eq!((entry.area, entry.title), (probe.area, probe.title));
+        assert_eq!(entry.flight, probe.flight);
+        assert_eq!(entry.fnv1a64, format!("{:016x}", fnv1a64(&own)));
+    }
+    // ... which is the log of that round's pack: round 11 as a whole
+    let eleven = pack::build(11, "test").unwrap();
+    let (name, flight) = &eleven.logs[6];
+    assert_eq!(name, "g7-flight-2k.bbl");
+    assert!(
+        *flight == pack.logs[2].1,
+        "g7-flight-2k differs from round 11's"
+    );
+    assert_eq!(
+        eleven.manifest.probes[6].fnv1a64,
+        pack.manifest.probes[2].fnv1a64
+    );
 }

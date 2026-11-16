@@ -823,17 +823,45 @@ pub fn craft_headers(id: &str) -> Vec<(String, String)> {
 }
 
 /// The header lines the log of `probe` is written with: those of the
-/// probes' craft, which has no debug mode set, and for a flight with debug
-/// values the debug mode it names. The firmware logs its debug values only
-/// while a mode is set, and the writer does as the header says.
+/// probes' craft, which has no debug mode set and digital ESCs, and for a
+/// flight with debug values the debug mode it names, for one whose motor
+/// outputs are not digital the protocol it names. The firmware logs its
+/// debug values only while a mode is set, and the writer does as the
+/// header says. (The range of the motor outputs, `motorOutput`, is no line
+/// of the craft: the writer states the range the flight's session names.)
 pub fn probe_headers(probe: &Probe) -> Vec<(String, String)> {
     let mut headers = craft_headers(probe.id);
-    if let Some(debug) = &probe.flight.debug {
-        for (_, value) in headers.iter_mut().filter(|(key, _)| key == "debug_mode") {
-            *value = debug.mode.to_string();
+    let mut set = |name: &str, to: String| {
+        for (_, value) in headers.iter_mut().filter(|(key, _)| key == name) {
+            value.clone_from(&to);
         }
+    };
+    if let Some(debug) = &probe.flight.debug {
+        set("debug_mode", debug.mode.to_string());
+    }
+    if let Some(output) = &probe.flight.motor_output {
+        set("motor_pwm_protocol", output.protocol.to_string());
     }
     headers
+}
+
+/// The log of `probe`, as a pack holds it: the same bytes in every round
+/// that carries the probe.
+///
+/// # Errors
+/// [`PackError::Write`] when the writer refuses the flight.
+pub fn log_of(probe: &Probe) -> Result<Vec<u8>, PackError> {
+    let options = WriteOptions {
+        time_offset_us: TIME_OFFSET_US,
+        headers: probe_headers(probe),
+        target: TARGET,
+        ..WriteOptions::default()
+    };
+    let probe_id = probe.id;
+    betaflight(&probe.flight.build(), &options).map_err(|source| PackError::Write {
+        probe: probe_id,
+        source,
+    })
 }
 
 /// One probe: its log, its manifest entry, `OpenPID`'s results and the
@@ -841,14 +869,7 @@ pub fn probe_headers(probe: &Probe) -> Vec<(String, String)> {
 fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
     let id = probe.id;
     let flight = &probe.flight;
-    let options = WriteOptions {
-        time_offset_us: TIME_OFFSET_US,
-        headers: probe_headers(probe),
-        target: TARGET,
-        ..WriteOptions::default()
-    };
-    let bytes = betaflight(&flight.build(), &options)
-        .map_err(|source| PackError::Write { probe: id, source })?;
+    let bytes = log_of(probe)?;
     let read = |message: String| PackError::Read { probe: id, message };
     let mut log = BlackboxFormat::new()
         .open(&bytes, &OpenOptions::default())
@@ -1020,17 +1041,9 @@ impl Pack {
             out.push(("predictions.json".into(), json(predictions)));
         }
         out.push(("steps.json".into(), json(&self.plan)));
-        let count = |action: &str| {
-            self.plan
-                .steps
-                .iter()
-                .filter(|s| s.action == action)
-                .count()
-        };
-        out.extend(capture::files(
+        out.extend(capture::files_of(
             self.manifest.round,
-            count("shot"),
-            count("clip_save"),
+            &self.plan,
             self.predictions.is_some(),
         ));
         out

@@ -9,7 +9,9 @@
 //!   one experiment per axis. Rounds 1 to 3 are about the spectrum, 4 to 6
 //!   about the step response; the last of each (3 and 6) is a hold-out,
 //!   flights the model of the reference tool was not fitted to. Round 7 is
-//!   about the numbers the tool reads off a step response.
+//!   about the numbers the tool reads off a step response; the later rounds
+//!   take the tool's other windows in turn (`openpid-probe --help` lists
+//!   them).
 //! - [`pack`]: a round as files: the logs, `manifest.json` with what is true
 //!   about each, `ours.json` with what `OpenPID` computes for the same logs,
 //!   `predictions.json` with what the model expects the reference tool to
@@ -37,6 +39,6 @@ pub mod truth;
 pub use catalogue::{Area, Probe};
 pub use pack::{Manifest, Ours, Pack, PackError};
 pub use signal::{
-    AxisSamples, AxisSpec, DebugValues, Filtered, FlightSpec, Modes, PidTerms, Plant, Stick,
-    Throttle, Wave,
+    AxisSamples, AxisSpec, DebugValues, Filtered, FlightSpec, Modes, MotorOutput, PidTerms, Plant,
+    Stick, Throttle, Wave,
 };

@@ -56,6 +56,11 @@ ROUNDS:
     15       The main window, which draws the channels of a log as lines: one log whose
              every channel holds a known constant or step, every line of its check-list
              switched on, its four plots copied.
+    16       What the rounds before left open in every window: three logs for the main
+             window (a gyro that rises evenly beside two throttles, motor outputs that
+             are not digital, a gyro that counts its samples), the stairs of the
+             throttle in eight more lengths, three logs of rounds 9 to 11 again, and a
+             summary of the tables the tool decodes the logs into.
 ";
 
 /// Runs the tool with `args` (without the program name), printing to `out`.

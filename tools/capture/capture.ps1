@@ -12,7 +12,10 @@
 # titles; the mouse, the Enter / Esc / Ctrl+A / Ctrl+V keys, and the clipboard (text
 # that was on it is put back after a file dialog; a copied plot stays on it).
 # What it saves: the inside of those windows as PNG files, copied plots as
-# metafiles, and a log with the titles and sizes of the windows.
+# metafiles, and a log with the titles and sizes of the windows. When a step
+# asks for it, also a summary of the tables (.csv files) the tool has written
+# next to the logs while the script ran: those files are only read, never
+# copied, moved or changed.
 #
 # This file is ASCII on purpose: Windows PowerShell reads a script without a
 # byte-order mark in the system code page.
@@ -467,6 +470,8 @@ function Log($text) {
     Write-Host $line
 }
 
+# when the script started: a table the tool writes after this is one of this run
+$script:started = Get-Date
 $script:toolPid = 0
 $script:mainHandle = 0
 $script:windowTitle = ""
@@ -689,6 +694,226 @@ function Test-Mouse {
     }
 }
 
+# A number as text, the same on every machine: a point, no grouping.
+function Format-Plain($value) {
+    return ([double]$value).ToString("R", [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+# One table the tool has left behind (a .csv file it decoded a log into), as
+# lines added to $text: its size, its header line, its first and last rows,
+# how its time column steps from row to row, and where its loop counter
+# starts and ends. Rows are counted from 1 at the first line after the header
+# line. The file is only read.
+function Add-TableSummary($text, $file) {
+    $inv = [System.Globalization.CultureInfo]::InvariantCulture
+    $float = [System.Globalization.NumberStyles]::Float
+    $comma = [char[]]@(',')
+    $text.Add("")
+    $text.Add("table " + $file.FullName)
+    $written = $file.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss", $inv)
+    $text.Add(("  {0} bytes, last written {1}" -f $file.Length, $written))
+
+    $header = $null
+    $timeAt = -1
+    $loopAt = -1
+    $cells = 0
+    $count = 0
+    $first = New-Object 'System.Collections.Generic.List[string]'
+    $times = New-Object 'System.Collections.Generic.List[double]'
+    $last1 = $null
+    $last2 = $null
+    $last3 = $null
+    $loopFirst = $null
+    $loopLast = $null
+    [double]$parsed = 0
+    foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
+        $count++
+        if ($count -eq 1) {
+            $header = $line
+            $names = $line.Split($comma)
+            for ($k = 0; $k -lt $names.Length; $k++) {
+                $name = $names[$k].ToLowerInvariant()
+                if (($timeAt -lt 0) -and $name.Contains("time")) { $timeAt = $k }
+                if (($loopAt -lt 0) -and $name.Contains("loopiteration")) { $loopAt = $k }
+            }
+            # the columns up to the later of the two, and the rest of the line
+            $cells = [Math]::Max($timeAt, $loopAt) + 2
+            continue
+        }
+        if ($first.Count -lt 3) { $first.Add($line) }
+        $last1 = $last2
+        $last2 = $last3
+        $last3 = $line
+        if ($cells -lt 2) { continue }
+        $parts = $line.Split($comma, $cells)
+        if ($timeAt -ge 0) {
+            $value = [double]::NaN
+            if ($timeAt -lt $parts.Length) {
+                if ([double]::TryParse($parts[$timeAt].Trim(), $float, $inv, [ref]$parsed)) { $value = $parsed }
+            }
+            $times.Add($value)
+        }
+        if (($loopAt -ge 0) -and ($loopAt -lt $parts.Length)) {
+            $cell = $parts[$loopAt].Trim()
+            if ($null -eq $loopFirst) { $loopFirst = $cell }
+            $loopLast = $cell
+        }
+    }
+
+    if ($null -eq $header) {
+        $text.Add("  the file is empty")
+        return
+    }
+    $rows = $count - 1
+    $text.Add(("  {0} lines: the header line and {1} rows" -f $count, $rows))
+    $text.Add("  header: " + $header)
+    for ($k = 0; $k -lt $first.Count; $k++) {
+        $text.Add(("  row {0}: {1}" -f ($k + 1), $first[$k]))
+    }
+    if ($rows -gt 3) {
+        $tail = @($last1, $last2, $last3)
+        for ($k = 0; $k -lt 3; $k++) {
+            if ($null -ne $tail[$k]) {
+                $text.Add(("  row {0}: {1}" -f ($rows - 2 + $k), $tail[$k]))
+            }
+        }
+    }
+
+    if ($loopAt -lt 0) {
+        $text.Add("  no column whose name contains 'loopIteration'")
+    } else {
+        $text.Add(("  loopIteration (column {0}): {1} in the first row, {2} in the last" -f ($loopAt + 1), $loopFirst, $loopLast))
+    }
+    if ($timeAt -lt 0) {
+        $text.Add("  no column whose name contains 'time'")
+        return
+    }
+    if ($times.Count -lt 2) {
+        $text.Add(("  time (column {0}): fewer than two rows" -f ($timeAt + 1)))
+        return
+    }
+    # the difference between a row and the row before it, and how often each occurs
+    $steps = @{}
+    for ($k = 1; $k -lt $times.Count; $k++) {
+        $d = [Math]::Round($times[$k] - $times[$k - 1], 6)
+        if ($steps.ContainsKey($d)) { $steps[$d] = $steps[$d] + 1 } else { $steps[$d] = 1 }
+    }
+    $common = $null
+    $most = 0
+    foreach ($key in @($steps.Keys)) {
+        if ($steps[$key] -gt $most) {
+            $most = $steps[$key]
+            $common = $key
+        }
+    }
+    $others = ($times.Count - 1) - $most
+    $from = $times[0]
+    $to = $times[$times.Count - 1]
+    $text.Add(("  time (column {0}): {1} in the first row, {2} in the last" -f ($timeAt + 1), (Format-Plain $from), (Format-Plain $to)))
+    $text.Add(("  the most common difference between a row and the row before it: {0} ({1} times); another difference: {2} times" -f (Format-Plain $common), $most, $others))
+    $shown = 0
+    for ($k = 1; ($k -lt $times.Count) -and ($shown -lt 50); $k++) {
+        $d = [Math]::Round($times[$k] - $times[$k - 1], 6)
+        if ($d -ne $common) {
+            $shown++
+            $value = $times[$k]
+            $text.Add(("    row {0}: time {1}, difference {2}" -f ($k + 1), (Format-Plain $value), (Format-Plain $d)))
+        }
+    }
+    if ($others -gt $shown) {
+        $text.Add(("    ... and {0} more rows that are not listed" -f ($others - $shown)))
+    }
+}
+
+# Writes tables.txt into the results: a summary of every table (.csv file)
+# that was written since the script started, in the folder of the logs (with
+# its subfolders) and in the folder of the tool's program. The tool decodes
+# every log it opens into such a table. Nothing is copied, moved or changed,
+# and whatever goes wrong here is written down and the run goes on.
+function Write-Tables {
+    $text = New-Object 'System.Collections.Generic.List[string]'
+    $found = 0
+    try {
+        $inv = [System.Globalization.CultureInfo]::InvariantCulture
+        $since = $script:started.ToString("yyyy-MM-dd HH:mm:ss", $inv)
+        $text.Add("tables (*.csv) written since the script started at " + $since)
+        $text.Add("rows are counted from 1 at the first line after the header line")
+
+        $folders = @($here)
+        $deep = @($true)
+        try {
+            if ($script:toolPid -ne 0) {
+                $program = (Get-Process -Id ([int]$script:toolPid)).Path
+                if ($program) {
+                    $text.Add("the tool's program: " + $program)
+                    $folders += (Split-Path -Parent $program)
+                    $deep += $false
+                } else {
+                    $text.Add("the tool's program: Windows does not say where it is")
+                }
+            } else {
+                $text.Add("the tool's program: no window of the tool was found")
+            }
+        } catch {
+            $text.Add("the tool's program could not be found: " + $_.Exception.Message)
+        }
+
+        $seen = @{}
+        $older = New-Object 'System.Collections.Generic.List[string]'
+        for ($k = 0; $k -lt $folders.Count; $k++) {
+            $folder = $folders[$k]
+            $files = @()
+            try {
+                if ($deep[$k]) {
+                    $text.Add("looked in " + $folder + " and its subfolders")
+                    $files = @(Get-ChildItem -LiteralPath $folder -Filter "*.csv" -File -Recurse -ErrorAction SilentlyContinue)
+                } else {
+                    $text.Add("looked in " + $folder)
+                    $files = @(Get-ChildItem -LiteralPath $folder -Filter "*.csv" -File -ErrorAction SilentlyContinue)
+                }
+            } catch {
+                $text.Add("  could not be listed: " + $_.Exception.Message)
+            }
+            foreach ($file in $files) {
+                if ($file.Extension -ne ".csv") { continue }
+                if ($seen.ContainsKey($file.FullName)) { continue }
+                $seen[$file.FullName] = $true
+                if ($file.LastWriteTime -lt $script:started) {
+                    $written = $file.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss", $inv)
+                    $older.Add(("  {0}, {1} bytes, last written {2}" -f $file.FullName, $file.Length, $written))
+                    continue
+                }
+                $found++
+                try {
+                    Add-TableSummary $text $file
+                } catch {
+                    $text.Add("  could not be read: " + $_.Exception.Message)
+                }
+            }
+        }
+
+        $text.Add("")
+        if ($found -eq 0) {
+            $text.Add("nothing found: no table was written in those folders since the script started")
+        } else {
+            $text.Add(("{0} tables written since the script started" -f $found))
+        }
+        if ($older.Count -gt 0) {
+            $text.Add(("{0} older tables in those folders were not read:" -f $older.Count))
+            for ($k = 0; ($k -lt $older.Count) -and ($k -lt 20); $k++) { $text.Add($older[$k]) }
+        }
+    } catch {
+        $text.Add("stopped: " + $_.Exception.Message)
+        Log ("    tables: " + $_.Exception.Message)
+    }
+    try {
+        [System.IO.File]::WriteAllLines((Join-Path $outDir "tables.txt"), $text.ToArray())
+        Log ("    tables: {0} summarised in tables.txt" -f $found)
+    } catch {
+        Log ("    tables: tables.txt could not be written: " + $_.Exception.Message)
+    }
+}
+
 function Invoke-Step($step, $index) {
     $action = $step.action
     Log ("step {0}: {1}" -f $index, ($step | ConvertTo-Json -Compress))
@@ -702,6 +927,10 @@ function Invoke-Step($step, $index) {
     }
     if ($action -eq "windows") {
         Show-ToolWindows
+        return
+    }
+    if ($action -eq "tables") {
+        Write-Tables
         return
     }
     if ($action -eq "clip_wait") {
