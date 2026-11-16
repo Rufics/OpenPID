@@ -4426,7 +4426,9 @@ mod tests {
             assert!(!tables.contains(verb), "{verb}");
         }
         assert_eq!(tables.matches("WriteAllLines").count(), 1);
-        assert!(SCRIPT.contains("if ($action -eq \"tables\") {\n        Write-Tables"));
+        // a checkout on Windows may give the script CRLF line endings
+        let lf = SCRIPT.replace("\r\n", "\n");
+        assert!(lf.contains("if ($action -eq \"tables\") {\n        Write-Tables"));
         assert!(SCRIPT.is_ascii());
     }
 
