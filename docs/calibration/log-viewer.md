@@ -132,6 +132,14 @@ order of their names, and every picture shows the log it was meant to.
 | "Period" | a red mark at each of two clicked times and the time between them with its frequency, "6681ms, 0.1496Hz" |
 | Flight modes | "ARM" written under the lower plot at 0 s for these logs, which are armed from their first frame; round 15's log, armed at 2 s, showed no name |
 
+## Round 17 (2026-11-17)
+
+The lines of a flight made for no question are drawn as OpenPID draws
+them; the line smoothing is counted in samples (21 at "med" at 2 and at
+4 kHz, as at 1 kHz), as #199 counts them. See
+[verification.md](verification.md).
+
+
 ## Not settled
 
 - **The factor of D-term(pf)**: 198 on roll and 40 on pitch in one log; it

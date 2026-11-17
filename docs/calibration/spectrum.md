@@ -390,6 +390,17 @@ option A of D-001 on 2026-11-11: OpenPID draws the reference tool's curve
 by default and keeps its density as a second mode (pull request #187, on its own from `master`; it replaces #181). The other channels of that window and the "Freq x
 Throttle" and "Freq x Time" screens are areas of their own.
 
+### Round 17 (2026-11-17): every channel, and OpenPID as decided
+
+OpenPID's curve (#187) on two flights made for no question: within
+0.04 dB median below 100 Hz, about 0.1 dB over the full range; the rest is
+the stretch (D-012). Every channel of the window's list read against
+OpenPID's curve of the same channel (S8), median 0.006 … 0.009 dB: Gyro
+`gyroADC`, Gyro prefilt `gyroUnfilt`, Dterm `axisD`, Pterm `axisP`, Fterm
+`axisF`, Set point `setpoint`, PID error the setpoint and the filtered
+gyro, PIDsum P + I + D + F, debug `debug[0]`; Motors on the logged number
+over 20 (D-008). See [verification.md](verification.md).
+
 ### Not settled
 
 - Why one flight starts a sample later, and when the span holds a sample

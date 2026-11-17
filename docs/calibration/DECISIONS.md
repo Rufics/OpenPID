@@ -230,6 +230,21 @@ Taken by the owner on 2026-11-11:
 | The owner's decision | **C**, 2026-11-17: the line smoothing and a period measure |
 | Carried out by | #199 (on its own from `master`): the line smoothing as the reference tool computes it, its span counted in samples (seen at 1 kHz only), and a second mark beside the cursor with the time between them and its frequency |
 
+### D-012 The stretch of a log the analyses take by default
+
+| Field | |
+|---|---|
+| Id | D-012 |
+| Area | Common to every area, C3: the stretch the spectrum curve, both maps and the step response take when the user has chosen none |
+| Probe | round 17 (pack `fdb8812`, OpenPID's results from `verify-7f192b3`): the spectrum at 1 and 4 kHz, both maps on 47 s and on 11 to 13 s; rounds 1–16 for the reference tool's rule |
+| The reference tool shows | always the log without its first and last second: from sample `fs + 2` (one sample later on some logs), `fs·(T − 2) − 1` samples; it does not draw the log's first sample. A log of 10 s or less is taken whole (the switch lies in (10, 11] s) |
+| OpenPID shows | its automatic stretch: from one second after take-off to one second before landing, by the throttle and the motor speeds, so on a probe from sample `fs`, `fs·(T − 2)` samples. On a flown log it also leaves out the time on the ground; on a log under 11 s it trims too. The difference on round 17: up to 0.38 dB on the spectrum curve below 100 Hz, about 1 dB on noise over the full range, 1 … 4 % of the pixels of a map, up to 3.7 % of a printed peak of a short log. The step response is not affected. On the reference tool's stretch every copy agrees to its resolution |
+| The exact value | none: a choice of which part of a log is analysed |
+| Options | **A.** Keep the automatic stretch as the default, and add the reference tool's stretch as a choice beside it ("as the reference tool": from sample `fs + 2`, `fs·(T − 2) − 1` samples, a log of 10 s or less whole), so that a log can be put side by side with the reference tool exactly. **B.** The reference tool's stretch as the default, the automatic one as a choice: every number is the reference tool's out of the box, the time on the ground included. **C.** Keep it as it is and say so in the user guide |
+| Recommendation | A. The time on the ground is not the flight and does not belong in a spectrum or a map; the exact stretch as a choice makes the comparison with the reference tool (#176) exact without making OpenPID analyse the ground by default |
+| The owner's decision | |
+| Carried out by | |
+
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
 call.
