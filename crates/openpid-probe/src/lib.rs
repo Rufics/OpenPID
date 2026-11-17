@@ -25,11 +25,17 @@
 //! - [`step_model`]: the step response of the reference tool, likewise.
 //! - [`truth`]: what is true about a plant in the frequency domain, for the
 //!   rounds that ask a tool what it reads off a step response.
+//! - [`emf`]: a reader of the metafiles the reference tool copies its plots
+//!   as, and the calibration of a plot's axes from its ticks.
+//! - [`compare`]: the copies of a round held against `OpenPID`'s own
+//!   results for the same logs (`openpid-probe compare`).
 //! - [`cli`]: the command line of the `openpid-probe` binary.
 
 pub mod capture;
 pub mod catalogue;
 pub mod cli;
+pub mod compare;
+pub mod emf;
 pub mod model;
 pub mod pack;
 pub mod signal;

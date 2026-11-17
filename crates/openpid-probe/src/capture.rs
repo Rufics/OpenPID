@@ -2619,7 +2619,60 @@ fn frames(slider: bool) -> Frames {
     }
 }
 
+/// The window of the reference tool a plot was copied in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Window {
+    /// The main window, which draws the channels of a log as lines.
+    LogViewer,
+    /// The spectrum window.
+    Spectrum,
+    /// The step response window.
+    StepResponse,
+    /// The map of frequency against throttle.
+    Throttle,
+    /// The map of frequency against time.
+    Time,
+    /// The filter simulator.
+    Filters,
+    /// Any other window.
+    Other,
+}
+
+impl Window {
+    /// The window whose title holds `title`.
+    fn of(title: &str) -> Window {
+        [
+            (LOG_VIEWER, Window::LogViewer),
+            (SPECTRUM, Window::Spectrum),
+            (STEP, Window::StepResponse),
+            (THROTTLE, Window::Throttle),
+            (TIME, Window::Time),
+            (FILTERS, Window::Filters),
+        ]
+        .into_iter()
+        .find(|(t, _)| *t == title)
+        .map_or(Window::Other, |(_, w)| w)
+    }
+}
+
 impl Plan {
+    /// Every plot the plan copies as a vector graphic: the name of the
+    /// copy (without `.emf`) and the window it is copied in, which is the
+    /// window of the step before the copy is saved.
+    pub fn copies(&self) -> Vec<(String, Window)> {
+        let mut window = Window::Other;
+        let mut out = Vec::new();
+        for step in &self.steps {
+            if let Some(title) = step.window {
+                window = Window::of(title);
+            }
+            if let (true, Some(file)) = (step.action == "clip_save", &step.file) {
+                out.push((file.clone(), window));
+            }
+        }
+        out
+    }
+
     /// How many steps of the plan do `action`.
     pub fn count(&self, action: &str) -> usize {
         self.steps.iter().filter(|s| s.action == action).count()

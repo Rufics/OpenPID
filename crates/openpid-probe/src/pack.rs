@@ -14,7 +14,9 @@ use crate::model;
 use crate::signal::{AxisSamples, FlightSpec, Wave, band_bins};
 use crate::step_model;
 use crate::truth::ResponseTruth;
-use openpid_analysis::{Analysis, AnalysisCtx, Epoch, PsdAnalysis, PsdParams};
+use openpid_analysis::{
+    Analysis, AnalysisCtx, Epoch, PsdAnalysis, PsdParams, StepAnalysis, StepParams,
+};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, LogFormat, OpenOptions};
 use openpid_dsp::Fft;
 use openpid_fmt_blackbox::BlackboxFormat;
@@ -39,6 +41,11 @@ const TRUTH_FROM_ROUND: u32 = 7;
 /// Seconds left out at each end of a log before `OpenPID`'s own analysis, as
 /// the reference tool leaves them out (`docs/DESIGN.md` §6.7).
 const TRIM_S: f64 = 1.0;
+/// The last round whose `ours.json` holds the spectra alone. The packs of
+/// rounds 1 to 16 keep their bytes; from round 17 on `ours.json` also
+/// holds `OpenPID`'s step response of every probe of that window, which
+/// `openpid-probe compare` holds the reference tool's copies against.
+pub const SPECTRA_ONLY_UP_TO: u32 = 16;
 
 /// Why a pack could not be built.
 #[derive(Debug, thiserror::Error)]
@@ -217,6 +224,21 @@ pub struct OursAxis {
     pub spectra: Vec<Spectrum>,
 }
 
+/// `OpenPID`'s step response of one axis.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct OursStep {
+    /// `roll`, `pitch` or `yaw`.
+    pub axis: &'static str,
+    /// Length of the window a response is computed from, seconds.
+    pub window_s: f64,
+    /// Time of every point of the curve, ms.
+    pub time_ms: Vec<f64>,
+    /// The mean response.
+    pub mean: Vec<f64>,
+    /// "Peak": the mean of the windows' peaks, as the Peak plot draws it.
+    pub peak: f64,
+}
+
 /// What `OpenPID` computes for one probe.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct OursProbe {
@@ -226,6 +248,11 @@ pub struct OursProbe {
     pub epoch_s: (f64, f64),
     /// The three axes.
     pub axes: Vec<OursAxis>,
+    /// The step response of every axis, with the window the step response
+    /// window comes up with: for a probe of that window, from the round
+    /// after [`SPECTRA_ONLY_UP_TO`] on.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub step: Vec<OursStep>,
 }
 
 /// `ours.json`: `OpenPID`'s results on the logs of the pack.
@@ -578,7 +605,7 @@ fn logged(
 }
 
 /// The spectra of the Spectrum tab for one axis.
-fn spectra(
+pub(crate) fn spectra(
     session: &FlightSession,
     axis: Axis,
     epoch: Epoch,
@@ -864,15 +891,64 @@ pub fn log_of(probe: &Probe) -> Result<Vec<u8>, PackError> {
     })
 }
 
-/// One probe: its log, its manifest entry, `OpenPID`'s results and the
-/// model's predictions.
-fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
+/// `OpenPID`'s step response of one axis, with windows of `window_s`.
+pub(crate) fn ours_step(
+    session: &FlightSession,
+    axis: Axis,
+    epoch: Epoch,
+    window_s: f64,
+    probe: &'static str,
+) -> Result<OursStep, PackError> {
+    let ctx = AnalysisCtx {
+        session,
+        epoch: Some(epoch),
+    };
+    let params = StepParams {
+        axis,
+        window_s,
+        ..StepParams::default()
+    };
+    let step = StepAnalysis
+        .run(&ctx, &params)
+        .map_err(|e| PackError::Read {
+            probe,
+            message: format!("step response of {}: {e}", axis_name(axis)),
+        })?;
+    Ok(OursStep {
+        axis: axis_name(axis),
+        window_s,
+        time_ms: step.time_ms.iter().map(|t| rounded(*t)).collect(),
+        mean: step.mean.iter().map(|v| rounded(*v)).collect(),
+        peak: rounded(step.spread.peak_mean),
+    })
+}
+
+/// The part of a flight `OpenPID` analyses: all but its first and last
+/// second, as the reference tool.
+pub(crate) fn epoch_of(flight: &FlightSpec) -> Epoch {
+    Epoch {
+        start_s: TRIM_S,
+        end_s: flight.duration_s - TRIM_S,
+    }
+}
+
+/// The log of `probe` decoded as `OpenPID` decodes it.
+///
+/// # Errors
+/// [`PackError`] when the log cannot be written, or does not read back
+/// whole as one session.
+pub fn session_of(probe: &Probe) -> Result<FlightSession, PackError> {
+    read_back(probe, &log_of(probe)?)
+}
+
+/// The written log `bytes` of `probe`, read back; it must be one session
+/// with every sample of the flight and no damage.
+fn read_back(probe: &Probe, bytes: &[u8]) -> Result<FlightSession, PackError> {
     let id = probe.id;
     let flight = &probe.flight;
-    let bytes = log_of(probe)?;
     let read = |message: String| PackError::Read { probe: id, message };
     let mut log = BlackboxFormat::new()
-        .open(&bytes, &OpenOptions::default())
+        .open(bytes, &OpenOptions::default())
         .map_err(|e| read(e.to_string()))?;
     if log.sessions.len() != 1 {
         return Err(read(format!(
@@ -890,11 +966,19 @@ fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
             damage.corrupt_frames
         )));
     }
-    let epoch = Epoch {
-        start_s: TRIM_S,
-        end_s: flight.duration_s - TRIM_S,
-    };
+    Ok(session)
+}
+
+/// One probe: its log, its manifest entry, `OpenPID`'s results and the
+/// model's predictions.
+fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
+    let id = probe.id;
+    let flight = &probe.flight;
+    let bytes = log_of(probe)?;
+    let session = read_back(probe, &bytes)?;
+    let epoch = epoch_of(flight);
     let mut axes = Vec::new();
+    let mut step = Vec::new();
     let mut ours = Vec::new();
     for (axis, purpose) in Axis::ALL.into_iter().zip(probe.purpose) {
         let spec = flight.axis(axis);
@@ -930,6 +1014,10 @@ fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
             axis: axis_name(axis),
             spectra: spectra(&session, axis, epoch, id)?,
         });
+        if round > SPECTRA_ONLY_UP_TO && probe.area == Area::StepResponse {
+            let window_s = StepParams::default().window_s;
+            step.push(ours_step(&session, axis, epoch, window_s, id)?);
+        }
     }
     let entry = ProbeEntry {
         id,
@@ -948,6 +1036,7 @@ fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
         id,
         epoch_s: (epoch.start_s, epoch.end_s),
         axes: ours,
+        step,
     };
     Ok(Built {
         entry,
@@ -1090,5 +1179,30 @@ mod tests {
         assert!(amplitude_at(&x, 70.0, fs, 0) < 1e-9);
         assert_eq!(amplitude_at(&[], 50.0, fs, 0), 0.0);
         assert_eq!(rounded(1.234_567_89), 1.234_568);
+    }
+
+    #[test]
+    fn ours_holds_the_step_response_from_the_round_after_sixteen_only() {
+        // the shortest log of the step response window
+        let probe = catalogue::ROUNDS
+            .iter()
+            .flat_map(|r| catalogue::round(*r).unwrap_or_default())
+            .filter(|p| p.area == Area::StepResponse)
+            .min_by_key(|p| p.flight.len())
+            .unwrap_or_else(|| unreachable!());
+        let later = build_probe(&probe, SPECTRA_ONLY_UP_TO + 1).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(later.ours.step.len(), 3);
+        for step in &later.ours.step {
+            assert_eq!(step.window_s, 2.0);
+            assert_eq!(step.time_ms.len(), step.mean.len());
+            assert!(step.peak.is_finite() && step.peak > 0.5);
+        }
+        let text = String::from_utf8(json(&later.ours)).unwrap_or_default();
+        assert!(text.contains("\"step\""));
+        // the packs of rounds 1 to 16 keep their bytes: no such section
+        let then = build_probe(&probe, 4).unwrap_or_else(|e| panic!("{e}"));
+        assert!(then.ours.step.is_empty());
+        let text = String::from_utf8(json(&then.ours)).unwrap_or_default();
+        assert!(!text.contains("\"step\""));
     }
 }

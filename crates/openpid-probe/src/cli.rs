@@ -1,6 +1,7 @@
 //! The command line of `openpid-probe`.
 
 use crate::catalogue;
+use crate::compare;
 use crate::pack;
 use std::io::Write;
 use std::path::PathBuf;
@@ -12,6 +13,7 @@ openpid-probe - calibration probes: synthetic flights of exactly known content
 USAGE:
     openpid-probe list
     openpid-probe pack <round> --out <dir> [--built-from <commit>]
+    openpid-probe compare <round> <capture-results-dir> [--ours <ours.json>] [--out <report.md>]
 
 COMMANDS:
     list   The rounds and their probes: one log per line, with what each axis settles.
@@ -23,6 +25,17 @@ COMMANDS:
            0.94 of the reference tool through the round on Windows. The same round
            always gives the same bytes.
            --built-from records the commit in the manifest.
+    compare
+           Hold every vector copy (.emf) in <capture-results-dir> that the round's
+           capture plan made against OpenPID's own result for the same log and
+           setting, and write a Markdown report: one row per copy with its numbers
+           and PASS or FAIL against the tolerances, and a summary. OpenPID's results
+           are taken from --ours (the pack's ours.json, or a file of the schema in
+           docs/calibration/PROTOCOL.md) and computed from the round's logs, as pack
+           computes them, where the file has none. Without --out the report is
+           printed. Exits with 1 when a copy fails or cannot be read; a copy that is
+           not the plan's, or whose setting OpenPID has no counterpart for, is listed
+           as not compared.
 
 ROUNDS:
     1 to 3   The spectrum. Round 3 is the hold-out: a flight as a craft flies it, which
@@ -126,8 +139,49 @@ pub fn run(args: &[String], out: &mut dyn Write) -> Result<(), String> {
             }
             Ok(())
         }
+        Some("compare") => run_compare(&args[1..], out),
         Some("--help" | "-h" | "help") => print(out, USAGE.to_string()),
         Some(other) => Err(format!("unknown command {other}\n\n{USAGE}")),
         None => Err(USAGE.to_string()),
+    }
+}
+
+/// `compare <round> <dir> [--ours <file>] [--out <file>]`.
+fn run_compare(args: &[String], out: &mut dyn Write) -> Result<(), String> {
+    let mut positional = Vec::new();
+    let mut ours: Option<PathBuf> = None;
+    let mut report: Option<PathBuf> = None;
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--ours" => ours = Some(rest.next().ok_or("--ours needs a file")?.into()),
+            "--out" => report = Some(rest.next().ok_or("--out needs a file")?.into()),
+            other if other.starts_with("--") => {
+                return Err(format!("unknown option {other}\n\n{USAGE}"));
+            }
+            other => positional.push(other),
+        }
+    }
+    let [round, dir] = positional[..] else {
+        return Err(format!("compare needs a round and a folder\n\n{USAGE}"));
+    };
+    let round = round
+        .parse::<u32>()
+        .map_err(|_| format!("the round must be a number, not {round}"))?;
+    let result = compare::compare(round, dir.as_ref(), ours.as_deref())?;
+    let text = result.markdown();
+    match &report {
+        Some(path) => {
+            std::fs::write(path, &text)
+                .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+            writeln!(out, "report written to {}", path.display())
+        }
+        None => write!(out, "{text}"),
+    }
+    .map_err(|e| format!("cannot print: {e}"))?;
+    if result.passed() {
+        Ok(())
+    } else {
+        Err(format!("round {round}: not every copy passed"))
     }
 }
