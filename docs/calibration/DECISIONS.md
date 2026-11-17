@@ -227,8 +227,8 @@ Taken by the owner on 2026-11-11:
 | The exact value | none: a choice of what the Log viewer offers |
 | Options | **A.** Add nothing; the Log viewer stays as it is. **B.** Add the line smoothing, as the reference tool computes it (a list with its five levels, off by default): it is known exactly and makes a noisy gyro readable. **C.** B, and a period measure: the time between the cursor and a second point and its frequency. D-term(pf) is not offered in any option: its scale is not known, and OpenPID shows the logged D term |
 | Recommendation | B. The smoothing is the one of the four that is known to the last digit and that changes how a trace reads; a period can already be read from the cursor's time, and a drawn line adds nothing to the data |
-| The owner's decision | |
-| Carried out by | |
+| The owner's decision | **C**, 2026-11-17: the line smoothing and a period measure |
+| Carried out by | in progress (on its own from `master`) |
 
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
