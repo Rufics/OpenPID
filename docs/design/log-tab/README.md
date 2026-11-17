@@ -67,6 +67,29 @@ right panel as on the other reworked tabs.
   bounds drag on any row; the cursor (click, tap, long press) gives
   **Position** in the panel and **start = cursor** / **end = cursor**.
 - One log at a time, the docked one, as on Freq × time.
+- **Line smoothing** (`LogDisplay::smoothing`, `LineSmoothing`; the owner's
+  decision D-011 = C, 2026-11-17): a list in the panel under Y scale with
+  off (the default), low, medium, med-high and high. Each level is a local
+  quadratic regression with tricube weights `(1 − (|d|/h)³)³` over a span
+  of 11, 21, 41 or 81 samples (`openpid_dsp::smooth::QuadraticLoess`): the
+  window is centred on the sample, shifted to stay inside the data at the
+  two ends, and invalid samples take no part and stay invalid. The span is
+  counted in samples, because the reference tool was seen at 1 kHz only and
+  whether it counts samples or milliseconds is not known. The smoothing
+  applies to every line drawn and to the values at the cursor, never to the
+  channels, the analyses or the exports. The weights of each level are
+  computed once; a line is smoothed in chunks of 4096 samples as they come
+  into view (each window reaching its `h` samples beyond) and kept until
+  the level or the log changes (`SmoothCache`), so panning and redrawing
+  cost nothing more; off frees them. Smoothing 480 000 samples (60 s at
+  8 kHz) takes about 10 ms per line at "high" in a release build.
+- **Period** (`ViewerState::period`, `ViewerState::mark_s`; D-011 = C): a
+  check box under the cursor rows. While it is on, a click, a tap or a long
+  press places a second mark (the first one places the cursor when there
+  is none), drawn through every row like the cursor in vermilion; the panel
+  reads "Δt = 6681 ms · 0.1497 Hz" (whole milliseconds from 100 ms, else
+  one decimal; the frequency to four significant digits). Off removes the
+  mark. Both marks are display state, not saved.
 
 ## Tests
 
@@ -77,7 +100,13 @@ places the cursor); `channel_filter_and_toggles_edit_the_channel_list`
 (folded list, filter); `cursor_buttons_set_the_epoch`,
 `epoch_bounds_can_be_dragged_on_the_plot` and
 `horizontal_pinch_zooms_time_only_and_a_long_press_places_the_cursor`
-unchanged in behaviour.
+unchanged in behaviour. D-011: `line_smoothing_smooths_what_the_rows_draw`
+(the five levels, off by default, "high" draws the regression of 81
+samples and reads the cursor from it, the channel untouched, the motors
+smoothed too), `period_places_a_second_mark_and_reads_out_the_time`,
+`a_long_press_places_the_second_mark`, `the_period_read_out`, and the
+kernel, quadratic, end, invalid-sample and "off" tests of
+`openpid_dsp::smooth`.
 
 ## Implementation
 

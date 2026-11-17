@@ -396,6 +396,8 @@ What the reference tool shows by default, from the owner's PIDtoolbox Pro v0.9 s
 | Log viewer | Quantities shown | Gyro, Set point, Motors, Throttle | the same | same |
 | Log viewer | Sticks | two boxes beside the plots | a card on the throttle / motors row, with the flight modes | the owner's choice (docs/design/log-sticks) |
 | Log viewer | Flight-mode changes | a dashed line through the panels, the names under the throttle row | the same, as an option that is off | the owner: off by default |
+| Log viewer | Line smoothing | off; low / med / med-high / high: a local quadratic regression with tricube weights over 11 / 21 / 41 / 81 samples (measured at 1 kHz only) | the same five levels, off; the span counted in samples; the lines and the values at the cursor only, never the channels or the analyses | the owner's decision D-011 (C): known exactly, it makes a noisy gyro readable; whether the reference tool counts samples or milliseconds is not known |
+| Log viewer | Period | a red mark at each of two clicked times, "6681ms, 0.1497Hz" | "Period" in the panel: the next click or long press places a second mark beside the cursor, "Δt = 6681 ms · 0.1497 Hz" | the owner's decision D-011 (C) |
 | Sliders | Slider tool | start gains and five ratios (P:D, P:I, roll:pitch, yaw, master) | the firmware's own sliders when the log has them, else the same five ratios over the logged gains | Betaflight's sliders give commands to paste; the ratios keep every other firmware from a dead end |
 
 ### 6.8 Cache and incrementality
