@@ -19,8 +19,8 @@ tests. It holds:
 | File | What it is |
 |---|---|
 | `*.bbl` | the probe logs, Betaflight 2025.12 |
-| `manifest.json` | what is true about each log (with its size and FNV-1a hash) |
-| `ours.json` | what OpenPID computes for the same logs: the spectra of every axis; from round 17 on also the step response of every log of that window |
+| `manifest.json` | what is true about each log (with its size and FNV-1a hash); from round 17 on also what is true about the channels beyond the gyro a log carries (`channels`), the three answers of the stick's path (`inputs` of an axis) and the filters typed into the filter simulator (`filters`) |
+| `ours.json` | what OpenPID computes for the same logs: the spectra of every axis; from round 17 on also the step response of every log of that window, and for a log of the spectrum window's list of channels the spectra of those channels |
 | `predictions.json` | where a model exists, what it expects the reference tool to show, written before the run |
 | `steps.json`, `capture.ps1`, `run.cmd`, `README.txt` | the capture script and its steps |
 
@@ -72,6 +72,7 @@ compared*, never left out.
 | Copy | Held against | Tolerance |
 |---|---|---|
 | spectrum | the solid curve (filtered gyro), dB against frequency, with OpenPID's spectrum of that channel (1 s segments for the plot below 100 Hz, 0.25 s for the full range); largest and median difference | 0.05 dB |
+| spectrum, one entry of the list of channels | every line of the copy, of any pen, with OpenPID's spectrum of the channel the entry stands for (Gyro, Gyro prefilt, Dterm, Pterm, Fterm, Set point, PID error, PIDsum, debug of the axis's place; Motors: each of the four motors); the line and the channel that agree best. "Dterm prefilt" has no counterpart and is only photographed | 0.05 dB |
 | step response | the mean response against time with OpenPID's at the copy's window length | 0.01 |
 | step response, Peak plot | the middle of the bar with OpenPID's Peak | 0.01 |
 | throttle and time maps | every pixel inside a cell of OpenPID's map, as a colour step between the two ends of the copy's colour bar, with OpenPID's value there on the same scale (decibels when the bar's lower end is below 0); a copy without a bar takes the roll plot's | 99 % of the pixels within one step |
@@ -115,7 +116,10 @@ section may be left out:
 ```
 
 - `probes[].axes[].spectra[]`: frequencies in Hz and levels in dB; `channel`
-  is `gyro` (the only one compared) or `gyro_unfiltered`.
+  is `gyro` or `gyro_unfiltered`, or one of `dterm`, `pterm`, `fterm`,
+  `setpoint`, `piderror`, `pidsum`, `debug` (the debug value of the axis's
+  place) and `motor1` … `motor4` (listed under roll), for the copies of the
+  spectrum window with one entry of its list of channels chosen.
 - `probes[].step[]`: times in ms, the mean response, the Peak.
 - `maps[]`: `window` is `throttle` or `time`; `x` are the columns (throttle
   in percent or time in seconds), `y` the rows in Hz, `z` the amplitudes row
@@ -124,7 +128,9 @@ section may be left out:
 - `filters[]`: the filter simulator does not read a log, so its curves can
   only come from a file: one entry per copy, by the copy's name, each curve
   in the units of the plot (Hz across; a ratio, ms, degrees or the response
-  up).
+  up). The filters a plan types in are in the `filters` section of the
+  manifest (round 17: `r17-filters-verify-*`), exactly, so that OpenPID's
+  curves for them can be computed into such a file.
 
 ## 5. Where the findings go
 

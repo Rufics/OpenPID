@@ -388,7 +388,7 @@ fn an_unknown_round_is_refused() {
     );
     assert_eq!(
         catalogue::ROUNDS,
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
     );
 }
 
@@ -1449,4 +1449,153 @@ fn round_16_carries_three_logs_of_earlier_rounds_byte_for_byte() {
         eleven.manifest.probes[6].fnv1a64,
         pack.manifest.probes[2].fnv1a64
     );
+}
+
+/// Round 17, built once for every test.
+fn round_17() -> &'static Pack {
+    static PACK: OnceLock<Pack> = OnceLock::new();
+    PACK.get_or_init(|| pack::build(17, "test").unwrap())
+}
+
+#[test]
+fn the_pack_of_round_17_says_what_every_channel_and_every_input_holds() {
+    let pack = round_17();
+    let files = pack.files();
+    let file = |name: &str| &files.iter().find(|(n, _)| n == name).unwrap().1;
+    let json = |name: &str| serde_json::from_slice::<serde_json::Value>(file(name)).unwrap();
+    let manifest = json("manifest.json");
+    assert_eq!(manifest["round"], 17);
+    assert_eq!(manifest["probes"].as_array().unwrap().len(), 13);
+    let probe = |id: &str| {
+        let all = manifest["probes"].as_array().unwrap();
+        all.iter().find(|p| p["id"] == id).unwrap().clone()
+    };
+    // the filters typed into the filter simulator, exactly
+    let filters = &manifest["filters"];
+    assert_eq!(filters["loop_rate_hz"], 4000);
+    assert_eq!(
+        filters["lowpass_1"],
+        serde_json::json!({"kind": "pt2", "hz": 210})
+    );
+    assert_eq!(
+        filters["lowpass_2"],
+        serde_json::json!({"kind": "biquad-butter", "hz": 420})
+    );
+    assert_eq!(filters["notch"], serde_json::json!({"hz": 330, "q": 2.5}));
+    // every channel of the list with its tone, and its level
+    let channels = probe("i1-chan-2k")["channels"].as_array().unwrap().clone();
+    let entry = |field: &str| {
+        channels
+            .iter()
+            .find(|c| c["field"] == field)
+            .unwrap()
+            .clone()
+    };
+    let tone = |field: &str, k: usize| entry(field)["truth"]["tones"][k].clone();
+    for (field, listed, hz, size) in [
+        ("axisP[0]", "Pterm", 120.0, 4.0),
+        ("axisD[0]", "Dterm", 180.0, 3.0),
+        ("axisF[0]", "Fterm", 60.0, 5.0),
+        ("setpoint[0]", "Set point", 30.0, 6.0),
+        ("motor[0]", "Motors", 85.0, 1.5),
+        ("debug[0]", "debug", 330.0, 8.0),
+        ("pidError[0]", "PID error", 30.0, 6.0),
+        ("pidSum[0]", "PIDsum", 120.0, 4.0),
+    ] {
+        assert_eq!(entry(field)["listed_as"], listed, "{field}");
+        let t = tone(field, 0);
+        assert_eq!(
+            (t["hz"].as_f64(), t["amplitude"].as_f64()),
+            (Some(hz), Some(size))
+        );
+        let logged = t["logged_amplitude"].as_f64().unwrap();
+        assert!((logged - size).abs() < 0.02 * size, "{field}: {logged}");
+        let power = 10.0 * (size * size / 2.0f64).log10();
+        assert!((t["power_db"].as_f64().unwrap() - power).abs() < 1e-5);
+    }
+    assert_eq!(tone("pidError[0]", 1)["hz"], 240.0);
+    assert!(channels.iter().all(|c| c["field"] != "axisD[2]"));
+    let motor = entry("motor[0]");
+    assert_eq!(motor["logged_per_unit"], 18.89);
+    assert_eq!(motor["reference_per_unit"], 0.9445);
+    assert_eq!(motor["unit"], "percent of the motor outputs' range");
+    // OpenPID's spectra of those channels, the motors under roll
+    let ours = json("ours.json");
+    let ours_probe = |id: &str| {
+        let all = ours["probes"].as_array().unwrap();
+        all.iter().find(|p| p["id"] == id).unwrap().clone()
+    };
+    let names = |id: &str, axis: usize| -> Vec<String> {
+        let spectra = ours_probe(id)["axes"][axis]["spectra"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let mut names: Vec<String> = spectra
+            .iter()
+            .map(|s| s["channel"].as_str().unwrap().to_string())
+            .collect();
+        names.dedup();
+        names
+    };
+    assert_eq!(
+        names("i1-chan-2k", 0),
+        [
+            "gyro",
+            "gyro_unfiltered",
+            "dterm",
+            "pterm",
+            "fterm",
+            "setpoint",
+            "piderror",
+            "pidsum",
+            "debug",
+            "motor1",
+            "motor2",
+            "motor3",
+            "motor4"
+        ]
+    );
+    assert!(!names("i1-chan-2k", 2).contains(&"dterm".to_string()));
+    assert!(!names("i1-chan-2k", 2).contains(&"motor1".to_string()));
+    assert_eq!(names("e1-spec-1k", 0), ["gyro", "gyro_unfiltered"]);
+    // a P term of a tone of 4 at 120 Hz stands out of its floor
+    let pterm = &ours_probe("i1-chan-2k")["axes"][0]["spectra"][7];
+    assert_eq!(
+        (pterm["channel"].as_str(), pterm["segment_s"].as_f64()),
+        (Some("pterm"), Some(1.0))
+    );
+    // the three answers of the stick's path
+    let path = probe("j1-path-2k");
+    let inputs = |axis: usize| path["axes"][axis]["inputs"].clone();
+    let at = |axis: usize, curve: &str, ms: usize| inputs(axis)[curve][ms].as_f64().unwrap();
+    assert_eq!(inputs(0)["time_ms"].as_array().unwrap().len(), 501);
+    // roll: the RC command asks for half the setpoint 40 ms later
+    assert!((at(0, "rc_command", 0) - 2.0 * at(0, "setpoint", 40)).abs() < 2e-6);
+    assert!((at(0, "rc_command", 300) - 2.0).abs() < 1e-3);
+    // a kick of the size of the move for 10 ms halves the first 10 ms
+    assert!((at(0, "setpoint_and_feedforward", 8) - 0.5 * at(0, "setpoint", 8)).abs() < 1e-6);
+    assert!((at(0, "setpoint_and_feedforward", 300) - 1.0).abs() < 1e-3);
+    // pitch: no echo; yaw: no feedforward
+    assert_eq!(inputs(1)["rc_command"], inputs(1)["setpoint"]);
+    assert_eq!(inputs(2)["setpoint_and_feedforward"], inputs(2)["setpoint"]);
+    assert!(probe("e3-step-2k")["axes"][0].get("inputs").is_none());
+    assert!(probe("e3-step-2k").get("channels").is_none());
+    // predictions of both windows; OpenPID's step response of that window
+    let predictions = json("predictions.json");
+    assert_eq!(predictions["probes"].as_array().unwrap().len(), 3);
+    assert_eq!(predictions["step"].as_array().unwrap().len(), 3);
+    assert_eq!(predictions["assumes"].as_array().unwrap().len(), 6);
+    assert_eq!(
+        ours_probe("j1-path-2k")["step"].as_array().unwrap().len(),
+        3
+    );
+    // the logs read back whole, as the manifest says
+    for (name, bytes) in &pack.logs {
+        let id = name.trim_end_matches(".bbl");
+        assert_eq!(
+            probe(id)["bytes"].as_u64(),
+            Some(bytes.len() as u64),
+            "{name}"
+        );
+    }
 }

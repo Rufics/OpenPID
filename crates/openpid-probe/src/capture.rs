@@ -177,7 +177,53 @@ mod spectrum_at {
     pub const SMOOTHING_X: u32 = 3591;
     /// The "Y max" box.
     pub const Y_MAX: (u32, u32) = (3610, 1612);
+    /// The "Y min" box beside it, measured for round 17 in the picture
+    /// round 16 saved of the window (`r16-spectrum-run`: 3686 × 2357
+    /// pixels, scaled to the frame `shot`; the box is pixels 3372 to 3452
+    /// across and 1539 to 1594 down there).
+    pub const Y_MIN: (u32, u32) = (3499, 1612);
+    /// The middle of the first row ("Gyro") of the list of channels below
+    /// the list of logs, measured in the same picture: the list is pixels
+    /// 3310 to 3633 across and 493 to 916 down there, its rows 37 pixels
+    /// high (38.1 here), the first two highlighted as the window comes up
+    /// (494 to 567). The rows of the pictures of rounds 8 to 11 lie on the
+    /// same pixels. Eleven rows and no scroll bar: [`super::SPECTRUM_CHANNELS`].
+    pub const CHANNEL: (u32, u32) = (3515, 528);
+    /// The distance between two rows of that list, tenths of a pixel.
+    pub const CHANNEL_ROW_TENTHS: u32 = 381;
+
+    /// The middle of row `row` (from 0) of the list of channels.
+    pub fn channel(row: usize) -> (u32, u32) {
+        (
+            CHANNEL.0,
+            CHANNEL.1 + (CHANNEL_ROW_TENTHS * row as u32 + 5) / 10,
+        )
+    }
 }
+
+/// The entries of the spectrum window's list of channels from the top, as
+/// version 0.94 lists them (round 16's picture): the name in the files,
+/// the entry, and whether the plots are copied after a pick, which they
+/// are for every entry `OpenPID` has a spectrum of. "Test Signal", which
+/// version 0.9 listed, is not in this version's list.
+pub const SPECTRUM_CHANNELS: [(&str, &str, bool); 11] = [
+    ("gyro", "Gyro", true),
+    ("prefilt", "Gyro prefilt", true),
+    ("dterm", "Dterm", true),
+    ("dterm-prefilt", "Dterm prefilt", false),
+    ("pterm", "Pterm", true),
+    ("piderror", "PID error", true),
+    ("setpoint", "Set point", true),
+    ("fterm", "Fterm", true),
+    ("pidsum", "PIDsum", true),
+    ("motors", "Motors", true),
+    ("debug", "debug", true),
+];
+/// The lower end of the spectrum plots round 17 types for the other
+/// channels, dB, and the one the window comes up with: the floor of a
+/// motor line, the logged number over 20, lies near -67 dB.
+const Y_MIN_CHANNELS: &str = "-90";
+const Y_MIN_DEFAULT: &str = "-50";
 
 /// Controls and plots of the window of frequency against throttle of
 /// version 0.94, in a picture the script saves. Read off a picture of the
@@ -705,6 +751,14 @@ struct StepLog<'a> {
 }
 
 impl StepLog<'_> {
+    /// The log chosen in row `row` (from 0) of the window's list: a click
+    /// selects it alone.
+    fn choose(self, steps: &mut Vec<Step>, row: usize) {
+        let y = log_row(step_at::LOG.1, row);
+        steps.push(step_click(&format!("log {}", self.id), (step_at::LOG.0, y)));
+        steps.push(pause(300));
+    }
+
     /// A Run, waited for, and a picture of what it drew when `picture`
     /// names the setting the picture is of.
     fn run(self, steps: &mut Vec<Step>, picture: Option<&str>) {
@@ -828,23 +882,13 @@ fn step_response(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
     let first = probes.iter().position(is_step);
     let last = probes.iter().rposition(is_step);
 
-    steps.push(click(LOG_VIEWER, "log", "Step Resp Tool", log_at::STEP));
-    steps.push(Step {
-        wait_s: Some(900),
-        ..settle(STEP, None, 2.0)
-    });
-    steps.push(shot(STEP, format!("r{round}-step-open")));
+    step_open(steps, round);
     for (row, probe) in probes.iter().enumerate().filter(|(_, p)| is_step(p)) {
         let log = StepLog {
             round,
             id: probe.id,
         };
-        let y = log_row(step_at::LOG.1, row);
-        steps.push(step_click(
-            &format!("log {}", probe.id),
-            (step_at::LOG.0, y),
-        ));
-        steps.push(pause(300));
+        log.choose(steps, row);
         log.plots(steps, "");
         // where the window is set back to how it came up, the Run of what
         // follows draws the plots anew; where nothing follows, one is
@@ -862,6 +906,17 @@ fn step_response(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
             log.settings(steps, again, is_last);
         }
     }
+}
+
+/// The step response window opened from the main window, and a picture of
+/// it as it comes up.
+fn step_open(steps: &mut Vec<Step>, round: u32) {
+    steps.push(click(LOG_VIEWER, "log", "Step Resp Tool", log_at::STEP));
+    steps.push(Step {
+        wait_s: Some(900),
+        ..settle(STEP, None, 2.0)
+    });
+    steps.push(shot(STEP, format!("r{round}-step-open")));
 }
 
 /// What the plan of a round of the step response does, for the reader of
@@ -1704,6 +1759,106 @@ const LOWPASS_TYPES: [(usize, &str); 4] = [
 /// The place of "pt1" in those lists.
 const LOWPASS_PT1: usize = 1;
 
+/// A low-pass of the filter simulator: its type as its list names it and
+/// its cut-off.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct LowpassSet {
+    /// `pt1`, `pt2`, `pt3`, `biquad-butter` or `biquad-bessel`.
+    pub kind: &'static str,
+    /// Cut-off, Hz.
+    pub hz: u32,
+}
+
+/// The RPM notches of the filter simulator.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct RpmSet {
+    /// Harmonics: notches at the frequency and at its multiples.
+    pub harmonics: u32,
+    /// The frequency of the first, Hz.
+    pub hz: u32,
+    /// Their Q (the box holds a hundred times it).
+    pub q: f64,
+}
+
+/// The static notch of the filter simulator, set by its "Notch Q".
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct NotchSet {
+    /// Centre, Hz.
+    pub hz: u32,
+    /// Its Q (the box holds a hundred times it).
+    pub q: f64,
+}
+
+/// A set of filters typed into the filter simulator, which reads no log:
+/// what a manifest says of it, so that `OpenPID`'s curves can be computed
+/// for exactly these filters.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FilterSet {
+    /// The loop rate of its list, Hz: the rate the filters run at.
+    pub loop_rate_hz: u32,
+    /// Motors: the RPM notches count once a motor in the printed delays.
+    pub motors: u32,
+    /// Low-pass 1.
+    pub lowpass_1: LowpassSet,
+    /// Low-pass 2.
+    pub lowpass_2: LowpassSet,
+    /// The RPM notches, as the window comes up.
+    pub rpm: RpmSet,
+    /// The static notch.
+    pub notch: NotchSet,
+    /// How the reference tool computes the filters and its plots (rounds
+    /// 13, 14 and 16).
+    pub rules: [&'static str; 5],
+}
+
+/// The loop rates of the filter simulator's list, Hz, in its order.
+const LOOP_RATES: [u32; 5] = [8000, 4000, 3200, 2000, 1000];
+/// The types of a low-pass in the filter simulator's lists, in their order.
+const LOWPASS_KINDS: [&str; 6] = ["off", "pt1", "pt2", "pt3", "biquad-butter", "biquad-bessel"];
+
+/// The set of filters round 17 types into the filter simulator, made for
+/// no question: low-pass 1 of a type and a cut-off no round set, low-pass
+/// 2 of another type, a static notch at another centre and Q, at a loop
+/// rate of 4 kHz; the four motors and the RPM notches as the window comes
+/// up.
+pub const VERIFY_FILTERS: FilterSet = FilterSet {
+    loop_rate_hz: 4000,
+    motors: 4,
+    lowpass_1: LowpassSet {
+        kind: "pt2",
+        hz: 210,
+    },
+    lowpass_2: LowpassSet {
+        kind: "biquad-butter",
+        hz: 420,
+    },
+    rpm: RpmSet {
+        harmonics: 3,
+        hz: 100,
+        q: 5.0,
+    },
+    notch: NotchSet { hz: 330, q: 2.5 },
+    rules: [
+        "pt1: y += k·(x − y) with k = dt / (1 / (2π·fc) + dt) and dt = 1 / loop rate; pt2 and \
+         pt3: two and three of them in a row, each at fc / sqrt(2^(1/n) − 1)",
+        "biquad-butter: the second-order low-pass b = [(1 − cos w) / 2, 1 − cos w, \
+         (1 − cos w) / 2], a = [1 + α, −2·cos w, 1 − α], w = 2π·fc / loop rate, \
+         α = sin w / (2·Q), Q = 1/√2",
+        "a notch: b = [1, −2·cos w, 1], a = [1 + α, −2·cos w, 1 − α] with its own Q; the RPM \
+         notches at the frequency and at its multiples up to the harmonics",
+        "the plots of a filter H: |H(f)|; the phase delay −arg H(f) / (2π·f) in ms; arg H(f) in \
+         degrees; the response to a unit step, sample by sample",
+        "the printed delay of a filter is its phase delay at 1 Hz; a column prints the sum of \
+         its filters, an RPM notch counted once a motor; the total is the sum of the columns",
+    ],
+};
+
+/// The filters the plan of `round` types into the filter simulator, when
+/// it types a set of its own.
+pub fn filter_set(round: u32) -> Option<FilterSet> {
+    (round == VERIFICATION).then_some(VERIFY_FILTERS)
+}
+
 /// The filter simulator asked: the window opened from the main window; a
 /// picture and copies of its eight plots as it comes up; a picture of each
 /// of its lists held open; each of its three switches set, a picture (and
@@ -2028,6 +2183,11 @@ fn viewer_lines(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) -> bool {
 /// The round that asks every window what the rounds before it left open:
 /// its plan is made for the logs of that round and for no others.
 pub const OPEN_ENDS: u32 = 16;
+/// The verification round: every window asked again on logs made for no
+/// question, the other channels of the spectrum window, the stick's path
+/// into the step response and two leftovers of round [`OPEN_ENDS`]. Its
+/// plan is made for its own logs.
+pub const VERIFICATION: u32 = 17;
 /// How long the main window is given to draw before its picture is taken,
 /// after a log or a smoothing level was chosen or a value was typed,
 /// milliseconds. A fixed time: the script cannot wait for this window to
@@ -2066,6 +2226,16 @@ fn viewer_ticks(steps: &mut Vec<Step>, lines: &[&str], back: bool) {
         steps.push(click(LOG_VIEWER, "log", &format!("{name} {state}"), at));
         steps.push(pause(400));
     }
+}
+
+/// A level of the line smoothing of the main window chosen in its list,
+/// and the time the window is given to draw.
+fn viewer_smoothing(steps: &mut Vec<Step>, (level, at): (&str, (u32, u32))) {
+    let list = viewer_at::SMOOTHING_LIST;
+    steps.push(viewer_click("line smoothing (the list)", list));
+    steps.push(pause(600));
+    steps.push(viewer_click(&format!("line smoothing {level}"), at));
+    steps.push(pause(VIEWER_DRAW_MS));
 }
 
 /// A number typed into the y scale of the main window, and the time the
@@ -2147,21 +2317,28 @@ impl<'a> ViewerLog<'a> {
     fn samples(self, steps: &mut Vec<Step>) {
         self.select(steps);
         self.copies(steps, "open", &[0, 1, 2]);
-        let pick = |steps: &mut Vec<Step>, (level, at): (&str, (u32, u32))| {
-            let list = viewer_at::SMOOTHING_LIST;
-            steps.push(viewer_click("line smoothing (the list)", list));
-            steps.push(pause(600));
-            steps.push(viewer_click(&format!("line smoothing {level}"), at));
-            steps.push(pause(VIEWER_DRAW_MS));
-        };
         for item in viewer_at::SMOOTHING {
             let what = format!("smooth-{}", item.0);
-            pick(steps, item);
+            viewer_smoothing(steps, item);
             self.shot(steps, &what);
             self.copies(steps, &what, &[0, 2]);
         }
-        pick(steps, viewer_at::SMOOTHING[0]);
+        viewer_smoothing(steps, viewer_at::SMOOTHING[0]);
         self.next(steps, 3);
+    }
+
+    /// The log that counts its samples at another rate: the roll plot (the
+    /// pulses) as it comes up, with the line smoothing off, and at "med",
+    /// a picture of each; "off" again.
+    fn smoothing_pair(self, steps: &mut Vec<Step>) {
+        self.select(steps);
+        self.copies(steps, "smooth-off", &[0]);
+        let med = viewer_at::SMOOTHING[2];
+        viewer_smoothing(steps, med);
+        let what = format!("smooth-{}", med.0);
+        self.shot(steps, &what);
+        self.copies(steps, &what, &[0]);
+        viewer_smoothing(steps, viewer_at::SMOOTHING[0]);
     }
 
     /// The log whose gyro rises and falls evenly: the lower plot as it
@@ -2330,6 +2507,227 @@ fn open_ends(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
     });
 }
 
+/// The row of the log `id` among `probes`, which is its row in the tool's
+/// lists (the logs are opened in the order of their names).
+fn row_of(probes: &[Probe], id: &str) -> Option<usize> {
+    probes.iter().position(|p| p.id == id)
+}
+
+/// A log of the spectrum window as the window comes up (round 17): the log
+/// chosen in row `row` of its list, a Run, a picture and copies of the six
+/// plots at "medium".
+fn spectrum_as_it_comes(steps: &mut Vec<Step>, round: u32, id: &str, row: usize) {
+    let at = |name: &str, position: (u32, u32)| click(SPECTRUM, "shot", name, position);
+    let y = log_row(spectrum_at::LOG.1, row);
+    steps.push(Step {
+        mark: Some(true),
+        ..at(&format!("log {id}"), (spectrum_at::LOG.0, y))
+    });
+    steps.push(pause(250));
+    steps.push(at("Run", spectrum_at::RUN));
+    steps.push(settle(SPECTRUM, Some(20.0), 1.2));
+    let level = "medium";
+    steps.push(shot(SPECTRUM, spectrum_shot(round, id, level)));
+    for (axis, column) in copied(round, level) {
+        copy_plot(
+            steps,
+            axis,
+            column,
+            spectrum_copy(round, id, level, axis, column),
+        );
+    }
+}
+
+/// Name of a picture or of a copied plot of the spectrum window with one
+/// channel of its list chosen: `channel` is its name in the files, `plot`
+/// the axis and the column ("" for a picture of the window).
+pub fn channel_file(round: u32, probe: &str, channel: &str, plot: &str) -> String {
+    named(format!("r{round}-{probe}-spectrum"), [channel, plot])
+}
+
+/// The other channels of the spectrum window's list (S8): the log chosen
+/// in row `row`, the plots' lower end typed down to [`Y_MIN_CHANNELS`], a
+/// Run and a picture of the window with its list as it comes up; then
+/// every entry of [`SPECTRUM_CHANNELS`] picked in turn, a Run and a picture
+/// after each pick, and the plots of roll copied, below 100 Hz and over
+/// the whole range, for the entries `OpenPID` has a counterpart of. "Gyro"
+/// is picked again at the end, and the lower end typed back.
+fn spectrum_channels(steps: &mut Vec<Step>, round: u32, id: &str, row: usize) {
+    let at = |name: &str, position: (u32, u32)| click(SPECTRUM, "shot", name, position);
+    let y = log_row(spectrum_at::LOG.1, row);
+    steps.push(at(&format!("log {id}"), (spectrum_at::LOG.0, y)));
+    steps.push(pause(250));
+    spectrum_type(steps, "Y min", spectrum_at::Y_MIN, Y_MIN_CHANNELS);
+    steps.push(Step {
+        mark: Some(true),
+        ..at("Run", spectrum_at::RUN)
+    });
+    steps.push(settle(SPECTRUM, Some(20.0), 1.2));
+    steps.push(shot(SPECTRUM, channel_file(round, id, "list", "")));
+    for (k, (name, entry, copied)) in SPECTRUM_CHANNELS.into_iter().enumerate() {
+        steps.push(Step {
+            mark: Some(true),
+            ..at(&format!("channel {entry}"), spectrum_at::channel(k))
+        });
+        steps.push(pause(400));
+        steps.push(at("Run", spectrum_at::RUN));
+        steps.push(settle(SPECTRUM, Some(20.0), 1.2));
+        steps.push(shot(SPECTRUM, channel_file(round, id, name, "")));
+        if copied {
+            for column in [1, 0] {
+                let plot = format!("{}-{}", AXES[0], COLUMNS[column]);
+                copy_plot(steps, 0, column, channel_file(round, id, name, &plot));
+            }
+        }
+    }
+    let (_, gyro, _) = SPECTRUM_CHANNELS[0];
+    steps.push(at(&format!("channel {gyro}"), spectrum_at::channel(0)));
+    steps.push(pause(400));
+    spectrum_type(steps, "Y min", spectrum_at::Y_MIN, Y_MIN_DEFAULT);
+}
+
+/// The maps of a log in the two windows of maps as each comes up, both
+/// opened from the spectrum window: the throttle window with the log in its
+/// four columns, a Run, a picture and its six plots (the unfiltered and the
+/// filtered gyro); the time window with the log, the unfiltered gyro and
+/// then the filtered one, a picture and the three plots each, and the
+/// unfiltered gyro chosen again.
+fn maps_as_they_come(steps: &mut Vec<Step>, round: u32, id: &str, row: usize) {
+    throttle_open(steps, round);
+    let log = ThrottleLog { round, id };
+    log.choose(steps, row);
+    log.capture(steps, "");
+    time_open(steps, round);
+    time_first(steps, round, id, row);
+    let gyro = TIME_CHANNELS[1];
+    time_changed(steps, round, id, gyro.0, |steps| time_channel(steps, gyro));
+    time_channel(steps, TIME_CHANNELS[0]);
+}
+
+/// A log of the step response window as the window comes up: chosen in
+/// row `row` of its list, a Run, a picture, and copies of the response and
+/// the Peak of the three axes.
+fn step_as_it_comes(steps: &mut Vec<Step>, round: u32, id: &str, row: usize) {
+    let log = StepLog { round, id };
+    log.choose(steps, row);
+    log.run(steps, Some(""));
+    log.copies(steps, "", &NINE[..2]);
+}
+
+/// The place of `item` in `list`, the first item when it is not there.
+fn place<T: PartialEq>(list: &[T], item: &T) -> usize {
+    list.iter().position(|x| x == item).unwrap_or(0)
+}
+
+/// The filter simulator with the set of filters `set` typed in: the window
+/// opened, the loop rate and the types of the two low-passes picked from
+/// their lists with a picture after each pick, the cut-offs of the
+/// low-passes and the centre and Q of the static notch typed, a picture,
+/// and copies of the eight plots, named after `what`.
+fn filters_typed(steps: &mut Vec<Step>, round: u32, set: &FilterSet, what: &str) {
+    filters_open(steps, round);
+    let picks = [
+        ("looprate", place(&LOOP_RATES, &set.loop_rate_hz)),
+        ("lowpass-1", place(&LOWPASS_KINDS, &set.lowpass_1.kind)),
+        ("lowpass-2", place(&LOWPASS_KINDS, &set.lowpass_2.kind)),
+    ];
+    for (list, row) in picks {
+        filters_pick(steps, list, row, true);
+        filters_shot(steps, round, &format!("{what}-{list}"));
+    }
+    let q = |q: f64| format!("{:.0}", 100.0 * q);
+    let typed = [
+        (
+            "lowpass 1 Hz",
+            filters_at::LOWPASS_1_HZ,
+            set.lowpass_1.hz.to_string(),
+        ),
+        (
+            "lowpass 2 Hz",
+            filters_at::LOWPASS_2_HZ,
+            set.lowpass_2.hz.to_string(),
+        ),
+        (
+            "Notch Center",
+            filters_at::NOTCH_CENTER,
+            set.notch.hz.to_string(),
+        ),
+        ("Notch Q", filters_at::NOTCH_Q, q(set.notch.q)),
+    ];
+    for (k, (name, at, text)) in typed.into_iter().enumerate() {
+        filters_type(steps, name, at, &text, k == 0);
+    }
+    filters_shot(steps, round, what);
+    for column in 0..filters_at::COLUMNS.len() {
+        filters_copies(steps, round, what, column);
+    }
+}
+
+/// The steps of round [`VERIFICATION`] after the logs are open, the most
+/// valuable first; a picture follows every choice of a log and every pick
+/// in a list.
+///
+/// 1. The spectrum window: the two flights made for it as it comes up
+///    ([`spectrum_as_it_comes`]); then the probe of the other channels,
+///    every entry of the list of channels in turn ([`spectrum_channels`]).
+/// 2. The maps of the flight made for them in both windows of maps
+///    ([`maps_as_they_come`]).
+/// 3. The step response window: the two flights made for it as it comes
+///    up ([`step_as_it_comes`]).
+/// 4. The main window: the flight made for it chosen, its four plots
+///    copied as they come up (two lines on each plot of an axis, the four
+///    motors and the throttle on the lower one, which round 16 copied).
+/// 5. The filter simulator with [`VERIFY_FILTERS`] ([`filters_typed`]).
+/// 6. The step response window again for the stick's path.
+/// 7. The main window for the log that counts its samples at 2 and 4 kHz
+///    ([`ViewerLog::smoothing_pair`]).
+/// 8. The short stairs: the throttle window, a picture and the map of the
+///    unfiltered gyro of roll; the time window, a picture and the three
+///    maps.
+fn verification(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+    let row = |id: &str| row_of(probes, id).map(|row| (row, probes[row].id));
+    spectrum_open(steps, round);
+    for (row, id) in ["e1-spec-1k", "e2-spec-4k"].into_iter().filter_map(row) {
+        spectrum_as_it_comes(steps, round, id, row);
+    }
+    if let Some((row, id)) = row("i1-chan-2k") {
+        spectrum_channels(steps, round, id, row);
+    }
+    if let Some((row, id)) = row("e5-maps-2k") {
+        maps_as_they_come(steps, round, id, row);
+    }
+    step_open(steps, round);
+    for (row, id) in ["e3-step-2k", "e4-step-8k"].into_iter().filter_map(row) {
+        step_as_it_comes(steps, round, id, row);
+    }
+    if let Some(log) = ViewerLog::of(round, probes, "e6-") {
+        log.select(steps);
+        log.copies(steps, "open", &[0, 1, 2, 3]);
+    }
+    filters_typed(steps, round, &VERIFY_FILTERS, "verify");
+    if let Some((row, id)) = row("j1-path-2k") {
+        step_as_it_comes(steps, round, id, row);
+    }
+    for prefix in ["x1-", "x2-"] {
+        if let Some(log) = ViewerLog::of(round, probes, prefix) {
+            log.smoothing_pair(steps);
+        }
+    }
+    let short: Vec<(usize, &str)> = ["x3-len11-2k", "x4-len12-2k", "x5-len13-2k"]
+        .into_iter()
+        .filter_map(row)
+        .collect();
+    for (row, id) in &short {
+        let log = ThrottleLog { round, id };
+        log.choose(steps, *row);
+        log.run(steps, "");
+        log.copy(steps, "", 0, 0);
+    }
+    for (row, id) in &short {
+        time_first(steps, round, id, *row);
+    }
+}
+
 /// How long a window that was never opened by the script is given to come
 /// up before its picture is taken, milliseconds.
 const LOOK_MS: u32 = 10_000;
@@ -2356,6 +2754,22 @@ fn windows_look(steps: &mut Vec<Step>, round: u32) {
 
 /// What the plan of a round does, for the reader of `steps.json`.
 fn about(round: u32, probes: &[Probe]) -> String {
+    if round == VERIFICATION {
+        return format!(
+            "Round {round}: every log through one open dialog, then every window again on \
+             logs made for no question, the most valuable first. The spectrum window: two \
+             flights as it comes up, six plots copied each; then the log of the other \
+             channels with every entry of the list of channels picked in turn, a picture \
+             after each pick and the two plots of roll copied. The maps of one flight in the \
+             window of frequency against throttle and in that against time. The step response \
+             window: two flights, the response and the Peak copied. The main window: one \
+             flight, its four plots copied. The filter simulator with a set of filters typed \
+             in, its eight plots copied. The step response of a log whose RC command and \
+             feedforward are not the setpoint's. The log of round 16 that counts its samples \
+             at 2 and 4 kHz, its roll plot with the line smoothing off and at med. Three short \
+             flights of stairs in both windows of maps."
+        );
+    }
     if round == OPEN_ENDS {
         return format!(
             "Round {round}: every log through one open dialog, then what the rounds before \
@@ -2447,10 +2861,9 @@ fn about(round: u32, probes: &[Probe]) -> String {
     }
 }
 
-/// The spectrum window: opened, and for every spectrum probe of the round
-/// the spectrum at each smoothing level, as a picture and, from round 2 on,
-/// as vector copies of its plots.
-fn spectrum_steps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+/// The spectrum window opened from the main window, a picture as it comes
+/// up, and from round 3 on [`Y_MAX_DB`] typed into its "Y max".
+fn spectrum_open(steps: &mut Vec<Step>, round: u32) {
     steps.push(click(
         LOG_VIEWER,
         "log",
@@ -2465,13 +2878,25 @@ fn spectrum_steps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
     });
     steps.push(shot(SPECTRUM, format!("r{round}-spectrum-open")));
     if round >= 3 {
-        steps.push(Step {
-            action: "type",
-            text: Some(Y_MAX_DB.to_string()),
-            ..click(SPECTRUM, "shot", "Y max", spectrum_at::Y_MAX)
-        });
-        steps.push(pause(300));
+        spectrum_type(steps, "Y max", spectrum_at::Y_MAX, &Y_MAX_DB.to_string());
     }
+}
+
+/// `text` typed into the box `name` of the spectrum window.
+fn spectrum_type(steps: &mut Vec<Step>, name: &str, at: (u32, u32), text: &str) {
+    steps.push(Step {
+        action: "type",
+        text: Some(text.to_string()),
+        ..click(SPECTRUM, "shot", name, at)
+    });
+    steps.push(pause(300));
+}
+
+/// The spectrum window: opened, and for every spectrum probe of the round
+/// the spectrum at each smoothing level, as a picture and, from round 2 on,
+/// as vector copies of its plots.
+fn spectrum_steps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+    spectrum_open(steps, round);
     let spectrum: Vec<&Probe> = probes.iter().filter(|p| p.area == Area::Spectrum).collect();
     for probe in spectrum {
         // the logs are listed in the order of their names, which is the
@@ -2532,8 +2957,12 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
         },
         shot(LOG_VIEWER, format!("r{round}-log-loaded")),
     ];
-    if round == OPEN_ENDS {
-        open_ends(&mut steps, round, probes);
+    if round == OPEN_ENDS || round == VERIFICATION {
+        if round == OPEN_ENDS {
+            open_ends(&mut steps, round, probes);
+        } else {
+            verification(&mut steps, round, probes);
+        }
         steps.push(Step {
             action: "windows",
             ..Step::default()
@@ -5057,5 +5486,201 @@ mod tests {
         let step =
             String::from_utf8(super::files(4, 20, 153, false)[2].1.clone()).unwrap_or_default();
         assert!(step.contains("153 plots") && !step.contains("predictions.json"));
+    }
+
+    fn round_17() -> Plan {
+        plan(17, &catalogue::round(17).unwrap_or_default())
+    }
+
+    #[test]
+    fn round_17_takes_its_pictures_and_copies_in_the_order_of_their_worth() {
+        let plan = round_17();
+        assert!(plan.give_up && plan.refs.slider.is_none());
+        assert!(plan.about.contains("logs made for no question"));
+        let shots = names_of(&plan, "shot");
+        let mut want: Vec<String> = ["r17-log-loaded", "r17-spectrum-open"]
+            .map(String::from)
+            .to_vec();
+        want.extend(["e1-spec-1k", "e2-spec-4k"].map(|id| spectrum_shot(17, id, "medium")));
+        want.push(channel_file(17, "i1-chan-2k", "list", ""));
+        want.extend(
+            SPECTRUM_CHANNELS
+                .iter()
+                .map(|(name, _, _)| channel_file(17, "i1-chan-2k", name, "")),
+        );
+        want.extend(["r17-throttle-open", "r17-e5-maps-2k-throttle"].map(String::from));
+        want.push("r17-time-open".into());
+        want.extend(["prefilt", "gyro"].map(|c| time_file(17, "e5-maps-2k", c, "")));
+        want.push("r17-step-open".into());
+        want.extend(["e3-step-2k", "e4-step-8k"].map(|id| step_file(17, id, "", "")));
+        want.push(viewer_file(17, "e6-view-2k", "", ""));
+        want.push("r17-filters-open".into());
+        want.extend(
+            [
+                "verify-looprate",
+                "verify-lowpass-1",
+                "verify-lowpass-2",
+                "verify",
+            ]
+            .map(|w| format!("r17-filters-{w}")),
+        );
+        want.push(step_file(17, "j1-path-2k", "", ""));
+        for id in ["x1-samp-2k", "x2-samp-4k"] {
+            want.extend(["", "smooth-med"].map(|w| viewer_file(17, id, w, "")));
+        }
+        let short = ["x3-len11-2k", "x4-len12-2k", "x5-len13-2k"];
+        want.extend(short.map(|id| throttle_file(17, id, "", "")));
+        want.extend(short.map(|id| time_file(17, id, "prefilt", "")));
+        assert_eq!(shots, want);
+        assert_eq!(shots.len(), 41);
+
+        let copies = names_of(&plan, "clip_save");
+        assert_eq!(copies.len(), 90);
+        // the most valuable first: the flights made for no question and the
+        // channels, then the stick's path, then the leftovers of round 16
+        let first = |part: &str| copies.iter().position(|c| c.contains(part)).unwrap();
+        let order = [
+            "e1-spec-1k",
+            "e2-spec-4k",
+            "i1-chan-2k",
+            "e5-maps-2k-throttle",
+            "e5-maps-2k-time",
+            "e3-step-2k",
+            "e4-step-8k",
+            "e6-view-2k",
+            "filters-verify",
+            "j1-path-2k",
+            "x1-samp-2k",
+            "x2-samp-4k",
+            "x3-len11-2k-throttle",
+            "x3-len11-2k-time",
+        ];
+        assert!(
+            order.windows(2).all(|w| first(w[0]) < first(w[1])),
+            "{copies:?}"
+        );
+        let count = |part: &str| copies.iter().filter(|c| c.contains(part)).count();
+        assert_eq!(count("e1-spec-1k"), 6);
+        assert_eq!(count("i1-chan-2k"), 20);
+        assert_eq!(count("e5-maps-2k"), 12);
+        assert_eq!(count("e3-step-2k"), 6);
+        assert_eq!(count("e6-view-2k"), 4);
+        assert_eq!(count("filters-verify"), 8);
+        assert_eq!(count("j1-path-2k"), 6);
+        assert_eq!(count("x1-samp-2k"), 2);
+        assert_eq!(count("x3-len11-2k"), 4);
+        assert!(copies.contains(&"r17-j1-path-2k-step-roll-peak"));
+        assert!(copies.contains(&"r17-x2-samp-4k-log-smooth-med-roll"));
+        // within half an hour, and the note says so
+        assert!(plan.seconds() < 30.0 * 60.0, "{} s", plan.seconds());
+        let files = files_of(17, &plan, true);
+        let note = String::from_utf8_lossy(&files[2].1).into_owned();
+        let minutes = (plan.seconds() / 60.0).ceil() as usize;
+        assert!(note.contains(&format!("{minutes} minutes")), "{note}");
+        assert!(note.contains("41 pictures") && note.contains("90 plots"));
+    }
+
+    #[test]
+    fn round_17_picks_every_channel_of_the_spectrum_window_with_a_picture_after_each() {
+        let plan = round_17();
+        let steps = &plan.steps;
+        let picks: Vec<usize> = steps
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.window == Some(SPECTRUM))
+            .filter(|(_, s)| s.name.as_deref().is_some_and(|n| n.starts_with("channel ")))
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(picks.len(), SPECTRUM_CHANNELS.len() + 1);
+        for (k, i) in picks.iter().enumerate() {
+            let (_, entry, _) = SPECTRUM_CHANNELS[k % SPECTRUM_CHANNELS.len()];
+            assert_eq!(
+                steps[*i].name.as_deref(),
+                Some(format!("channel {entry}").as_str())
+            );
+            assert_eq!(steps[*i].at, Some(spectrum_at::channel(k % 11)));
+            assert_eq!(steps[*i].window, Some(SPECTRUM));
+            if k < SPECTRUM_CHANNELS.len() {
+                // a Run and a picture before the next pick
+                let next = picks.get(k + 1).copied().unwrap_or(steps.len());
+                let between = &steps[*i..next];
+                assert!(between.iter().any(|s| s.name.as_deref() == Some("Run")));
+                assert_eq!(between.iter().filter(|s| s.action == "shot").count(), 1);
+                let copied = between.iter().filter(|s| s.action == "clip_save").count();
+                assert_eq!(copied, if SPECTRUM_CHANNELS[k].2 { 2 } else { 0 }, "{k}");
+            }
+        }
+        // the rows: the first two at the highlighted rows of round 16's
+        // picture (494 to 567 of 2357 pixels), the last inside the list
+        let to_shot = |pixel: f64| pixel * 2427.0 / 2357.0;
+        assert!((f64::from(spectrum_at::channel(0).1) - to_shot(512.5)).abs() < 1.0);
+        assert!((f64::from(spectrum_at::channel(1).1) - to_shot(549.5)).abs() < 1.0);
+        assert!(f64::from(spectrum_at::channel(10).1) < to_shot(916.0) - 15.0);
+        // the lower end of the plots is typed down before and back after
+        let typed: Vec<(&str, &str)> = steps
+            .iter()
+            .filter(|s| s.action == "type" && s.window == Some(SPECTRUM))
+            .map(|s| {
+                (
+                    s.name.as_deref().unwrap_or(""),
+                    s.text.as_deref().unwrap_or(""),
+                )
+            })
+            .collect();
+        assert_eq!(typed, [("Y max", "70"), ("Y min", "-90"), ("Y min", "-50")]);
+        let y_min = steps
+            .iter()
+            .position(|s| s.name.as_deref() == Some("Y min"));
+        assert!(y_min.is_some_and(|i| i < picks[0]));
+        assert_eq!(steps[y_min.unwrap_or(0)].at, Some(spectrum_at::Y_MIN));
+    }
+
+    #[test]
+    fn round_17_types_the_filters_its_manifest_states() {
+        let plan = round_17();
+        assert_eq!(filter_set(17), Some(VERIFY_FILTERS));
+        assert_eq!(filter_set(16), None);
+        let in_filters: Vec<&Step> = plan
+            .steps
+            .iter()
+            .filter(|s| s.window == Some(FILTERS))
+            .collect();
+        let typed: Vec<(&str, &str)> = in_filters
+            .iter()
+            .filter(|s| s.action == "type")
+            .map(|s| {
+                (
+                    s.name.as_deref().unwrap_or(""),
+                    s.text.as_deref().unwrap_or(""),
+                )
+            })
+            .collect();
+        assert_eq!(
+            typed,
+            [
+                ("lowpass 1 Hz", "210"),
+                ("lowpass 2 Hz", "420"),
+                ("Notch Center", "330"),
+                ("Notch Q", "250"),
+            ]
+        );
+        let picked: Vec<&str> = in_filters
+            .iter()
+            .filter_map(|s| s.name.as_deref())
+            .filter(|n| n.contains(" item "))
+            .collect();
+        assert_eq!(
+            picked,
+            ["looprate item 1", "lowpass-1 item 2", "lowpass-2 item 4"]
+        );
+        assert_eq!(LOOP_RATES[1], 4000);
+        assert_eq!(
+            (LOWPASS_KINDS[2], LOWPASS_KINDS[4]),
+            ("pt2", "biquad-butter")
+        );
+        assert_eq!(place(&LOOP_RATES, &12_345), 0);
+        let text = serde_json::to_string(&VERIFY_FILTERS).unwrap_or_default();
+        assert!(text.contains("\"lowpass_1\":{\"kind\":\"pt2\",\"hz\":210}"));
+        assert!(text.contains("\"notch\":{\"hz\":330,\"q\":2.5}"));
     }
 }

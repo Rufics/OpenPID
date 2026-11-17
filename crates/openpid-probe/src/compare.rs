@@ -10,6 +10,7 @@
 //! | Copy | Compared on |
 //! |---|---|
 //! | spectrum | the solid curve (the filtered gyro), dB against frequency, with `OpenPID`'s spectrum of the same channel: the column below 100 Hz with its one-second segments, the full range with its quarter-second ones; largest and median difference over the common range |
+//! | spectrum of an entry of the list of channels | every line of the copy with `OpenPID`'s spectrum of the channel the entry stands for (the gyro channels, the D, P and F terms, the setpoint, the PID error and sum, the debug value of the axis's place, each of the four motors); the line and the channel that agree best |
 //! | step response | the mean response against time with `OpenPID`'s, at the window length of the copy; the Peak plot with `OpenPID`'s Peak |
 //! | throttle and time maps | every pixel of the map as a colour step between the two ends of its colour bar, with `OpenPID`'s map at the same throttle (or time) and frequency on the same scale; the share within one step, and the printed mean and peak |
 //! | filter simulator | every curve given in the results file with the copy's nearest curve: magnitude, delay, phase or step response against frequency or time |
@@ -422,30 +423,43 @@ impl Source {
         self.file.probes.iter().find(|p| p.id == probe.id)
     }
 
-    /// `OpenPID`'s spectrum of the filtered gyro: frequencies and levels.
+    /// `OpenPID`'s spectrum of the channel the results name `channel` on
+    /// `axis` (`gyro`, `gyro_unfiltered`, one of
+    /// [`pack::LISTED_CHANNELS`] or [`pack::MOTOR_CHANNELS`], which the
+    /// results list under roll): frequencies and levels.
     fn spectrum(
         &mut self,
         probe: &Probe,
-        axis: Axis,
+        (axis, channel): (Axis, &'static str),
         segment_s: f64,
     ) -> Result<(Vec<f64>, Vec<f64>), String> {
+        let listed_under = if pack::MOTOR_CHANNELS.contains(&channel) {
+            Axis::Roll
+        } else {
+            axis
+        };
         let given = self.probe_in(probe).and_then(|p| {
-            let a = p.axes.iter().find(|a| a.axis == axis.name())?;
+            let a = p.axes.iter().find(|a| a.axis == listed_under.name())?;
             let s = a
                 .spectra
                 .iter()
-                .find(|s| s.channel == "gyro" && s.segment_s == segment_s)?;
+                .find(|s| s.channel == channel && s.segment_s == segment_s)?;
             Some((s.freq.clone(), s.power_db.clone()))
         });
         if let Some(given) = given {
             return Ok(given);
         }
+        let id = pack::listed_channel(channel, axis)
+            .ok_or_else(|| format!("OpenPID has no channel {channel}"))?;
         let session = self.session(probe)?;
-        let spectra = pack::spectra(session, axis, pack::epoch_of(&probe.flight), probe.id)
-            .map_err(|e| e.to_string())?;
-        spectra
+        if session.channel(&id).is_none() {
+            return Err(format!("the log has no {} channel", id.key()));
+        }
+        let epoch = pack::epoch_of(&probe.flight);
+        pack::spectrum_of(session, (&id, channel), epoch, probe.id)
+            .map_err(|e| e.to_string())?
             .into_iter()
-            .find(|s| s.channel == "gyro" && s.segment_s == segment_s)
+            .find(|s| s.segment_s == segment_s)
             .map(|s| (s.freq, s.power_db))
             .ok_or_else(|| "OpenPID has no such spectrum".to_string())
     }
@@ -742,29 +756,123 @@ fn number(v: f64) -> String {
 
 // ----------------------------------------------------------------- spectra
 
+/// The smoothing levels of the spectrum window as the names of copies hold
+/// them: a copy named after one is of the window's channels as it comes
+/// up, the filtered gyro drawn solid.
+const SMOOTHING_LEVELS: [&str; 5] = ["low", "low-med", "medium", "med-high", "high"];
+
+/// The results of `OpenPID` a copy of an entry of the spectrum window's list
+/// of channels is held against, by the entry's name in the files
+/// (`capture::SPECTRUM_CHANNELS`): the gyro channels, one of
+/// [`pack::LISTED_CHANNELS`], or for "motors" each of the four motors.
+fn channel_results(channel: &str) -> Option<Vec<&'static str>> {
+    match channel {
+        "gyro" => Some(vec!["gyro"]),
+        "prefilt" => Some(vec!["gyro_unfiltered"]),
+        "motors" => Some(pack::MOTOR_CHANNELS.to_vec()),
+        other => pack::LISTED_CHANNELS
+            .iter()
+            .find(|c| **c == other)
+            .map(|c| vec![*c]),
+    }
+}
+
+/// What a name of the results is, for the report.
+fn results_name(name: &str) -> String {
+    match name {
+        "gyro" => "the filtered gyro".into(),
+        "gyro_unfiltered" => "the unfiltered gyro".into(),
+        "dterm" => "the D term".into(),
+        "pterm" => "the P term".into(),
+        "fterm" => "the feedforward".into(),
+        "setpoint" => "the setpoint".into(),
+        "piderror" => "the PID error".into(),
+        "pidsum" => "the PID sum".into(),
+        "debug" => "the debug value of the axis's place".into(),
+        motor => motor.replace("motor", "motor "),
+    }
+}
+
 fn spectrum(copy: &Copy, m: &Metafile, src: &mut Source) -> Result<Outcome, String> {
     let words = tokens(copy.rest.strip_prefix("spectrum-").unwrap_or(&copy.rest));
-    let (Some(column), Some(axis), Some(probe)) = (
-        words.last(),
-        words.len().checked_sub(2).and_then(|i| axis_of(words[i])),
-        copy.probe,
-    ) else {
+    let at = words.len().checked_sub(2);
+    let (Some(column), Some(axis), Some(probe)) =
+        (words.last(), at.and_then(|i| axis_of(words[i])), copy.probe)
+    else {
         return Ok(not_compared(
             "the name does not say the log, the axis and the column",
         ));
     };
     let segment_s = if *column == "sub" { 1.0 } else { 0.25 };
+    let setting = words[..at.unwrap_or(0)].join("-");
+    if !setting.is_empty() && !SMOOTHING_LEVELS.contains(&setting.as_str()) {
+        return channel_spectrum(m, src, (probe, axis, segment_s), &setting);
+    }
     let scales = Axes::of(m).map_err(|e| e.to_string())?;
     let points: Vec<(f64, f64)> = groups(m, &scales, |c| c.pen.solid())
         .into_iter()
         .flat_map(|(_, p)| p)
         .collect();
-    let (freq, db) = src.spectrum(probe, axis, segment_s)?;
+    let (freq, db) = src.spectrum(probe, (axis, "gyro"), segment_s)?;
     let (max, median, n) =
         differences(&points, &freq, &db).ok_or("the copy and OpenPID share no frequencies")?;
     Ok(Outcome {
         against: format!(
             "OpenPID's spectrum of the filtered {} gyro, {segment_s} s segments",
+            axis.name()
+        ),
+        numbers: format!(
+            "largest {} dB, median {} dB over {n} points",
+            number(max),
+            number(median)
+        ),
+        pass: Some(max <= limit("spectrum")),
+    })
+}
+
+/// A copy of the spectrum window with one entry of its list of channels
+/// chosen, `channel` its name in the files: every line of the copy, of
+/// whatever pen (a channel alone may not be drawn solid), held against
+/// `OpenPID`'s spectrum of each channel the entry may stand for; the pair
+/// that agrees best is reported.
+fn channel_spectrum(
+    m: &Metafile,
+    src: &mut Source,
+    (probe, axis, segment_s): (&Probe, Axis, f64),
+    channel: &str,
+) -> Result<Outcome, String> {
+    let Some(names) = channel_results(channel) else {
+        return Ok(not_compared(format!(
+            "the channel {channel} has no counterpart in OpenPID's spectrum"
+        )));
+    };
+    let scales = Axes::of(m).map_err(|e| e.to_string())?;
+    let drawn = groups(m, &scales, |_| true);
+    let mut best: Option<(&str, u32, (f64, f64, usize))> = None;
+    for name in &names {
+        let (freq, db) = src.spectrum(probe, (axis, name), segment_s)?;
+        for (colour, points) in &drawn {
+            let Some(found) = differences(points, &freq, &db) else {
+                continue;
+            };
+            if best.is_none_or(|(_, _, (_, median, _))| found.1 < median) {
+                best = Some((name, *colour, found));
+            }
+        }
+    }
+    let (name, colour, (max, median, n)) =
+        best.ok_or("the copy and OpenPID share no frequencies")?;
+    let units = if name.starts_with("motor") {
+        " (a motor in OpenPID is a percent of the outputs' range, in the reference tool the \
+         logged number over 20: D-008)"
+    } else {
+        ""
+    };
+    Ok(Outcome {
+        against: format!(
+            "OpenPID's spectrum of {} on {}, {segment_s} s segments, against the copy's line \
+             #{colour:06x}{units}",
+            results_name(name),
             axis.name()
         ),
         numbers: format!(
@@ -1387,4 +1495,84 @@ pub fn compare(round: u32, dir: &Path, ours: Option<&Path>) -> Result<Report, St
         rows,
         missing,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What `compare` reads off the name of a copy, or why it would not
+    /// compare it: `None` when the name says nothing it can use.
+    fn parsed(copy: &Copy) -> Option<String> {
+        let rest = &copy.rest;
+        match copy.window {
+            Window::Spectrum => {
+                let words = tokens(rest.strip_prefix("spectrum-")?);
+                let at = words.len().checked_sub(2)?;
+                let axis = axis_of(words[at])?;
+                let column = words.last()?;
+                let setting = words[..at].join("-");
+                let known = SMOOTHING_LEVELS.contains(&setting.as_str())
+                    || channel_results(&setting).is_some();
+                known.then(|| format!("{setting} {} {column}", axis.name()))
+            }
+            Window::StepResponse => {
+                let (setting, axis, plot) = step_parts(rest)?;
+                window_of(&setting).map(|w| format!("{w} {} {plot}", axis.name()))
+            }
+            Window::Throttle | Window::Time => {
+                let (axis, stage, setting) = map_parts(rest, copy.window)?;
+                view_only(&setting).then(|| format!("{} {stage:?}", axis.name()))
+            }
+            Window::LogViewer => tokens(rest.strip_prefix("log-")?)
+                .last()
+                .map(|p| (*p).to_string()),
+            Window::Filters => {
+                let plot = tokens(rest).last().copied()?;
+                ["magnitude", "delay", "phase", "step"]
+                    .contains(&plot)
+                    .then(|| plot.to_string())
+            }
+            Window::Other => None,
+        }
+    }
+
+    #[test]
+    fn every_copy_of_round_17_is_one_compare_knows() {
+        let probes = catalogue::round(17).unwrap_or_default();
+        let plan = crate::capture::plan(17, &probes);
+        let copies = plan.copies();
+        assert_eq!(copies.len(), 90);
+        for (name, window) in &copies {
+            let copy = identify(17, name, *window, &probes);
+            assert_eq!(copy.probe.is_none(), *window == Window::Filters, "{name}");
+            let known = parsed(&copy);
+            // the main window's line smoothing at "med" is the one setting
+            // OpenPID has no counterpart of
+            let smoothed = name.contains("smooth-med");
+            assert!(known.is_some(), "{name}: {window:?}");
+            assert!(!smoothed || *window == Window::LogViewer, "{name}");
+        }
+        // an entry of the list of channels stands for OpenPID's channels
+        assert_eq!(channel_results("prefilt"), Some(vec!["gyro_unfiltered"]));
+        assert_eq!(channel_results("motors").map(|m| m.len()), Some(4));
+        assert_eq!(channel_results("pidsum"), Some(vec!["pidsum"]));
+        assert_eq!(channel_results("dterm-prefilt"), None);
+        for (name, said) in [
+            ("gyro", "the filtered gyro"),
+            ("gyro_unfiltered", "the unfiltered gyro"),
+            ("dterm", "the D term"),
+            ("pterm", "the P term"),
+            ("fterm", "the feedforward"),
+            ("setpoint", "the setpoint"),
+            ("piderror", "the PID error"),
+            ("pidsum", "the PID sum"),
+            ("debug", "the debug value of the axis's place"),
+            ("motor3", "motor 3"),
+        ] {
+            assert_eq!(results_name(name), said);
+            assert!(pack::listed_channel(name, Axis::Pitch).is_some(), "{name}");
+        }
+        assert_eq!(pack::listed_channel("rpm", Axis::Roll), None);
+    }
 }

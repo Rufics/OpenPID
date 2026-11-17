@@ -74,6 +74,12 @@ ROUNDS:
              are not digital, a gyro that counts its samples), the stairs of the
              throttle in eight more lengths, three logs of rounds 9 to 11 again, and a
              summary of the tables the tool decodes the logs into.
+    17       The verification round: every window again on flights made for no question
+             (the spectrum, the step response, both maps, the main window, a set of filters
+             typed into the filter simulator); every channel of the spectrum window's list
+             with a tone of its own; the stick's path into the step response (an RC command
+             and a feedforward that are not the setpoint's); the log of round 16 that counts
+             its samples at 2 and 4 kHz, and its stairs in flights of 11, 12 and 13 s.
 ";
 
 /// Runs the tool with `args` (without the program name), printing to `out`.

@@ -163,6 +163,25 @@ pub enum Wave {
         /// What those samples carry, deg/s.
         value: f64,
     },
+    /// The stick of the axis the wave belongs to, `delay_ms` later and
+    /// times `scale`: the rate asked for, as a channel that is not the
+    /// setpoint may hold it. Nothing on a channel of no axis.
+    Echo {
+        /// How much later, ms.
+        delay_ms: f64,
+        /// The factor.
+        scale: f64,
+    },
+    /// At every move of the stick of the axis the wave belongs to, `gain`
+    /// times the size of the move for `ms` milliseconds from the sample the
+    /// setpoint moves at: what a feedforward does with a step. Nothing on a
+    /// channel of no axis.
+    Kicks {
+        /// How long each kick lasts, ms.
+        ms: f64,
+        /// The factor on the size of the move.
+        gain: f64,
+    },
 }
 
 impl Wave {
@@ -263,6 +282,8 @@ impl Wave {
                 out
             }
             Wave::Triangle { from, to, period_s } => triangle(n, period_s * fs, *from, *to),
+            Wave::Echo { delay_ms, scale } => echo(timeline, delay_ms / 1000.0, *scale),
+            Wave::Kicks { ms, gain } => kicks(timeline, ms / 1000.0, *gain),
             Wave::Pulse {
                 at_s,
                 samples,
@@ -279,6 +300,48 @@ impl Wave {
             }
         }
     }
+}
+
+/// The first sample at or after `at_s` on a timeline at `fs`: where the
+/// setpoint takes a move of the stick at `at_s`.
+fn first_sample(at_s: f64, fs: f64) -> usize {
+    ((at_s - SAME_TIME_S) * fs).ceil().max(0.0) as usize
+}
+
+/// The stick of the timeline `delay_s` later, times `scale`: see
+/// [`Wave::Echo`].
+fn echo(timeline: &Timeline<'_>, delay_s: f64, scale: f64) -> Vec<f64> {
+    let n = timeline.throttle.len();
+    let mut out = vec![0.0; n];
+    let moves = timeline.stick;
+    for (k, (at, level)) in moves.iter().enumerate() {
+        let first = first_sample(at + delay_s, timeline.fs).min(n);
+        let until = moves
+            .get(k + 1)
+            .map_or(n, |(next, _)| first_sample(next + delay_s, timeline.fs))
+            .min(n);
+        for value in &mut out[first..until.max(first)] {
+            *value = scale * level;
+        }
+    }
+    out
+}
+
+/// `gain` times every move of the stick of the timeline, for `width_s`
+/// from the sample the setpoint moves at: see [`Wave::Kicks`].
+fn kicks(timeline: &Timeline<'_>, width_s: f64, gain: f64) -> Vec<f64> {
+    let n = timeline.throttle.len();
+    let width = (width_s * timeline.fs).round().max(0.0) as usize;
+    let mut out = vec![0.0; n];
+    let mut level = 0.0;
+    for (at, to) in timeline.stick {
+        let first = first_sample(*at, timeline.fs).min(n);
+        for value in &mut out[first..(first + width).min(n)] {
+            *value += gain * (to - level);
+        }
+        level = *to;
+    }
+    out
 }
 
 /// A triangle of `n` samples with a period of `period` samples: see
@@ -615,6 +678,13 @@ pub enum Throttle {
         /// Percent at the end.
         to: f64,
     },
+    /// Straight lines between points of the flight, `(seconds, percent)` in
+    /// time order: a throttle that wanders as a pilot's does. Before the
+    /// first point it holds the first value, after the last the last.
+    Path {
+        /// The points.
+        points: Vec<(f64, f64)>,
+    },
 }
 
 impl Throttle {
@@ -624,6 +694,7 @@ impl Throttle {
             Throttle::Ramp { from, to } => (0..n)
                 .map(|i| from + (to - from) * (i as f64 / fs) / duration_s)
                 .collect(),
+            Throttle::Path { points } => (0..n).map(|i| along(points, i as f64 / fs)).collect(),
             Throttle::Stairs { steps } => {
                 let period: f64 = steps.iter().map(|(_, s)| s.max(0.0)).sum();
                 if period <= 0.0 {
@@ -645,6 +716,114 @@ impl Throttle {
         }
     }
 }
+
+/// The value at `t` of straight lines between `points` (`(t, value)` in
+/// time order), held at the ends.
+fn along(points: &[(f64, f64)], t: f64) -> f64 {
+    let after = points.partition_point(|(at, _)| *at <= t);
+    match (
+        after.checked_sub(1).map(|i| points[i]),
+        points.get(after).copied(),
+    ) {
+        (Some((t0, v0)), Some((t1, v1))) if t1 > t0 => v0 + (v1 - v0) * (t - t0) / (t1 - t0),
+        (Some((_, v)), _) | (None, Some((_, v))) => v,
+        (None, None) => 0.0,
+    }
+}
+
+/// A channel beyond the gyro that carries waves of its own over a flight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Carrier {
+    /// The setpoint of an axis, deg/s: the waves are added to the stick.
+    /// The craft does not follow them: the gyro follows the stick alone.
+    Setpoint {
+        /// The axis.
+        axis: Axis,
+    },
+    /// The RC command of an axis, as the rate it asks for through the
+    /// craft's rates, deg/s ([`RATE_AT_FULL_STICK`] at full stick, in a
+    /// straight line). Without it a log holds the setpoint's image there.
+    RcCommand {
+        /// The axis.
+        axis: Axis,
+    },
+    /// A term of the controller, in the firmware's units: the waves are
+    /// added to the constant of [`FlightSpec::pid_terms`], or stand alone.
+    Term {
+        /// The axis.
+        axis: Axis,
+        /// The term.
+        term: PidTerm,
+    },
+    /// The output of a motor, percent: added to what it holds otherwise.
+    Motor {
+        /// Its place, 0 to 3.
+        idx: u8,
+    },
+    /// A debug value, in the firmware's units: added to its constant. A
+    /// log holds it only while the flight names a debug mode.
+    Debug {
+        /// Its slot.
+        idx: u8,
+    },
+}
+
+impl Carrier {
+    /// The axis whose stick the waves of the channel follow, if any.
+    pub fn axis(&self) -> Option<Axis> {
+        match self {
+            Carrier::Setpoint { axis }
+            | Carrier::RcCommand { axis }
+            | Carrier::Term { axis, .. } => Some(*axis),
+            Carrier::Motor { .. } | Carrier::Debug { .. } => None,
+        }
+    }
+
+    /// The channel of the session.
+    pub fn id(&self) -> ChannelId {
+        match *self {
+            Carrier::Setpoint { axis } => ChannelId::Setpoint { axis },
+            Carrier::RcCommand { axis } => ChannelId::RcCommand {
+                ch: axis.index() as u8,
+            },
+            Carrier::Term { axis, term } => ChannelId::PidTerm { axis, term },
+            Carrier::Motor { idx } => ChannelId::Motor { idx },
+            Carrier::Debug { idx } => ChannelId::Debug { idx },
+        }
+    }
+
+    /// The name of its field in a log.
+    pub fn field(&self) -> String {
+        match *self {
+            Carrier::Setpoint { axis } => format!("setpoint[{}]", axis.index()),
+            Carrier::RcCommand { axis } => format!("rcCommand[{}]", axis.index()),
+            Carrier::Term { axis, term } => {
+                let letter = term.name().to_ascii_uppercase();
+                format!("axis{letter}[{}]", axis.index())
+            }
+            Carrier::Motor { idx } => format!("motor[{idx}]"),
+            Carrier::Debug { idx } => format!("debug[{idx}]"),
+        }
+    }
+}
+
+/// What a channel beyond the gyro carries: see [`Carrier`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Carried {
+    /// The channel.
+    pub channel: Carrier,
+    /// What it carries, in the unit of the channel.
+    pub waves: Vec<Wave>,
+}
+
+/// The rate the craft's rates ask for at full stick on roll, pitch and
+/// yaw, deg/s: the probes' craft has "actual" rates of 100 with no expo
+/// (`craft.txt`), a straight line to 1000 deg/s, and a log holds the RC
+/// command of those axes as ±500 at full stick.
+pub const RATE_AT_FULL_STICK: f64 = 1000.0;
+/// The RC command of roll, pitch or yaw at full stick, in a log.
+const RC_AT_FULL_STICK: f64 = 500.0;
 
 /// The four terms of the controller on roll, pitch and yaw, each constant
 /// over the flight, in the firmware's units.
@@ -764,6 +943,9 @@ struct Timeline<'a> {
     duration_s: f64,
     /// Throttle at every sample, percent.
     throttle: &'a [f64],
+    /// The moves of the stick of the axis, `(seconds, deg/s)`: none for a
+    /// channel of no axis.
+    stick: &'a [(f64, f64)],
 }
 
 /// A whole probe flight.
@@ -811,6 +993,9 @@ pub struct FlightSpec {
     /// other flight has.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motor_output: Option<MotorOutput>,
+    /// The channels beyond the gyro that carry waves of their own.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub carried: Vec<Carried>,
 }
 
 /// The samples of one axis.
@@ -845,6 +1030,7 @@ impl FlightSpec {
             modes: None,
             stick_throttle: None,
             motor_output: None,
+            carried: Vec::new(),
         }
     }
 
@@ -882,10 +1068,47 @@ impl FlightSpec {
     /// The output of motor `idx` (0 … 3) at every sample, percent: its own
     /// level when the flight gives each motor one, else what all four do.
     pub fn motor_samples_of(&self, idx: usize) -> Vec<f64> {
-        match self.motor_levels {
+        let mut out = match self.motor_levels {
             Some(levels) => vec![levels[idx % 4]; self.len()],
             None => self.motor_samples(),
+        };
+        let carrier = Carrier::Motor {
+            idx: (idx % 4) as u8,
+        };
+        if let Some(add) = self.carried_samples(carrier) {
+            out.iter_mut().zip(add).for_each(|(v, a)| *v += a);
         }
+        out
+    }
+
+    /// What the flight's carried channels `channel` hold: the sum of their
+    /// waves, `None` when it carries nothing there.
+    pub fn carried_samples(&self, channel: Carrier) -> Option<Vec<f64>> {
+        let mut waves = self
+            .carried
+            .iter()
+            .filter(|c| c.channel == channel)
+            .flat_map(|c| &c.waves)
+            .peekable();
+        waves.peek()?;
+        let throttle = self.throttle_samples();
+        let stick = channel
+            .axis()
+            .map(|axis| self.axis(axis).stick.breakpoints(self.duration_s))
+            .unwrap_or_default();
+        let timeline = Timeline {
+            fs: self.fs,
+            duration_s: self.duration_s,
+            throttle: &throttle,
+            stick: &stick,
+        };
+        let mut out = vec![0.0; self.len()];
+        for wave in waves {
+            out.iter_mut()
+                .zip(wave.render(&timeline))
+                .for_each(|(v, w)| *v += w);
+        }
+        Some(out)
     }
 
     /// The changes of flight mode, for the session: none for a flight that
@@ -901,12 +1124,13 @@ impl FlightSpec {
         let n = self.len();
         let fs = self.fs;
         let throttle = self.throttle_samples();
+        let steps = spec.stick.breakpoints(self.duration_s);
         let timeline = Timeline {
             fs,
             duration_s: self.duration_s,
             throttle: &throttle,
+            stick: &steps,
         };
-        let steps = spec.stick.breakpoints(self.duration_s);
         let mut setpoint = vec![0.0; n];
         let mut response = vec![0.0; n];
         // what the steps that have settled add from each sample on
@@ -947,6 +1171,9 @@ impl FlightSpec {
             Filtered::Same => unfiltered.clone(),
             Filtered::Separate { waves } => add(waves),
         };
+        if let Some(more) = self.carried_samples(Carrier::Setpoint { axis }) {
+            setpoint.iter_mut().zip(more).for_each(|(v, m)| *v += m);
+        }
         AxisSamples {
             setpoint,
             response,
@@ -959,31 +1186,60 @@ impl FlightSpec {
     /// controller, the speeds of the motors (mechanical, which the writer
     /// turns into the electrical speed a log holds), the debug values and
     /// the throttle of the stick (in the firmware's units, 1000 … 2000: a
-    /// writer takes it for `rcCommand[3]` in place of the throttle).
-    fn extra_channels(&self) -> Vec<(ChannelId, String, Unit, f64)> {
+    /// writer takes it for `rcCommand[3]` in place of the throttle), each
+    /// constant over the flight, and the waves of the carried channels on
+    /// top of them or as channels of their own (the RC command of an axis
+    /// in the units of a log, ±500 at full stick).
+    fn extra_channels(&self) -> Vec<(ChannelId, String, Unit, Vec<f64>)> {
+        let n = self.len();
         let mut out = Vec::new();
         if let Some(percent) = self.stick_throttle {
             let id = ChannelId::RcCommand { ch: 3 };
             let units = 1000.0 + 10.0 * percent;
-            out.push((id, "rcCommand[3]".into(), Unit::Raw, units));
+            out.push((id, "rcCommand[3]".into(), Unit::Raw, vec![units; n]));
         }
         if let Some(pid) = &self.pid_terms {
             for (term, letter, values) in pid.terms() {
                 for axis in Axis::ALL {
                     let i = axis.index();
                     let id = ChannelId::PidTerm { axis, term };
-                    out.push((id, format!("axis{letter}[{i}]"), Unit::Raw, values[i]));
+                    let name = format!("axis{letter}[{i}]");
+                    out.push((id, name, Unit::Raw, vec![values[i]; n]));
                 }
             }
         }
         for (idx, rpm) in self.motor_rpm.iter().flatten().enumerate() {
             let id = ChannelId::MotorRpm { idx: idx as u8 };
-            out.push((id, format!("motorRPM[{idx}]"), Unit::Rpm, *rpm));
+            out.push((id, format!("motorRPM[{idx}]"), Unit::Rpm, vec![*rpm; n]));
         }
         let debug = self.debug.iter().flat_map(|d| d.values.iter().take(8));
         for (idx, value) in debug.enumerate() {
             let id = ChannelId::Debug { idx: idx as u8 };
-            out.push((id, format!("debug[{idx}]"), Unit::Raw, *value));
+            out.push((id, format!("debug[{idx}]"), Unit::Raw, vec![*value; n]));
+        }
+        let mut carriers: Vec<Carrier> = Vec::new();
+        for carried in &self.carried {
+            let elsewhere = matches!(
+                carried.channel,
+                Carrier::Setpoint { .. } | Carrier::Motor { .. }
+            );
+            if !elsewhere && !carriers.contains(&carried.channel) {
+                carriers.push(carried.channel);
+            }
+        }
+        for carrier in carriers {
+            let Some(mut add) = self.carried_samples(carrier) else {
+                continue;
+            };
+            if let Carrier::RcCommand { .. } = carrier {
+                for v in &mut add {
+                    *v *= RC_AT_FULL_STICK / RATE_AT_FULL_STICK;
+                }
+            }
+            match out.iter_mut().find(|entry| entry.0 == carrier.id()) {
+                Some(entry) => entry.3.iter_mut().zip(add).for_each(|(v, a)| *v += a),
+                None => out.push((carrier.id(), carrier.field(), Unit::Raw, add)),
+            }
         }
         out
     }
@@ -1105,8 +1361,8 @@ impl FlightSpec {
                 still(0.0),
             );
         }
-        for (id, name, unit, value) in self.extra_channels() {
-            add(id, name, unit, still(value));
+        for (id, name, unit, values) in self.extra_channels() {
+            add(id, name, unit, values);
         }
         let mut settings = Settings {
             loop_rates: openpid_fmt_blackbox::write::typical_rates(self.fs),
@@ -1954,5 +2210,172 @@ mod tests {
         );
         let text = serde_json::to_string(&spec).unwrap();
         assert_eq!(serde_json::from_str::<FlightSpec>(&text).unwrap(), spec);
+    }
+
+    #[test]
+    fn a_throttle_path_runs_straight_between_its_points() {
+        let path = Throttle::Path {
+            points: vec![(1.0, 20.0), (3.0, 60.0), (4.0, 40.0)],
+        };
+        let x = path.render(10.0, 60, 6.0);
+        // held before the first point and after the last
+        assert!(x[..10].iter().all(|v| *v == 20.0));
+        assert!(x[40..].iter().all(|v| *v == 40.0));
+        assert!((x[20] - 40.0).abs() < 1e-9 && (x[35] - 50.0).abs() < 1e-9);
+        assert_eq!(along(&[], 1.0), 0.0);
+        assert_eq!(along(&[(2.0, 7.0), (2.0, 9.0)], 2.0), 9.0);
+    }
+
+    /// A flight of 1 s at 1 kHz whose roll stick moves to 100 at 0.2 s and
+    /// to -50 at 0.5 s.
+    fn moving(carried: Vec<Carried>) -> FlightSpec {
+        FlightSpec {
+            roll: AxisSpec::following(
+                Stick::Steps {
+                    start_s: 0.2,
+                    every_s: 0.3,
+                    levels: vec![100.0, -50.0],
+                },
+                Plant::Delay { delay_ms: 5.0 },
+            ),
+            carried,
+            ..FlightSpec::quiet(1000.0, 0.8)
+        }
+    }
+
+    #[test]
+    fn an_echo_holds_the_stick_later_and_kicks_follow_its_moves() {
+        let echo = Carried {
+            channel: Carrier::RcCommand { axis: Axis::Roll },
+            waves: vec![Wave::Echo {
+                delay_ms: 40.0,
+                scale: 0.5,
+            }],
+        };
+        let kicks = Carried {
+            channel: Carrier::Term {
+                axis: Axis::Roll,
+                term: PidTerm::F,
+            },
+            waves: vec![Wave::Kicks {
+                ms: 10.0,
+                gain: 2.0,
+            }],
+        };
+        let spec = moving(vec![echo, kicks]);
+        let rc = spec
+            .carried_samples(Carrier::RcCommand { axis: Axis::Roll })
+            .unwrap();
+        assert!(rc[..240].iter().all(|v| *v == 0.0));
+        assert!(rc[240..540].iter().all(|v| *v == 50.0));
+        assert!(rc[540..].iter().all(|v| *v == -25.0));
+        let feedforward = Carrier::Term {
+            axis: Axis::Roll,
+            term: PidTerm::F,
+        };
+        let f = spec.carried_samples(feedforward).unwrap();
+        assert!(f[200..210].iter().all(|v| *v == 200.0));
+        assert!(f[500..510].iter().all(|v| *v == -300.0));
+        assert_eq!(f.iter().filter(|v| **v != 0.0).count(), 20);
+        // neither moves the setpoint, nor the gyro, nor a channel of no axis
+        let samples = spec.samples(Axis::Roll);
+        assert_eq!(
+            (samples.setpoint[300], samples.response[300]),
+            (100.0, 100.0)
+        );
+        assert!(spec.carried_samples(Carrier::Debug { idx: 0 }).is_none());
+        let lone = moving(vec![Carried {
+            channel: Carrier::Debug { idx: 0 },
+            waves: vec![Wave::Echo {
+                delay_ms: 0.0,
+                scale: 1.0,
+            }],
+        }]);
+        let debug = lone.carried_samples(Carrier::Debug { idx: 0 }).unwrap();
+        assert!(debug.iter().all(|v| *v == 0.0));
+        // in the session the RC command is in the units of a log, ±500 at
+        // full stick, and the feedforward is a channel of its own
+        let session = spec.build();
+        let channel = |id: ChannelId| session.channel(&id).unwrap().data.values().to_vec();
+        assert_eq!(channel(ChannelId::RcCommand { ch: 0 })[300], 25.0);
+        assert_eq!(channel(feedforward.id())[205], 200.0);
+        assert!(session.channel(&ChannelId::RcCommand { ch: 1 }).is_none());
+    }
+
+    #[test]
+    fn carried_channels_add_to_the_setpoint_the_terms_the_motors_and_the_debug_values() {
+        let tone = |hz: f64, size: f64| vec![Wave::tone(hz, size)];
+        let carried = vec![
+            Carried {
+                channel: Carrier::Setpoint { axis: Axis::Pitch },
+                waves: tone(30.0, 6.0),
+            },
+            Carried {
+                channel: Carrier::Term {
+                    axis: Axis::Roll,
+                    term: PidTerm::P,
+                },
+                waves: tone(120.0, 4.0),
+            },
+            Carried {
+                channel: Carrier::Motor { idx: 2 },
+                waves: tone(85.0, 1.5),
+            },
+            Carried {
+                channel: Carrier::Debug { idx: 1 },
+                waves: tone(330.0, 8.0),
+            },
+        ];
+        let spec = FlightSpec {
+            pid_terms: Some(PidTerms {
+                p: [10.0; 3],
+                i: [0.0; 3],
+                d: [0.0; 3],
+                f: [0.0; 3],
+            }),
+            debug: Some(DebugValues {
+                mode: 1,
+                values: vec![0.0, 3.0],
+            }),
+            carried,
+            ..FlightSpec::quiet(1000.0, 2.0)
+        };
+        let fs = spec.fs;
+        let setpoint = spec.samples(Axis::Pitch).setpoint;
+        assert!((amplitude_at(&setpoint, 30.0, fs) - 6.0).abs() < 1e-9);
+        assert!(spec.samples(Axis::Pitch).response.iter().all(|v| *v == 0.0));
+        let motor = spec.motor_samples_of(2);
+        assert!((amplitude_at(&motor, 85.0, fs) - 1.5).abs() < 1e-9);
+        assert!((motor.iter().sum::<f64>() / motor.len() as f64 - 50.0).abs() < 1e-9);
+        assert_eq!(spec.motor_samples_of(1), [50.0; 2000]);
+        let session = spec.build();
+        let values = |id: ChannelId| session.channel(&id).unwrap().data.values().to_vec();
+        let p = values(ChannelId::PidTerm {
+            axis: Axis::Roll,
+            term: PidTerm::P,
+        });
+        assert!((amplitude_at(&p, 120.0, fs) - 4.0).abs() < 1e-9);
+        assert!((p.iter().sum::<f64>() / p.len() as f64 - 10.0).abs() < 1e-9);
+        let debug = values(ChannelId::Debug { idx: 1 });
+        assert!((amplitude_at(&debug, 330.0, fs) - 8.0).abs() < 1e-9);
+        assert_eq!(values(ChannelId::Debug { idx: 0 }), [0.0; 2000]);
+        // the names and the axes of the carriers
+        assert_eq!(Carrier::Setpoint { axis: Axis::Yaw }.field(), "setpoint[2]");
+        assert_eq!(Carrier::Motor { idx: 3 }.field(), "motor[3]");
+        assert_eq!(Carrier::Debug { idx: 3 }.axis(), None);
+        assert_eq!(
+            Carrier::Term {
+                axis: Axis::Yaw,
+                term: PidTerm::D
+            }
+            .field(),
+            "axisD[2]"
+        );
+        // written down and read back; a flight without them says nothing
+        let text = serde_json::to_string(&spec).unwrap();
+        assert!(text.contains("\"carried\""));
+        assert_eq!(serde_json::from_str::<FlightSpec>(&text).unwrap(), spec);
+        let quiet = serde_json::to_string(&FlightSpec::quiet(1000.0, 1.0)).unwrap();
+        assert!(!quiet.contains("carried"));
     }
 }

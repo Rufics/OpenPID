@@ -8,9 +8,10 @@
 //! (`docs/calibration/ROUNDS.md`).
 
 use crate::signal::{
-    AxisSpec, DebugValues, Filtered, FlightSpec, Modes, MotorOutput, PidTerms, Plant, Stick,
-    Throttle, Wave,
+    AxisSpec, Carried, Carrier, DebugValues, Filtered, FlightSpec, Modes, MotorOutput, PidTerms,
+    Plant, Stick, Throttle, Wave,
 };
+use openpid_core::{Axis, PidTerm};
 use serde::Serialize;
 
 /// The part of the tools a probe is about.
@@ -1863,11 +1864,6 @@ fn viewer_open_ends() -> Vec<Probe> {
         to: size,
         period_s,
     };
-    let pulse = |at_s: f64, samples: u32, value: f64| Wave::Pulse {
-        at_s,
-        samples,
-        value,
-    };
     vec![
         Probe {
             id: "v1-deriv-2k",
@@ -1946,37 +1942,55 @@ fn viewer_open_ends() -> Vec<Probe> {
                 "filtered gyro: white noise of 20 deg/s RMS (seed 1601), and 200 deg/s more \
                  from 3.500 s (sample 3500) to the end; unfiltered gyro 0",
             ],
-            flight: FlightSpec {
-                roll: bare(
-                    Vec::new(),
-                    vec![
-                        pulse(2.0, 1, 500.0),
-                        pulse(4.0, 5, 500.0),
-                        pulse(5.0, 50, 500.0),
-                    ],
-                ),
-                pitch: bare(
-                    Vec::new(),
-                    vec![Wave::Ramp {
-                        from: 0.0,
-                        to: 7000.0,
-                    }],
-                ),
-                yaw: bare(
-                    Vec::new(),
-                    vec![
-                        Wave::Noise {
-                            rms: 20.0,
-                            seed: SAMPLES_SEED,
-                        },
-                        // a step: a pulse that lasts to the end of the flight
-                        pulse(3.5, 3500, 200.0),
-                    ],
-                ),
-                ..FlightSpec::quiet(1000.0, 7.0)
-            },
+            flight: counting(1000.0),
         },
     ]
+}
+
+/// The pulse at `at_s` of `samples` samples of `value` deg/s.
+fn pulse(at_s: f64, samples: u32, value: f64) -> Wave {
+    Wave::Pulse {
+        at_s,
+        samples,
+        value,
+    }
+}
+
+/// The flight of 7 s at `fs` of the log of round 16 that counts its
+/// samples at 1 kHz: pulses of 1, 5 and 50 samples on the filtered gyro of
+/// roll at 2, 4 and 5 s; a ramp from 0 to 7000 deg/s on pitch; noise and a
+/// step at 3.5 s that lasts to the end on yaw.
+fn counting(fs: f64) -> FlightSpec {
+    let to_the_end = (3.5 * fs).round() as u32;
+    FlightSpec {
+        roll: bare(
+            Vec::new(),
+            vec![
+                pulse(2.0, 1, 500.0),
+                pulse(4.0, 5, 500.0),
+                pulse(5.0, 50, 500.0),
+            ],
+        ),
+        pitch: bare(
+            Vec::new(),
+            vec![Wave::Ramp {
+                from: 0.0,
+                to: 7000.0,
+            }],
+        ),
+        yaw: bare(
+            Vec::new(),
+            vec![
+                Wave::Noise {
+                    rms: 20.0,
+                    seed: SAMPLES_SEED,
+                },
+                // a step: a pulse that lasts to the end of the flight
+                pulse(3.5, to_the_end, 200.0),
+            ],
+        ),
+        ..FlightSpec::quiet(fs, 7.0)
+    }
 }
 
 /// Round 16: the open ends the rounds before it left in every window.
@@ -2023,6 +2037,665 @@ fn round_16() -> Vec<Probe> {
     probes
 }
 
+/// Round 17 asks every window again, on logs made for no question: the
+/// verification round. The seeds of its noise and sticks start here.
+const VERIFY_SEED: u64 = 1701;
+
+/// A throttle that wanders between `low` and `high` percent: straight
+/// lines between points `every_s` apart, each at a level of a fixed
+/// sequence of `seed` (a tenth of a percent at a time), in the upper and
+/// the lower half of the range by turns, so that it sweeps the range; the
+/// first at the middle, the second at the top, the third at the bottom.
+fn wandering(seed: u64, (low, high): (f64, f64), every_s: f64, duration_s: f64) -> Throttle {
+    let mut state = seed;
+    let count = (duration_s / every_s).ceil() as usize;
+    let points = (0..=count)
+        .map(|k| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            let unit = ((state >> 33) % 1001) as f64 / 1000.0;
+            let half = if k % 2 == 1 { 0.5 } else { 0.0 };
+            let level = match k {
+                0 => 0.5,
+                1 => 1.0,
+                2 => 0.0,
+                _ => half + unit / 2.0,
+            };
+            let t = (k as f64 * every_s).min(duration_s);
+            (t, (10.0 * (low + (high - low) * level)).round() / 10.0)
+        })
+        .collect();
+    Throttle::Path { points }
+}
+
+/// The noise of a flown axis of round 17: motor noise whose fundamental
+/// is `motor.0` Hz at zero throttle and `motor.1` Hz more per percent,
+/// with `size` deg/s, its second harmonic at two fifths of that, a
+/// resonance of the frame at `resonance_hz` with a third of it, and white
+/// noise of `floor` deg/s RMS.
+#[derive(Clone, Copy)]
+struct Noisy {
+    motor: (f64, f64),
+    size: f64,
+    resonance_hz: f64,
+    floor: f64,
+}
+
+impl Noisy {
+    /// The components on the unfiltered gyro (`share` 1) or a share of
+    /// them on the filtered one.
+    fn waves(self, share: f64, seed: u64) -> Vec<Wave> {
+        let (at_zero, per_percent) = self.motor;
+        vec![
+            throttle_tone(at_zero, per_percent, self.size * share),
+            throttle_tone(2.0 * at_zero, 2.0 * per_percent, 0.4 * self.size * share),
+            Wave::tone(self.resonance_hz, self.size * share / 3.0),
+            Wave::Noise {
+                rms: self.floor * share,
+                seed,
+            },
+        ]
+    }
+}
+
+/// What the filtered gyro of round 17 keeps of the noise of the
+/// unfiltered one.
+const FILTERED_SHARE: f64 = 0.35;
+
+/// An axis of a flight of round 17: random stick moves within `stick`
+/// deg/s, held 150 to 850 ms, through `plant`, under the noise `noisy`.
+fn verified(seed: u64, stick: f64, plant: Plant, noisy: Noisy) -> AxisSpec {
+    AxisSpec {
+        stick: Stick::Random {
+            seed: seed + 100,
+            hold_min_ms: 150,
+            hold_max_ms: 850,
+            amplitude: stick,
+        },
+        plant,
+        waves: noisy.waves(1.0, seed),
+        filtered: Filtered::Separate {
+            waves: noisy.waves(FILTERED_SHARE, seed),
+        },
+    }
+}
+
+/// A second-order plant of gain 1.
+fn second(natural_hz: f64, damping: f64, delay_ms: f64) -> Plant {
+    Plant::SecondOrder {
+        natural_hz,
+        damping,
+        delay_ms,
+        gain: 1.0,
+    }
+}
+
+/// A first-order plant of gain 1.
+fn first(tau_ms: f64, delay_ms: f64) -> Plant {
+    Plant::FirstOrder {
+        tau_ms,
+        delay_ms,
+        gain: 1.0,
+    }
+}
+
+/// One axis of a flight of round 17 as data: the stick's reach, the plant,
+/// the noise.
+type Flown17 = (f64, Plant, Noisy);
+
+/// A flight of round 17 made for no question: on every axis its own stick
+/// moves, plant and noise (`axes`, seeds from `seed`), the throttle
+/// wandering within `throttle` percent.
+fn made_for_none(
+    (id, area, title): (&'static str, Area, &'static str),
+    purpose: [&'static str; 3],
+    (fs, duration_s): (f64, f64),
+    (seed, throttle): (u64, (f64, f64)),
+    axes: &[Flown17; 3],
+) -> Probe {
+    let [roll, pitch, yaw] = [0, 1, 2].map(|k: usize| {
+        let (stick, plant, noisy) = axes[k];
+        verified(seed + k as u64, stick, plant, noisy)
+    });
+    Probe {
+        id,
+        area,
+        title,
+        purpose,
+        flight: FlightSpec {
+            roll,
+            pitch,
+            yaw,
+            throttle: wandering(seed + 10, throttle, 1.6, duration_s),
+            ..FlightSpec::quiet(fs, duration_s)
+        },
+    }
+}
+
+/// The noise of an axis of round 17: `motor`, `size` deg/s, the resonance
+/// and the floor.
+fn noisy(motor: (f64, f64), size: f64, resonance_hz: f64, floor: f64) -> Noisy {
+    Noisy {
+        motor,
+        size,
+        resonance_hz,
+        floor,
+    }
+}
+
+/// The six flights of round 17 made for no question, one or two for each
+/// window: the spectrum, the step response, both maps, the main window.
+fn verification_flights() -> Vec<Probe> {
+    vec![
+        made_for_none(
+            (
+                "e1-spec-1k",
+                Area::Spectrum,
+                "A flight made for no question, for the spectrum window: stick moves, motor \
+                 noise that follows a wandering throttle (25 to 65 %), a resonance, gyro noise; \
+                 1 kHz, 26 s",
+            ),
+            [
+                "stick moves within 280 deg/s through a second-order response of 17 Hz, damping \
+                 0.38, after 3.25 ms; motor noise of 11 deg/s at 68 Hz + 2.7 Hz per percent of \
+                 throttle and its second harmonic; a resonance at 345 Hz; white noise of 2.5 \
+                 deg/s RMS; the filtered gyro keeps 0.35 of the noise",
+                "stick moves within 230 deg/s, 13 Hz, damping 0.62, after 4.25 ms; motor noise \
+                 of 9 deg/s; a resonance at 395 Hz; white noise of 2 deg/s RMS",
+                "stick moves within 140 deg/s, a first-order response of 35 ms after 5.5 ms; \
+                 motor noise of 6 deg/s; a resonance at 290 Hz; white noise of 1.5 deg/s RMS",
+            ],
+            (1000.0, 26.0),
+            (VERIFY_SEED, (25.0, 65.0)),
+            &[
+                (
+                    280.0,
+                    second(17.0, 0.38, 3.25),
+                    noisy((68.0, 2.7), 11.0, 345.0, 2.5),
+                ),
+                (
+                    230.0,
+                    second(13.0, 0.62, 4.25),
+                    noisy((68.0, 2.7), 9.0, 395.0, 2.0),
+                ),
+                (140.0, first(35.0, 5.5), noisy((68.0, 2.7), 6.0, 290.0, 1.5)),
+            ],
+        ),
+        made_for_none(
+            (
+                "e2-spec-4k",
+                Area::Spectrum,
+                "Another flight for the spectrum window, with other noise: the throttle \
+                 wandering from 30 to 75 %; 4 kHz, 34 s",
+            ),
+            [
+                "stick moves within 320 deg/s, 21 Hz, damping 0.47, after 2.75 ms; motor noise \
+                 of 13 deg/s at 75 Hz + 3 Hz per percent and its second harmonic; a resonance at \
+                 430 Hz; white noise of 3 deg/s RMS",
+                "stick moves within 260 deg/s, 12 Hz, damping 0.85, after 5.25 ms; motor noise \
+                 of 10 deg/s; a resonance at 470 Hz; white noise of 2.5 deg/s RMS",
+                "stick moves within 150 deg/s, a first-order response of 28 ms after 4.75 ms; \
+                 motor noise of 7 deg/s; a resonance at 375 Hz; white noise of 2 deg/s RMS",
+            ],
+            (4000.0, 34.0),
+            (VERIFY_SEED + 20, (30.0, 75.0)),
+            &[
+                (
+                    320.0,
+                    second(21.0, 0.47, 2.75),
+                    noisy((75.0, 3.0), 13.0, 430.0, 3.0),
+                ),
+                (
+                    260.0,
+                    second(12.0, 0.85, 5.25),
+                    noisy((75.0, 3.0), 10.0, 470.0, 2.5),
+                ),
+                (
+                    150.0,
+                    first(28.0, 4.75),
+                    noisy((75.0, 3.0), 7.0, 375.0, 2.0),
+                ),
+            ],
+        ),
+        made_for_none(
+            (
+                "e3-step-2k",
+                Area::StepResponse,
+                "A flight made for no question, for the step response window: stick moves \
+                 through plants of dampings and delays no earlier round flew, with motor noise, \
+                 a resonance and gyro noise; 2 kHz, 28 s",
+            ),
+            [
+                "stick moves within 300 deg/s; a second-order response of 19 Hz, damping 0.44, \
+                 after 2.75 ms; motor noise of 8 deg/s at 62 Hz + 3.1 Hz per percent; a \
+                 resonance at 365 Hz; white noise of 2.5 deg/s RMS",
+                "stick moves within 240 deg/s; a second-order response of 11 Hz, damping 0.88, \
+                 after 5.75 ms; motor noise of 7 deg/s; a resonance at 415 Hz; white noise of 2 \
+                 deg/s RMS",
+                "stick moves within 160 deg/s; a first-order response of 26 ms after 9 ms; motor \
+                 noise of 5 deg/s; a resonance at 305 Hz; white noise of 1.5 deg/s RMS",
+            ],
+            (2000.0, 28.0),
+            (VERIFY_SEED + 40, (30.0, 70.0)),
+            &[
+                (
+                    300.0,
+                    second(19.0, 0.44, 2.75),
+                    noisy((62.0, 3.1), 8.0, 365.0, 2.5),
+                ),
+                (
+                    240.0,
+                    second(11.0, 0.88, 5.75),
+                    noisy((62.0, 3.1), 7.0, 415.0, 2.0),
+                ),
+                (160.0, first(26.0, 9.0), noisy((62.0, 3.1), 5.0, 305.0, 1.5)),
+            ],
+        ),
+        made_for_none(
+            (
+                "e4-step-8k",
+                Area::StepResponse,
+                "Another flight for the step response window, with other plants: 8 kHz, 22 s",
+            ),
+            [
+                "stick moves within 340 deg/s; a second-order response of 24 Hz, damping 0.95, \
+                 after 3.25 ms; motor noise of 9 deg/s at 70 Hz + 2.9 Hz per percent; a \
+                 resonance at 520 Hz; white noise of 3 deg/s RMS",
+                "stick moves within 250 deg/s; a second-order response of 15 Hz, damping 0.33, \
+                 after 4.25 ms; motor noise of 8 deg/s; a resonance at 610 Hz; white noise of \
+                 2.5 deg/s RMS",
+                "stick moves within 130 deg/s; a second-order response of 9 Hz, damping 0.67, \
+                 after 5.5 ms; motor noise of 5 deg/s; a resonance at 450 Hz; white noise of 2 \
+                 deg/s RMS",
+            ],
+            (8000.0, 22.0),
+            (VERIFY_SEED + 60, (25.0, 75.0)),
+            &[
+                (
+                    340.0,
+                    second(24.0, 0.95, 3.25),
+                    noisy((70.0, 2.9), 9.0, 520.0, 3.0),
+                ),
+                (
+                    250.0,
+                    second(15.0, 0.33, 4.25),
+                    noisy((70.0, 2.9), 8.0, 610.0, 2.5),
+                ),
+                (
+                    130.0,
+                    second(9.0, 0.67, 5.5),
+                    noisy((70.0, 2.9), 5.0, 450.0, 2.0),
+                ),
+            ],
+        ),
+        made_for_none(
+            (
+                "e5-maps-2k",
+                Area::Throttle,
+                "A flight made for no question, for the maps of frequency against throttle and \
+                 against time: the throttle wandering from 20 to 80 %, motor tones that follow \
+                 it, a resonance, gyro noise; 2 kHz, 47 s",
+            ),
+            [
+                "stick moves within 260 deg/s, 18 Hz, damping 0.57, after 3.75 ms; motor noise \
+                 of 12 deg/s at 55 Hz + 3.5 Hz per percent of throttle (125 to 335 Hz) and its \
+                 second harmonic (250 to 670 Hz); a resonance at 455 Hz; white noise of 2.5 \
+                 deg/s RMS; the filtered gyro keeps 0.35 of the noise",
+                "stick moves within 220 deg/s, 14 Hz, damping 0.73, after 4.75 ms; motor noise \
+                 of 10 deg/s; a resonance at 505 Hz; white noise of 2 deg/s RMS",
+                "stick moves within 120 deg/s, a first-order response of 32 ms after 6.25 ms; \
+                 motor noise of 7 deg/s; a resonance at 380 Hz; white noise of 1.5 deg/s RMS",
+            ],
+            (2000.0, 47.0),
+            (VERIFY_SEED + 80, (20.0, 80.0)),
+            &[
+                (
+                    260.0,
+                    second(18.0, 0.57, 3.75),
+                    noisy((55.0, 3.5), 12.0, 455.0, 2.5),
+                ),
+                (
+                    220.0,
+                    second(14.0, 0.73, 4.75),
+                    noisy((55.0, 3.5), 10.0, 505.0, 2.0),
+                ),
+                (
+                    120.0,
+                    first(32.0, 6.25),
+                    noisy((55.0, 3.5), 7.0, 380.0, 1.5),
+                ),
+            ],
+        ),
+        made_for_none(
+            (
+                "e6-view-2k",
+                Area::LogViewer,
+                "A flight made for no question, for the main window: stick moves, motor noise, \
+                 a resonance, gyro noise, the throttle wandering from 30 to 70 %; 2 kHz, 24 s",
+            ),
+            [
+                "stick moves within 290 deg/s, 16 Hz, damping 0.49, after 3.25 ms; motor noise \
+                 of 10 deg/s at 66 Hz + 2.8 Hz per percent; a resonance at 385 Hz; white noise \
+                 of 2.5 deg/s RMS",
+                "stick moves within 210 deg/s, 12.5 Hz, damping 0.79, after 4.25 ms; motor noise \
+                 of 8 deg/s; a resonance at 440 Hz; white noise of 2 deg/s RMS",
+                "stick moves within 130 deg/s, a first-order response of 38 ms after 5.75 ms; \
+                 motor noise of 6 deg/s; a resonance at 335 Hz; white noise of 1.5 deg/s RMS",
+            ],
+            (2000.0, 24.0),
+            (VERIFY_SEED + 100, (30.0, 70.0)),
+            &[
+                (
+                    290.0,
+                    second(16.0, 0.49, 3.25),
+                    noisy((66.0, 2.8), 10.0, 385.0, 2.5),
+                ),
+                (
+                    210.0,
+                    second(12.5, 0.79, 4.25),
+                    noisy((66.0, 2.8), 8.0, 440.0, 2.0),
+                ),
+                (
+                    130.0,
+                    first(38.0, 5.75),
+                    noisy((66.0, 2.8), 6.0, 335.0, 1.5),
+                ),
+            ],
+        ),
+    ]
+}
+
+/// What each channel of the spectrum window's list carries on one axis of
+/// the probe of the other channels, as `(Hz, size)`: the setpoint (deg/s,
+/// over the stick), the filtered and the unfiltered gyro (deg/s, over the
+/// response to the stick), and the P, D and F terms (the firmware's
+/// units); no D term on an axis without one.
+struct ListedTones {
+    setpoint: (f64, f64),
+    gyro: (f64, f64),
+    prefilt: (f64, f64),
+    p: (f64, f64),
+    d: Option<(f64, f64)>,
+    f: (f64, f64),
+}
+
+/// The tones of the probe of the other channels: roll, pitch and yaw.
+const LISTED: [ListedTones; 3] = [
+    ListedTones {
+        setpoint: (30.0, 6.0),
+        gyro: (240.0, 2.5),
+        prefilt: (300.0, 7.0),
+        p: (120.0, 4.0),
+        d: Some((180.0, 3.0)),
+        f: (60.0, 5.0),
+    },
+    ListedTones {
+        setpoint: (35.0, 6.5),
+        gyro: (250.0, 3.0),
+        prefilt: (310.0, 7.5),
+        p: (130.0, 4.5),
+        d: Some((190.0, 3.5)),
+        f: (70.0, 5.5),
+    },
+    ListedTones {
+        setpoint: (40.0, 7.0),
+        gyro: (260.0, 3.5),
+        prefilt: (320.0, 8.0),
+        p: (140.0, 5.0),
+        d: None,
+        f: (80.0, 6.0),
+    },
+];
+/// The tone of each motor of that probe, `(Hz, percent)`.
+const MOTOR_TONES: [(f64, f64); 4] = [(85.0, 1.5), (105.0, 2.0), (135.0, 2.5), (165.0, 3.0)];
+/// The tone of the debug values 0 to 2 of that probe, `(Hz, units)`.
+const DEBUG_TONES: [(f64, f64); 3] = [(330.0, 8.0), (345.0, 9.0), (360.0, 10.0)];
+/// White noise under each motor tone of that probe, percent RMS: about
+/// half a unit of a log, which keeps the rounding of the log from making
+/// lines of its own.
+const MOTOR_DITHER: f64 = 0.03;
+
+/// The probe of the other channels the spectrum window lists (S8, the
+/// owner, 2026-11-17): every channel of the list carries a tone of its own
+/// on every axis, so that a curve names the channel it was drawn from.
+fn listed_channels() -> Probe {
+    let seed = VERIFY_SEED + 200;
+    let toned = |(hz, size): (f64, f64), seed: u64| vec![Wave::tone(hz, size), dither(seed)];
+    let mut carried = Vec::new();
+    let mut axes = Vec::new();
+    for (k, (axis, tones)) in Axis::ALL.into_iter().zip(LISTED).enumerate() {
+        let seed = seed + 10 * k as u64;
+        let mut term = |term: PidTerm, tone: (f64, f64), seed: u64| {
+            carried.push(Carried {
+                channel: Carrier::Term { axis, term },
+                waves: toned(tone, seed),
+            });
+        };
+        term(PidTerm::P, tones.p, seed + 3);
+        if let Some(d) = tones.d {
+            term(PidTerm::D, d, seed + 4);
+        }
+        term(PidTerm::F, tones.f, seed + 5);
+        carried.push(Carried {
+            channel: Carrier::Setpoint { axis },
+            waves: toned(tones.setpoint, seed + 6),
+        });
+        // a slow stick: a new rate every 2.5 s
+        let levels = [80.0, -50.0, 120.0, 0.0, -90.0, 40.0].map(|l| l * (1.0 - 0.2 * k as f64));
+        axes.push(AxisSpec {
+            stick: Stick::Steps {
+                start_s: 1.0,
+                every_s: 2.5,
+                levels: levels.to_vec(),
+            },
+            plant: second(12.0 - k as f64, 0.7, 4.0),
+            waves: toned(tones.prefilt, seed + 1),
+            filtered: Filtered::Separate {
+                waves: toned(tones.gyro, seed + 2),
+            },
+        });
+    }
+    for (idx, (hz, size)) in MOTOR_TONES.into_iter().enumerate() {
+        carried.push(Carried {
+            channel: Carrier::Motor { idx: idx as u8 },
+            waves: vec![
+                Wave::tone(hz, size),
+                Wave::Noise {
+                    rms: MOTOR_DITHER,
+                    seed: seed + 40 + idx as u64,
+                },
+            ],
+        });
+    }
+    for (idx, tone) in DEBUG_TONES.into_iter().enumerate() {
+        carried.push(Carried {
+            channel: Carrier::Debug { idx: idx as u8 },
+            waves: toned(tone, seed + 50 + idx as u64),
+        });
+    }
+    let [roll, pitch, yaw]: [AxisSpec; 3] = axes.try_into().unwrap_or_else(|_| unreachable!());
+    Probe {
+        id: "i1-chan-2k",
+        area: Area::Spectrum,
+        title: "Every channel of the spectrum window's list with a tone of its own, for which \
+                channel each entry of the list draws: motors 1 to 4 a tone of 1.5, 2, 2.5 and \
+                3 % at 85, 105, 135 and 165 Hz over 50 % throttle; debug 0, 1 and 2 (debug mode \
+                1) a tone of 8, 9 and 10 at 330, 345 and 360 Hz; PID error and PID sum follow \
+                from the rest; every tone over white noise of 0.5 RMS (0.03 % on the motors); \
+                2 kHz, 24 s",
+        purpose: [
+            "setpoint: a tone of 6 deg/s at 30 Hz over a slow stick (a new rate every 2.5 s \
+             within 120 deg/s, which a second-order response of 12 Hz, damping 0.7, after 4 ms \
+             follows); filtered gyro a tone of 2.5 deg/s at 240 Hz, unfiltered gyro 7 deg/s \
+             at 300 Hz, both over that response; P a tone of 4 at 120 Hz, D 3 at 180 Hz, F 5 \
+             at 60 Hz, I 0",
+            "setpoint 6.5 deg/s at 35 Hz over a slow stick within 96 deg/s (11 Hz, damping \
+             0.7, after 4 ms); filtered gyro 3 deg/s at 250 Hz, unfiltered 7.5 deg/s at 310 \
+             Hz; P 4.5 at 130 Hz, D 3.5 at 190 Hz, F 5.5 at 70 Hz",
+            "setpoint 7 deg/s at 40 Hz over a slow stick within 72 deg/s (10 Hz, damping 0.7, \
+             after 4 ms); filtered gyro 3.5 deg/s at 260 Hz, unfiltered 8 deg/s at 320 Hz; P \
+             5 at 140 Hz, F 6 at 80 Hz, and no D term: the craft has no D gain on yaw",
+        ],
+        flight: FlightSpec {
+            roll,
+            pitch,
+            yaw,
+            debug: Some(DebugValues {
+                mode: VALUES_DEBUG_MODE,
+                values: Vec::new(),
+            }),
+            carried,
+            ..FlightSpec::quiet(2000.0, 24.0)
+        },
+    }
+}
+
+/// How much later the RC command of the probe of the stick's path holds
+/// the stick, ms, and how much of it.
+pub const ECHO: (f64, f64) = (40.0, 0.5);
+/// How long the feedforward of that probe kicks at every move of the
+/// stick, ms, and how much of the move.
+pub const KICK: (f64, f64) = (10.0, 1.0);
+
+/// The probe of the stick's path (#172, the owner): what the step response
+/// window takes for the input of the craft, when the RC command is not the
+/// setpoint's image and the feedforward carries kicks at every move.
+fn stick_path() -> Probe {
+    let seed = VERIFY_SEED + 300;
+    let echo = |axis: Axis| Carried {
+        channel: Carrier::RcCommand { axis },
+        waves: vec![Wave::Echo {
+            delay_ms: ECHO.0,
+            scale: ECHO.1,
+        }],
+    };
+    let kicks = |axis: Axis| Carried {
+        channel: Carrier::Term {
+            axis,
+            term: PidTerm::F,
+        },
+        waves: vec![Wave::Kicks {
+            ms: KICK.0,
+            gain: KICK.1,
+        }],
+    };
+    let axis = |k: u64, amplitude: f64, plant: Plant, noise: f64| AxisSpec {
+        waves: vec![Wave::Noise {
+            rms: noise,
+            seed: seed + k,
+        }],
+        ..AxisSpec::following(
+            Stick::Random {
+                seed: seed + 10 + k,
+                hold_min_ms: 180,
+                hold_max_ms: 650,
+                amplitude,
+            },
+            plant,
+        )
+    };
+    Probe {
+        id: "j1-path-2k",
+        area: Area::StepResponse,
+        title: "Random stick moves through known plants, with an RC command that is not the \
+                setpoint's image and a feedforward that kicks at every move: what the step \
+                response window takes for the input, the setpoint, the stick or the setpoint \
+                with the feedforward; the manifest holds the three answers; 2 kHz, 28 s",
+        purpose: [
+            "stick moves within 240 deg/s through a second-order response of 16 Hz, damping \
+             0.52, after 3.75 ms, gyro noise of 1.5 deg/s RMS; the RC command holds the same \
+             moves 40 ms later and half as large (through the craft's rates, 1000 deg/s at \
+             full stick); the feedforward holds the size of every move of the setpoint for \
+             10 ms after it",
+            "stick moves within 200 deg/s through a first-order response of 22 ms after 4.75 \
+             ms, gyro noise of 1.5 deg/s RMS; the RC command is the setpoint's image; the \
+             feedforward kicks as on roll",
+            "stick moves within 150 deg/s through a second-order response of 10 Hz, damping \
+             0.78, after 6.25 ms, gyro noise of 1 deg/s RMS; the RC command 40 ms later and \
+             half as large, as on roll; no feedforward",
+        ],
+        flight: FlightSpec {
+            roll: axis(0, 240.0, second(16.0, 0.52, 3.75), 1.5),
+            pitch: axis(1, 200.0, first(22.0, 4.75), 1.5),
+            yaw: axis(2, 150.0, second(10.0, 0.78, 6.25), 1.0),
+            carried: vec![
+                echo(Axis::Roll),
+                kicks(Axis::Roll),
+                kicks(Axis::Pitch),
+                echo(Axis::Yaw),
+            ],
+            ..FlightSpec::quiet(2000.0, 28.0)
+        },
+    }
+}
+
+/// Round 17, the verification round: every window asked again, now that
+/// the rules of the reference tool are known and `OpenPID`'s decisions are
+/// taken, on logs that answer no question of their own. In the order the
+/// plan values them:
+///
+/// - six flights made for no question (rates, lengths, plants and noise of
+///   their own; stick moves, motor noise that follows a wandering
+///   throttle, a resonance, gyro noise): two for the spectrum window, two
+///   for the step response window, one for both maps, one for the main
+///   window; and a set of filters typed into the filter simulator
+///   (`capture::VERIFY_FILTERS`);
+/// - the other channels of the spectrum window's list, each with a tone of
+///   its own;
+/// - the stick's path into the step response;
+/// - two leftovers of round 16: its log that counts its samples at 2 and
+///   4 kHz, for whether the line smoothing of the main window counts
+///   samples or milliseconds, and its stairs in flights of 11, 12 and
+///   13 s, for where the maps stop trimming the ends of a short log.
+///
+/// The logs are in the order of their names, which is the order they are
+/// opened in.
+fn round_17() -> Vec<Probe> {
+    let mut probes = verification_flights();
+    probes.push(listed_channels());
+    probes.push(stick_path());
+    let counted = |id: &'static str, fs: f64, rate: &'static str| Probe {
+        id,
+        area: Area::LogViewer,
+        title: rate,
+        purpose: [
+            "filtered gyro 0, and 500 deg/s in one sample at 2.000 s, in five samples from \
+             4.000 s and in fifty from 5.000 s: the same seconds and the same samples as \
+             v3-samp-1k of round 16, at another rate; unfiltered gyro 0",
+            "filtered gyro: a ramp from 0 to 7000 deg/s over the 7 s; unfiltered gyro 0",
+            "filtered gyro: white noise of 20 deg/s RMS (seed 1601), and 200 deg/s more from \
+             3.500 s to the end; unfiltered gyro 0",
+        ],
+        flight: counting(fs),
+    };
+    probes.push(counted(
+        "x1-samp-2k",
+        2000.0,
+        "The log of round 16 that counts its samples (v3-samp-1k) at 2 kHz: pulses of one, \
+         five and fifty samples at the same seconds, for whether the line smoothing of the main \
+         window spans samples or milliseconds; 7 s, 14000 samples",
+    ));
+    probes.push(counted(
+        "x2-samp-4k",
+        4000.0,
+        "The same at 4 kHz; 7 s, 28000 samples",
+    ));
+    for (id, duration_s) in [
+        ("x3-len11-2k", 11.0),
+        ("x4-len12-2k", 12.0),
+        ("x5-len13-2k", 13.0),
+    ] {
+        probes.push(Probe {
+            title: "The stairs of the throttle of round 16 (a second a stair) in a short \
+                    flight: where between 10 and 14 s the maps stop taking a log whole and \
+                    trim its ends",
+            ..stairs_in(id, 2000.0, 1.0, duration_s)
+        });
+    }
+    probes
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
@@ -2042,12 +2715,13 @@ pub fn round(round: u32) -> Option<Vec<Probe>> {
         14 => Some(round_14()),
         15 => Some(round_15()),
         16 => Some(round_16()),
+        17 => Some(round_17()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 
 #[cfg(test)]
 mod tests {
@@ -3653,5 +4327,214 @@ mod tests {
             |from: usize, to: usize| roll[from..to].iter().fold(0.0f64, |m, v| m.max(v.abs()));
         assert!(loud(6000, 7000) > 9.0 && loud(7100, 11_900) < 3.0);
         assert!(loud(25_000, 25_200) > 9.0 && loud(27_000, 27_040) > 5.0);
+    }
+
+    /// The probe `id` of round 17.
+    fn verifying(id: &str) -> Probe {
+        let found = round(17).unwrap().into_iter().find(|p| p.id == id);
+        found.unwrap_or_else(|| panic!("round 17 has no {id}"))
+    }
+
+    #[test]
+    fn round_17_is_thirteen_logs_in_the_order_of_their_names() {
+        let probes = round(17).unwrap();
+        let shape: Vec<(&str, Area, f64, f64)> = probes
+            .iter()
+            .map(|p| (p.id, p.area, p.flight.fs, p.flight.duration_s))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("e1-spec-1k", Area::Spectrum, 1000.0, 26.0),
+                ("e2-spec-4k", Area::Spectrum, 4000.0, 34.0),
+                ("e3-step-2k", Area::StepResponse, 2000.0, 28.0),
+                ("e4-step-8k", Area::StepResponse, 8000.0, 22.0),
+                ("e5-maps-2k", Area::Throttle, 2000.0, 47.0),
+                ("e6-view-2k", Area::LogViewer, 2000.0, 24.0),
+                ("i1-chan-2k", Area::Spectrum, 2000.0, 24.0),
+                ("j1-path-2k", Area::StepResponse, 2000.0, 28.0),
+                ("x1-samp-2k", Area::LogViewer, 2000.0, 7.0),
+                ("x2-samp-4k", Area::LogViewer, 4000.0, 7.0),
+                ("x3-len11-2k", Area::Throttle, 2000.0, 11.0),
+                ("x4-len12-2k", Area::Throttle, 2000.0, 12.0),
+                ("x5-len13-2k", Area::Throttle, 2000.0, 13.0),
+            ]
+        );
+        let mut names: Vec<&str> = probes.iter().map(|p| p.id).collect();
+        names.sort_unstable();
+        assert!(names.iter().zip(&probes).all(|(n, p)| *n == p.id));
+        // the log that counts its samples is that of round 16 at other rates
+        let v3 = open_end("v3-samp-1k").flight;
+        for id in ["x1-samp-2k", "x2-samp-4k"] {
+            let x = verifying(id).flight;
+            assert_eq!((&x.roll, &x.pitch), (&v3.roll, &v3.pitch), "{id}");
+            let Filtered::Separate { waves } = &x.yaw.filtered else {
+                panic!("{id}: no filtered gyro of its own");
+            };
+            let Wave::Pulse { samples, .. } = waves[1] else {
+                panic!("{id}: no step");
+            };
+            assert_eq!(f64::from(samples), 3.5 * x.fs);
+        }
+        // the short stairs are those of round 16, a second a stair
+        for (id, duration_s) in [("x3-len11-2k", 11.0), ("x5-len13-2k", 13.0)] {
+            let stairs = verifying(id).flight;
+            assert_eq!(stairs.roll, open_end("w7-len10-2k").flight.roll);
+            assert_eq!(stairs.throttle, super::stairs(1.0, duration_s));
+        }
+    }
+
+    #[test]
+    fn the_flights_of_round_17_are_made_for_no_question() {
+        let earlier: Vec<Probe> = ROUNDS
+            .iter()
+            .filter(|r| **r < 17)
+            .flat_map(|r| round(*r).unwrap())
+            .collect();
+        let plants: Vec<Plant> = earlier
+            .iter()
+            .flat_map(|p| Axis::ALL.map(|axis| p.flight.axis(axis).plant))
+            .collect();
+        for probe in &round(17).unwrap()[..6] {
+            let f = &probe.flight;
+            // a rate and a length no earlier log of its window had together
+            let same = |p: &Probe| {
+                (p.area, p.flight.fs, p.flight.duration_s) == (probe.area, f.fs, f.duration_s)
+            };
+            assert!(!earlier.iter().any(same), "{}", probe.id);
+            let Throttle::Path { points } = &f.throttle else {
+                panic!("{}: the throttle does not wander", probe.id);
+            };
+            assert!(points.len() > 10 && points.last().unwrap().0 >= f.duration_s);
+            for axis in Axis::ALL {
+                let spec = f.axis(axis);
+                assert!(matches!(spec.stick, Stick::Random { .. }), "{}", probe.id);
+                assert!(!plants.contains(&spec.plant), "{} {axis:?}", probe.id);
+                let s = f.samples(axis);
+                let peak = s.unfiltered.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+                assert!(
+                    peak > 100.0 && peak < 2000.0,
+                    "{} {axis:?}: {peak}",
+                    probe.id
+                );
+                // the noise of the filtered gyro is the smaller
+                let noise = |x: &[f64]| {
+                    let d: Vec<f64> = x.iter().zip(&s.response).map(|(a, b)| a - b).collect();
+                    d.iter().map(|v| v * v).sum::<f64>()
+                };
+                assert!(noise(&s.filtered) < 0.2 * noise(&s.unfiltered));
+                // every component is below the Nyquist frequency
+                let top = f.throttle_samples().iter().fold(0.0f64, |m, v| m.max(*v));
+                for wave in &spec.waves {
+                    let hz = match wave {
+                        Wave::Tone { hz, .. } => *hz,
+                        Wave::ThrottleTone {
+                            hz_at_zero,
+                            hz_per_percent,
+                            ..
+                        } => hz_at_zero + hz_per_percent * top,
+                        _ => 0.0,
+                    };
+                    assert!(hz < f.fs / 2.0, "{} {axis:?}: {hz}", probe.id);
+                }
+            }
+        }
+        // the maps flight wanders over 20 to 80 % of throttle
+        let maps = verifying("e5-maps-2k").flight.throttle_samples();
+        let (low, high) = maps
+            .iter()
+            .fold((100.0f64, 0.0f64), |(l, h), v| (l.min(*v), h.max(*v)));
+        assert_eq!((low, high), (20.0, 80.0));
+    }
+
+    #[test]
+    fn the_log_of_the_other_channels_carries_a_tone_on_each() {
+        let probe = verifying("i1-chan-2k");
+        let (head, session) = log_of(&probe);
+        assert!(head.contains("H debug_mode:1"));
+        let fs = probe.flight.fs;
+        let tone_of = |id: ChannelId, hz: f64| {
+            let c = session.channel(&id).unwrap();
+            let values = c.data.values();
+            let (mut s, mut co) = (0.0, 0.0);
+            for (i, v) in values.iter().enumerate() {
+                let phase = std::f64::consts::TAU * hz * i as f64 / fs;
+                s += v * phase.sin();
+                co += v * phase.cos();
+            }
+            2.0 * (s * s + co * co).sqrt() / values.len() as f64
+        };
+        let roll = Axis::Roll;
+        let term = |term: PidTerm| ChannelId::PidTerm { axis: roll, term };
+        let near = |got: f64, want: f64| (got - want).abs() < 0.05 * want;
+        let tones = &LISTED[0];
+        assert!(near(tone_of(term(PidTerm::P), tones.p.0), tones.p.1));
+        assert!(near(tone_of(term(PidTerm::D), 180.0), 3.0));
+        assert!(near(tone_of(term(PidTerm::F), 60.0), 5.0));
+        assert!(tone_of(term(PidTerm::I), 120.0) < 0.01);
+        assert!(near(tone_of(term(PidTerm::Sum), 120.0), 4.0));
+        assert!(near(tone_of(ChannelId::Setpoint { axis: roll }, 30.0), 6.0));
+        assert!(near(
+            tone_of(ChannelId::PidError { axis: roll }, 240.0),
+            2.5
+        ));
+        let gyro = |stage: GyroStage| ChannelId::Gyro { axis: roll, stage };
+        assert!(near(tone_of(gyro(GyroStage::Filtered), 240.0), 2.5));
+        assert!(near(tone_of(gyro(GyroStage::Raw), 300.0), 7.0));
+        assert!(near(tone_of(ChannelId::Motor { idx: 0 }, 85.0), 1.5));
+        assert!(near(tone_of(ChannelId::Motor { idx: 3 }, 165.0), 3.0));
+        assert!(near(tone_of(ChannelId::Debug { idx: 0 }, 330.0), 8.0));
+        // no D term on yaw: the craft has no D gain there
+        let yaw_d = ChannelId::PidTerm {
+            axis: Axis::Yaw,
+            term: PidTerm::D,
+        };
+        assert!(session.channel(&yaw_d).is_none());
+    }
+
+    #[test]
+    fn the_log_of_the_stick_s_path_parts_the_rc_command_and_the_feedforward() {
+        let probe = verifying("j1-path-2k");
+        let (_, session) = log_of(&probe);
+        let values = |id: ChannelId| session.channel(&id).unwrap().data.values().to_vec();
+        let setpoint = values(ChannelId::Setpoint { axis: Axis::Roll });
+        let rc = values(ChannelId::RcCommand { ch: 0 });
+        // 40 ms later (80 samples) and half as large, in the units of a log:
+        // a quarter of the setpoint's deg/s, rounded
+        for i in (80..setpoint.len()).step_by(97) {
+            assert!((rc[i] - setpoint[i - 80] / 4.0).abs() <= 0.5, "{i}");
+        }
+        // pitch keeps the setpoint's image
+        let pitch = values(ChannelId::Setpoint { axis: Axis::Pitch });
+        let image = values(ChannelId::RcCommand { ch: 1 });
+        assert!(
+            pitch
+                .iter()
+                .zip(&image)
+                .all(|(s, r)| (r - s / 2.0).abs() <= 0.5)
+        );
+        // the feedforward: every move of the setpoint for 10 ms (20 samples)
+        let f = values(ChannelId::PidTerm {
+            axis: Axis::Roll,
+            term: PidTerm::F,
+        });
+        let moves: Vec<usize> = (1..setpoint.len())
+            .filter(|i| setpoint[*i] != setpoint[i - 1])
+            .collect();
+        assert!(moves.len() > 30);
+        for i in &moves {
+            assert_eq!(f[*i], setpoint[*i] - setpoint[i - 1], "{i}");
+            assert_eq!(f[i + 19], f[*i]);
+        }
+        let first = usize::from(setpoint[0] != 0.0);
+        assert_eq!(
+            f.iter().filter(|v| **v != 0.0).count(),
+            20 * (moves.len() + first)
+        );
+        let yaw_f = values(ChannelId::PidTerm {
+            axis: Axis::Yaw,
+            term: PidTerm::F,
+        });
+        assert!(yaw_f.iter().all(|v| *v == 0.0));
     }
 }

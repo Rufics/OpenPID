@@ -11,13 +11,13 @@
 use crate::capture;
 use crate::catalogue::{self, Area, Probe};
 use crate::model;
-use crate::signal::{AxisSamples, FlightSpec, Wave, band_bins};
+use crate::signal::{AxisSamples, Carrier, FlightSpec, Wave, band_bins};
 use crate::step_model;
 use crate::truth::ResponseTruth;
 use openpid_analysis::{
     Analysis, AnalysisCtx, Epoch, PsdAnalysis, PsdParams, StepAnalysis, StepParams,
 };
-use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, LogFormat, OpenOptions};
+use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, LogFormat, OpenOptions, PidTerm};
 use openpid_dsp::Fft;
 use openpid_fmt_blackbox::BlackboxFormat;
 use openpid_fmt_blackbox::write::{Target, WriteError, WriteOptions, betaflight};
@@ -153,6 +153,52 @@ pub struct AxisEntry {
     /// from round 7 on, for an axis that follows its stick.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response: Option<ResponseTruth>,
+    /// What a step response is when one or another channel is taken for
+    /// the input of the craft: for an axis whose RC command or feedforward
+    /// is not the setpoint's (round 17 on).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inputs: Option<StickPaths>,
+}
+
+/// The step response of an axis as it comes out with each of three
+/// channels taken for the input of the craft, in closed form from the
+/// plant's response to a unit step `p(t)`. The flight's setpoint `s(t)` is
+/// what the craft follows: its gyro is `p` applied to `s`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct StickPaths {
+    /// How each of the three follows from `p`.
+    pub rules: [String; 3],
+    /// The times of the curves, ms.
+    pub time_ms: Vec<f64>,
+    /// The logged setpoint taken for the input: `p(t)`.
+    pub setpoint: Vec<f64>,
+    /// The setpoint the RC command asks for through the craft's rates.
+    pub rc_command: Vec<f64>,
+    /// The setpoint with the feedforward added to it.
+    pub setpoint_and_feedforward: Vec<f64>,
+}
+
+/// A channel beyond the gyro that carries something of its own, or that
+/// follows from those that do (PID error, PID sum): what is true about it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ChannelEntry {
+    /// Its field in the log (`axisP[0]`, `motor[2]`, `pidError[0]` …);
+    /// PID error and PID sum are no field, a tool computes them.
+    pub field: String,
+    /// Its entry in the list of channels of the reference tool's spectrum
+    /// window.
+    pub listed_as: &'static str,
+    /// The unit of the truth.
+    pub unit: &'static str,
+    /// How many units of the log one unit of the truth is.
+    pub logged_per_unit: f64,
+    /// What one unit of the truth is in what the reference tool draws,
+    /// where that is known: a motor reads the logged number over 20
+    /// (round 15).
+    pub reference_per_unit: f64,
+    /// Its tones (the level of each: `power_db`), noise and logged range,
+    /// in the unit of the truth.
+    pub truth: ChannelTruth,
 }
 
 /// One probe in the manifest.
@@ -179,6 +225,10 @@ pub struct ProbeEntry {
     pub samples: usize,
     /// The three axes.
     pub axes: Vec<AxisEntry>,
+    /// The channels beyond the gyro that carry something of their own, and
+    /// those that follow from them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub channels: Vec<ChannelEntry>,
     /// The whole flight, as the generator takes it.
     pub flight: FlightSpec,
 }
@@ -194,12 +244,19 @@ pub struct Manifest {
     pub built_from: String,
     /// The probes.
     pub probes: Vec<ProbeEntry>,
+    /// The filters the capture plan types into the filter simulator, which
+    /// reads no log: exactly, so that `OpenPID`'s curves can be computed for
+    /// them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filters: Option<capture::FilterSet>,
 }
 
 /// One spectrum `OpenPID` computes.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Spectrum {
-    /// `gyro` or `gyro_unfiltered`.
+    /// `gyro` or `gyro_unfiltered`; from round 17 on, for a probe of the
+    /// channels of the spectrum window's list, also one of
+    /// [`LISTED_CHANNELS`] and `motor1` … `motor4` (listed under roll).
     pub channel: &'static str,
     /// Segment length, seconds.
     pub segment_s: f64,
@@ -611,39 +668,115 @@ pub(crate) fn spectra(
     epoch: Epoch,
     probe: &'static str,
 ) -> Result<Vec<Spectrum>, PackError> {
-    let ctx = AnalysisCtx {
-        session,
-        epoch: Some(epoch),
-    };
     let mut out = Vec::new();
     for (stage, channel) in [
         (GyroStage::Filtered, "gyro"),
         (GyroStage::Raw, "gyro_unfiltered"),
     ] {
-        // the two columns of the tab: the whole range, and below 100 Hz
-        // with one-second segments
-        for (segment_s, max_hz) in [(0.25, None), (1.0, Some(100.0))] {
-            let params = PsdParams {
-                channel: ChannelId::Gyro { axis, stage },
-                segment_s,
-                max_hz,
-                ..PsdParams::default()
-            };
-            let psd = PsdAnalysis
-                .run(&ctx, &params)
-                .map_err(|e| PackError::Read {
-                    probe,
-                    message: format!("spectrum of {channel}: {e}"),
-                })?;
-            out.push(Spectrum {
-                channel,
-                segment_s,
-                bin_hz: rounded(psd.fs / psd.nperseg as f64),
-                segments: psd.segments,
-                freq: psd.freq.iter().map(|f| rounded(*f)).collect(),
-                power_db: psd.power_db.iter().map(|p| rounded(*p)).collect(),
-            });
-        }
+        let id = ChannelId::Gyro { axis, stage };
+        out.extend(spectrum_of(session, (&id, channel), epoch, probe)?);
+    }
+    Ok(out)
+}
+
+/// `OpenPID`'s two spectra of the channel `id`, named `name` in the
+/// results: the two columns of the Spectrum tab, the whole range with
+/// quarter-second segments and below 100 Hz with one-second segments.
+pub(crate) fn spectrum_of(
+    session: &FlightSession,
+    (id, name): (&ChannelId, &'static str),
+    epoch: Epoch,
+    probe: &'static str,
+) -> Result<Vec<Spectrum>, PackError> {
+    let ctx = AnalysisCtx {
+        session,
+        epoch: Some(epoch),
+    };
+    let mut out = Vec::new();
+    for (segment_s, max_hz) in [(0.25, None), (1.0, Some(100.0))] {
+        let params = PsdParams {
+            channel: id.clone(),
+            segment_s,
+            max_hz,
+            ..PsdParams::default()
+        };
+        let psd = PsdAnalysis
+            .run(&ctx, &params)
+            .map_err(|e| PackError::Read {
+                probe,
+                message: format!("spectrum of {name}: {e}"),
+            })?;
+        out.push(Spectrum {
+            channel: name,
+            segment_s,
+            bin_hz: rounded(psd.fs / psd.nperseg as f64),
+            segments: psd.segments,
+            freq: psd.freq.iter().map(|f| rounded(*f)).collect(),
+            power_db: psd.power_db.iter().map(|p| rounded(*p)).collect(),
+        });
+    }
+    Ok(out)
+}
+
+/// The channels of the reference tool's spectrum window beyond the gyro
+/// that `OpenPID` has a spectrum of, as the results name them: the D, P
+/// and F terms, the setpoint, the PID error, the PID sum and the debug
+/// value of the axis's place.
+pub const LISTED_CHANNELS: [&str; 7] = [
+    "dterm", "pterm", "fterm", "setpoint", "piderror", "pidsum", "debug",
+];
+/// The names of the four motors in the results.
+pub const MOTOR_CHANNELS: [&str; 4] = ["motor1", "motor2", "motor3", "motor4"];
+
+/// The channel of the session a name of the results stands for on `axis`:
+/// one of [`LISTED_CHANNELS`] or [`MOTOR_CHANNELS`], `gyro` or
+/// `gyro_unfiltered`.
+pub fn listed_channel(name: &str, axis: Axis) -> Option<ChannelId> {
+    let term = |term: PidTerm| Some(ChannelId::PidTerm { axis, term });
+    match name {
+        "gyro" | "gyro_unfiltered" => Some(ChannelId::Gyro {
+            axis,
+            stage: if name == "gyro" {
+                GyroStage::Filtered
+            } else {
+                GyroStage::Raw
+            },
+        }),
+        "dterm" => term(PidTerm::D),
+        "pterm" => term(PidTerm::P),
+        "fterm" => term(PidTerm::F),
+        "pidsum" => term(PidTerm::Sum),
+        "setpoint" => Some(ChannelId::Setpoint { axis }),
+        "piderror" => Some(ChannelId::PidError { axis }),
+        "debug" => Some(ChannelId::Debug {
+            idx: axis.index() as u8,
+        }),
+        _ => MOTOR_CHANNELS
+            .iter()
+            .position(|m| *m == name)
+            .map(|idx| ChannelId::Motor { idx: idx as u8 }),
+    }
+}
+
+/// `OpenPID`'s spectra of the channels of [`LISTED_CHANNELS`] the log has
+/// on `axis`, and on roll those of the four motors.
+fn listed_spectra(
+    session: &FlightSession,
+    axis: Axis,
+    epoch: Epoch,
+    probe: &'static str,
+) -> Result<Vec<Spectrum>, PackError> {
+    let motors: &[&'static str] = if axis == Axis::Roll {
+        &MOTOR_CHANNELS
+    } else {
+        &[]
+    };
+    let mut out = Vec::new();
+    for name in LISTED_CHANNELS.iter().chain(motors) {
+        let Some(id) = listed_channel(name, axis).filter(|id| session.channel(id).is_some()) else {
+            continue;
+        };
+        out.extend(spectrum_of(session, (&id, name), epoch, probe)?);
     }
     Ok(out)
 }
@@ -969,6 +1102,265 @@ fn read_back(probe: &Probe, bytes: &[u8]) -> Result<FlightSession, PackError> {
     Ok(session)
 }
 
+/// The times of the curves of [`StickPaths`], ms: every millisecond up to
+/// half a second.
+const PATH_MS: usize = 500;
+
+/// The waves of `flight`'s carried channel `carrier`.
+fn carried_waves(flight: &FlightSpec, carrier: Carrier) -> impl Iterator<Item = &Wave> {
+    flight
+        .carried
+        .iter()
+        .filter(move |c| c.channel == carrier)
+        .flat_map(|c| &c.waves)
+}
+
+/// The three answers of [`StickPaths`] for `axis` of `flight`, when its RC
+/// command echoes the stick ([`Wave::Echo`]) or its feedforward kicks at
+/// the moves ([`Wave::Kicks`]).
+///
+/// With the RC command `c·s(t − d)` taken for the input, the response is
+/// `p(t + d) / c`. With the setpoint and a feedforward of `k` times every
+/// move for `w` seconds, the input is `s(t) + k·(s(t) − s(t − w))`, and
+/// the response `Σ_j r^j / (1 + k) · p(t − j·w)` with `r = k / (1 + k)`.
+fn stick_paths(flight: &FlightSpec, axis: Axis) -> Option<StickPaths> {
+    let echo = carried_waves(flight, Carrier::RcCommand { axis }).find_map(|w| match w {
+        Wave::Echo { delay_ms, scale } => Some((*delay_ms, *scale)),
+        _ => None,
+    });
+    let feedforward = Carrier::Term {
+        axis,
+        term: PidTerm::F,
+    };
+    let kick = carried_waves(flight, feedforward).find_map(|w| match w {
+        Wave::Kicks { ms, gain } => Some((*ms, *gain)),
+        _ => None,
+    });
+    if echo.is_none() && kick.is_none() {
+        return None;
+    }
+    let plant = flight.axis(axis).plant;
+    let p = |ms: f64| plant.step_response(ms / 1000.0);
+    let time_ms: Vec<f64> = (0..=PATH_MS).map(|ms| ms as f64).collect();
+    let (delay, scale) = echo.unwrap_or((0.0, 1.0));
+    let (width, gain) = kick.unwrap_or((0.0, 0.0));
+    let ratio = gain / (1.0 + gain);
+    let kicked = |t: f64| {
+        let mut sum = 0.0;
+        let mut weight = 1.0 / (1.0 + gain);
+        let mut at = t;
+        while at >= 0.0 && weight > 1.0e-12 {
+            sum += weight * p(at);
+            weight *= ratio;
+            if width <= 0.0 {
+                break;
+            }
+            at -= width;
+        }
+        sum
+    };
+    let rules = [
+        "the setpoint taken for the input: p(t), the plant's response to a unit step".to_string(),
+        match echo {
+            Some((d, c)) => format!(
+                "the RC command taken for the input, through the craft's rates: it asks for \
+                 {c} times the setpoint {d} ms later, so the response is p(t + {d} ms) / {c}"
+            ),
+            None => "the RC command is the setpoint's image: p(t)".to_string(),
+        },
+        match kick {
+            Some((w, k)) => format!(
+                "the setpoint with the feedforward added taken for the input: the feedforward is \
+                 {k} times every move for {w} ms, so the response is the sum over j of \
+                 r^j / (1 + {k}) · p(t − j·{w} ms) with r = {k} / (1 + {k})"
+            ),
+            None => "no feedforward: p(t)".to_string(),
+        },
+    ];
+    Some(StickPaths {
+        rules,
+        setpoint: time_ms.iter().map(|t| rounded(p(*t))).collect(),
+        rc_command: time_ms
+            .iter()
+            .map(|t| rounded(p(t + delay) / scale))
+            .collect(),
+        setpoint_and_feedforward: time_ms.iter().map(|t| rounded(kicked(*t))).collect(),
+        time_ms,
+    })
+}
+
+/// The entry of the reference tool's list of channels a carried channel
+/// stands for, the unit of its truth and how many units of a log one unit
+/// of it is (`motor_units`: those of one percent of a motor).
+fn listed_as(carrier: Carrier, motor_units: f64) -> (&'static str, &'static str, f64) {
+    let raw = "the firmware's units";
+    match carrier {
+        Carrier::Setpoint { .. } => ("Set point", "deg/s", 1.0),
+        Carrier::RcCommand { .. } => (
+            "(not listed)",
+            "the firmware's units, ±500 at full stick",
+            1.0,
+        ),
+        Carrier::Term { term, .. } => match term {
+            PidTerm::P => ("Pterm", raw, 1.0),
+            PidTerm::D => ("Dterm", raw, 1.0),
+            PidTerm::F => ("Fterm", raw, 1.0),
+            _ => ("(not listed)", raw, 1.0),
+        },
+        Carrier::Motor { .. } => ("Motors", "percent of the motor outputs' range", motor_units),
+        Carrier::Debug { .. } => ("debug", raw, 1.0),
+    }
+}
+
+/// The values of channel `id` in a session, all of them valid.
+fn values_of(session: &FlightSession, id: &ChannelId) -> Option<Vec<f64>> {
+    session
+        .channel(id)
+        .filter(|c| c.data.all_valid())
+        .map(|c| c.data.values().to_vec())
+}
+
+/// The error for a channel the written log does not hold whole.
+fn missing(field: &str) -> PackError {
+    PackError::Read {
+        probe: "carried channel",
+        message: format!("the written log has no complete {field}"),
+    }
+}
+
+/// What is true about the carried channel `carrier` of `flight`: `exact`
+/// is the flight's session, `session` the written log read back.
+fn carried_entry(
+    flight: &FlightSpec,
+    (exact, session): (&FlightSession, &FlightSession),
+    carrier: Carrier,
+) -> Result<ChannelEntry, PackError> {
+    let motors = &session.settings.motor;
+    let motor_units = match (motors.output_low, motors.output_high) {
+        (Some(low), Some(high)) if high > low => (high - low) / 100.0,
+        _ => 1.0,
+    };
+    let id = carrier.id();
+    let field = carrier.field();
+    let waves: Vec<Wave> = carried_waves(flight, carrier).cloned().collect();
+    let truth = values_of(exact, &id).ok_or_else(|| missing(&field))?;
+    let logged = values_of(session, &id).ok_or_else(|| missing(&field))?;
+    let (listed, unit, per) = listed_as(carrier, motor_units);
+    let reference = if matches!(carrier, Carrier::Motor { .. }) {
+        per / 20.0
+    } else {
+        1.0
+    };
+    Ok(ChannelEntry {
+        field,
+        listed_as: listed,
+        unit,
+        logged_per_unit: rounded(per),
+        reference_per_unit: rounded(reference),
+        truth: channel_truth(flight, &waves, &truth, &logged),
+    })
+}
+
+/// What is true about the PID error of `axis`, the setpoint less the
+/// filtered gyro, whose tones are those of both.
+fn pid_error_entry(
+    flight: &FlightSpec,
+    session: &FlightSession,
+    axis: Axis,
+) -> Result<ChannelEntry, PackError> {
+    let samples = flight.samples(axis);
+    let exact: Vec<f64> = samples
+        .setpoint
+        .iter()
+        .zip(&samples.filtered)
+        .map(|(s, g)| s - g)
+        .collect();
+    let mut waves: Vec<Wave> = carried_waves(flight, Carrier::Setpoint { axis })
+        .cloned()
+        .collect();
+    if let crate::signal::Filtered::Separate { waves: more } = &flight.axis(axis).filtered {
+        waves.extend(more.iter().cloned());
+    }
+    let field = format!("pidError[{}]", axis.index());
+    let logged =
+        values_of(session, &ChannelId::PidError { axis }).ok_or_else(|| missing(&field))?;
+    Ok(ChannelEntry {
+        field,
+        listed_as: "PID error",
+        unit: "deg/s",
+        logged_per_unit: 1.0,
+        reference_per_unit: 1.0,
+        truth: channel_truth(flight, &waves, &exact, &logged),
+    })
+}
+
+/// What is true about the PID sum of `axis`, the sum of its `terms`.
+fn pid_sum_entry(
+    flight: &FlightSpec,
+    (exact, session): (&FlightSession, &FlightSession),
+    axis: Axis,
+    terms: &[Carrier],
+) -> Result<ChannelEntry, PackError> {
+    let mut sum = vec![0.0; flight.len()];
+    let mut waves = Vec::new();
+    for carrier in terms {
+        let values = values_of(exact, &carrier.id()).unwrap_or_default();
+        sum.iter_mut().zip(values).for_each(|(e, v)| *e += v);
+        waves.extend(carried_waves(flight, *carrier).cloned());
+    }
+    let field = format!("pidSum[{}]", axis.index());
+    let id = ChannelId::PidTerm {
+        axis,
+        term: PidTerm::Sum,
+    };
+    let logged = values_of(session, &id).ok_or_else(|| missing(&field))?;
+    Ok(ChannelEntry {
+        field,
+        listed_as: "PIDsum",
+        unit: "the firmware's units",
+        logged_per_unit: 1.0,
+        reference_per_unit: 1.0,
+        truth: channel_truth(flight, &waves, &sum, &logged),
+    })
+}
+
+/// What is true about the channels `flight` carries beyond the gyro, and
+/// about the PID error and the PID sum of the axes they are on, against
+/// what the written log `session` holds.
+fn channel_entries(
+    flight: &FlightSpec,
+    session: &FlightSession,
+) -> Result<Vec<ChannelEntry>, PackError> {
+    if flight.carried.is_empty() {
+        return Ok(Vec::new());
+    }
+    let exact = flight.build();
+    let mut carriers: Vec<Carrier> = Vec::new();
+    for c in &flight.carried {
+        if !carriers.contains(&c.channel) {
+            carriers.push(c.channel);
+        }
+    }
+    let mut out = Vec::new();
+    for carrier in &carriers {
+        out.push(carried_entry(flight, (&exact, session), *carrier)?);
+    }
+    for axis in Axis::ALL {
+        if carriers.contains(&Carrier::Setpoint { axis }) {
+            out.push(pid_error_entry(flight, session, axis)?);
+        }
+        let terms: Vec<Carrier> = carriers
+            .iter()
+            .filter(|c| matches!(c, Carrier::Term { axis: a, .. } if *a == axis))
+            .copied()
+            .collect();
+        if !terms.is_empty() {
+            out.push(pid_sum_entry(flight, (&exact, session), axis, &terms)?);
+        }
+    }
+    Ok(out)
+}
+
 /// One probe: its log, its manifest entry, `OpenPID`'s results and the
 /// model's predictions.
 fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
@@ -1009,10 +1401,16 @@ fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
             response: (round >= TRUTH_FROM_ROUND)
                 .then(|| ResponseTruth::of(spec.plant))
                 .flatten(),
+            inputs: stick_paths(flight, axis),
         });
+        let mut spectra = spectra(&session, axis, epoch, id)?;
+        if round > SPECTRA_ONLY_UP_TO && probe.area == Area::Spectrum && !flight.carried.is_empty()
+        {
+            spectra.extend(listed_spectra(&session, axis, epoch, id)?);
+        }
         ours.push(OursAxis {
             axis: axis_name(axis),
-            spectra: spectra(&session, axis, epoch, id)?,
+            spectra,
         });
         if round > SPECTRA_ONLY_UP_TO && probe.area == Area::StepResponse {
             let window_s = StepParams::default().window_s;
@@ -1030,6 +1428,7 @@ fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
         duration_s: flight.duration_s,
         samples: flight.len(),
         axes,
+        channels: channel_entries(flight, &session)?,
         flight: flight.clone(),
     };
     let ours = OursProbe {
@@ -1064,6 +1463,7 @@ pub fn build(round: u32, built_from: &str) -> Result<Pack, PackError> {
         round,
         built_from: built_from.to_string(),
         probes: Vec::new(),
+        filters: capture::filter_set(round),
     };
     let mut ours = Ours {
         format: FORMAT,
@@ -1082,8 +1482,18 @@ pub fn build(round: u32, built_from: &str) -> Result<Pack, PackError> {
         expected_step.extend(built.predicted_step);
     }
     // rounds 1 and 4 were run before there was a model of their window:
-    // their packs stay as they were
-    let predictions = if round >= 2 && !expected.is_empty() {
+    // their packs stay as they were; from round 17 on a pack predicts both
+    // windows
+    let both = round > SPECTRA_ONLY_UP_TO && !(expected.is_empty() && expected_step.is_empty());
+    let predictions = if both {
+        Some(Predictions {
+            format: FORMAT,
+            round,
+            assumes: ASSUMES.iter().chain(&STEP_ASSUMES).copied().collect(),
+            probes: expected,
+            step: expected_step,
+        })
+    } else if round >= 2 && !expected.is_empty() {
         Some(Predictions {
             format: FORMAT,
             round,
@@ -1204,5 +1614,38 @@ mod tests {
         assert!(then.ours.step.is_empty());
         let text = String::from_utf8(json(&then.ours)).unwrap_or_default();
         assert!(!text.contains("\"step\""));
+    }
+
+    #[test]
+    fn a_carried_channel_is_listed_as_the_reference_tool_lists_it() {
+        let roll = Axis::Roll;
+        let term = |term: PidTerm| listed_as(Carrier::Term { axis: roll, term }, 18.0);
+        assert_eq!(term(PidTerm::P).0, "Pterm");
+        assert_eq!(term(PidTerm::D).0, "Dterm");
+        assert_eq!(term(PidTerm::F).0, "Fterm");
+        assert_eq!(term(PidTerm::I).0, "(not listed)");
+        assert_eq!(
+            listed_as(Carrier::RcCommand { axis: roll }, 18.0).0,
+            "(not listed)"
+        );
+        assert_eq!(
+            listed_as(Carrier::Setpoint { axis: roll }, 18.0),
+            ("Set point", "deg/s", 1.0)
+        );
+        assert_eq!(listed_as(Carrier::Motor { idx: 1 }, 18.0).2, 18.0);
+        assert_eq!(listed_as(Carrier::Debug { idx: 1 }, 18.0).0, "debug");
+        // a flight that carries nothing has no channels and no inputs
+        let quiet = FlightSpec::quiet(1000.0, 1.0);
+        assert!(stick_paths(&quiet, roll).is_none());
+        let session = quiet.build();
+        assert!(
+            channel_entries(&quiet, &session)
+                .unwrap_or_default()
+                .is_empty()
+        );
+        assert_eq!(
+            missing("x").to_string(),
+            "probe carried channel: the written log has no complete x"
+        );
     }
 }

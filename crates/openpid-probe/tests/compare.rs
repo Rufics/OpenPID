@@ -240,6 +240,79 @@ fn a_spectrum_against_the_results_file_and_against_the_log() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// A line of a copy: its colour, its pen style (0 solid, 2 dotted) and its
+/// levels against frequency.
+type Line<'a> = (u32, u32, &'a dyn Fn(f64) -> f64);
+
+/// A copy of a spectrum plot below 100 Hz with one line per curve.
+fn lines_copy(curves: &[Line]) -> Vec<u8> {
+    let mut w = Writer::new();
+    let p = Plot {
+        frame: (100.0, 20.0, 2100.0, 520.0),
+        x: (0.0, 100.0),
+        y: (-90.0, 20.0),
+    };
+    p.axes(
+        &mut w,
+        &[0.0, 20.0, 40.0, 60.0, 80.0, 100.0],
+        &[-80.0, -40.0, 0.0],
+    );
+    for (colour, style, f) in curves {
+        let (x, y) = sampled(f, 0.0, 100.0, 0.05);
+        let points: Vec<(f64, f64)> = x.into_iter().zip(y).collect();
+        p.curve(&mut w, *colour, *style, &points);
+    }
+    w.finish()
+}
+
+#[test]
+fn a_channel_of_the_spectrum_window_against_its_counterpart() {
+    let dterm = "r17-i1-chan-2k-spectrum-dterm-roll-sub";
+    let motors = "r17-i1-chan-2k-spectrum-motors-roll-sub";
+    let pterm = "r17-i1-chan-2k-spectrum-pterm-roll-sub";
+    assert!([dterm, motors, pterm].iter().all(|n| planned(17, n)));
+    // the entry OpenPID has no counterpart of is only photographed
+    assert!(!planned(
+        17,
+        "r17-i1-chan-2k-spectrum-dterm-prefilt-roll-sub"
+    ));
+    let level = |k: f64| move |f: f64| -40.0 + k + 10.0 * (f / 7.0).sin();
+    let spectrum = |channel: &str, k: f64| {
+        let (freq, power_db) = sampled(level(k), 0.0, 100.0, 0.25);
+        serde_json::json!({"channel": channel, "segment_s": 1.0, "freq": freq, "power_db": power_db})
+    };
+    let mut spectra = vec![spectrum("dterm", 0.0)];
+    spectra.extend((1..=4).map(|m| spectrum(&format!("motor{m}"), 5.0 * f64::from(m))));
+    let json = serde_json::json!({"probes": [{"id": "i1-chan-2k", "axes": [{"axis": "roll",
+        "spectra": spectra}]}]});
+    let dir = folder("channels");
+    let ours = results(&dir, &json);
+    // a channel alone may be drawn dotted: every line is held
+    save(&dir, dterm, &lines_copy(&[(0xe60000, 2, &level(0.0))]));
+    // the motors: the line that is motor 3, beside one that is no motor
+    let far = |f: f64| -80.0 + f / 10.0;
+    save(
+        &dir,
+        motors,
+        &lines_copy(&[(0x0000e6, 0, &level(15.0)), (0x00e600, 0, &far)]),
+    );
+    // the P term is not in the file: OpenPID's is computed from the log
+    save(&dir, pterm, &lines_copy(&[(0xe60000, 0, &level(0.0))]));
+    let report = compare(17, &dir, Some(&ours)).unwrap();
+    assert_eq!(verdict(&report, dterm), Verdict::Pass, "{report:?}");
+    assert_eq!(verdict(&report, motors), Verdict::Pass, "{report:?}");
+    let row = |name: &str| report.rows.iter().find(|r| r.copy == name).unwrap().clone();
+    assert!(row(motors).against.contains("motor 3"), "{:?}", row(motors));
+    assert!(row(motors).against.contains("#0000e6"));
+    assert!(row(dterm).against.contains("the D term on roll"));
+    assert_eq!(verdict(&report, pterm), Verdict::Fail);
+    assert!(row(pterm).against.contains("the P term"));
+    save(&dir, dterm, &lines_copy(&[(0xe60000, 2, &level(0.2))]));
+    let report = compare(17, &dir, Some(&ours)).unwrap();
+    assert_eq!(verdict(&report, dterm), Verdict::Fail);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 fn response_copy(f: &dyn Fn(f64) -> f64) -> Vec<u8> {
     let mut w = Writer::new();
     let p = Plot {
