@@ -158,10 +158,22 @@ fn spectra_of_a_real_flight() {
             },
         )
         .unwrap();
-    assert_eq!(hm.grid.x.len(), 101);
+    assert_eq!(hm.grid.x.len(), 100);
+    assert_eq!(hm.counts.len(), 100);
     assert_eq!(hm.grid.z.len(), hm.grid.x.len() * hm.grid.y.len());
-    assert!(hm.counts.iter().sum::<usize>() > 0);
+    assert_eq!(hm.grid_db.z.len(), hm.grid.z.len());
+    // a segment is in two columns (one or none at the ends of the range)
+    let held = hm.counts.iter().sum::<usize>();
+    assert!(held > hm.segments && held <= 2 * hm.segments, "{held}");
     assert!(hm.grid.z.iter().all(|v| v.is_finite() && *v >= 0.0));
+    assert!(hm.grid_db.z.iter().all(|v| v.is_finite()));
+    // rows to half the log rate, the last bin left out
+    let top = hm.grid.y.last().copied().unwrap();
+    assert!((top - (hm.fs / 2.0 - hm.fs / hm.nperseg as f64)).abs() < 1e-9);
+    assert!(hm.peak >= hm.mean && hm.mean > 0.0);
+    // (a quiet gyro lies under the −40 dB of an empty column, so the decibel
+    // mean has no lower bound there)
+    assert!(hm.peak_db >= hm.mean_db && hm.mean_db.is_finite());
 
     let st = StftAnalysis
         .run(

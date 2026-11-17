@@ -59,10 +59,47 @@ fn params_hash_by_value() {
     assert_ne!(
         hash(&t),
         hash(&ThrottleHeatmapParams {
-            smooth_throttle: 3,
+            smoothing: openpid_analysis::ThrottleSmoothing::High,
             ..Default::default()
         })
     );
+    assert_eq!(hash(&t), hash(&t.clone()));
+    // a project saved before the map followed the reference tool carries the
+    // old parameters: they are ignored, the channel is kept
+    let mut saved = serde_json::to_value(ThrottleHeatmapParams {
+        channel: ChannelId::Gyro {
+            axis: Axis::Yaw,
+            stage: GyroStage::Raw,
+        },
+        ..Default::default()
+    })
+    .unwrap();
+    let object = saved.as_object_mut().unwrap();
+    object.remove("smoothing");
+    for (key, value) in [
+        ("segment_s", serde_json::json!(0.2)),
+        ("half_window", serde_json::json!(6.0)),
+        ("window", serde_json::json!("hann")),
+        ("max_hz", serde_json::json!(1000.0)),
+        ("smooth_throttle", serde_json::json!(8)),
+        ("smooth_freq_frac", serde_json::json!(0.01)),
+    ] {
+        object.insert(key.into(), value);
+    }
+    let loaded: ThrottleHeatmapParams = serde_json::from_value(saved).unwrap();
+    assert_eq!(
+        loaded.channel,
+        ChannelId::Gyro {
+            axis: Axis::Yaw,
+            stage: GyroStage::Raw,
+        }
+    );
+    assert_eq!(
+        loaded.smoothing,
+        openpid_analysis::ThrottleSmoothing::Medium
+    );
+    let empty: ThrottleHeatmapParams = serde_json::from_str("{}").unwrap();
+    assert_eq!(empty, t);
     let s = StftParams::default();
     assert_ne!(
         hash(&s),
@@ -126,13 +163,6 @@ fn validation_and_variants() {
         &ctx,
         &StftParams {
             segment_s: -1.0,
-            ..Default::default()
-        }
-    )));
-    assert!(bad(ThrottleHeatmap.run(
-        &ctx,
-        &ThrottleHeatmapParams {
-            max_hz: 0.0,
             ..Default::default()
         }
     )));

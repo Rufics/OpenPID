@@ -227,28 +227,57 @@ The control panel on the right (hover any field for its explanation):
 
 ![Freq × throttle](screenshots/throttle.png)
 
-Heatmaps of the spectrum amplitude against throttle (DESIGN §6.4), roll, pitch
-and yaw stacked. Every log gets two columns: the unfiltered gyro (**prefilt**)
-and the chosen quantity, on one colour scale, so the work of the filters reads
-as a darker map; the colour bar on the right of each log has ticks (relative
-values: the amplitude of noise depends on the segment length, so no unit is
-shown). The epoch is cut into segments, each gets a spectrum and a mean
-throttle; for every throttle bin the segments within **Throttle window ±** %
-are averaged. The throttle axis is 0–100 %; **Zoom to the flown range**
-narrows it to the bins the logs sampled. All maps move and
-zoom together; a double click resets them. Under the maps: per log how many
-throttle bins have too few segments, and the value under the pointer
-("23 %, 128 Hz: 0.13"). With more than two logs the columns scroll
-sideways.
+Maps of the spectrum against throttle (DESIGN §6.4), roll, pitch and yaw
+stacked. Every log gets two columns: the unfiltered gyro (**prefilt**) and
+the chosen quantity, on one colour scale, so the work of the filters reads as
+a darker map. The maps are computed as the reference tool computes its own,
+so a map here and a map there of the same log and window can be read side by
+side, down to the two numbers printed on them.
+
+How a map is made: the analysis window is cut into segments of 0.3 s that
+overlap; each gets a spectrum and the mean of its throttle. The throttle axis
+has 100 bins of one percent; a bin averages the segments whose throttle lies
+within a percent of it, and the result is smoothed along the throttle and the
+frequency. The frequency axis runs to half the logging rate. All maps move
+and zoom together; a double click resets them. With more than two logs the
+columns scroll sideways.
+
+How to read it:
+
+- **The colours** run from 0 to 0.5 (in decibels from −40 to 10 dB), the same
+  on every map and every log; the colour bar on the right of each log has the
+  ticks. The values carry no unit, on purpose: a cell is **not** the
+  amplitude of a tone. The window of a segment is not compensated and the
+  map is smoothed, so a steady tone of amplitude A shows as about 0.035·A
+  with the default smoothing. Compare maps with each other; for an amplitude
+  in °/s use the Spectrum tab.
+- **mean=… peak=…** in the corner of every map: the mean and the largest
+  cell of that map, without the lowest tenth of the frequency rows (on a
+  2 kHz log, below about 100 Hz), three significant digits. The mean falls when the map
+  is quieter overall or when less of the throttle range was flown (an empty
+  bin counts as 0, in decibels as −40 dB); the peak is the strongest spot,
+  usually a motor line or a resonance, and falls with a higher smoothing.
+  Compare them between maps of the same smoothing and view: prefilt against
+  gyro for what the filters remove, one log against another for what a change
+  did.
+- **Dimmed bins** have fewer segments than **Min segments**: there is no
+  data there, not silence. Under the maps: per log how many bins are dimmed,
+  and the value under the pointer ("23 %, 128 Hz: 0.13").
 
 The control panel on the right (hover any field for its explanation):
 
 - **Channel**: Gyro (default), D-term, P-term, PID sum, PID error, Setpoint;
   **Prefilt beside it** (the gyro only).
-- **Colour max**: auto (the 99th percentile without the rows below 20 Hz) or a
-  fixed ceiling; **Link scales** (on by default with several logs) gives every
-  log the same ceiling, the largest of the automatic ones, so the same colour
-  means the same value. The same on Freq × time.
+- **Decibels**: the second matrix of the same analysis, the mean of the
+  segments' power density in decibels, on −40 … 10 dB; an empty bin is
+  −40 dB. It shows the quiet parts of a map that the linear view leaves dark.
+  The printed mean and peak are then those of the decibel map.
+- **Colour scale**: *0 … 0.5* (*−40 … 10* in decibels), the fixed scale;
+  *automatic*, the 99th percentile of the log's maps above 20 Hz, for a log
+  so quiet that the fixed scale leaves it dark; or *typed in*, with **Colour
+  max** (the linear view). With the automatic scale and several logs, **Link
+  scales** gives every log the same ceiling, the largest of the automatic
+  ones, so the same colour means the same value.
 - **RPM overlay** (off by default; when the log has eRPM): one thin line per harmonic
   `k·rpm/60` at the mean speed of the motors (**Harmonics** = how many to
   draw, 0 = as many as the RPM filter removes); **Per motor** draws a
@@ -257,9 +286,13 @@ The control panel on the right (hover any field for its explanation):
   filter minimum. The noise
   ridge should sit on the fundamental line; if it is above or below,
   `motor_poles` or `rpm_min` is set wrong.
-- **Segment**, **Throttle window ±**, **Max frequency**, **Min segments**:
-  throttle bins with fewer segments than the minimum are dimmed towards
-  black: there is no data there, not silence.
+- **Zoom to the flown range** narrows the throttle axis from 0–100 % to the
+  bins the logs sampled; **Max frequency** lowers the top of the frequency
+  axis (auto: half the logging rate). Neither changes a map or its numbers.
+- **Smoothing**: low, low-med, medium (default), med-high, high: how far a
+  cell is spread over its neighbours. Higher reads calmer and lowers the
+  peak; the mean moves little.
+- **Min segments**: bins with fewer segments are dimmed towards black.
 
 ## 6. Freq × time
 
@@ -460,7 +493,9 @@ or `--set master_multiplier=110,pd_ratio=120` for the ratio sliders.
   slot with its letter and visibility (schema v2; v1 files are read).
 - **··· → Export → Plot as PNG…** saves the tab area; **<slot> result as JSON…** the
   analysis result exactly as `openpid run …` prints it. For the heatmaps
-  `openpid run thr-heatmap <log> --png out.png` writes the grid as an image.
+  `openpid run thr-heatmap <log> --png out.png` writes the grid as an image
+  (the linear map on 0 … 0.5 as the tab draws it by default; `--db` the
+  decibel map on −40 … 10 dB).
 
 ## 12a. Advice — recommendations with evidence
 
@@ -516,7 +551,7 @@ with a new log.
 | Log check | `openpid info <log>`: the `fitness` block (the `fitness` field with `--json`) |
 | Step response | `openpid run step <log> --axis pitch --epoch 2..12` (`--json` carries `verdicts` against the project's targets, or the defaults) |
 | Spectrum | `openpid run psd <log> --channel gyro.raw.roll` |
-| Freq × throttle | `openpid run thr-heatmap <log> [--png out.png]` |
+| Freq × throttle | `openpid run thr-heatmap <log> [--smoothing medium] [--db] [--png out.png]` (the JSON carries `mean`, `peak`, `mean_db`, `peak_db`, `counts`, `grid` and `grid_db`) |
 | Freq × time | `openpid run stft <log> --channel motor.0` |
 | Filter Sim | `openpid run filter-sim <log> --set lpf1_hz=100,lpf1_type=1` |
 | Motor noise (no tab) | `openpid run motor-noise <log>` |
@@ -564,7 +599,7 @@ the table is updated with it.
 | "no unfiltered gyro in this log" | Enable `gyroUnfilt` in the blackbox fields (BF 4.5+) or `debug_mode = GYRO_SCALED`; on ArduPilot `INS_LOG_BAT_MASK`. |
 | No RPM overlay | The log has no eRPM (DShot telemetry off). The speed can be estimated (`run rpm`). |
 | Step response: "none of N windows had stick input" | The epoch has no manoeuvres, or `Min input` is too high; pick a span with stick movement. |
-| Freq × throttle almost empty | A short flight or a narrow throttle range: look at the segments-per-bin strip. |
+| Freq × throttle almost empty | A short flight or a narrow throttle range: the line under the maps says how many throttle bins have too few segments. On a quiet log the fixed colour scale can leave the maps dark: choose **Colour scale** *automatic*, or **Decibels**. |
 | The log opened with "corrupt frames" in Setup info | Corrupt frames are skipped; many of them point at the card or the log rate (see docs/BLACKBOX-VERSIONS.md). |
 | ArduPilot: a stair-stepped setpoint | `RATE`/`PIDR` are written at 10 Hz; enable `ATTITUDE_FAST` and `PID` in `LOG_BITMASK`. |
 

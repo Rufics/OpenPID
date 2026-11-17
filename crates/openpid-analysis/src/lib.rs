@@ -37,4 +37,7 @@ pub use rpm::{RpmEstimateOutput, RpmEstimateParams, RpmEstimator};
 pub use step::{StepAnalysis, StepMetrics, StepOutput, StepParams, StepSpread};
 pub use stft::{StftAnalysis, StftOutput, StftParams};
 pub use targets::{StepTargets, TargetPreset, Verdict, VerdictLevel, verdicts};
-pub use throttle::{RpmOverlay, ThrottleHeatmap, ThrottleHeatmapOutput, ThrottleHeatmapParams};
+pub use throttle::{
+    RpmOverlay, Smoothing as ThrottleSmoothing, ThrottleHeatmap, ThrottleHeatmapOutput,
+    ThrottleHeatmapParams,
+};
