@@ -117,7 +117,11 @@ on a time axis that does not start at 0 (its first sample stands at
 - Why the step response's time axis moves with the loop rate.
 - The chirp of the notch column shows the dip of the static notch and
   none at the RPM notches.
-- low-pass 2 as another type than pt1 (taken to be as low-pass 1).
+- ~~low-pass 2 as another type than pt1~~: round 16 (2026-11-17) set it
+  to pt2, pt3, biquad Butterworth and Bessel at 500 Hz and 8 kHz. The
+  column printed 1.0463, 1.1235, 1.081 and 1.1808 ms, which are 0.63662 ms
+  of low-pass 1 plus 0.40972, 0.48685, 0.44436 and 0.54423 ms: the rule of
+  low-pass 1, to the last digit printed.
 
 ## OpenPID on the same filters
 

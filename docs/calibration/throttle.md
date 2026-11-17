@@ -239,6 +239,50 @@ neither changes a digit of a printed number.
   view; it was not followed further.
 - Other channels than the two gyro ones, and the presets of the window.
 
+## Round 16 (2026-11-17): the thresholds placed
+
+The stairs of round 8 again, in flights of 21.5, 22, 22.5, 61, 62 and
+63 s (stretches of 19.5, 20, 20.5, 59, 60 and 61 s) and of 10 and 14 s
+(pack `b8d035e`), one copied map of the unfiltered roll gyro each, and
+`v1-deriv-2k`, whose stick throttle (50 %) and mixer throttle (30 %)
+differ.
+
+| Stretch | 8 (log of 10 s) | 12 | 19.5 | 20 | 20.5 | 59 | 60 | 61 |
+|---|---|---|---|---|---|---|---|---|
+| Distance between segments | 0.06 s, **the whole log** | 0.06 s | 0.06 s | 0.06 s | 0.1 s | 0.1 s | 0.1 s | 0.3 s |
+
+Each map is the rule's to one colour step on 99.9 % of its pixels, and the
+printed mean and peak are the model's three digits. So:
+
+- **The thresholds**: 0.06 s on a stretch of 20 s and less, 0.1 s on one
+  of 60 s and less, 0.3 s above. A stretch of exactly 20 or 60 s keeps
+  the shorter distance.
+- **A short log is taken whole**: the log of 10 s is the rule's only with
+  nothing left out at either end (segments from its first samples, 0.06 s
+  apart); the log of 14 s is trimmed as all the longer ones. Where between
+  10 and 14 s the tool stops leaving out the ends was not found. The
+  window of frequency against time did the same with the same two logs
+  ([time.md](time.md)).
+- **Which throttle**: the tone of 150 Hz of `v1-deriv-2k` stands in the
+  column of 30 %: the map reads the mixer's throttle (`setpoint[3]`), not
+  the stick's. It is the field OpenPID reads.
+
+**The first sample.** The main window showed in the same round that the
+tool does not draw the first sample of a log: its time zero is the second
+sample ([log-viewer.md](log-viewer.md)). The stretch of this window
+therefore starts one second after the tool's own zero. Why some logs start
+one sample later still was not found: the script looked for the tables the
+tool decodes a log into, to compare them, and found none in the folder of
+the logs or of the program.
+
+OpenPID's map (#195) took the reference tool's distance on six of the
+eight logs and the longer one on the two stretches of exactly 20 and 60 s:
+it measured the stretch as samples over the rate, and an epoch holds the
+samples at both of its ends. #195 now reads the span of the stretch, from
+its first to its last sample, and keeps the shorter distance up to and
+including 20 and 60 s; on all eight logs it takes the reference tool's
+distance.
+
 ## OpenPID on the same logs
 
 OpenPID's map (`openpid run thr-heatmap`, INVENTORY T1) is built

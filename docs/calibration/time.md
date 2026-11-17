@@ -151,7 +151,12 @@ first had been written down before the run (2026-11-14, 18:26 UTC).
   [throttle.md](throttle.md)). The whole log is then one sample later;
   what decides it was not found, and it may lie in how the tool reads a
   log rather than in the map. It moves a segment by half a millisecond.
-- **How short a log may be**: 16.5 s gives a map, 8 s gives none.
+- **How short a log may be**: 16.5 s gives a map, 8 s gives none. Round 16
+  (2026-11-17): a log of 14 s gives a map trimmed as the longer ones (its
+  time axis from 1 s), a log of 10 s a map of the **whole** log (its axis
+  from 0 to 9.7 s), as the throttle window does with the same log
+  ([throttle.md](throttle.md)). Where between 10 and 14 s the ends stop
+  being left out was not found.
 - The motor, RPM and notch lines, the player, other channels.
 
 ## OpenPID on the same logs

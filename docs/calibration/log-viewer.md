@@ -101,15 +101,45 @@ The three differences are entries D-008, D-009 and D-010 of
 motors' percent and the sign of the PID error stay OpenPID's; the motor
 speed is shown in revolutions per second, as the reference tool (#198).
 
+## Round 16 (2026-11-17): the open ends
+
+Three more logs for this window, among the fourteen of round 16 (pack
+`b8d035e`, the same bytes as `379bd18`), all written as Betaflight 2025.12
+logs:
+
+| Log | What it holds |
+|---|---|
+| `v3-samp-1k` | 7 s at 1 kHz. Pitch: a gyro equal to its sample number (0, 1, 2, … 6999 deg/s). Roll: 0 with pulses of 500 deg/s, one sample long at 2.000 s, five at 4.000 s, fifty at 5.000 s. Yaw: noise of 20 deg/s RMS and a step to 200 deg/s at 3.500 s |
+| `v1-deriv-2k` | 20 s at 2 kHz. Roll: the filtered gyro a triangle of ±200 deg/s every 2 s (±400 deg/s per second), the unfiltered one a triangle of ±300 deg/s every 1.2 s (±1000 per second). Pitch: tones of 5 Hz (filtered) and 2 Hz (unfiltered), 100 deg/s. Yaw: an unfiltered tone of 150 Hz. The stick's throttle at 50 % (`rcCommand[3]` 1500), the mixer's at 30 % (`setpoint[3]` 300). Motor speeds of 12 000 … 30 000 rpm (200 … 500 Hz) |
+| `v2-out-2k` | 20 s at 2 kHz. Motors at 1070, 1300, 1535 and 2000 with `motorOutput:1070,2000` and a protocol that is not digital (`motor_pwm_protocol:1`) |
+
+All 874 steps of the round ran, none failed, in six minutes. The script
+chose each log in the window's list of files, which holds them in the
+order of their names, and every picture shows the log it was meant to.
+
+### What came back
+
+| Asked | Came back |
+|---|---|
+| Which sample a line starts with | **The first sample of a log is not drawn**: a copied line of `v3-samp-1k` has 6 999 points for its 7 000 samples, and every pulse is drawn 1 ms early (the one-sample pulse of sample 2000 at 1.999 s). The tool's time zero is the second sample of the log |
+| Which sample the read-out shows | the one after the time it prints: "time: 0.25 sec" with "gyro P: 251 deg/s", 0.751 s with 752, 1.2 s with 1201 (the pitch gyro is its own sample number). It is the same offset: the printed time counts from the second sample |
+| What "line smoothing" does | each level is a local quadratic regression with the weights `(1 − (d/d_max)³)³` over a span of 11 ("low"), 21 ("med"), 41 ("med-high") and 81 samples ("high"), centred on the sample: the one-sample pulse comes back as that kernel to 0.0002 of its height (peaks 0.317, 0.159, 0.079 and 0.040 of the pulse, with side lobes below zero). "Off" is the samples as they are. The log runs at 1 kHz, so whether the span is counted in samples or in milliseconds was not told apart |
+| D-term(pf), which OpenPID does not have | a line the tool computes from the **filtered** gyro: minus its change from one sample to the next, times a factor. On roll every step of the gyro by 1 deg/s is a spike of ∓198, negative while the gyro rises (2 166 against 21); on pitch the values are 0, ±40 and ±80. The factor (198 on roll, 40 on pitch) is not the D gain (30 and 34) nor `d_max`; it was not found |
+| Which throttle is drawn | the mixer's: 30 %, where the stick says 50 % (OpenPID's L7 reads the same field) |
+| Motors that are not digital | 53.48, 65.00, 76.74 and 100.00 % for 1070, 1300, 1535 and 2000: the logged number over 20 again, whatever the protocol and the `motorOutput` range (D-008) |
+| Motor speeds above 150 Hz | with the four speed lines ticked the lower plot reaches 250; the speed of 200 Hz is drawn, those of 300, 400 and 500 Hz are not drawn at all. The grey ends stay at 0 … 100 |
+| "Markup" | a line drawn between two clicks in a plot |
+| "Period" | a red mark at each of two clicked times and the time between them with its frequency, "6681ms, 0.1496Hz" |
+| Flight modes | "ARM" written under the lower plot at 0 s for these logs, which are armed from their first frame; round 15's log, armed at 2 s, showed no name |
+
 ## Not settled
 
-- **D-term(pf)**: what the tool computes it from and at what scale. A gyro
-  that rises evenly would tell; it is asked only if the owner wants that
-  line in OpenPID.
-- **The motors of a log that is not DShot** (outputs of 1000 … 2000): the
-  rule of the tool was seen on DShot numbers only.
-- **Which field the throttle is read from**: the stick and the mixer's
-  throttle said the same in this log.
-- **Which sample the read-out shows**, the line smoothing, "Markup" and
-  "Period".
-- **The motor speed above 150**: whether the lower plot ever grows past it.
+- **The factor of D-term(pf)**: 198 on roll and 40 on pitch in one log; it
+  is neither the D gain nor `d_max`. OpenPID has no such line.
+- **The span of the line smoothing** in samples or in milliseconds: seen at
+  1 kHz only.
+- **Where the top of the lower plot comes from** with the speed lines
+  ticked (250 for speeds of 200 … 500 Hz).
+- **What the reference tool has and OpenPID has not**: the line smoothing,
+  D-term(pf), "Markup" and "Period". Whether OpenPID should have any of them
+  is entry D-011 of [DECISIONS.md](DECISIONS.md).

@@ -215,6 +215,21 @@ Taken by the owner on 2026-11-11:
 | The owner's decision | **B**, 2026-11-16: revolutions per second |
 | Carried out by | #198 (on its own from `master`): the lines of the motor speed row and their values at the cursor in Hz; the channel itself stays in rpm |
 
+### D-011 What of the reference tool's main window OpenPID adds
+
+| Field | |
+|---|---|
+| Id | D-011 |
+| Area | Log viewer, L4 and L11: what the reference tool's main window has and OpenPID's Log viewer has not |
+| Probe | `v3-samp-1k` and `v1-deriv-2k` of round 16 (pack `b8d035e`): pulses of 1, 5 and 50 samples, a step under noise, triangle and tone gyros |
+| The reference tool shows | four things OpenPID does not have ([log-viewer.md](log-viewer.md)): **line smoothing**, off or a local quadratic regression with tricube weights over 11, 21, 41 or 81 samples, found exactly; **D-term(pf)**, minus the change of the filtered gyro from one sample to the next times a factor that was not found (198 on roll, 40 on pitch in one log); **"Period"**, the time between two clicked moments and its frequency; **"Markup"**, a line drawn between two clicks |
+| OpenPID shows | the lines as logged, no line computed from the gyro, and a cursor whose time and values are read out on every row |
+| The exact value | none: a choice of what the Log viewer offers |
+| Options | **A.** Add nothing; the Log viewer stays as it is. **B.** Add the line smoothing, as the reference tool computes it (a list with its five levels, off by default): it is known exactly and makes a noisy gyro readable. **C.** B, and a period measure: the time between the cursor and a second point and its frequency. D-term(pf) is not offered in any option: its scale is not known, and OpenPID shows the logged D term |
+| Recommendation | B. The smoothing is the one of the four that is known to the last digit and that changes how a trace reads; a period can already be read from the cursor's time, and a drawn line adds nothing to the data |
+| The owner's decision | |
+| Carried out by | |
+
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
 call.
