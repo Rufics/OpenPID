@@ -31,23 +31,23 @@ use serde::{Deserialize, Serialize};
 
 /// Length of a segment, seconds.
 pub const SEGMENT_S: f64 = 0.3;
-/// Distance between the starts of two segments on a stretch shorter than
-/// [`HOP_MEDIUM_FROM_S`], seconds.
+/// Distance between the starts of two segments on a stretch that spans
+/// [`HOP_MEDIUM_FROM_S`] or less, seconds.
 pub const HOP_SHORT_S: f64 = 0.06;
-/// Distance between segments from [`HOP_MEDIUM_FROM_S`] to
-/// [`HOP_LONG_FROM_S`], seconds.
+/// Distance between segments on a stretch that spans more than
+/// [`HOP_MEDIUM_FROM_S`] and at most [`HOP_LONG_FROM_S`], seconds.
 pub const HOP_MEDIUM_S: f64 = 0.1;
-/// Distance between segments on a stretch of [`HOP_LONG_FROM_S`] or longer,
-/// seconds.
+/// Distance between segments on a stretch that spans more than
+/// [`HOP_LONG_FROM_S`], seconds.
 pub const HOP_LONG_S: f64 = 0.3;
-/// Length of the stretch from which the segments are [`HOP_MEDIUM_S`] apart,
-/// seconds. The reference tool was seen with 0.06 s at 10, 14.5 and 19 s and
-/// with 0.1 s at 21.25 s and longer, so the threshold lies above 19 s and at
-/// or below 21.25 s; 20 is the round number inside that bracket.
+/// The span of a stretch (from its first to its last sample) above which
+/// the segments are [`HOP_MEDIUM_S`] apart, seconds. The reference tool was
+/// seen with 0.06 s up to a stretch of 20 s, that one included, and with
+/// 0.1 s from 20.5 s on (round 16).
 pub const HOP_MEDIUM_FROM_S: f64 = 20.0;
-/// Length of the stretch from which the segments are [`HOP_LONG_S`] apart,
-/// seconds. The reference tool was seen with 0.1 s up to 57.25 s and with
-/// 0.3 s at 64 s and longer; 60 is the round number inside that bracket.
+/// The span of a stretch above which the segments are [`HOP_LONG_S`] apart,
+/// seconds. The reference tool was seen with 0.1 s up to a stretch of 60 s,
+/// that one included, and with 0.3 s from 61 s on (round 16).
 pub const HOP_LONG_FROM_S: f64 = 60.0;
 /// Percent of a segment's samples that must be valid for it to be used.
 pub const MIN_VALID_PERCENT: usize = 90;
@@ -269,12 +269,12 @@ impl ThrottleHeatmapOutput {
     }
 }
 
-/// Distance between the starts of two segments for a stretch of
-/// `duration_s` seconds, in seconds.
-pub fn hop_seconds(duration_s: f64) -> f64 {
-    if duration_s < HOP_MEDIUM_FROM_S {
+/// Distance between the starts of two segments for a stretch that spans
+/// `span_s` seconds from its first to its last sample, in seconds.
+pub fn hop_seconds(span_s: f64) -> f64 {
+    if span_s <= HOP_MEDIUM_FROM_S {
         HOP_SHORT_S
-    } else if duration_s < HOP_LONG_FROM_S {
+    } else if span_s <= HOP_LONG_FROM_S {
         HOP_MEDIUM_S
     } else {
         HOP_LONG_S
@@ -326,7 +326,9 @@ pub fn column_means(
             "{n} samples, a segment needs {nperseg}"
         )));
     }
-    let hop = ((hop_seconds(n as f64 / fs) * fs).round() as usize).max(1);
+    // an epoch holds the samples at both of its ends: 1 … 21 s at 2 kHz are
+    // 40 001 samples, a span of 20 s
+    let hop = ((hop_seconds((n - 1) as f64 / fs) * fs).round() as usize).max(1);
     // the last position that would still fit is not taken
     let positions = (n - nperseg) / hop;
     let window = hann_symmetric(nperseg);

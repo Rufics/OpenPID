@@ -433,6 +433,9 @@ fn the_distance_between_segments_follows_the_length_of_the_stretch() {
         (10.0, 0.06),
         (14.5, 0.06),
         (19.0, 0.06),
+        (19.5, 0.06),
+        (20.0, 0.06),
+        (20.5, 0.1),
         (21.25, 0.1),
         (23.5, 0.1),
         (25.75, 0.1),
@@ -441,20 +444,26 @@ fn the_distance_between_segments_follows_the_length_of_the_stretch() {
         (37.0, 0.1),
         (55.0, 0.1),
         (57.25, 0.1),
+        (59.0, 0.1),
+        (60.0, 0.1),
+        (61.0, 0.3),
         (64.0, 0.3),
         (73.0, 0.3),
         (82.0, 0.3),
     ] {
         assert_eq!(hop_seconds(seconds), hop, "{seconds} s");
     }
-    // and the two thresholds, 20 and 60 s; at 1 kHz L = 300 and
-    // there are floor((n − L) / hop) segments: the last that would still fit
-    // is not taken (n = 60000, hop 300: 200 fit, 199 are used)
+    // and the two thresholds: a stretch that spans 20 s (20 001 samples at
+    // 1 kHz, from its first to its last) is still 0.06 s apart, one sample
+    // more is 0.1 s; the same at 60 s. L = 300 and there are
+    // floor((n − L) / hop) segments: the last that would still fit is not
+    // taken (n = 60002, hop 300: 200 fit, 199 are used)
     for (n, hop, positions) in [
-        (19_999, 60, 328),
-        (20_000, 100, 197),
-        (59_999, 100, 596),
-        (60_000, 300, 199),
+        (20_000, 60, 328),
+        (20_001, 60, 328),
+        (20_002, 100, 197),
+        (60_001, 100, 597),
+        (60_002, 300, 199),
         // the shortest stretch with a segment: L + hop samples
         (360, 60, 1),
     ] {
