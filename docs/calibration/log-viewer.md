@@ -142,4 +142,5 @@ order of their names, and every picture shows the log it was meant to.
   ticked (250 for speeds of 200 … 500 Hz).
 - **What the reference tool has and OpenPID has not**: the line smoothing,
   D-term(pf), "Markup" and "Period". Whether OpenPID should have any of them
-  is entry D-011 of [DECISIONS.md](DECISIONS.md).
+  is entry D-011 of [DECISIONS.md](DECISIONS.md): the owner chose the
+  line smoothing and a period measure (2026-11-17), #199.
