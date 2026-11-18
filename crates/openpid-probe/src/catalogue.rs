@@ -8,8 +8,8 @@
 //! (`docs/calibration/ROUNDS.md`).
 
 use crate::signal::{
-    AxisSpec, Carried, Carrier, DebugValues, Filtered, FlightSpec, Modes, MotorOutput, PidTerms,
-    Plant, Stick, Throttle, Wave,
+    AxisSpec, Carried, Carrier, DebugValues, Filtered, FlightSpec, Modes, MotorOutput, Pauses,
+    PidTerms, Plant, Stick, Throttle, Wave,
 };
 use openpid_core::{Axis, PidTerm};
 use serde::Serialize;
@@ -2696,6 +2696,492 @@ fn round_17() -> Vec<Probe> {
     probes
 }
 
+/// Round 18 confirms decision D-012 = A and asks what no round asked yet.
+/// The seeds of its noise and sticks start here.
+const CONFIRM_SEED: u64 = 1801;
+
+/// The flights of round 18 made for no question, as those of round 17 are
+/// ([`made_for_none`]): the spectrum at 2 and 8 kHz, the step response at
+/// 1 and 4 kHz. The flight of the spectrum at 2 kHz is also the one of
+/// both maps, on a length no flight of the maps had, and the flight of the
+/// step response at 1 kHz the one of the main window: the open dialog takes
+/// the names of the sixteen logs of this round and of hardly more.
+fn confirming_flights() -> Vec<Probe> {
+    vec![
+        made_for_none(
+            (
+                "b1-spc-2k",
+                Area::Spectrum,
+                "A flight made for no question, for the spectrum window and both maps: stick \
+                 moves, motor noise that follows a wandering throttle (30 to 70 %), a \
+                 resonance, gyro noise; 2 kHz, 23 s. Beyond the gyro, a tone only in the D term \
+                 of roll and one only in the setpoint of pitch, for the maps of those channels; \
+                 its headers say a master multiplier of 85 and end with two lines of no \
+                 firmware (the pair of the setup list, with b2-clk-2k)",
+            ),
+            [
+                "stick moves within 270 deg/s through a second-order response of 15 Hz, damping \
+                 0.41, after 3.5 ms; motor noise of 10 deg/s at 72 Hz + 2.6 Hz per percent of \
+                 throttle and its second harmonic; a resonance at 335 Hz; white noise of 2.5 \
+                 deg/s RMS; the filtered gyro keeps 0.35 of the noise",
+                "stick moves within 220 deg/s, 11.5 Hz, damping 0.69, after 4.5 ms; motor noise \
+                 of 8 deg/s; a resonance at 405 Hz; white noise of 2 deg/s RMS",
+                "stick moves within 150 deg/s, a first-order response of 31 ms after 6 ms; motor \
+                 noise of 6 deg/s; a resonance at 285 Hz; white noise of 1.5 deg/s RMS",
+            ],
+            (2000.0, 23.0),
+            (CONFIRM_SEED, (30.0, 70.0)),
+            &[
+                (
+                    270.0,
+                    second(15.0, 0.41, 3.5),
+                    noisy((72.0, 2.6), 10.0, 335.0, 2.5),
+                ),
+                (
+                    220.0,
+                    second(11.5, 0.69, 4.5),
+                    noisy((72.0, 2.6), 8.0, 405.0, 2.0),
+                ),
+                (150.0, first(31.0, 6.0), noisy((72.0, 2.6), 6.0, 285.0, 1.5)),
+            ],
+        ),
+        made_for_none(
+            (
+                "b3-spc-8k",
+                Area::Spectrum,
+                "Another flight for the spectrum window, at the highest log rate, where a span \
+                 of the reference tool was seen to hold one sample more (round 2): the \
+                 throttle wandering from 25 to 70 %; 8 kHz, 31 s",
+            ),
+            [
+                "stick moves within 310 deg/s, 22 Hz, damping 0.36, after 2.25 ms; motor noise \
+                 of 12 deg/s at 80 Hz + 3.2 Hz per percent and its second harmonic; a resonance \
+                 at 560 Hz; white noise of 3 deg/s RMS",
+                "stick moves within 240 deg/s, 14.5 Hz, damping 0.81, after 3.75 ms; motor \
+                 noise of 9 deg/s; a resonance at 640 Hz; white noise of 2.5 deg/s RMS",
+                "stick moves within 140 deg/s, a first-order response of 24 ms after 4.25 ms; \
+                 motor noise of 7 deg/s; a resonance at 455 Hz; white noise of 2 deg/s RMS",
+            ],
+            (8000.0, 31.0),
+            (CONFIRM_SEED + 20, (25.0, 70.0)),
+            &[
+                (
+                    310.0,
+                    second(22.0, 0.36, 2.25),
+                    noisy((80.0, 3.2), 12.0, 560.0, 3.0),
+                ),
+                (
+                    240.0,
+                    second(14.5, 0.81, 3.75),
+                    noisy((80.0, 3.2), 9.0, 640.0, 2.5),
+                ),
+                (
+                    140.0,
+                    first(24.0, 4.25),
+                    noisy((80.0, 3.2), 7.0, 455.0, 2.0),
+                ),
+            ],
+        ),
+        made_for_none(
+            (
+                "d1-stp-1k",
+                Area::StepResponse,
+                "A flight made for no question, for the step response window and the main \
+                 window: plants of dampings and delays no earlier round flew; 1 kHz, 30.000 s, \
+                 the length and the rate the main window is asked to print",
+            ),
+            [
+                "stick moves within 290 deg/s; a second-order response of 17.5 Hz, damping \
+                 0.47, after 3 ms; motor noise of 8 deg/s at 64 Hz + 2.4 Hz per percent; a \
+                 resonance at 355 Hz; white noise of 2.5 deg/s RMS",
+                "stick moves within 230 deg/s; a second-order response of 10.5 Hz, damping \
+                 0.92, after 6.5 ms; motor noise of 7 deg/s; a resonance at 425 Hz; white noise \
+                 of 2 deg/s RMS",
+                "stick moves within 150 deg/s; a first-order response of 29 ms after 7.5 ms; \
+                 motor noise of 5 deg/s; a resonance at 310 Hz; white noise of 1.5 deg/s RMS",
+            ],
+            (1000.0, 30.0),
+            (CONFIRM_SEED + 40, (30.0, 65.0)),
+            &[
+                (
+                    290.0,
+                    second(17.5, 0.47, 3.0),
+                    noisy((64.0, 2.4), 8.0, 355.0, 2.5),
+                ),
+                (
+                    230.0,
+                    second(10.5, 0.92, 6.5),
+                    noisy((64.0, 2.4), 7.0, 425.0, 2.0),
+                ),
+                (150.0, first(29.0, 7.5), noisy((64.0, 2.4), 5.0, 310.0, 1.5)),
+            ],
+        ),
+        made_for_none(
+            (
+                "d2-stp-4k",
+                Area::StepResponse,
+                "Another flight for the step response window, with other plants: 4 kHz, 26 s",
+            ),
+            [
+                "stick moves within 330 deg/s; a second-order response of 21 Hz, damping 0.58, \
+                 after 2.5 ms; motor noise of 9 deg/s at 69 Hz + 3.3 Hz per percent; a \
+                 resonance at 495 Hz; white noise of 3 deg/s RMS",
+                "stick moves within 260 deg/s; a second-order response of 13.5 Hz, damping \
+                 0.39, after 4.75 ms; motor noise of 8 deg/s; a resonance at 575 Hz; white \
+                 noise of 2.5 deg/s RMS",
+                "stick moves within 140 deg/s; a second-order response of 8.5 Hz, damping 0.74, \
+                 after 6 ms; motor noise of 5 deg/s; a resonance at 430 Hz; white noise of 2 \
+                 deg/s RMS",
+            ],
+            (4000.0, 26.0),
+            (CONFIRM_SEED + 60, (25.0, 70.0)),
+            &[
+                (
+                    330.0,
+                    second(21.0, 0.58, 2.5),
+                    noisy((69.0, 3.3), 9.0, 495.0, 3.0),
+                ),
+                (
+                    260.0,
+                    second(13.5, 0.39, 4.75),
+                    noisy((69.0, 3.3), 8.0, 575.0, 2.5),
+                ),
+                (
+                    140.0,
+                    second(8.5, 0.74, 6.0),
+                    noisy((69.0, 3.3), 5.0, 430.0, 2.0),
+                ),
+            ],
+        ),
+    ]
+}
+
+/// The header lines of no firmware the pair of the setup list ends with,
+/// `(name, value)`, in the order the first of the pair lists them; the
+/// second lists them the other way round.
+pub const PAIR_LINES: [(&str, &str); 2] = [("probe_line_a", "10"), ("probe_line_b", "20")];
+/// The master multiplier of the slider headers of the first and of the
+/// second log of that pair.
+pub const PAIR_MASTER: [u32; 2] = [85, 120];
+
+/// The header lines that make two logs the pair of the setup list (U13):
+/// the master multiplier of the sliders (P3), the one line that differs
+/// beyond the name of the craft, and the two lines of [`PAIR_LINES`], in
+/// their order for the first log (`second` unset) and the other way round
+/// for the second.
+fn header_pair(second: bool) -> Vec<(String, String)> {
+    let master = PAIR_MASTER[usize::from(second)];
+    let mut lines: Vec<(String, String)> = PAIR_LINES
+        .iter()
+        .map(|(name, value)| ((*name).to_string(), (*value).to_string()))
+        .collect();
+    if second {
+        lines.reverse();
+    }
+    let mut headers = vec![(
+        "simplified_master_multiplier".to_string(),
+        master.to_string(),
+    )];
+    headers.extend(lines);
+    headers
+}
+
+/// The amplitudes of the two tones of each axis of the probe of the clock,
+/// deg/s, over its white noise of [`PEAKS_FLOOR`]: on the curve the
+/// spectrum window draws at "medium" (`OpenPID`'s by decision D-001) the
+/// first stands about 12 dB above the floor, the second about 4 dB (S5).
+const PEAKS_TONES: [f64; 2] = [0.85, 0.31];
+/// The white noise under them, deg/s RMS.
+const PEAKS_FLOOR: f64 = 2.0;
+
+/// How far the clock of the probe of the rate runs off its header's rate:
+/// its time stamps advance 2 % more than the header says (C1).
+pub const CLOCK: f64 = 1.02;
+/// The share of the frames the probe of the pauses does not log (C2).
+pub const PAUSED: f64 = 0.05;
+
+/// The probes of the time base (C1 and C2): a log whose header states
+/// 2 kHz while its time stamps are 2 % further apart, on every axis two
+/// tones a peak label may be given to (S5), the second of the pair of the
+/// setup list; and a log that pauses for 5 % of its frames.
+fn time_base() -> Vec<Probe> {
+    let seed = CONFIRM_SEED + 140;
+    let toned = |hz: f64, k: u64| AxisSpec::of(vec![Wave::tone(hz, 10.0), dither(seed + k)]);
+    let noise = |rms: f64, k: u64| {
+        AxisSpec::of(vec![Wave::Noise {
+            rms,
+            seed: seed + k,
+        }])
+    };
+    let [high, low] = PEAKS_TONES;
+    let peaks = |k: u64, (first, second): (f64, f64)| {
+        AxisSpec::of(vec![
+            Wave::tone(first, high),
+            Wave::tone(second, low),
+            Wave::Noise {
+                rms: PEAKS_FLOOR,
+                seed: seed + 10 + k,
+            },
+        ])
+    };
+    let mut clock = Probe {
+        id: "b2-clk-2k",
+        area: Area::Spectrum,
+        title: "A log whose header states 2 kHz while its time stamps are 510 µs apart, 2 % \
+                more than the header says: whether a tone sits at its frequency by the header \
+                (the samples) or by the time stamps, 2 % lower. On every axis two tones over \
+                white noise, about 12 and 4 dB above the floor of the curve at \"medium\": \
+                whether the spectrum window labels peaks, which, and at what frequency. The \
+                second of the pair of the setup list: a master multiplier of 120, its two \
+                last lines the other way round; 24 s by the header",
+        purpose: [
+            "a tone of 0.85 deg/s at 140 Hz and one of 0.31 deg/s at 330 Hz by the header's \
+             rate (137.25 and 323.53 Hz by the time stamps), over white noise of 2 deg/s RMS",
+            "the same below 100 Hz: 35 and 70 Hz (34.31 and 68.63 Hz)",
+            "the same at 210 and 260 Hz (205.88 and 254.90 Hz)",
+        ],
+        flight: FlightSpec {
+            roll: peaks(0, (140.0, 330.0)),
+            pitch: peaks(1, (35.0, 70.0)),
+            yaw: peaks(2, (210.0, 260.0)),
+            ..FlightSpec::quiet(2000.0, 24.0)
+        },
+    };
+    clock.flight.quirks.clock = Some(CLOCK);
+    clock.flight.quirks.headers = header_pair(true);
+    let mut paused = Probe {
+        id: "b4-gap-2k",
+        area: Area::Spectrum,
+        title: "A log that pauses for 5 % of its frames, in stretches of 32 ms as the firmware \
+                does when its storage falls behind: the floor and a tone with the gaps, and \
+                whether the stretch of the maps counts samples or seconds; 2 kHz, 20 s",
+        purpose: [
+            "a tone of 10 deg/s at 120 Hz over white noise of 1 deg/s RMS",
+            "white noise of 2 deg/s RMS: the floor with the gaps",
+            "a tone of 10 deg/s at 40 Hz: below 100 Hz",
+        ],
+        flight: FlightSpec {
+            roll: AxisSpec::of(vec![
+                Wave::tone(120.0, 10.0),
+                Wave::Noise {
+                    rms: 1.0,
+                    seed: seed + 3,
+                },
+            ]),
+            pitch: noise(2.0, 4),
+            yaw: toned(40.0, 5),
+            ..FlightSpec::quiet(2000.0, 20.0)
+        },
+    };
+    paused.flight.quirks.pauses = Some(Pauses {
+        share: PAUSED,
+        seed: seed + 6,
+    });
+    vec![clock, paused]
+}
+
+/// The gain of a large move of the stick on the roll axis of the probe of
+/// the step windows, and from how large a move is large, deg/s.
+pub const LARGE_MOVE: (f64, f64) = (0.75, 500.0);
+
+/// The stick of the roll axis of the probe of the step windows: a move
+/// every 0.5 s from 1 s on, out and back to the centre, ±200 deg/s up to
+/// 20 s and ±800 deg/s after.
+fn small_then_large(duration_s: f64) -> Stick {
+    let count = ((duration_s - 1.0) / 0.5) as usize;
+    let levels = (0..count)
+        .map(|k| {
+            let size = if k < count / 2 { 200.0 } else { 800.0 };
+            let sign = if (k / 2) % 2 == 0 { 1.0 } else { -1.0 };
+            if k % 2 == 0 { sign * size } else { 0.0 }
+        })
+        .collect();
+    Stick::Steps {
+        start_s: 1.0,
+        every_s: 0.5,
+        levels,
+    }
+}
+
+/// The probe of the step response windows and of the legend (R1, R3, R6,
+/// R15, P5): long enough for windows of 5 s; roll moves small and then
+/// large through a plant whose gain drops on the large ones, pitch flies a
+/// plant of gain 0.8, and the headers state a D-min next to the D-max and
+/// a gain with four decimals.
+fn step_windows() -> Probe {
+    let seed = CONFIRM_SEED + 160;
+    let duration_s = 40.0;
+    let (large_gain, large_from) = LARGE_MOVE;
+    let mut probe = Probe {
+        id: "d3-win-2k",
+        area: Area::StepResponse,
+        title: "Stick moves for windows of 4 and 5 s, small and large moves for curves of low \
+                and high inputs, a plant of gain 0.8 for \"Y corr.\", and headers with a D-min \
+                beside the D-max (d_min 20,23,0; d_max 40,46,0) and a pitch P of 0.1546: which \
+                the legend prints as Dm, and how it prints the gain; 2 kHz, 40 s",
+        purpose: [
+            "a move every 0.5 s out and back, ±200 deg/s up to 20 s and ±800 deg/s after, \
+             through a second-order response of 18 Hz, damping 0.6, after 4 ms, whose gain is \
+             1 for a move under 500 deg/s and 0.75 for a larger one; gyro noise of 1.5 deg/s \
+             RMS",
+            "random stick moves within 250 deg/s through a second-order response of 13 Hz, \
+             damping 0.7, after 5 ms and of gain 0.8; gyro noise of 1.5 deg/s RMS",
+            "random stick moves within 150 deg/s through a first-order response of 27 ms after \
+             6 ms; gyro noise of 1 deg/s RMS",
+        ],
+        flight: FlightSpec {
+            roll: AxisSpec {
+                waves: vec![Wave::Noise {
+                    rms: 1.5,
+                    seed: seed + 1,
+                }],
+                ..AxisSpec::following(
+                    small_then_large(duration_s),
+                    Plant::Graded {
+                        natural_hz: 18.0,
+                        damping: 0.6,
+                        delay_ms: 4.0,
+                        gain: 1.0,
+                        large_from,
+                        large_gain,
+                    },
+                )
+            },
+            pitch: AxisSpec {
+                waves: vec![Wave::Noise {
+                    rms: 1.5,
+                    seed: seed + 2,
+                }],
+                ..AxisSpec::following(
+                    Stick::Random {
+                        seed: seed + 12,
+                        hold_min_ms: 200,
+                        hold_max_ms: 700,
+                        amplitude: 250.0,
+                    },
+                    Plant::SecondOrder {
+                        natural_hz: 13.0,
+                        damping: 0.7,
+                        delay_ms: 5.0,
+                        gain: 0.8,
+                    },
+                )
+            },
+            yaw: AxisSpec {
+                waves: vec![Wave::Noise {
+                    rms: 1.0,
+                    seed: seed + 3,
+                }],
+                ..AxisSpec::following(
+                    Stick::Random {
+                        seed: seed + 13,
+                        hold_min_ms: 200,
+                        hold_max_ms: 700,
+                        amplitude: 150.0,
+                    },
+                    first(27.0, 6.0),
+                )
+            },
+            ..FlightSpec::quiet(2000.0, duration_s)
+        },
+    };
+    probe.flight.quirks.headers = vec![
+        ("d_min".to_string(), "20,23,0".to_string()),
+        ("pitchPID".to_string(), "0.1546,84,34".to_string()),
+    ];
+    probe
+}
+
+/// The tone of the D term of roll and of the setpoint of pitch of the
+/// flight of the maps of round 18, `(Hz, size)`.
+pub const TERM_TONES: [(f64, f64); 2] = [(250.0, 20.0), (150.0, 15.0)];
+
+/// The channels beyond the gyro of the flight of the spectrum and the maps
+/// (T1, F1): a tone only in the D term of roll and one only in the setpoint
+/// of pitch (and so in its PID error), each over white noise of 0.5. Its
+/// gyro follows the stick alone.
+fn other_channels() -> Vec<Carried> {
+    let seed = CONFIRM_SEED + 180;
+    let toned = |(hz, size): (f64, f64), k: u64| vec![Wave::tone(hz, size), dither(seed + k)];
+    let [d_tone, setpoint_tone] = TERM_TONES;
+    vec![
+        Carried {
+            channel: Carrier::Term {
+                axis: Axis::Roll,
+                term: PidTerm::D,
+            },
+            waves: toned(d_tone, 0),
+        },
+        Carried {
+            channel: Carrier::Setpoint { axis: Axis::Pitch },
+            waves: toned(setpoint_tone, 1),
+        },
+    ]
+}
+
+/// The short stairs of round 18 (B): where between 10 and 11 s a log stops
+/// being taken whole, in seconds or in samples. Short names: the open
+/// dialog takes 250 characters of them.
+const SHORT_STAIRS: [(&str, f64, f64); 6] = [
+    ("l1-2k", 2000.0, 10.1),
+    ("l2-2k", 2000.0, 10.25),
+    ("l3-2k", 2000.0, 10.5),
+    ("l4-2k", 2000.0, 10.75),
+    ("l5-2k", 2000.0, 10.9),
+    ("l6-1k", 1000.0, 10.5),
+];
+
+/// Round 18, the round that confirms decision D-012 = A (#200: `OpenPID`
+/// offers the reference tool's stretch, "Without the first and last
+/// second") and the fixed `compare`, and asks what no round asked yet. In
+/// the order the plan values them:
+///
+/// - four flights made for no question ([`confirming_flights`]): two for
+///   the spectrum window (2 and 8 kHz; the first for both maps too), two
+///   for the step response window (1 and 4 kHz; the first for the main
+///   window too);
+/// - the open ends of the stretch: stairs of 10.1 to 10.9 s at 2 kHz and of
+///   10.5 s at 1 kHz; a log whose clock runs 2 % off its header's rate and
+///   one that pauses for 5 % of its frames ([`time_base`]); the three logs
+///   of earlier rounds that were read from sample `fs + 3` (`a9-flight-2k`,
+///   `f4-short-2k`, `z8-short-2k`), byte for byte;
+/// - what no round asked, on those logs where it fits: the peak labels on
+///   the log of the clock, the maps of the D term and the PID error on the
+///   flight of the maps ([`other_channels`]), the pair of the setup list
+///   ([`header_pair`]); and one log of its own, for the step response
+///   windows of 4 and 5 s with small and large moves and a gain of 0.8 and
+///   the legend of a log with D-min and D-max ([`step_windows`]).
+///
+/// Sixteen logs: the names of many more do not fit the open dialog at once. The
+/// logs are in the order of their names, which is the order they are
+/// opened in: those of the spectrum and the step response windows, whose
+/// lists show nine rows, come first.
+fn round_18() -> Vec<Probe> {
+    let again = |probes: Vec<Probe>, id: &str| probes.into_iter().find(|p| p.id == id);
+    let mut probes: Vec<Probe> = [
+        again(round_8(), "z8-short-2k"),
+        again(round_9(), "a9-flight-2k"),
+        again(round_10(), "f4-short-2k"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let mut flights = confirming_flights();
+    flights[0].flight.quirks.headers = header_pair(false);
+    flights[0].flight.carried = other_channels();
+    probes.extend(flights);
+    probes.extend(time_base());
+    probes.push(step_windows());
+    probes.extend(SHORT_STAIRS.map(|(id, fs, duration_s)| Probe {
+        title: "The stairs of the throttle of round 16 (a second a stair) in a short flight: \
+                where between 10 and 11 s the maps stop taking a log whole, and whether in \
+                seconds or in samples (10.5 s at 1 and at 2 kHz)",
+        ..stairs_in(id, fs, 1.0, duration_s)
+    }));
+    probes.sort_by_key(|p| p.id);
+    probes
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
@@ -2716,12 +3202,15 @@ pub fn round(round: u32) -> Option<Vec<Probe>> {
         15 => Some(round_15()),
         16 => Some(round_16()),
         17 => Some(round_17()),
+        18 => Some(round_18()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
-pub const ROUNDS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
+pub const ROUNDS: &[u32] = &[
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+];
 
 #[cfg(test)]
 mod tests {
@@ -3699,7 +4188,7 @@ mod tests {
             .unwrap();
         assert_eq!(log.sessions.len(), 1);
         let session = log.sessions.remove(0);
-        assert_eq!(session.len(), probe.flight.len(), "{}", probe.id);
+        assert_eq!(session.len(), probe.flight.logged_len(), "{}", probe.id);
         assert_eq!(session.diagnostics.corrupt_frames, 0, "{}", probe.id);
         (head, session)
     }
@@ -4536,5 +5025,258 @@ mod tests {
             term: PidTerm::F,
         });
         assert!(yaw_f.iter().all(|v| *v == 0.0));
+    }
+
+    fn confirming(id: &str) -> Probe {
+        let found = round(18).unwrap().into_iter().find(|p| p.id == id);
+        found.unwrap_or_else(|| panic!("round 18 has no {id}"))
+    }
+
+    #[test]
+    fn round_18_is_sixteen_logs_in_the_order_of_their_names() {
+        let probes = round(18).unwrap();
+        let shape: Vec<(&str, Area, f64, f64)> = probes
+            .iter()
+            .map(|p| (p.id, p.area, p.flight.fs, p.flight.duration_s))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("a9-flight-2k", Area::Throttle, 2000.0, 30.0),
+                ("b1-spc-2k", Area::Spectrum, 2000.0, 23.0),
+                ("b2-clk-2k", Area::Spectrum, 2000.0, 24.0),
+                ("b3-spc-8k", Area::Spectrum, 8000.0, 31.0),
+                ("b4-gap-2k", Area::Spectrum, 2000.0, 20.0),
+                ("d1-stp-1k", Area::StepResponse, 1000.0, 30.0),
+                ("d2-stp-4k", Area::StepResponse, 4000.0, 26.0),
+                ("d3-win-2k", Area::StepResponse, 2000.0, 40.0),
+                ("f4-short-2k", Area::Time, 2000.0, 16.5),
+                ("l1-2k", Area::Throttle, 2000.0, 10.1),
+                ("l2-2k", Area::Throttle, 2000.0, 10.25),
+                ("l3-2k", Area::Throttle, 2000.0, 10.5),
+                ("l4-2k", Area::Throttle, 2000.0, 10.75),
+                ("l5-2k", Area::Throttle, 2000.0, 10.9),
+                ("l6-1k", Area::Throttle, 1000.0, 10.5),
+                ("z8-short-2k", Area::Throttle, 2000.0, 12.0),
+            ][..]
+        );
+        let mut names: Vec<&str> = probes.iter().map(|p| p.id).collect();
+        names.sort_unstable();
+        assert!(names.iter().zip(&probes).all(|(n, p)| *n == p.id));
+        // the logs of the spectrum and the step response windows lie in
+        // the first nine rows of their lists
+        let listed = |p: &Probe| matches!(p.area, Area::Spectrum | Area::StepResponse);
+        assert!(probes.iter().rposition(listed).is_some_and(|row| row < 9));
+        // the three logs read from fs + 3 before are those of their rounds
+        for (r, id) in [(8, "z8-short-2k"), (9, "a9-flight-2k"), (10, "f4-short-2k")] {
+            let theirs = round(r).unwrap().into_iter().find(|p| p.id == id).unwrap();
+            assert_eq!(confirming(id), theirs, "{id}");
+            assert_eq!(
+                crate::pack::log_of(&confirming(id)).unwrap(),
+                crate::pack::log_of(&theirs).unwrap(),
+                "{id}"
+            );
+        }
+        // the short stairs are those of round 17, a second a stair
+        for (id, duration_s) in [("l1-2k", 10.1), ("l6-1k", 10.5)] {
+            let stairs = confirming(id).flight;
+            assert_eq!(stairs.roll, verifying("x3-len11-2k").flight.roll);
+            assert_eq!(stairs.throttle, super::stairs(1.0, duration_s));
+        }
+        // nothing a log of round 18 does is in a log of an earlier round
+        let earlier = ROUNDS
+            .iter()
+            .filter(|r| **r < 18)
+            .flat_map(|r| round(*r).unwrap());
+        assert!(earlier.into_iter().all(|p| p.flight.quirks.is_none()));
+        // the flight of the maps carries a tone in its D term and setpoint
+        assert_eq!(confirming("b1-spc-2k").flight.carried, other_channels());
+    }
+
+    #[test]
+    fn the_pair_of_the_setup_list_differs_in_one_header_and_in_an_order() {
+        let header = |id: &str| {
+            let (head, _) = log_of(&confirming(id));
+            let lines: Vec<String> = head
+                .lines()
+                .filter_map(|l| l.strip_prefix("H "))
+                .filter(|l| !l.starts_with("Craft name:"))
+                .map(str::to_string)
+                .collect();
+            lines
+        };
+        let (first, second) = (header("b1-spc-2k"), header("b2-clk-2k"));
+        assert_eq!(first.len(), second.len());
+        let differ: Vec<(&String, &String)> =
+            first.iter().zip(&second).filter(|(a, b)| a != b).collect();
+        // the master multiplier, and the two last lines the other way round
+        assert_eq!(differ.len(), 3, "{differ:?}");
+        assert!(first.contains(&"simplified_master_multiplier:85".to_string()));
+        assert!(second.contains(&"simplified_master_multiplier:120".to_string()));
+        let tail = |lines: &[String]| lines[lines.len() - 2..].to_vec();
+        assert_eq!(tail(&first), ["probe_line_a:10", "probe_line_b:20"]);
+        assert_eq!(tail(&second), ["probe_line_b:20", "probe_line_a:10"]);
+        let mut a = first.clone();
+        let mut b = second.clone();
+        a.retain(|l| !l.starts_with("simplified_master_multiplier"));
+        b.retain(|l| !l.starts_with("simplified_master_multiplier"));
+        a.sort();
+        b.sort();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn the_step_windows_probe_states_a_d_min_and_a_gain_of_four_decimals() {
+        let probe = confirming("d3-win-2k");
+        let (head, session) = log_of(&probe);
+        for line in [
+            "H d_min:20,23,0\n",
+            "H d_max:40,46,0\n",
+            "H pitchPID:0.1546,84,34\n",
+        ] {
+            assert!(head.contains(line), "{line}");
+        }
+        // roll: small moves first, large ones after, the large ones at 0.75
+        let roll = probe.flight.samples(Axis::Roll);
+        let at = |t: f64| (t * probe.flight.fs) as usize;
+        // a move out lasts 0.5 s: the response has settled at its end
+        assert!((roll.setpoint[at(1.45)] - 200.0).abs() < 1e-9);
+        assert!((roll.response[at(1.45)] - 200.0).abs() < 0.5);
+        let large = (0..at(40.0))
+            .find(|i| roll.setpoint[*i].abs() > 500.0)
+            .unwrap();
+        let settled = large + at(0.45);
+        assert!((roll.response[settled] / roll.setpoint[settled] - 0.75).abs() < 0.01);
+        assert!(large as f64 / probe.flight.fs > 19.9);
+        // pitch settles at 0.8 of the stick
+        let pitch = Plant::SecondOrder {
+            natural_hz: 13.0,
+            damping: 0.7,
+            delay_ms: 5.0,
+            gain: 0.8,
+        };
+        assert_eq!(probe.flight.pitch.plant, pitch);
+        assert_eq!(session.len(), probe.flight.len());
+    }
+
+    #[test]
+    fn the_logs_of_the_time_base_run_off_their_rate_or_pause() {
+        let clock = confirming("b2-clk-2k");
+        let (_, session) = log_of(&clock);
+        // the header's rate, and time stamps 2 % further apart
+        assert_eq!(session.timebase.nominal_dt_us, Some(500.0));
+        let t = &session.timebase.time_us;
+        assert!(t.windows(2).all(|w| w[1] - w[0] == 510), "{:?}", &t[..4]);
+        let paused = confirming("b4-gap-2k");
+        let (head, session) = log_of(&paused);
+        assert!(head.contains("H I interval:128\n"));
+        let kept = paused.flight.kept();
+        let left_out = kept.iter().filter(|k| !**k).count();
+        assert_eq!(left_out % 64, 0);
+        let share = left_out as f64 / kept.len() as f64;
+        assert!((share - PAUSED).abs() < 0.005, "{share}");
+        assert!(
+            kept[..64]
+                .iter()
+                .chain(&kept[kept.len() - 64..])
+                .all(|k| *k)
+        );
+        assert_eq!(session.len(), kept.len() - left_out);
+        // the gaps are whole stretches of 32 ms
+        let t = &session.timebase.time_us;
+        let gaps: Vec<i64> = t
+            .windows(2)
+            .map(|w| w[1] - w[0])
+            .filter(|d| *d != 500)
+            .collect();
+        assert!(!gaps.is_empty() && gaps.iter().all(|d| (d - 500) % 32_000 == 0));
+    }
+
+    #[test]
+    fn a_log_may_hold_the_unfiltered_gyro_in_its_debug_values() {
+        let seed = 9;
+        let mut probe = Probe {
+            id: "t0-scaled-2k",
+            area: Area::LogViewer,
+            title: "the unfiltered gyro in the debug values",
+            purpose: ["a tone", "a tone", "a tone"],
+            flight: FlightSpec {
+                roll: two_channels(seed, vec![Wave::tone(90.0, 40.0)], vec![]),
+                pitch: two_channels(seed + 2, vec![Wave::tone(60.0, 30.0)], vec![]),
+                yaw: two_channels(seed + 4, vec![Wave::tone(45.0, 20.0)], vec![]),
+                debug: Some(DebugValues {
+                    mode: 6,
+                    values: Vec::new(),
+                }),
+                ..FlightSpec::quiet(2000.0, 4.0)
+            },
+        };
+        probe.flight.quirks.prefilt_in_debug = true;
+        let (head, session) = log_of(&probe);
+        assert!(head.contains("H debug_mode:6\n"));
+        assert!(!head.contains("gyroUnfilt"));
+        for axis in Axis::ALL {
+            let raw = ChannelId::Gyro {
+                axis,
+                stage: GyroStage::Raw,
+            };
+            assert!(session.channel(&raw).is_none());
+            let debug = ChannelId::Debug {
+                idx: axis.index() as u8,
+            };
+            let logged = session.channel(&debug).unwrap().data.values().to_vec();
+            let exact = probe.flight.samples(axis).unfiltered;
+            assert_eq!(logged.len(), exact.len());
+            assert!(logged.iter().zip(&exact).all(|(l, e)| (l - e).abs() <= 0.5));
+            let filtered = gyro_of(&session, axis, GyroStage::Filtered);
+            assert!(
+                filtered
+                    .iter()
+                    .zip(&logged)
+                    .any(|(f, l)| (f - l).abs() > 5.0)
+            );
+        }
+    }
+
+    #[test]
+    fn the_flight_of_the_maps_has_a_tone_only_in_the_d_term_and_in_the_setpoint() {
+        let probe = confirming("b1-spc-2k");
+        let (_, session) = log_of(&probe);
+        let d = session
+            .channel(&ChannelId::PidTerm {
+                axis: Axis::Roll,
+                term: PidTerm::D,
+            })
+            .unwrap();
+        let peak = d.data.values().iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        assert!(peak > 15.0 && peak < 25.0, "{peak}");
+        // the setpoint of pitch is the stick and the tone; the gyro follows
+        // the stick alone
+        let logged = session
+            .channel(&ChannelId::Setpoint { axis: Axis::Pitch })
+            .unwrap()
+            .data
+            .values()
+            .to_vec();
+        let pitch = probe.flight.samples(Axis::Pitch);
+        let stick = probe
+            .flight
+            .pitch
+            .stick
+            .breakpoints(probe.flight.duration_s);
+        assert!(!stick.is_empty());
+        let off: Vec<f64> = logged
+            .iter()
+            .zip(&pitch.setpoint)
+            .map(|(l, e)| l - e)
+            .collect();
+        assert!(off.iter().all(|d| d.abs() <= 0.5));
+        let tone: f64 = pitch
+            .setpoint
+            .iter()
+            .zip(&pitch.response)
+            .map(|(s, r)| (s - r).abs())
+            .fold(0.0, f64::max);
+        assert!(tone > 14.0, "{tone}");
     }
 }

@@ -14,13 +14,13 @@
 //! channels spans a few colour steps of the bar.
 
 use super::{
-    Copy, Held, Outcome, Source, Stretch, axis_of, limit, not_compared, number, on_stretches,
-    tokens,
+    BOTH_STRETCHES, Copy, Held, Outcome, Source, Stretch, axis_of, limit, not_compared, number,
+    on_stretches, results_name, tokens,
 };
 use crate::capture::Window;
 use crate::emf::{self, Axes, ColourBar, Metafile, Picture};
 use openpid_analysis::Grid2D;
-use openpid_core::{Axis, GyroStage};
+use openpid_core::Axis;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
@@ -92,10 +92,21 @@ impl Grid {
     }
 }
 
-/// The axis, channel and setting of a map copy, and whether `OpenPID` has a
-/// counterpart for the setting: `throttle-<setting>-<axis>-<channel>` or
-/// `time-<channel>-<setting>-<axis>`.
-fn map_parts(rest: &str, window: Window) -> Option<(Axis, GyroStage, String)> {
+/// The channels of a map copy by their names in the files: the unfiltered
+/// and the filtered gyro, and from round 18 on the D term, the PID error
+/// and the setpoint of the time window's list; each with the name
+/// `OpenPID`'s results give it.
+const MAP_CHANNELS: [(&str, &str); 5] = [
+    ("prefilt", "gyro_unfiltered"),
+    ("gyro", "gyro"),
+    ("dterm", "dterm"),
+    ("piderror", "piderror"),
+    ("setpoint", "setpoint"),
+];
+
+/// The axis, channel (as the results name it) and setting of a map copy:
+/// `throttle-<setting>-<axis>-<channel>` or `time-<channel>-<setting>-<axis>`.
+fn map_parts(rest: &str, window: Window) -> Option<(Axis, &'static str, String)> {
     let (words, stage, axis) = if window == Window::Time {
         let words = tokens(rest.strip_prefix("time-")?);
         let (stage, axis) = (*words.first()?, *words.last()?);
@@ -110,12 +121,8 @@ fn map_parts(rest: &str, window: Window) -> Option<(Axis, GyroStage, String)> {
         let (axis, stage) = (*words.get(n.checked_sub(2)?)?, *words.last()?);
         (words[..n - 2].to_vec(), stage, axis)
     };
-    let stage = match stage {
-        "prefilt" => GyroStage::Raw,
-        "gyro" => GyroStage::Filtered,
-        _ => return None,
-    };
-    Some((axis_of(axis)?, stage, words.join("-")))
+    let (_, channel) = MAP_CHANNELS.iter().find(|(name, _)| *name == stage)?;
+    Some((axis_of(axis)?, channel, words.join("-")))
 }
 
 /// Whether a map setting only changes the view: the view below 100 Hz, the
@@ -131,8 +138,8 @@ fn view_only(setting: &str) -> bool {
 /// What `compare` reads off the name of a map copy, when it compares it.
 #[cfg(test)]
 pub(super) fn parsed(rest: &str, window: Window) -> Option<String> {
-    let (axis, stage, setting) = map_parts(rest, window)?;
-    view_only(&setting).then(|| format!("{} {}", axis.name(), super::stage_name(stage)))
+    let (axis, channel, setting) = map_parts(rest, window)?;
+    view_only(&setting).then(|| format!("{} {channel}", axis.name()))
 }
 
 /// The picture of the map (the largest) and of its colour bar (the
@@ -524,7 +531,7 @@ impl HeldMap {
 }
 
 pub(super) fn map(copy: &Copy, m: &Metafile, src: &mut Source) -> Result<Outcome, String> {
-    let (Some((axis, stage, setting)), Some(probe)) =
+    let (Some((axis, channel, setting)), Some(probe)) =
         (map_parts(&copy.rest, copy.window), copy.probe)
     else {
         return Ok(not_compared(
@@ -543,38 +550,32 @@ pub(super) fn map(copy: &Copy, m: &Metafile, src: &mut Source) -> Result<Outcome
         .flatten();
     let bar = bar_of(m, sibling.as_ref())?;
     let extra = copy.window == Window::Time;
-    let which = (axis, stage, copy.window);
+    let which = (axis, channel, copy.window);
     let own = hold_map(
         m,
         (&scales, &bar, picture),
         &src.map(probe, which, Stretch::Own)?,
         extra,
     )?;
-    let (numbers, verdict) = on_stretches(own.held(), || {
-        let grid = src.map(probe, which, Stretch::Reference)?;
+    let both = src.round >= BOTH_STRETCHES;
+    let judged = on_stretches(own.held(), both, |stretch| {
+        let grid = src.map(probe, which, stretch)?;
         hold_map(m, (&scales, &bar, picture), &grid, extra).map(|h| h.held())
     });
-    Ok(Outcome {
-        against: format!(
-            "OpenPID's map of the {} {} gyro on the copy's colour scale ({} … {}{}){}",
-            if stage == GyroStage::Raw {
-                "unfiltered"
-            } else {
-                "filtered"
-            },
-            axis.name(),
-            number(bar.low),
-            number(bar.high),
-            if bar.low < 0.0 { " dB" } else { "" },
-            if picture.indices.is_empty() {
-                format!(", a picture of {} bits a colour channel", picture.depth)
-            } else {
-                String::new()
-            }
-        ),
-        numbers,
-        verdict,
-    })
+    let against = format!(
+        "OpenPID's map of {} of {} on the copy's colour scale ({} … {}{}){}",
+        results_name(channel),
+        axis.name(),
+        number(bar.low),
+        number(bar.high),
+        if bar.low < 0.0 { " dB" } else { "" },
+        if picture.indices.is_empty() {
+            format!(", a picture of {} bits a colour channel", picture.depth)
+        } else {
+            String::new()
+        }
+    );
+    Ok(Outcome::on(against, judged))
 }
 
 #[cfg(test)]

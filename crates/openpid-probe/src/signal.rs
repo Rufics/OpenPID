@@ -501,13 +501,75 @@ pub enum Plant {
         /// Steady-state gain.
         gain: f64,
     },
+    /// The second-order plant of [`Plant::SecondOrder`] whose gain depends
+    /// on how far the stick moves: `gain` for a move smaller than
+    /// `large_from` deg/s, `large_gain` for one at least that large, as a
+    /// craft whose motors run out of thrust on large moves. The response
+    /// to a small move is the plant's in every other respect too.
+    Graded {
+        /// Natural frequency `ω / 2π`, Hz.
+        natural_hz: f64,
+        /// Damping ratio ζ.
+        damping: f64,
+        /// Transport delay, ms.
+        delay_ms: f64,
+        /// Steady-state gain of a small move.
+        gain: f64,
+        /// The smallest move that is large, deg/s.
+        large_from: f64,
+        /// Steady-state gain of a large move.
+        large_gain: f64,
+    },
 }
 
 impl Plant {
+    /// The plant a small move of the stick sees: for [`Plant::Graded`] the
+    /// second-order plant of its small gain, the plant itself otherwise.
+    pub fn small(&self) -> Plant {
+        match *self {
+            Plant::Graded {
+                natural_hz,
+                damping,
+                delay_ms,
+                gain,
+                ..
+            } => Plant::SecondOrder {
+                natural_hz,
+                damping,
+                delay_ms,
+                gain,
+            },
+            other => other,
+        }
+    }
+
+    /// The plant a move of the stick by `change` deg/s sees: for
+    /// [`Plant::Graded`] the second-order plant of the gain of a move that
+    /// size, the plant itself otherwise.
+    pub fn for_move(&self, change: f64) -> Plant {
+        match *self {
+            Plant::Graded {
+                natural_hz,
+                damping,
+                delay_ms,
+                large_from,
+                large_gain,
+                ..
+            } if change.abs() >= large_from => Plant::SecondOrder {
+                natural_hz,
+                damping,
+                delay_ms,
+                gain: large_gain,
+            },
+            other => other.small(),
+        }
+    }
+
     /// Transport delay, seconds.
     fn delay_s(&self) -> f64 {
         match self {
             Plant::None => 0.0,
+            Plant::Graded { .. } => self.small().delay_s(),
             Plant::Delay { delay_ms }
             | Plant::FirstOrder { delay_ms, .. }
             | Plant::SecondOrder { delay_ms, .. } => delay_ms / 1000.0,
@@ -520,6 +582,7 @@ impl Plant {
             Plant::None => 0.0,
             Plant::Delay { .. } => 1.0,
             Plant::FirstOrder { gain, .. } | Plant::SecondOrder { gain, .. } => *gain,
+            Plant::Graded { .. } => self.small().gain(),
         }
     }
 
@@ -528,6 +591,7 @@ impl Plant {
     fn settled_s(&self) -> f64 {
         let slowest = match self {
             Plant::None | Plant::Delay { .. } => 0.0,
+            Plant::Graded { .. } => return self.small().settled_s(),
             Plant::FirstOrder { tau_ms, .. } => tau_ms / 1000.0,
             Plant::SecondOrder {
                 natural_hz,
@@ -549,6 +613,9 @@ impl Plant {
     /// The response `t` seconds after a unit step of the stick, in closed
     /// form.
     pub fn step_response(&self, t: f64) -> f64 {
+        if let Plant::Graded { .. } = self {
+            return self.small().step_response(t);
+        }
         let t = t - self.delay_s();
         if t < -SAME_TIME_S {
             return 0.0;
@@ -557,6 +624,7 @@ impl Plant {
         match self {
             Plant::None => 0.0,
             Plant::Delay { .. } => 1.0,
+            Plant::Graded { .. } => unreachable!("taken as the plant of a small move above"),
             Plant::FirstOrder { tau_ms, gain, .. } => {
                 if *tau_ms <= 0.0 {
                     return *gain;
@@ -996,6 +1064,59 @@ pub struct FlightSpec {
     /// The channels beyond the gyro that carry waves of their own.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub carried: Vec<Carried>,
+    /// What its log does that the logs of the other flights do not.
+    #[serde(default, skip_serializing_if = "Quirks::is_none")]
+    pub quirks: Quirks,
+}
+
+/// What the log of a flight may do beyond what a log of the probes' craft
+/// does (round 18 on): other header lines, time stamps that run off the
+/// rate its header states, frames that are not logged, the unfiltered gyro
+/// in the debug values in place of its own field. A flight has none of it
+/// unless it says so.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct Quirks {
+    /// Header lines, `(name, value)`: each replaces the line of the
+    /// probes' craft of that name, or is added after the craft's lines in
+    /// this order (the writer puts a line the firmware writes in the
+    /// firmware's place, any other after them all).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub headers: Vec<(String, String)>,
+    /// The time stamps advance by this factor times the step of the rate
+    /// the header states: a clock that runs off the loop's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clock: Option<f64>,
+    /// Frames that are not logged, as when the storage of a flight
+    /// controller falls behind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pauses: Option<Pauses>,
+    /// The log has no field of the unfiltered gyro; its debug values 0 to
+    /// 2 hold the unfiltered gyro of roll, pitch and yaw in deg/s, as the
+    /// firmware's debug mode `GYRO_SCALED` logs it (the flight names that
+    /// mode, [`FlightSpec::debug`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub prefilt_in_debug: bool,
+}
+
+impl Quirks {
+    /// Whether the log does nothing the craft's logs do not.
+    pub fn is_none(&self) -> bool {
+        *self == Quirks::default()
+    }
+}
+
+/// How long the firmware stays paused once a frame was not logged,
+/// seconds: it resumes on the next `I` frame, and logs one every 32 ms.
+pub const PAUSE_S: f64 = 0.032;
+
+/// Frames a log leaves out: whole stretches of [`PAUSE_S`], chosen at
+/// random, never the first or the last.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Pauses {
+    /// The share of the stretches left out.
+    pub share: f64,
+    /// Seed of the choice.
+    pub seed: u64,
 }
 
 /// The samples of one axis.
@@ -1031,7 +1152,40 @@ impl FlightSpec {
             stick_throttle: None,
             motor_output: None,
             carried: Vec::new(),
+            quirks: Quirks::default(),
         }
+    }
+
+    /// Whether each sample is logged: all are, but on a flight whose log
+    /// pauses ([`Quirks::pauses`]).
+    pub fn kept(&self) -> Vec<bool> {
+        let n = self.len();
+        let Some(pauses) = self.quirks.pauses else {
+            return vec![true; n];
+        };
+        let block = ((PAUSE_S * self.fs).round() as usize).max(1);
+        let blocks = n.div_ceil(block);
+        let inner = blocks.saturating_sub(2);
+        let wanted = ((pauses.share * blocks as f64).round() as usize).min(inner);
+        // a fixed shuffle of the inner stretches; the first `wanted` go
+        let mut order: Vec<usize> = (1..=inner).collect();
+        let mut rng = Rng::new(pauses.seed);
+        for i in (1..order.len()).rev() {
+            let j = ((rng.next() * (i + 1) as f64) as usize).min(i);
+            order.swap(i, j);
+        }
+        let mut kept = vec![true; n];
+        for b in order.into_iter().take(wanted) {
+            for k in kept.iter_mut().skip(b * block).take(block) {
+                *k = false;
+            }
+        }
+        kept
+    }
+
+    /// The number of samples the log holds.
+    pub fn logged_len(&self) -> usize {
+        self.kept().iter().filter(|k| **k).count()
     }
 
     /// Number of samples.
@@ -1146,11 +1300,12 @@ impl FlightSpec {
             for value in &mut setpoint[first.min(n)..until.min(n)] {
                 *value = *to;
             }
-            let done = (((at + spec.plant.settled_s()) * fs).ceil() as usize + 1).min(n);
+            let plant = spec.plant.for_move(change);
+            let done = (((at + plant.settled_s()) * fs).ceil() as usize + 1).min(n);
             for (i, value) in response.iter_mut().enumerate().take(done).skip(first) {
-                *value += change * spec.plant.step_response(i as f64 / fs - at);
+                *value += change * plant.step_response(i as f64 / fs - at);
             }
-            settled[done] += change * spec.plant.gain();
+            settled[done] += change * plant.gain();
         }
         let mut sum = 0.0;
         for (value, add) in response.iter_mut().zip(&settled) {
@@ -1250,7 +1405,12 @@ impl FlightSpec {
     pub fn build(&self) -> FlightSession {
         let n = self.len();
         let dt_us = 1.0e6 / self.fs;
-        let time_us: Vec<i64> = (0..n).map(|i| (i as f64 * dt_us).round() as i64).collect();
+        let stamp_us = self.quirks.clock.map_or(dt_us, |c| dt_us * c);
+        let time_us: Vec<i64> = (0..n)
+            .map(|i| (i as f64 * stamp_us).round() as i64)
+            .collect();
+        let kept = self.kept();
+        let mut gyro = Vec::new();
         let mut channels = ChannelSet::new();
         let mut add = |id: ChannelId, name: String, unit: Unit, values: Vec<f64>| {
             channels.insert(Channel {
@@ -1285,20 +1445,40 @@ impl FlightSpec {
                 Unit::DegreesPerSecond,
                 samples.setpoint,
             );
-            let raw = ChannelId::Gyro {
-                axis,
-                stage: GyroStage::Raw,
-            };
-            add(
-                raw,
-                format!("gyroUnfilt[{i}]"),
-                Unit::DegreesPerSecond,
-                samples.unfiltered,
-            );
+            if self.quirks.prefilt_in_debug {
+                let id = ChannelId::Debug { idx: i as u8 };
+                add(id, format!("debug[{i}]"), Unit::Raw, samples.unfiltered);
+            } else {
+                let raw = ChannelId::Gyro {
+                    axis,
+                    stage: GyroStage::Raw,
+                };
+                add(
+                    raw,
+                    format!("gyroUnfilt[{i}]"),
+                    Unit::DegreesPerSecond,
+                    samples.unfiltered,
+                );
+            }
             let filtered = ChannelId::Gyro {
                 axis,
                 stage: GyroStage::Filtered,
             };
+            if self.quirks.pauses.is_some() {
+                // a sample without a gyro value is not logged: the writer
+                // pauses the log there, as the firmware does
+                let data = samples.filtered.iter().zip(&kept);
+                gyro.push(Channel {
+                    id: filtered.clone(),
+                    name: format!("gyroADC[{i}]"),
+                    unit: Unit::DegreesPerSecond,
+                    data: Series::from_options(data.map(|(v, k)| k.then_some(*v))),
+                    origin: Origin::Derived {
+                        from: Vec::new(),
+                        by: "openpid-probe".into(),
+                    },
+                });
+            }
             add(
                 filtered,
                 format!("gyroADC[{i}]"),
@@ -1364,6 +1544,10 @@ impl FlightSpec {
         for (id, name, unit, values) in self.extra_channels() {
             add(id, name, unit, values);
         }
+        // in place of the channels of the same name, where they were
+        for channel in gyro {
+            channels.insert(channel);
+        }
         let mut settings = Settings {
             loop_rates: openpid_fmt_blackbox::write::typical_rates(self.fs),
             ..Settings::default()
@@ -1423,6 +1607,73 @@ mod tests {
             roll,
             ..FlightSpec::quiet(fs, duration_s)
         }
+    }
+
+    #[test]
+    fn a_graded_plant_takes_its_gain_from_the_size_of_a_move() {
+        let graded = Plant::Graded {
+            natural_hz: 10.0,
+            damping: 0.7,
+            delay_ms: 3.0,
+            gain: 1.0,
+            large_from: 500.0,
+            large_gain: 0.5,
+        };
+        let small = Plant::SecondOrder {
+            natural_hz: 10.0,
+            damping: 0.7,
+            delay_ms: 3.0,
+            gain: 1.0,
+        };
+        assert_eq!(graded.small(), small);
+        assert_eq!(graded.for_move(-499.0), small);
+        assert_eq!(graded.for_move(500.0).gain(), 0.5);
+        assert_eq!(graded.for_move(-800.0).gain(), 0.5);
+        assert_eq!(small.for_move(800.0), small);
+        for t in [0.0, 0.002, 0.01, 0.1] {
+            assert_eq!(graded.step_response(t), small.step_response(t));
+        }
+        assert_eq!(graded.gain(), 1.0);
+        assert_eq!(graded.transfer(20.0), small.transfer(20.0));
+    }
+
+    #[test]
+    fn a_log_that_pauses_leaves_out_whole_stretches_of_an_i_interval() {
+        let mut spec = FlightSpec::quiet(2000.0, 10.0);
+        assert!(spec.quirks.is_none());
+        assert!(spec.kept().iter().all(|k| *k));
+        spec.quirks.pauses = Some(Pauses {
+            share: 0.1,
+            seed: 3,
+        });
+        assert!(!spec.quirks.is_none());
+        let kept = spec.kept();
+        assert_eq!(kept.len(), 20_000);
+        // 313 stretches of 64 samples, 31 of them left out
+        assert_eq!(spec.logged_len(), 20_000 - 31 * 64);
+        for block in kept.chunks(64) {
+            assert!(block.iter().all(|k| *k == block[0]));
+        }
+        assert!(
+            kept[..64]
+                .iter()
+                .chain(&kept[kept.len() - 64..])
+                .all(|k| *k)
+        );
+        // the same choice every time
+        assert_eq!(spec.kept(), kept);
+        // the filtered gyro of a sample left out has no value
+        let session = spec.build();
+        let gyro = ChannelId::Gyro {
+            axis: Axis::Roll,
+            stage: GyroStage::Filtered,
+        };
+        let data = &session.channel(&gyro).unwrap().data;
+        assert!((0..kept.len()).all(|i| data.is_valid(i) == kept[i]));
+        // and a clock that runs off the rate
+        spec.quirks.clock = Some(1.02);
+        let t = spec.build().timebase.time_us;
+        assert_eq!((t[1], t[1000]), (510, 510_000));
     }
 
     #[test]

@@ -388,7 +388,9 @@ fn an_unknown_round_is_refused() {
     );
     assert_eq!(
         catalogue::ROUNDS,
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+        [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18
+        ]
     );
 }
 
@@ -1593,6 +1595,72 @@ fn the_pack_of_round_17_says_what_every_channel_and_every_input_holds() {
         ours_probe("j1-path-2k")["step"].as_array().unwrap().len(),
         3
     );
+    // the logs read back whole, as the manifest says
+    for (name, bytes) in &pack.logs {
+        let id = name.trim_end_matches(".bbl");
+        assert_eq!(
+            probe(id)["bytes"].as_u64(),
+            Some(bytes.len() as u64),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn the_pack_of_round_18_says_what_its_logs_do_and_predicts_every_window_length() {
+    let pack = pack::build(18, "test").unwrap();
+    let files = pack.files();
+    let file = |name: &str| &files.iter().find(|(n, _)| n == name).unwrap().1;
+    let json = |name: &str| serde_json::from_slice::<serde_json::Value>(file(name)).unwrap();
+    for name in ["manifest.json", "ours.json", "predictions.json"] {
+        let text = String::from_utf8_lossy(file(name)).into_owned();
+        assert!(!text.contains("NaN"), "{name}");
+    }
+    let manifest = json("manifest.json");
+    assert_eq!(manifest["round"], 18);
+    let probes = manifest["probes"].as_array().unwrap();
+    assert_eq!(probes.len(), 16);
+    let probe = |id: &str| probes.iter().find(|p| p["id"] == id).unwrap().clone();
+    // what a log does beyond the craft's logs, and only there
+    assert_eq!(probe("b2-clk-2k")["flight"]["quirks"]["clock"], 1.02);
+    assert_eq!(
+        probe("b4-gap-2k")["flight"]["quirks"]["pauses"]["share"],
+        0.05
+    );
+    let headers = &probe("d3-win-2k")["flight"]["quirks"]["headers"];
+    assert_eq!(headers[0][0], "d_min");
+    assert!(probe("a9-flight-2k")["flight"].get("quirks").is_none());
+    // a log that pauses holds fewer samples than its flight, and its truth
+    // is taken over the samples it holds
+    let gaps = probe("b4-gap-2k");
+    let tone = &gaps["axes"][0]["unfiltered"]["tones"][0];
+    let amplitude = tone["logged_amplitude"].as_f64().unwrap();
+    assert!((amplitude - 10.0).abs() < 0.05, "{amplitude}");
+    // OpenPID's step response and the model's from windows of 4 and 5 s
+    let ours = json("ours.json");
+    let ours_probe = |id: &str| {
+        let all = ours["probes"].as_array().unwrap();
+        all.iter().find(|p| p["id"] == id).unwrap().clone()
+    };
+    let windows: Vec<f64> = ours_probe("d3-win-2k")["step"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["window_s"].as_f64().unwrap())
+        .collect();
+    assert_eq!(windows, [2.0, 4.0, 5.0, 2.0, 4.0, 5.0, 2.0, 4.0, 5.0]);
+    assert_eq!(ours_probe("d1-stp-1k")["step"].as_array().unwrap().len(), 3);
+    let predictions = json("predictions.json");
+    let step = predictions["step"].as_array().unwrap();
+    assert_eq!(step.len(), 3);
+    let d3 = step.iter().find(|p| p["id"] == "d3-win-2k").unwrap();
+    let levels = d3["axes"][0]["levels"].as_array().unwrap();
+    let seconds: Vec<f64> = levels
+        .iter()
+        .map(|l| l["window_s"].as_f64().unwrap())
+        .collect();
+    assert_eq!(seconds, [2.0, 4.0, 5.0]);
+    assert_eq!(predictions["probes"].as_array().unwrap().len(), 4);
     // the logs read back whole, as the manifest says
     for (name, bytes) in &pack.logs {
         let id = name.trim_end_matches(".bbl");

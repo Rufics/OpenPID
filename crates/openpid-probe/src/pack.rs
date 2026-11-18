@@ -536,13 +536,15 @@ fn amplitude_at(x: &[f64], hz: f64, fs: f64, from: usize) -> f64 {
     if x.is_empty() {
         return 0.0;
     }
-    let (mut s, mut c) = (0.0, 0.0);
-    for (i, v) in x.iter().enumerate() {
+    let (mut s, mut c, mut count) = (0.0, 0.0, 0usize);
+    // a frame the log left out is NaN, and counts for nothing
+    for (i, v) in x.iter().enumerate().filter(|(_, v)| v.is_finite()) {
         let phase = TAU * hz * (from + i) as f64 / fs;
         s += v * phase.sin();
         c += v * phase.cos();
+        count += 1;
     }
-    2.0 * (s * s + c * c).sqrt() / x.len() as f64
+    2.0 * (s * s + c * c).sqrt() / count.max(1) as f64
 }
 
 /// What is true about a channel made of `waves`, and what `logged` holds.
@@ -589,8 +591,11 @@ fn channel_truth(
         })
         .sum();
     let noise_density = noise_power / (fs / 2.0);
-    let mean = logged.iter().sum::<f64>() / n.max(1) as f64;
-    let variance = logged.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n.max(1) as f64;
+    // the frames a log left out are NaN on the flight's grid
+    let held = || logged.iter().filter(|v| v.is_finite());
+    let count = held().count().max(1) as f64;
+    let mean = held().sum::<f64>() / count;
+    let variance = held().map(|v| (v - mean).powi(2)).sum::<f64>() / count;
     let (low, high) = logged
         .iter()
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
@@ -647,6 +652,38 @@ fn band_facts(flight: &FlightSpec, waves: &[Wave], logged: &[f64]) -> Vec<BandFa
             _ => None,
         })
         .collect()
+}
+
+/// The samples of a gyro channel of the written log of `flight`, on the
+/// flight's grid: as decoded, but NaN where a log that pauses left a frame
+/// out, and the unfiltered gyro of a log that has no field of it from the
+/// debug value it is logged in.
+fn logged_on_grid(
+    session: &FlightSession,
+    flight: &FlightSpec,
+    (axis, stage): (Axis, GyroStage),
+    probe: &'static str,
+) -> Result<Vec<f64>, PackError> {
+    let values = if stage == GyroStage::Raw && flight.quirks.prefilt_in_debug {
+        let id = ChannelId::Debug {
+            idx: axis.index() as u8,
+        };
+        values_of(session, &id).ok_or_else(|| PackError::Read {
+            probe,
+            message: format!("the written log has no complete {} channel", id.key()),
+        })?
+    } else {
+        logged(session, axis, stage, probe)?
+    };
+    if flight.quirks.pauses.is_none() {
+        return Ok(values);
+    }
+    let mut out = vec![f64::NAN; flight.len()];
+    let kept = flight.kept().into_iter().enumerate().filter(|(_, k)| *k);
+    for ((i, _), v) in kept.zip(values) {
+        out[i] = v;
+    }
+    Ok(out)
 }
 
 /// The samples of a gyro channel of a decoded log.
@@ -925,9 +962,11 @@ fn predicted_settings(probe: &Probe) -> Vec<(usize, f64)> {
         0..0
     };
     let again = capture::settings_captured(probe);
+    let windows = capture::windows_captured(probe).iter().map(|s| (0, *s));
     std::iter::once(capture::DEFAULT_SETTING)
         .chain(smoothed.map(|level| (level, capture::DEFAULT_SETTING.1)))
         .chain(again.iter().copied())
+        .chain(windows)
         .map(|(level, seconds)| (level, f64::from(seconds)))
         .collect()
 }
@@ -1030,6 +1069,12 @@ pub fn probe_headers(probe: &Probe) -> Vec<(String, String)> {
     if let Some(output) = &probe.flight.motor_output {
         set("motor_pwm_protocol", output.protocol.to_string());
     }
+    for (name, value) in &probe.flight.quirks.headers {
+        match headers.iter_mut().find(|(key, _)| key == name) {
+            Some(line) => line.1.clone_from(value),
+            None => headers.push((name.clone(), value.clone())),
+        }
+    }
     headers
 }
 
@@ -1120,20 +1165,39 @@ pub fn app_epoch(session: &FlightSession) -> Epoch {
 /// 10.5 s until a round narrows the switch.
 const WHOLE_UP_TO_S: f64 = 10.5;
 
-/// The stretch of a log the reference tool analyses (decision D-012, where
-/// `OpenPID` keeps its own by default): from sample `fs + 2`, `fs·(T − 2) −
-/// 1` samples, so up to the sample one second before the end; a log of
-/// [`WHOLE_UP_TO_S`] or less whole.
-pub(crate) fn reference_epoch(flight: &FlightSpec) -> Epoch {
-    if flight.duration_s <= WHOLE_UP_TO_S {
+/// The stretch of a log the reference tool analyses, as decision D-012 = A
+/// gives it to `OpenPID` as a choice ("Without the first and last second",
+/// #200), where `OpenPID` keeps its own by default: from sample `fs + 2` to
+/// sample `n − fs` (counting from 0; `fs·(T − 2) − 1` samples of a log of
+/// `n = fs·T`), `fs` the rate the header states; a log of
+/// [`WHOLE_UP_TO_S`] or less from its second sample to its end. The bounds
+/// are the time stamps of those samples, so the stretch is exact on a log
+/// whose clock runs off its rate or which pauses (and the end half a
+/// microsecond past its time stamp, so that it keeps its last sample). `later` starts it that
+/// many samples later still: `fs + 3`, which some logs of rounds 8 to 11
+/// were read from.
+pub(crate) fn reference_epoch(session: &FlightSession, later: usize) -> Epoch {
+    let t = &session.timebase.time_us;
+    let n = t.len();
+    if n < 3 {
         return Epoch {
             start_s: 0.0,
-            end_s: flight.duration_s,
+            end_s: 0.0,
         };
     }
+    let fs = (1.0e6 / openpid_analysis::prepare::nominal_dt_us(session)).round() as usize;
+    let (a, b) = if n as f64 / fs.max(1) as f64 <= WHOLE_UP_TO_S {
+        (1, n - 1)
+    } else {
+        (fs + 2, n.saturating_sub(fs))
+    };
+    let second = |i: usize| (t[i.min(n - 1)] - t[0]) as f64 * 1e-6;
+    // half a microsecond past the last time stamp: a stretch is cut at
+    // whole microseconds, and a time in seconds may lie a hair below the
+    // time stamp it was taken from
     Epoch {
-        start_s: (flight.fs + 2.0) / flight.fs,
-        end_s: flight.duration_s - TRIM_S,
+        start_s: second(a + later),
+        end_s: second(b) + 0.5e-6,
     }
 }
 
@@ -1163,11 +1227,12 @@ fn read_back(probe: &Probe, bytes: &[u8]) -> Result<FlightSession, PackError> {
     }
     let session = log.sessions.remove(0);
     let damage = &session.diagnostics;
-    if session.len() != flight.len() || damage.corrupt_frames > 0 || damage.skipped_bytes > 0 {
+    let samples = flight.logged_len();
+    if session.len() != samples || damage.corrupt_frames > 0 || damage.skipped_bytes > 0 {
         return Err(read(format!(
             "the written log reads back as {} of {} samples with {} corrupt frames",
             session.len(),
-            flight.len(),
+            samples,
             damage.corrupt_frames
         )));
     }
@@ -1468,13 +1533,13 @@ fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
                 flight,
                 &spec.waves,
                 &unfiltered,
-                &logged(&session, axis, GyroStage::Raw, id)?,
+                &logged_on_grid(&session, flight, (axis, GyroStage::Raw), id)?,
             ),
             filtered: channel_truth(
                 flight,
                 filtered_waves,
                 &filtered,
-                &logged(&session, axis, GyroStage::Filtered, id)?,
+                &logged_on_grid(&session, flight, (axis, GyroStage::Filtered), id)?,
             ),
             response: (round >= TRUTH_FROM_ROUND)
                 .then(|| ResponseTruth::of(spec.plant))
@@ -1499,6 +1564,9 @@ fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
         if round > SPECTRA_ONLY_UP_TO && probe.area == Area::StepResponse {
             let window_s = StepParams::default().window_s;
             step.push(ours_step(&session, axis, epoch, window_s, id)?);
+            for seconds in capture::windows_captured(probe) {
+                step.push(ours_step(&session, axis, epoch, f64::from(*seconds), id)?);
+            }
         }
     }
     let entry = ProbeEntry {

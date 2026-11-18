@@ -36,6 +36,7 @@ impl Plant {
         let j = Complex::new(0.0, 1.0);
         let (shape, delay_ms) = match *self {
             Plant::None => return Complex::new(0.0, 0.0),
+            Plant::Graded { .. } => return self.small().transfer(hz),
             Plant::Delay { delay_ms } => (Complex::new(1.0, 0.0), delay_ms),
             Plant::FirstOrder {
                 tau_ms,

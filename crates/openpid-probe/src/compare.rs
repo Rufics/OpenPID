@@ -12,7 +12,7 @@
 //! | spectrum | the solid curve (the filtered gyro; the dotted one of the unfiltered gyro is drawn with the same pen, in dashes of its own), dB against frequency, with the spectrum the Spectrum tab draws by default for the same channel ([`pack::app_psd`]): the column below 100 Hz and the full range; the median difference over the common range, against the resolution of the copy |
 //! | spectrum of an entry of the list of channels | every line of the copy with `OpenPID`'s spectrum of the channel the entry stands for (the gyro channels, the D, P and F terms, the setpoint, the PID error and sum, the debug value of the axis's place); the line and the channel that agree best. The "Motors" entry draws one plot of every motor: each line with the motor nearest it, in the reference tool's units (D-008) |
 //! | step response | the mean response of the newest run of the copy (the window keeps the runs before it, one colour each) against time with `OpenPID`'s, at the window length of the copy; the Peak plot's newest bar with `OpenPID`'s Peak |
-//! | throttle and time maps | the map placed cell by cell on the picture's pixels, each pixel in the middle of a cell as a colour step between the two ends of its colour bar (each cell's mean colour for a picture of 16 bits), with `OpenPID`'s map on the same scale; the share within one colour level of the copy, and the printed mean and peak against `OpenPID`'s |
+//! | throttle and time maps | the map placed cell by cell on the picture's pixels, each pixel in the middle of a cell as a colour step between the two ends of its colour bar (each cell's mean colour for a picture of 16 bits), with `OpenPID`'s map on the same scale (of the gyro channels, or of the D term, the PID error or the setpoint the time window's list offers); the share within one colour level of the copy, and the printed mean and peak against `OpenPID`'s |
 //! | filter simulator | every curve of the manifest's set of filters, computed with `OpenPID`'s filter simulator, or given in the results file, with the copy's nearest curve: magnitude, delay, phase or step response against frequency or time; the delays the copy prints |
 //! | log viewer | every line of the plot, matched by its colour to the channel of the decoded log it is nearest to (smoothed as the copy's setting smooths it): value against time |
 //!
@@ -29,7 +29,10 @@
 //! a failure: a motor's percent (D-008), and the stretch of a log the
 //! analyses take by default (D-012), for which `OpenPID`'s result is
 //! computed again on the reference tool's stretch when a copy fails on
-//! `OpenPID`'s own.
+//! `OpenPID`'s own. From round [`BOTH_STRETCHES`] on every such copy is
+//! held on both stretches, and the report counts the copies that agree on
+//! the reference tool's: what decision D-012 = A gives `OpenPID` as a
+//! choice ("Without the first and last second").
 
 mod filters;
 mod maps;
@@ -41,7 +44,7 @@ use crate::pack;
 use crate::smoothing;
 use openpid_analysis::{Analysis, AnalysisCtx, Epoch, StftAnalysis, StftParams};
 use openpid_analysis::{ThrottleHeatmap, ThrottleHeatmapParams};
-use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
+use openpid_core::{Axis, ChannelId, FlightSession};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -142,9 +145,11 @@ pub const DECIDED: [(&str, &str); 2] = [
         "D-012",
         "the stretch of a log the analyses take by default: OpenPID's automatic stretch, from \
          one second after the start to one second before the end; the reference tool's from \
-         sample fs + 2, fs·(T − 2) − 1 samples, a log of 10 s or less whole; the owner kept \
-         OpenPID's as the default (2026-11-18). The copy differs from OpenPID's result on \
-         OpenPID's stretch and agrees with OpenPID's result on the reference tool's",
+         sample fs + 2, fs·(T − 2) − 1 samples, a log of 10.5 s or less from its second \
+         sample; the owner kept OpenPID's as the default and gave the reference tool's as a \
+         choice, \"Without the first and last second\" (2026-11-18, #200). The copy differs \
+         from OpenPID's result on OpenPID's stretch and agrees with OpenPID's result on the \
+         reference tool's",
     ),
 ];
 
@@ -176,6 +181,11 @@ impl Verdict {
     }
 }
 
+/// The first round whose copies are held on both stretches of a log,
+/// `OpenPID`'s own and the reference tool's, whether or not they agree on
+/// the first: the round that confirms decision D-012 = A.
+pub const BOTH_STRETCHES: u32 = 18;
+
 /// One copy in the report.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row {
@@ -189,6 +199,9 @@ pub struct Row {
     pub numbers: String,
     /// The verdict.
     pub verdict: Verdict,
+    /// Whether the copy agrees with `OpenPID`'s result on the reference
+    /// tool's stretch, where it was held there.
+    pub reference: Option<bool>,
 }
 
 /// The comparison of a round.
@@ -258,6 +271,16 @@ impl Report {
             },
             if self.passed() { "PASS" } else { "FAIL" }
         );
+        let held: Vec<bool> = self.rows.iter().filter_map(|r| r.reference).collect();
+        if !held.is_empty() {
+            let agree = held.iter().filter(|a| **a).count();
+            let _ = writeln!(
+                s,
+                "- On the reference tool's stretch (\"Without the first and last second\", \
+                 D-012 = A): {agree} of the {} copies held there agree with OpenPID.",
+                held.len()
+            );
+        }
         let named: Vec<&(&str, &str)> = DECIDED
             .iter()
             .filter(|(id, _)| self.rows.iter().any(|r| r.verdict == Verdict::Decided(id)))
@@ -411,6 +434,9 @@ enum Stretch {
     Own,
     /// The reference tool's (decision D-012).
     Reference,
+    /// The reference tool's, one sample later: from sample `fs + 3`, which
+    /// some logs of rounds 8 to 11 were read from.
+    Later,
 }
 
 /// Where `OpenPID`'s results come from: a results file, and the logs for
@@ -453,7 +479,8 @@ impl Source {
     fn epoch(&mut self, probe: &Probe, stretch: Stretch) -> Result<Epoch, String> {
         Ok(match stretch {
             Stretch::Own => pack::app_epoch(self.session(probe)?),
-            Stretch::Reference => pack::reference_epoch(&probe.flight),
+            Stretch::Reference => pack::reference_epoch(self.session(probe)?, 0),
+            Stretch::Later => pack::reference_epoch(self.session(probe)?, 1),
         })
     }
 
@@ -500,12 +527,13 @@ impl Source {
             .ok_or_else(|| "OpenPID has no such spectrum".to_string())
     }
 
-    /// `OpenPID`'s step response: times, mean and Peak.
+    /// `OpenPID`'s step response: times, mean and Peak; on `OpenPID`'s own
+    /// stretch the results file is asked first.
     fn step(
         &mut self,
         probe: &Probe,
-        axis: Axis,
-        window_s: f64,
+        (axis, window_s): (Axis, f64),
+        stretch: Stretch,
     ) -> Result<(Vec<f64>, Vec<f64>, f64), String> {
         let given = self.probe_in(probe).and_then(|p| {
             p.step
@@ -513,25 +541,25 @@ impl Source {
                 .find(|s| s.axis == axis.name() && s.window_s == window_s)
                 .map(|s| (s.time_ms.clone(), s.mean.clone(), s.peak))
         });
-        if let Some(given) = given {
+        if let Some(given) = given.filter(|_| stretch == Stretch::Own) {
             return Ok(given);
         }
+        let epoch = self.epoch(probe, stretch)?;
         let session = self.session(probe)?;
-        let epoch = pack::app_epoch(session);
         let step =
             pack::ours_step(session, axis, epoch, window_s, probe.id).map_err(|e| e.to_string())?;
         Ok((step.time_ms, step.mean, step.peak))
     }
 
-    /// `OpenPID`'s map of a gyro channel; on `OpenPID`'s own stretch the
-    /// results file is asked first.
+    /// `OpenPID`'s map of the channel the results name `channel` (`gyro`,
+    /// `gyro_unfiltered` or one of [`pack::LISTED_CHANNELS`]); on
+    /// `OpenPID`'s own stretch the results file is asked first.
     fn map(
         &mut self,
         probe: &Probe,
-        (axis, stage, window): (Axis, GyroStage, Window),
+        (axis, channel, window): (Axis, &'static str, Window),
         stretch: Stretch,
     ) -> Result<maps::Grid, String> {
-        let channel = stage_name(stage);
         let window_name = if window == Window::Time {
             "time"
         } else {
@@ -552,7 +580,11 @@ impl Source {
             session,
             epoch: Some(epoch),
         };
-        let id = ChannelId::Gyro { axis, stage };
+        let id = pack::listed_channel(channel, axis)
+            .ok_or_else(|| format!("OpenPID has no channel {channel}"))?;
+        if session.channel(&id).is_none() {
+            return Err(format!("the log has no {} channel", id.key()));
+        }
         let grid = if window == Window::Time {
             let params = StftParams {
                 channel: id,
@@ -632,13 +664,6 @@ fn drawn_in(id: &ChannelId, plot: &str) -> bool {
     }
 }
 
-fn stage_name(stage: GyroStage) -> &'static str {
-    match stage {
-        GyroStage::Filtered => "gyro",
-        GyroStage::Raw => "gyro_unfiltered",
-    }
-}
-
 // ------------------------------------------------------------------ copies
 
 /// A copy of the plan.
@@ -682,6 +707,9 @@ struct Outcome {
     against: String,
     numbers: String,
     verdict: Verdict,
+    /// Whether it agrees on the reference tool's stretch, where it was
+    /// held there.
+    reference: Option<bool>,
 }
 
 impl Outcome {
@@ -691,6 +719,17 @@ impl Outcome {
             against,
             numbers,
             verdict: if pass { Verdict::Pass } else { Verdict::Fail },
+            reference: None,
+        }
+    }
+
+    /// A comparison held on the stretches of a log.
+    fn on(against: String, judged: Judged) -> Outcome {
+        Outcome {
+            against,
+            numbers: judged.numbers,
+            verdict: judged.verdict,
+            reference: judged.reference,
         }
     }
 }
@@ -700,6 +739,7 @@ fn not_compared(reason: impl Into<String>) -> Outcome {
         against: reason.into(),
         numbers: String::new(),
         verdict: Verdict::NotCompared,
+        reference: None,
     }
 }
 
@@ -717,30 +757,55 @@ struct HeldSpectrum {
     median: f64,
 }
 
-/// The numbers and the verdict of a comparison whose result depends on the
-/// stretch of the log: as held on `OpenPID`'s own stretch, and when that
-/// fails, held again on the reference tool's (`reference`); a copy that
-/// agrees there is the decided difference D-012.
-fn on_stretches(own: Held, reference: impl FnOnce() -> Result<Held, String>) -> (String, Verdict) {
-    if own.pass {
-        return (own.numbers, Verdict::Pass);
+/// A comparison held on the stretches of a log: its numbers, its verdict,
+/// and whether it agrees on the reference tool's stretch where it was held
+/// there.
+struct Judged {
+    numbers: String,
+    verdict: Verdict,
+    reference: Option<bool>,
+}
+
+/// A comparison whose result depends on the stretch of the log: `own` as
+/// held on `OpenPID`'s own stretch; where that fails, or for every copy
+/// when `both` is set (from round [`BOTH_STRETCHES`] on), held again on
+/// the reference tool's (`hold(Stretch::Reference)`). A copy that fails on
+/// its own stretch and agrees on the reference tool's is the decided
+/// difference D-012. One that agrees on neither is held one sample later
+/// as well (`hold(Stretch::Later)`), for its numbers: the logs some rounds
+/// read from sample `fs + 3`.
+fn on_stretches(
+    own: Held,
+    both: bool,
+    mut hold: impl FnMut(Stretch) -> Result<Held, String>,
+) -> Judged {
+    if own.pass && !both {
+        return Judged {
+            numbers: own.numbers,
+            verdict: Verdict::Pass,
+            reference: None,
+        };
     }
-    match reference() {
-        Ok(r) => (
-            format!(
-                "{}; on the reference tool's stretch: {}",
-                own.numbers, r.numbers
-            ),
-            if r.pass {
-                Verdict::Decided("D-012")
-            } else {
-                Verdict::Fail
-            },
-        ),
-        Err(e) => (
-            format!("{}; on the reference tool's stretch: {e}", own.numbers),
-            Verdict::Fail,
-        ),
+    let (theirs, agree) = match hold(Stretch::Reference) {
+        Ok(r) => (r.numbers, r.pass),
+        Err(e) => (e, false),
+    };
+    let mut numbers = format!("{}; on the reference tool's stretch: {theirs}", own.numbers);
+    if !own.pass
+        && !agree
+        && let Ok(later) = hold(Stretch::Later)
+    {
+        let _ = write!(numbers, "; one sample later: {}", later.numbers);
+    }
+    let verdict = match (own.pass, agree) {
+        (true, _) => Verdict::Pass,
+        (false, true) => Verdict::Decided("D-012"),
+        (false, false) => Verdict::Fail,
+    };
+    Judged {
+        numbers,
+        verdict,
+        reference: Some(agree),
     }
 }
 
@@ -995,20 +1060,18 @@ fn spectrum(copy: &Copy, m: &Metafile, src: &mut Source) -> Result<Outcome, Stri
         unit,
         0.0,
     )?;
-    let (numbers, verdict) = on_stretches(own.held, || {
-        let theirs = src.spectrum(probe, channel, (segment_s, Stretch::Reference))?;
+    let both = src.round >= BOTH_STRETCHES;
+    let judged = on_stretches(own.held, both, |stretch| {
+        let theirs = src.spectrum(probe, channel, (segment_s, stretch))?;
         hold_spectrum(&points, &theirs, unit, 0.0).map(|h| h.held)
     });
-    Ok(Outcome {
-        against: format!(
-            "OpenPID's spectrum of the filtered {} gyro, {segment_s} s segments; the copy \
-             reads to {} dB",
-            axis.name(),
-            number(unit)
-        ),
-        numbers,
-        verdict,
-    })
+    let against = format!(
+        "OpenPID's spectrum of the filtered {} gyro, {segment_s} s segments; the copy reads to \
+         {} dB",
+        axis.name(),
+        number(unit)
+    );
+    Ok(Outcome::on(against, judged))
 }
 
 /// The line of a copy that agrees best with one of `OpenPID`'s spectra:
@@ -1060,21 +1123,19 @@ fn channel_spectrum(
         unit,
         0.0,
     )?;
-    let (numbers, verdict) = on_stretches(own.held, || {
-        let theirs = src.spectrum(probe, channel, (segment_s, Stretch::Reference))?;
+    let both = src.round >= BOTH_STRETCHES;
+    let judged = on_stretches(own.held, both, |stretch| {
+        let theirs = src.spectrum(probe, channel, (segment_s, stretch))?;
         hold_spectrum(&points, &theirs, unit, 0.0).map(|h| h.held)
     });
-    Ok(Outcome {
-        against: format!(
-            "OpenPID's spectrum of {} on {}, {segment_s} s segments, against the copy's line \
-             #{colour:06x}; the copy reads to {} dB",
-            results_name(name),
-            axis.name(),
-            number(unit)
-        ),
-        numbers,
-        verdict,
-    })
+    let against = format!(
+        "OpenPID's spectrum of {} on {}, {segment_s} s segments, against the copy's line \
+         #{colour:06x}; the copy reads to {} dB",
+        results_name(name),
+        axis.name(),
+        number(unit)
+    );
+    Ok(Outcome::on(against, judged))
 }
 
 /// How many decibels a motor's spectrum in the reference tool's units (the
@@ -1136,6 +1197,7 @@ fn motors_spectrum(m: &Metafile, src: &mut Source, probe: &Probe) -> Result<Outc
             (true, true) => Verdict::Pass,
             (true, false) => Verdict::Decided("D-008"),
         },
+        reference: None,
     })
 }
 
@@ -1215,24 +1277,30 @@ fn step_response(
         .flat_map(|(_, p)| p)
         .collect();
     points.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let (time_ms, mean, _) = src.step(probe, axis, window_s)?;
-    let (max, median, n) =
-        differences(&points, &time_ms, &mean).ok_or("the copy and OpenPID share no times")?;
-    Ok(Outcome::judged(
-        format!(
-            "OpenPID's mean step response of {}, windows of {window_s} s, against the newest of \
-             the copy's {} runs (#{:06x})",
-            axis.name(),
-            colours.len(),
-            newest.unwrap_or(0)
-        ),
-        format!(
-            "largest {}, median {} over {n} points",
-            number(max),
-            number(median)
-        ),
-        max <= limit("step"),
-    ))
+    let hold = |src: &mut Source, stretch: Stretch| -> Result<Held, String> {
+        let (time_ms, mean, _) = src.step(probe, (axis, window_s), stretch)?;
+        let (max, median, n) =
+            differences(&points, &time_ms, &mean).ok_or("the copy and OpenPID share no times")?;
+        Ok(Held {
+            numbers: format!(
+                "largest {}, median {} over {n} points",
+                number(max),
+                number(median)
+            ),
+            pass: max <= limit("step"),
+        })
+    };
+    let own = hold(src, Stretch::Own)?;
+    let both = src.round >= BOTH_STRETCHES;
+    let judged = on_stretches(own, both, |stretch| hold(src, stretch));
+    let against = format!(
+        "OpenPID's mean step response of {}, windows of {window_s} s, against the newest of the \
+         copy's {} runs (#{:06x})",
+        axis.name(),
+        colours.len(),
+        newest.unwrap_or(0)
+    );
+    Ok(Outcome::on(against, judged))
 }
 
 /// The Peak a Peak plot draws for the newest of its runs: the middle of
@@ -1268,22 +1336,28 @@ fn step_peak(
     let (_, y) = Axes::upright(m).map_err(|e| e.to_string())?;
     let (at, runs) = drawn_peak(m).ok_or("the plot has no bar")?;
     let drawn = y.value(at);
-    let (_, _, peak) = src.step(probe, axis, window_s)?;
-    let d = (drawn - peak).abs();
-    Ok(Outcome::judged(
-        format!(
-            "OpenPID's Peak of {}, windows of {window_s} s, against the newest of the copy's \
-             {runs} bars",
-            axis.name()
-        ),
-        format!(
-            "copy {}, OpenPID {}, difference {}",
-            number(drawn),
-            number(peak),
-            number(d)
-        ),
-        d <= limit("peak"),
-    ))
+    let hold = |src: &mut Source, stretch: Stretch| -> Result<Held, String> {
+        let (_, _, peak) = src.step(probe, (axis, window_s), stretch)?;
+        let d = (drawn - peak).abs();
+        Ok(Held {
+            numbers: format!(
+                "copy {}, OpenPID {}, difference {}",
+                number(drawn),
+                number(peak),
+                number(d)
+            ),
+            pass: d <= limit("peak"),
+        })
+    };
+    let own = hold(src, Stretch::Own)?;
+    let both = src.round >= BOTH_STRETCHES;
+    let judged = on_stretches(own, both, |stretch| hold(src, stretch));
+    let against = format!(
+        "OpenPID's Peak of {}, windows of {window_s} s, against the newest of the copy's {runs} \
+         bars",
+        axis.name()
+    );
+    Ok(Outcome::on(against, judged))
 }
 
 // ------------------------------------------------------------- log viewer
@@ -1375,6 +1449,7 @@ fn viewer(copy: &Copy, m: &Metafile, src: &mut Source) -> Result<Outcome, String
             parts.join("; ")
         ),
         verdict,
+        reference: None,
     })
 }
 
@@ -1403,9 +1478,9 @@ fn compare_copy(copy: &Copy, bytes: &[u8], src: &mut Source) -> Row {
             Window::LogViewer => viewer(copy, &m, src),
             Window::Other => Ok(not_compared("a copy of a window that is not compared")),
         });
-    let (against, numbers, verdict) = match outcome {
-        Ok(o) => (o.against, o.numbers, o.verdict),
-        Err(e) => (String::new(), e, Verdict::Error),
+    let (against, numbers, verdict, reference) = match outcome {
+        Ok(o) => (o.against, o.numbers, o.verdict, o.reference),
+        Err(e) => (String::new(), e, Verdict::Error, None),
     };
     Row {
         copy: copy.name.clone(),
@@ -1413,6 +1488,7 @@ fn compare_copy(copy: &Copy, bytes: &[u8], src: &mut Source) -> Row {
         against,
         numbers,
         verdict,
+        reference,
     }
 }
 
@@ -1480,6 +1556,7 @@ pub fn compare(round: u32, dir: &Path, ours: Option<&Path>) -> Result<Report, St
                 against: format!("not a copy of the plan of round {round}"),
                 numbers: String::new(),
                 verdict: Verdict::NotCompared,
+                reference: None,
             });
             continue;
         };
@@ -1492,6 +1569,7 @@ pub fn compare(round: u32, dir: &Path, ours: Option<&Path>) -> Result<Report, St
                 against: String::new(),
                 numbers: format!("cannot read the file: {e}"),
                 verdict: Verdict::Error,
+                reference: None,
             },
         };
         rows.push(row);
@@ -1585,21 +1663,104 @@ mod tests {
     }
 
     #[test]
+    fn every_copy_of_round_18_is_one_compare_knows() {
+        let probes = catalogue::round(18).unwrap_or_default();
+        let plan = crate::capture::plan(18, &probes);
+        let copies = plan.copies();
+        assert_eq!(copies.len(), 110);
+        for (name, window) in &copies {
+            let copy = identify(18, name, *window, &probes);
+            assert!(copy.probe.is_some(), "{name}");
+            assert!(parsed(&copy).is_some(), "{name}: {window:?}");
+        }
+        // the maps of the other channels of the time window
+        let dterm = identify(18, "r18-b1-spc-2k-time-dterm-roll", Window::Time, &probes);
+        assert_eq!(parsed(&dterm).as_deref(), Some("roll dterm"));
+        let error = identify(
+            18,
+            "r18-b1-spc-2k-time-piderror-pitch",
+            Window::Time,
+            &probes,
+        );
+        assert_eq!(parsed(&error).as_deref(), Some("pitch piderror"));
+        // the step response from windows of 4 and 5 s
+        let five = identify(
+            18,
+            "r18-d3-win-2k-step-window-5s-roll-response",
+            Window::StepResponse,
+            &probes,
+        );
+        assert_eq!(parsed(&five).as_deref(), Some("5 roll response"));
+        assert_eq!(BOTH_STRETCHES, crate::capture::CONFIRMATION);
+    }
+
+    #[test]
+    fn the_reference_stretch_is_that_of_the_choice_without_the_first_and_last_second() {
+        let probes = catalogue::round(18).unwrap_or_default();
+        let of = |id: &str| probes.iter().find(|p| p.id == id).cloned().unwrap();
+        let samples = |id: &str, later: usize| {
+            let session = pack::session_of(&of(id)).unwrap();
+            let epoch = pack::reference_epoch(&session, later);
+            let (a, b) = openpid_analysis::prepare::epoch_range(&session, Some(epoch));
+            (a, b - a, session.len())
+        };
+        // a long log: from sample fs + 2, fs·(T − 2) − 1 samples
+        assert_eq!(samples("b1-spc-2k", 0), (2002, 2000 * 21 - 1, 46_000));
+        assert_eq!(samples("b1-spc-2k", 1), (2003, 2000 * 21 - 2, 46_000));
+        // one of 10.5 s or less: all but its first sample
+        assert_eq!(samples("l3-2k", 0), (1, 20_999, 21_000));
+        assert_eq!(samples("l6-1k", 0), (1, 10_499, 10_500));
+        // one of 10.75 s: trimmed
+        assert_eq!(samples("l4-2k", 0), (2002, 21_500 - 4001, 21_500));
+        // a clock 2 % slow: the samples by the header's rate, the bounds by
+        // the time stamps
+        assert_eq!(samples("b2-clk-2k", 0), (2002, 2000 * 22 - 1, 48_000));
+    }
+
+    #[test]
     fn a_comparison_that_fails_on_its_own_stretch_may_be_the_decided_one() {
         let held = |pass: bool| Held {
             numbers: format!("held {pass}"),
             pass,
         };
-        let (numbers, verdict) = on_stretches(held(true), || unreachable!("not asked"));
-        assert_eq!((numbers.as_str(), verdict), ("held true", Verdict::Pass));
-        let (numbers, verdict) = on_stretches(held(false), || Ok(held(true)));
-        assert_eq!(verdict, Verdict::Decided("D-012"));
-        assert!(numbers.contains("on the reference tool's stretch: held true"));
-        let (_, verdict) = on_stretches(held(false), || Ok(held(false)));
-        assert_eq!(verdict, Verdict::Fail);
-        let (numbers, verdict) = on_stretches(held(false), || Err("no log".into()));
-        assert_eq!(verdict, Verdict::Fail);
-        assert!(numbers.ends_with("no log"));
+        let judged = on_stretches(held(true), false, |_| unreachable!("not asked"));
+        assert_eq!(judged.numbers, "held true");
+        assert_eq!((judged.verdict, judged.reference), (Verdict::Pass, None));
+        let judged = on_stretches(held(false), false, |_| Ok(held(true)));
+        assert_eq!(judged.verdict, Verdict::Decided("D-012"));
+        assert_eq!(judged.reference, Some(true));
+        assert!(
+            judged
+                .numbers
+                .contains("on the reference tool's stretch: held true")
+        );
+        // agreeing on neither, it is held one sample later for the numbers
+        let mut asked = Vec::new();
+        let judged = on_stretches(held(false), false, |stretch| {
+            asked.push(stretch);
+            Ok(held(false))
+        });
+        assert_eq!(judged.verdict, Verdict::Fail);
+        assert_eq!(asked, [Stretch::Reference, Stretch::Later]);
+        assert!(judged.numbers.ends_with("one sample later: held false"));
+        let judged = on_stretches(held(false), false, |_| Err("no log".into()));
+        assert_eq!(
+            (judged.verdict, judged.reference),
+            (Verdict::Fail, Some(false))
+        );
+        assert!(judged.numbers.ends_with("no log"));
+        // from round 18 on a copy that agrees is held there too
+        let judged = on_stretches(held(true), true, |_| Ok(held(false)));
+        assert_eq!(
+            (judged.verdict, judged.reference),
+            (Verdict::Pass, Some(false))
+        );
+        assert!(
+            judged
+                .numbers
+                .contains("on the reference tool's stretch: held false")
+        );
+        assert!(!judged.numbers.contains("one sample later"));
         assert_eq!(
             Verdict::Decided("D-008").word(),
             "decided difference (D-008)"

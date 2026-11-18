@@ -105,6 +105,17 @@ const WINDOW_LENGTHS_S: [u32; 2] = [1, 3];
 /// 600 curves takes longer to copy than the script waits.
 pub const RULE_ROUNDS: u32 = 6;
 
+/// The lengths of the window, seconds, beyond the one the window comes up
+/// with, at which the response and the Peak of a probe are captured once
+/// more: for the probe of round 18 that asks windows of 4 and 5 s (R1).
+pub fn windows_captured(probe: &Probe) -> &'static [u32] {
+    if probe.id == "d3-win-2k" {
+        &[4, 5]
+    } else {
+        &[]
+    }
+}
+
 /// A setting of the step response window: the smoothing level (its place
 /// in the tool's list, 0 for "off") and the seconds of the window.
 pub type Setting = (usize, u32);
@@ -2750,6 +2761,238 @@ fn verification(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
     }
 }
 
+/// The round that confirms decision D-012 = A ("Without the first and last
+/// second", #200) and the fixed `compare` on logs made for no question,
+/// narrows the open ends of the stretch and asks what no round asked yet.
+/// Its plan is made for its own logs.
+pub const CONFIRMATION: u32 = 18;
+
+/// The logs of round [`CONFIRMATION`] each part of its plan is for, by
+/// name: the spectrum window as it comes up; the flight of both maps; the
+/// step response window as it comes up; the main window; the short
+/// stairs, whose maps are copied in both windows; the logs of earlier
+/// rounds read from sample `fs + 3`, in the throttle window and in the
+/// time window; the log that pauses, also in the time window; the second
+/// log of the pair of the setup list.
+const CONFIRM_SPECTRA: [&str; 4] = ["b1-spc-2k", "b3-spc-8k", "b2-clk-2k", "b4-gap-2k"];
+const CONFIRM_MAPS: &str = "b1-spc-2k";
+const CONFIRM_STEPS: [&str; 3] = ["d1-stp-1k", "d2-stp-4k", "d3-win-2k"];
+const CONFIRM_VIEWER: &str = "d1-";
+const SHORT_STAIRS: [&str; 6] = ["l1-2k", "l2-2k", "l3-2k", "l4-2k", "l5-2k", "l6-1k"];
+const LATER_THROTTLE: [&str; 2] = ["z8-short-2k", "a9-flight-2k"];
+const LATER_TIME: [&str; 1] = ["f4-short-2k"];
+const PAUSED_LOG: &str = "b4-gap-2k";
+const PAIR_SECOND: &str = "b2-clk-2k";
+
+/// The channels of the time window's list beyond the gyro that round
+/// [`CONFIRMATION`] draws a map of (F1): the name in the files and the
+/// place in the list, taken to be that of the spectrum window's list
+/// ([`SPECTRUM_CHANNELS`]; a picture of the open list is taken first).
+const TIME_OTHER_CHANNELS: [(&str, usize); 2] = [("dterm", 2), ("piderror", 5)];
+
+/// How long the pointer rests on a plot before its picture is taken,
+/// milliseconds: long enough for a read-out that follows the pointer.
+const POINTER_MS: u32 = 1500;
+
+/// The rows of `ids` among `probes`, with the names, in the order of `ids`.
+fn rows_of<'a>(probes: &'a [Probe], ids: &[&str]) -> Vec<(usize, &'a str)> {
+    ids.iter()
+        .filter_map(|id| row_of(probes, id).map(|row| (row, probes[row].id)))
+        .collect()
+}
+
+/// The step response window for the logs of [`CONFIRM_STEPS`] as it comes
+/// up, and the probe of the windows also from windows of the lengths of
+/// [`windows_captured`]: the length picked, a Run, a picture, the response
+/// and the Peak copied; the length the window came up with again.
+fn confirm_steps(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+    step_open(steps, round);
+    for (row, id) in rows_of(probes, &CONFIRM_STEPS) {
+        step_as_it_comes(steps, round, id, row);
+        let seconds = probes.get(row).map_or(&[][..], windows_captured);
+        let log = StepLog { round, id };
+        let mut now = DEFAULT_SETTING;
+        for s in seconds {
+            let to = (0, *s);
+            step_set(steps, now, to);
+            now = to;
+            let what = setting_name(now);
+            log.run(steps, Some(&what));
+            log.copies(steps, &what, &NINE[..2]);
+        }
+        step_set(steps, now, DEFAULT_SETTING);
+    }
+}
+
+/// The maps of the D term and of the PID error in the time window (F1),
+/// for the flight of the maps while the window shows it: the list of
+/// channels held open for a picture, then each channel of
+/// [`TIME_OTHER_CHANNELS`] picked in turn, a picture and the three maps
+/// each, and the unfiltered gyro picked again. (The throttle window's
+/// picture of that flight shows its two D-term columns, T1; their plots
+/// are not copied: their places were never measured.)
+fn time_other_channels(steps: &mut Vec<Step>, round: u32, id: &str) {
+    let list = time_click("channel (the list)", time_at::CHANNEL_LIST);
+    list_shot(steps, list, time_file(round, id, "list-channels", ""));
+    for channel in TIME_OTHER_CHANNELS {
+        time_changed(steps, round, id, channel.0, |steps| {
+            time_channel(steps, channel);
+        });
+    }
+    time_channel(steps, TIME_CHANNELS[0]);
+}
+
+/// The open ends of the stretch: the short stairs in the throttle window
+/// (a picture and the map of the unfiltered gyro of roll) and in the time
+/// window (a picture and the three maps); the logs read from `fs + 3`
+/// before, each chosen alone in the window it was read in (the throttle
+/// window: the maps of both gyro channels of roll; the time window: the
+/// three maps); and the log that pauses, in the time window.
+fn stretch_ends(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+    for (row, id) in rows_of(probes, &SHORT_STAIRS) {
+        let log = ThrottleLog { round, id };
+        log.choose(steps, row);
+        log.run(steps, "");
+        log.copy(steps, "", 0, 0);
+    }
+    for (row, id) in rows_of(probes, &LATER_THROTTLE) {
+        let log = ThrottleLog { round, id };
+        log.choose(steps, row);
+        log.run(steps, "");
+        log.copy(steps, "", 0, 0);
+        log.copy(steps, "", 1, 0);
+    }
+    let timed = [&SHORT_STAIRS[..], &LATER_TIME, &[PAUSED_LOG]].concat();
+    for (row, id) in rows_of(probes, &timed) {
+        time_first(steps, round, id, row);
+    }
+}
+
+/// The setup list for the pair of logs that differ in one header (U13):
+/// the window opened, a picture; its list of logs held open, a picture;
+/// the second log of the pair chosen in that list, so that the window
+/// shows the pair should its other column hold the log of the row before
+/// (as it held the second log with two, round 13), a picture; "Show
+/// Differences Only" on, a picture, and off again.
+fn setup_pair(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+    let Some((row, id)) = rows_of(probes, &[PAIR_SECOND]).pop() else {
+        return;
+    };
+    let (button, _, at) = log_at::OTHERS[2];
+    let file = |what: &str| format!("r{round}-setup-{what}");
+    let inside = |name: &str, at: (u32, u32)| click(SETUP, "shot", name, at);
+    steps.push(click(LOG_VIEWER, "log", button, at));
+    steps.push(pause(4000));
+    steps.push(shot(SETUP, file("open")));
+    let list = inside("logs (the list)", setup_at::LOG_LIST);
+    list_shot(steps, list, file("list-logs"));
+    steps.push(inside("logs (the list)", setup_at::LOG_LIST));
+    steps.push(pause(600));
+    let item = throttle_at::item(setup_at::LOG_LIST, row);
+    steps.push(inside(&format!("log {id}"), item));
+    steps.push(pause(2000));
+    steps.push(shot(SETUP, file("pair")));
+    steps.push(inside("differences on", setup_at::DIFFERENCES));
+    steps.push(pause(2000));
+    steps.push(shot(SETUP, file("pair-differences")));
+    steps.push(inside("differences off", setup_at::DIFFERENCES));
+    steps.push(pause(1000));
+}
+
+/// The pointer on a plot of `window` (T4, F7, S6): a picture of the window
+/// brought to the front, the pointer resting in the middle of the plot
+/// `axes` and a picture as the window is, a click there and a picture
+/// again. Last in the plan: whatever the click leaves on the plot stays
+/// out of every copy.
+fn pointer(steps: &mut Vec<Step>, window: &'static str, axes: (u32, u32, u32, u32), what: &str) {
+    let (left, top, right, bottom) = axes;
+    let middle = (u32::midpoint(left, right), u32::midpoint(top, bottom));
+    let as_it_is = |file: String| Step {
+        front: Some(false),
+        ..shot(window, file)
+    };
+    steps.push(shot(window, format!("{what}-before")));
+    steps.push(hover(window, format!("{what} plot"), middle, POINTER_MS));
+    steps.push(as_it_is(format!("{what}-hover")));
+    steps.push(Step {
+        front: Some(false),
+        ..click(window, "shot", &format!("{what} plot (click)"), middle)
+    });
+    steps.push(pause(POINTER_MS));
+    steps.push(as_it_is(format!("{what}-click")));
+    steps.push(Step {
+        action: "key",
+        key: Some("esc"),
+        ..Step::default()
+    });
+    steps.push(pause(400));
+}
+
+/// The pointer on the map of the unfiltered gyro of roll in the throttle
+/// window and in the time window, and on the plot of roll over the whole
+/// range in the spectrum window.
+fn pointers(steps: &mut Vec<Step>, round: u32) {
+    let (_, left, right) = throttle_at::COLUMNS[0];
+    let (top, bottom) = throttle_at::ROWS[0];
+    let throttle = (left, top, right, bottom);
+    pointer(
+        steps,
+        THROTTLE,
+        throttle,
+        &format!("r{round}-pointer-throttle"),
+    );
+    let (left, right) = time_at::SIDES;
+    let (top, bottom) = time_at::ROWS[0];
+    pointer(
+        steps,
+        TIME,
+        (left, top, right, bottom),
+        &format!("r{round}-pointer-time"),
+    );
+    let spectrum = PLOTS[0][0];
+    pointer(
+        steps,
+        SPECTRUM,
+        spectrum,
+        &format!("r{round}-pointer-spectrum"),
+    );
+}
+
+/// The steps of round [`CONFIRMATION`] after the logs are open, the most
+/// valuable first; a picture follows every choice of a log.
+///
+/// 1. Confirm (A): the spectrum window for the logs of [`CONFIRM_SPECTRA`]
+///    as it comes up ([`spectrum_as_it_comes`]): two flights made for no
+///    question, the log whose clock runs off its rate (C1, with the tones
+///    of the peak labels, S5) and the log that pauses (C2). The maps of the
+///    first flight in both windows of maps ([`maps_as_they_come`]), and its
+///    D term and PID error in the time window ([`time_other_channels`],
+///    C). The step response window for the logs of [`CONFIRM_STEPS`]
+///    ([`confirm_steps`]: "Reset" before each; R1, R3, R6 and R15 on the
+///    last). The main window for the flight of the step response at 1 kHz:
+///    a picture (the length and the rate it prints, C6) and the four plots
+///    copied.
+/// 2. The stretch (B): [`stretch_ends`].
+/// 3. What no round asked (C): [`setup_pair`], and last [`pointers`].
+fn confirmation(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
+    spectrum_open(steps, round);
+    for (row, id) in rows_of(probes, &CONFIRM_SPECTRA) {
+        spectrum_as_it_comes(steps, round, id, row);
+    }
+    if let Some((row, id)) = rows_of(probes, &[CONFIRM_MAPS]).pop() {
+        maps_as_they_come(steps, round, id, row);
+        time_other_channels(steps, round, id);
+    }
+    confirm_steps(steps, round, probes);
+    if let Some(log) = ViewerLog::of(round, probes, CONFIRM_VIEWER) {
+        log.select(steps);
+        log.copies(steps, "open", &[0, 1, 2, 3]);
+    }
+    stretch_ends(steps, round, probes);
+    setup_pair(steps, round, probes);
+    pointers(steps, round);
+}
+
 /// How long a window that was never opened by the script is given to come
 /// up before its picture is taken, milliseconds.
 const LOOK_MS: u32 = 10_000;
@@ -2776,6 +3019,24 @@ fn windows_look(steps: &mut Vec<Step>, round: u32) {
 
 /// What the plan of a round does, for the reader of `steps.json`.
 fn about(round: u32, probes: &[Probe]) -> String {
+    if round == CONFIRMATION {
+        return format!(
+            "Round {round}: every log through one open dialog, then, the most valuable first: \
+             the spectrum window for two flights made for no question, a log whose clock runs \
+             2 % off its header's rate (with two tones on every axis for the peak labels) and \
+             one that pauses for 5 % of its frames, six plots copied each; the maps of the \
+             first flight in the window of frequency against throttle and in that against \
+             time, there also of its D term and its PID error; the step response window for \
+             two flights (\"Reset\" before each) and for a log of small and large moves, \
+             also from windows of 4 and 5 s; the main window for the flight of 30.000 s at 1 \
+             kHz, its four plots copied; the stretch: six short flights of stairs (10.1 to \
+             10.9 s) in both windows of maps, the three logs of earlier rounds that were read \
+             from sample fs + 3, and the log that pauses in the time window; the setup list \
+             for two logs that differ in one header; last a picture of each window of maps \
+             and of the spectrum window with the pointer resting on a plot and after a click \
+             there."
+        );
+    }
     if round == VERIFICATION {
         return format!(
             "Round {round}: every log through one open dialog, then every window again on \
@@ -2979,11 +3240,11 @@ pub fn plan(round: u32, probes: &[Probe]) -> Plan {
         },
         shot(LOG_VIEWER, format!("r{round}-log-loaded")),
     ];
-    if round == OPEN_ENDS || round == VERIFICATION {
-        if round == OPEN_ENDS {
-            open_ends(&mut steps, round, probes);
-        } else {
-            verification(&mut steps, round, probes);
+    if [OPEN_ENDS, VERIFICATION, CONFIRMATION].contains(&round) {
+        match round {
+            OPEN_ENDS => open_ends(&mut steps, round, probes),
+            VERIFICATION => verification(&mut steps, round, probes),
+            _ => confirmation(&mut steps, round, probes),
         }
         steps.push(Step {
             action: "windows",
@@ -5736,5 +5997,185 @@ mod tests {
         let text = serde_json::to_string(&VERIFY_FILTERS).unwrap_or_default();
         assert!(text.contains("\"lowpass_1\":{\"kind\":\"pt2\",\"hz\":210}"));
         assert!(text.contains("\"notch\":{\"hz\":330,\"q\":2.5}"));
+    }
+
+    fn round_18() -> Plan {
+        plan(18, &catalogue::round(18).unwrap_or_default())
+    }
+
+    #[test]
+    fn round_18_takes_its_pictures_and_copies_in_the_order_of_their_worth() {
+        let plan = round_18();
+        assert!(plan.give_up && plan.refs.slider.is_none());
+        assert!(plan.about.contains("fs + 3") && plan.about.is_ascii());
+        let shots = names_of(&plan, "shot");
+        let copies = names_of(&plan, "clip_save");
+        let count = |part: &str| copies.iter().filter(|c| c.contains(part)).count();
+        for (id, n) in [
+            // six spectrum plots, six throttle maps, three time maps of
+            // each gyro channel, of the D term and of the PID error
+            ("b1-spc-2k", 24),
+            ("b2-clk-2k", 6),
+            ("b3-spc-8k", 6),
+            // six spectrum plots and the three maps of the time window
+            ("b4-gap-2k", 9),
+            // the response and the Peak, and the main window's four plots
+            ("d1-stp-1k", 10),
+            ("d2-stp-4k", 6),
+            // the response and the Peak from windows of 2, 4 and 5 s
+            ("d3-win-2k", 18),
+            ("l1-2k", 4),
+            ("l6-1k", 4),
+            ("z8-short-2k", 2),
+            ("a9-flight-2k", 2),
+            ("f4-short-2k", 3),
+        ] {
+            assert_eq!(count(id), n, "{id}");
+        }
+        assert_eq!(copies.len(), 110);
+        assert_eq!(shots.len(), 50);
+        // A first, then B
+        let first = |part: &str| copies.iter().position(|c| c.contains(part)).unwrap();
+        let order = [
+            "b1-spc-2k-spectrum",
+            "b3-spc-8k",
+            "b2-clk-2k",
+            "b4-gap-2k-spectrum",
+            "b1-spc-2k-throttle",
+            "b1-spc-2k-time-prefilt",
+            "b1-spc-2k-time-gyro",
+            "b1-spc-2k-time-dterm",
+            "b1-spc-2k-time-piderror",
+            "d1-stp-1k-step",
+            "d2-stp-4k",
+            "d3-win-2k-step-roll",
+            "d3-win-2k-step-window-4s",
+            "d3-win-2k-step-window-5s",
+            "d1-stp-1k-log",
+            "l1-2k-throttle",
+            "l6-1k-throttle",
+            "z8-short-2k",
+            "a9-flight-2k",
+            "l1-2k-time",
+            "f4-short-2k",
+            "b4-gap-2k-time",
+        ];
+        assert!(
+            order.windows(2).all(|w| first(w[0]) < first(w[1])),
+            "{copies:?}"
+        );
+        // the pointer pictures come last, after every copy
+        let last_copy = plan.steps.iter().rposition(|s| s.action == "clip_save");
+        let first_hover = plan
+            .steps
+            .iter()
+            .position(|s| s.action == "hover" && !s.copy.unwrap_or(false));
+        assert!(last_copy < first_hover);
+        let pointers: Vec<String> = ["throttle", "time", "spectrum"]
+            .iter()
+            .flat_map(|w| ["before", "hover", "click"].map(|k| format!("r18-pointer-{w}-{k}")))
+            .collect();
+        assert_eq!(shots[shots.len() - 9..], pointers[..]);
+        for want in ["r18-d1-stp-1k-log", "r18-setup-pair-differences"] {
+            assert!(shots.contains(&want), "{want}");
+        }
+        // within half an hour, and the note says so
+        assert!(plan.seconds() < 30.0 * 60.0, "{} s", plan.seconds());
+        let files = files_of(18, &plan, true);
+        let note = String::from_utf8_lossy(&files[2].1).into_owned();
+        assert!(note.contains("50 pictures") && note.contains("110 plots"));
+    }
+
+    #[test]
+    fn round_18_resets_the_step_window_and_asks_windows_of_four_and_five_seconds() {
+        let plan = round_18();
+        let steps = &plan.steps;
+        let resets: Vec<usize> = steps
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.name.as_deref() == Some("Reset"))
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(resets.len(), 3);
+        for (i, id) in resets.iter().zip(CONFIRM_STEPS) {
+            let chosen = steps[*i..]
+                .iter()
+                .find(|s| s.name.as_deref().is_some_and(|n| n.starts_with("log ")));
+            assert_eq!(
+                chosen.and_then(|s| s.name.as_deref()),
+                Some(format!("log {id}").as_str())
+            );
+        }
+        let lengths: Vec<&str> = steps
+            .iter()
+            .filter_map(|s| s.name.as_deref())
+            .filter(|n| n.ends_with("deconv. window"))
+            .collect();
+        assert_eq!(
+            lengths,
+            [
+                "4sec deconv. window",
+                "5sec deconv. window",
+                "2sec deconv. window"
+            ]
+        );
+        // the lists of the spectrum and the step windows: nine rows at most
+        let chosen = |s: &&Step| s.name.as_deref().is_some_and(|n| n.starts_with("log "));
+        for (window, first) in [(SPECTRUM, spectrum_at::LOG), (STEP, step_at::LOG)] {
+            let rows: Vec<(u32, u32)> = steps
+                .iter()
+                .filter(|s| s.window == Some(window))
+                .filter(chosen)
+                .filter_map(|s| s.at)
+                .collect();
+            assert!(!rows.is_empty());
+            assert!(
+                rows.iter()
+                    .all(|at| at.0 == first.0 && at.1 <= log_row(first.1, 8))
+            );
+        }
+        let probes = catalogue::round(18).unwrap_or_default();
+        let d3 = probes.iter().find(|p| p.id == "d3-win-2k").unwrap();
+        assert_eq!(windows_captured(d3), &[4, 5]);
+        let without = probes.iter().filter(|p| windows_captured(p).is_empty());
+        assert_eq!(without.count(), 15);
+        // the open dialog takes their names
+        let paths = plan.steps[1].paths.clone().unwrap_or_default();
+        assert_eq!(paths.len(), 16);
+    }
+
+    #[test]
+    fn round_18_picks_the_other_channels_of_the_time_window_after_a_picture_of_its_list() {
+        let plan = round_18();
+        let steps = &plan.steps;
+        let at = |name: &str| steps.iter().position(|s| s.name.as_deref() == Some(name));
+        let list = at("channel (the list)").unwrap();
+        let dterm = at("channel dterm").unwrap();
+        let error = at("channel piderror").unwrap();
+        assert!(list < dterm && dterm < error);
+        let listed = steps[list..].iter().find(|s| s.action == "shot");
+        assert_eq!(
+            listed.and_then(|s| s.file.as_deref()),
+            Some("r18-b1-spc-2k-time-list-channels")
+        );
+        let item = |row| Some(throttle_at::item(time_at::CHANNEL_LIST, row));
+        assert_eq!(steps[dterm].at, item(2));
+        assert_eq!(steps[error].at, item(5));
+        // and the unfiltered gyro again after them
+        let back = steps[error..]
+            .iter()
+            .position(|s| s.name.as_deref() == Some("channel prefilt"));
+        assert!(back.is_some());
+        // the setup list: the second log of the pair in its list
+        let in_setup: Vec<&Step> = steps
+            .iter()
+            .filter(|s| s.window == Some(SETUP))
+            .filter(|s| s.name.as_deref() == Some("log b2-clk-2k"))
+            .collect();
+        assert_eq!(in_setup.len(), 1);
+        assert_eq!(
+            in_setup[0].at,
+            Some(throttle_at::item(setup_at::LOG_LIST, 2))
+        );
     }
 }
