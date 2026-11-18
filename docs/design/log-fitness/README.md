@@ -42,6 +42,7 @@ checks (thresholds are constants with comments):
 | `erpm` | `motor_rpm.*` present | missing, but the estimator exists | — | "set dshot_telemetry = ON, blackbox log motor rpm" |
 | `frames` | corrupt < 0.5 % | 0.5–5 % | > 5 % | "check SD card / flash speed" |
 | `gaps` | 0 | ≤ 3 | > 3 or > 1 s | — |
+| `clock` | the median step within 1 % of the header's rate and ≤ 1 % of the frames missing | otherwise | — | "OpenPID places the samples by their time stamps; a tool that takes them by the header's rate shows other frequencies and levels" (decision D-013 of the calibration) |
 | `sticks` | ≥ 10 step windows on roll and pitch | 5–9 | < 5 | "fly sharper stick inputs for step response" |
 | `throttle` | ≥ 50 % of the throttle bins with ≥ 3 segments | 25–50 % | < 25 % | "vary throttle through the range" |
 | `debug_mode` | known | — | — | informational: what is in debug[0..7] |

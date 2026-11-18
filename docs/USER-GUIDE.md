@@ -274,6 +274,10 @@ did. It shows how the noise changes over the flight (motor spin-up, propwash,
 resonances during certain manoeuvres). Manual markers from the Spectrum tab
 show here too.
 
+OpenPID draws the map of any stretch that holds a segment. The reference
+tool of the calibration draws none for a stretch under about 9 s (decision
+D-014): a short log is still shown here.
+
 ![Freq × time](screenshots/time.png)
 
 The control panel on the right (hover any field for its explanation):
@@ -416,12 +420,19 @@ or `--set master_multiplier=110,pd_ratio=120` for the ratio sliders.
   | rpm — motor eRPM | present | missing (the overlay uses the rpm estimate) | — |
   | frames — corrupt frames | < 0.5 % | 0.5–5 % | > 5 % |
   | gaps — timebase gaps | 0 | ≤ 3 | > 3 |
+  | clock — time stamps against the header's rate | within 1 %, ≤ 1 % of the frames missing | otherwise | — |
   | sticks — step windows on roll and pitch | ≥ 10 | 5–9 | < 5: the step response is unreliable |
   | throttle — throttle range coverage | ≥ 30 % | 10–30 % | < 10 %: Freq × throttle is incomplete |
   | debug — `debug_mode` | informational | | |
 
   The overall mark is the worst of rate, duration and frames; the rest only
-  warn. Next to every fix is a **Copy** button: the command goes to the
+  warn. **clock**: OpenPID places every sample at its time stamp, on an even
+  grid at the header's rate, and bridges a missing frame with a straight
+  line. Another analysis tool that takes the samples one after the other at
+  the header's rate puts a tone as far off as the clock runs off the header
+  and joins the samples over a gap; when this check warns, its spectra and
+  maps of the log differ from OpenPID's (on a log 2 % off, by 2 % in
+  frequency and about 2 dB). Next to every fix is a **Copy** button: the command goes to the
   clipboard, ready for the configurator CLI. The Filter Sim tab shows the
   same fix when the raw gyro is missing. A log with several
   sessions is checked per session; the table shows the selected one.
