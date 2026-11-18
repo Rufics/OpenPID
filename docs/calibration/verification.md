@@ -125,3 +125,35 @@ gyro; on the reference tool's stretch they agree, the spectra to 0.002 …
 0.007 dB in the median and the maps on 99.47 … 100 % of their pixels) and
 D-008 on the main window's lower plot. The "Motors" copy of the fixed plan
 was not in this run.
+
+## Round 18 (2026-11-18): the choice of D-012, and what no round asked
+
+Sixteen logs (#180, `3b4051b`; OpenPID's results from `verify-524b754`,
+which holds #200). The run stopped at step 1 674 of 1 970 when the mouse
+moved: 85 of 110 copies and 33 of 50 pictures came back. The maps against
+time of `f4-short-2k` and `b4-gap-2k`, the setup list and the pictures
+under the pointer were not reached.
+
+| Asked | Came back |
+|---|---|
+| The stretch of #200 on new logs | every spectrum at 2 and 8 kHz to the copy's resolution (median 0.0033 … 0.008 dB), both maps on 99.8 … 100 % of their pixels, the step response to 0.0008 |
+| Where a short log stops being taken whole | logs of 10.1, 10.25, 10.5, 10.75 and 10.9 s at 2 kHz and of 10.5 s at 1 kHz are trimmed; round 16 took 10 s whole: the switch lies in (10, 10.1] s. #200 and `compare` take a log whole up to 10 s now |
+| The logs once read from `fs + 3` (`z8-short-2k`, `a9-flight-2k`) | each chosen alone, both agree from `fs + 2` on 100 % of their pixels. `f4-short-2k` was not reached |
+| Windows of 4 and 5 s | as long as chosen, a fortieth of a window apart: 339 and 263 windows on the 38 s stretch, the curves and Peaks of the rule to 0.0007. OpenPID took windows of 2 s whatever was chosen: corrected in #188 (and the field shown for the division), after which every step copy agrees |
+| A clock 2 % off its header, 5 % of the frames missing | the samples as they come, at the header's rate, joined over the gaps; the stretch by the time stamps. OpenPID's grid by the time stamps differs by 1.9 dB and 0.5 … 7 dB: entry D-013 |
+| The map against time of a short log | nothing for the logs of 10.1 … 10.75 s (stretches of 8.1 … 8.75 s); round 16 had a map for 10 s whole: entry D-014 |
+| The legend's "P, I, D, Dm, F" with `d_min` and `d_max` logged | "Dm" is D-max (40 and 46 where D-min is 20 and 23) |
+| A gain of 0.1546 | printed as logged, "0.1546" |
+| The time window's channel list | a picture of it; the maps of the D term and the PID error of `b1` agree with OpenPID's of the same channel on the reference tool's stretch (99.97 % of their cells) |
+
+**Not settled.** The printed peaks of the six throttle maps of `b1-spc-2k`
+are those of a start at `fs + 3`, while its pixels and its spectra sit at
+`fs + 2`: two segments of that log lie within 0.01 % of throttle of a
+column's edge, and one sample moves them. What decides a late start is
+still not known. The span of `b2` fits the time stamps when the log's
+length is rounded to 0.1 s; one log does not settle that rounding.
+
+`compare` on the copies, with #188 and #200 corrected: 43 PASS, 25 decided
+differences (D-012: 24, D-008: 1), 17 FAIL (the twelve copies of D-013
+and five printed peaks of `b1`).
+

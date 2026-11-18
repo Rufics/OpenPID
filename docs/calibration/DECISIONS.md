@@ -243,7 +243,37 @@ Taken by the owner on 2026-11-11:
 | Options | **A.** Keep the automatic stretch as the default, and add the reference tool's stretch as a choice beside it ("as the reference tool": from sample `fs + 2`, `fs·(T − 2) − 1` samples, a log of 10 s or less whole), so that a log can be put side by side with the reference tool exactly. **B.** The reference tool's stretch as the default, the automatic one as a choice: every number is the reference tool's out of the box, the time on the ground included. **C.** Keep it as it is and say so in the user guide |
 | Recommendation | A. The time on the ground is not the flight and does not belong in a spectrum or a map; the exact stretch as a choice makes the comparison with the reference tool (#176) exact without making OpenPID analyse the ground by default |
 | The owner's decision | **A** (2026-11-18): the automatic trim stays the default; the reference tool's stretch is a choice beside it |
-| Carried out by | #200: "Without the first and last second" in the Auto menu and `--epoch ends` (`epoch::cut_ends`); a log of 10.5 s or less whole until a round narrows the switch |
+| Carried out by | #200: "Without the first and last second" in the Auto menu and `--epoch ends` (`epoch::cut_ends`); a log of 10 s or less whole (round 18 placed the switch in (10, 10.1] s) |
+
+### D-013 Samples whose time stamps are not the header's rate
+
+| Field | |
+|---|---|
+| Id | D-013 |
+| Area | Common to every area, C1 and C2: what an analysis takes when a log's time stamps do not run at the rate its header states, or frames are missing |
+| Probe | round 18 (pack `3b4051b`, OpenPID's results from `verify-524b754`): `b2-clk-2k`, a header of 2 kHz with time stamps 510 µs apart; `b4-gap-2k`, 5 % of its frames missing in pauses of 32 ms. Both with tones of known frequency |
+| The reference tool shows | the samples as they come, one after the other, at the header's rate: the tones of `b2` at their frequencies by the header (140.2 and 329.1 Hz on roll), the samples of `b4` joined end to end over the gaps (no filling); the level computed with the header's rate. The stretch is chosen by the time stamps (`b2`: 44 118 samples from sample 1 962; `b4`: 34 207 samples). Every copy agrees with that reading to its resolution (median 0.0032 dB) |
+| OpenPID shows | the samples brought onto a uniform grid at the header's rate by their time stamps, a gap filled by a straight line (C2): the tones of `b2` 2 % lower (at the frequencies their time stamps give), the gaps of `b4` bridged. The difference: 1.9 dB median over the full range on `b2`, 0.5 … 7 dB on `b4` |
+| The exact value | the probe's tones lie where their time stamps put them; on a real craft the time stamps are the flight controller's clock, the header's rate is the loop it was set to run |
+| Options | **A.** As the reference tool: samples by index at the header's rate, gaps joined, the stretch by the time stamps. Every number the reference tool's on such logs; a frequency off by as much as the loop runs off its setting, a phase jump at every gap. **B.** Keep OpenPID's grid by the time stamps and say so in the user guide: the frequencies where the clock puts them, a gap bridged. **C.** B, and a warning in the log check (U1) when a log's time stamps run more than 1 % off its header's rate or more than 1 % of its frames are missing, so that a user comparing the two programs knows why they differ |
+| Recommendation | C. The time stamps are the craft's own clock, and a spectrum with phase jumps at every gap is not the flight's; the warning tells the user where the two programs part. Logs that run off their rate or drop frames are rare on a healthy craft, and the round's other logs, whose clocks run true, agree |
+| The owner's decision | |
+| Carried out by | |
+
+### D-014 The map against time of a short stretch
+
+| Field | |
+|---|---|
+| Id | D-014 |
+| Area | Freq × time (F1): a map of a stretch under about 9 s |
+| Probe | rounds 11, 16 and 18: logs of 8, 10, 10.1, 10.25, 10.5, 10.75 and 14 s |
+| The reference tool shows | no map for a log of 8 s (whole) and for logs of 10.1 to 10.75 s (trimmed to 8.1 … 8.75 s): an empty window, nothing to copy. A map for the log of 10 s (taken whole) and of 14 s (12 s) |
+| OpenPID shows | a map of any stretch that holds a segment |
+| The exact value | none: whether a map of a few seconds is worth showing |
+| Options | **A.** As the reference tool: no map below a stretch of 9 s (the switch lies between 8.75 and 10 s), with a line that says why. **B.** Keep OpenPID's map of any stretch and say in the user guide that the reference tool shows none below about 9 s |
+| Recommendation | B. A short log still has something to show, and OpenPID marks its stretch on the time axis; the two programs differ only where the reference tool shows nothing |
+| The owner's decision | |
+| Carried out by | |
 
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
