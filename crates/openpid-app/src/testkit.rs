@@ -378,24 +378,39 @@ impl Ui {
         self.settle();
     }
 
-    /// Picks the option whose name contains `option` in the combo box named
-    /// `label`.
-    pub fn choose(&mut self, label: &str, option: &str) {
+    /// Opens the list of the combo box named `label`.
+    pub fn open_list(&mut self, label: &str) {
         self.h
             .get_by_role_and_label(Role::ComboBox, label)
             .click_accesskit();
         self.settle();
+    }
+
+    /// Picks the option whose name contains `option` in the combo box named
+    /// `label`.
+    pub fn choose(&mut self, label: &str, option: &str) {
+        self.open_list(label);
         self.click_containing(option);
+        self.close_list(label);
     }
 
     /// Picks the option named exactly `option` in the combo box named
     /// `label` (when one option's name is part of another's: `RP`, `RPY`).
     pub fn choose_exact(&mut self, label: &str, option: &str) {
-        self.h
-            .get_by_role_and_label(Role::ComboBox, label)
-            .click_accesskit();
-        self.settle();
+        self.open_list(label);
         self.click(option);
+        self.close_list(label);
+    }
+
+    /// Closes the list of the combo box named `label` when a pick left it
+    /// open: a pointer click on an entry closes the list, a pick through
+    /// the accessibility tree does not, and the next click on the box
+    /// (which is what [`Ui::open_list`] is) would then close the list
+    /// instead of opening it.
+    fn close_list(&mut self, label: &str) {
+        if self.h.query_all_by_role(Role::ListBox).next().is_some() {
+            self.open_list(label);
+        }
     }
 
     /// Starts editing the number field named `label`, as a click on it does.

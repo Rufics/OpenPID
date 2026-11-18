@@ -92,6 +92,7 @@ static UA: &[(&str, &str)] = &[
     ("Axes", "Осі"),
     ("Axis", "Вісь"),
     ("Back", "Назад"),
+    ("Bandwidth", "Смуга пропускання"),
     ("Battery", "Батарея"),
     ("Blackbox Explorer", "Blackbox Explorer"),
     (
@@ -132,6 +133,7 @@ static UA: &[(&str, &str)] = &[
     ("Corrupt frames", "Пошкоджені кадри"),
     ("Count", "Кількість"),
     ("Craft name", "Назва апарата"),
+    ("Crossover freq", "Частота перетину"),
     ("Cursor", "Курсор"),
     ("Custom", "Власні"),
     ("Cut-off", "Зріз"),
@@ -201,7 +203,8 @@ static UA: &[(&str, &str)] = &[
     ("Keyboard shortcuts", "Гарячі клавіші"),
     ("LPF headroom", "запас над LPF"),
     ("Language", "Мова"),
-    ("Latency", "Затримка"),
+    ("Latency", "Затримка відгуку"),
+    ("Latency | SP-gyro delay", "Затримка | уставка→гіро"),
     ("Light", "Світла"),
     ("Link scales", "Спільна шкала"),
     ("Log", "Лог"),
@@ -278,15 +281,20 @@ static UA: &[(&str, &str)] = &[
     ("PID sum", "Сума PID"),
     ("PID yaw", "PID yaw"),
     ("Pause", "Пауза"),
+    ("Peak", "Пік"),
     ("Peak prominence", "Виразність піка"),
+    ("Peak | Latency", "Пік | Затримка"),
     ("Peaks", "Піки"),
     ("Per motor", "По моторах"),
+    ("Phase margin", "Запас за фазою"),
+    ("Phase margin | Crossover", "Запас за фазою | перетин"),
     ("Pitch D gain", "D по pitch"),
     ("Pitch P & I gain", "P та I по pitch"),
     ("Play", "Відтворити"),
     ("Player", "Плеєр"),
     ("Plot as PNG…", "Графік як PNG…"),
     ("Plot colours", "Кольори графіків"),
+    ("Plots", "Графіки"),
     ("Position", "Позиція"),
     ("Prefilt", "До фільтра"),
     ("Prefilt (dotted)", "До фільтра (пунктир)"),
@@ -315,14 +323,16 @@ static UA: &[(&str, &str)] = &[
     ("Reset to log", "Скинути до логу"),
     ("Residual", "Залишок"),
     ("Rise max", "Підйом макс"),
+    ("Rise time", "Час наростання"),
+    ("Rise time | Bandwidth", "Наростання | Смуга"),
     ("Roll:pitch ratio", "Співвідношення roll:pitch"),
     ("Rules", "Правила"),
     (
         "Rules are hints with their evidence, not an autotune: apply one change, fly, compare the new log.",
         "Правила — підказки з доказами, не autotune: застосуйте одну зміну, політайте, порівняйте новий лог.",
     ),
-    ("SP-gyro delay (xcorr)", "Затримка уставка→гіро (xcorr)"),
-    ("SR latency (50 %)", "Затримка відгуку (50 %)"),
+    ("SP-gyro delay", "Затримка уставка→гіро"),
+    ("SP-gyro delay (ms)", "уставка→гіро (мс)"),
     ("Sample step", "Крок семплів"),
     ("Samples", "Семпли"),
     ("Save as…", "Зберегти як…"),
@@ -331,6 +341,9 @@ static UA: &[(&str, &str)] = &[
     ("Search", "Пошук"),
     ("Sections", "Розділи"),
     ("Segment", "Сегмент"),
+    ("Sensitivity freq", "Частота чутливості"),
+    ("Sensitivity peak", "Пік чутливості"),
+    ("Sensitivity peak | freq", "Пік чутливості | частота"),
     ("Setpoint", "Уставка"),
     ("Settings", "Налаштування"),
     ("Settling max", "Усталення макс"),
@@ -484,6 +497,7 @@ static UA: &[(&str, &str)] = &[
         "back to the filters the log flew with",
         "повернутися до фільтрів, з якими літав лог",
     ),
+    ("bandwidth (Hz)", "смуга (Гц)"),
     ("below 100 Hz", "нижче 100 Гц"),
     ("below 100 Hz (1 s segments)", "нижче 100 Гц (сегменти 1 с)"),
     ("changes proposed", "змін запропоновано"),
@@ -507,6 +521,7 @@ static UA: &[(&str, &str)] = &[
         "copy the rows shown as tab-separated text, to paste into a spreadsheet or a message",
         "скопіювати показані рядки як текст із табуляцією, щоб вставити в таблицю чи повідомлення",
     ),
+    ("crossover (Hz)", "перетин (Гц)"),
     (
         "dB (20·log10 of the amplitude) shows weak and strong lines at once, as the reference tool; linear shows the strongest only",
         "dB (20·log10 амплітуди) показує слабкі й сильні лінії разом, як в еталонному інструменті; лінійна — лише найсильніші",
@@ -577,6 +592,10 @@ static UA: &[(&str, &str)] = &[
     (
         "how far from 1 the settled response may be: 0.10 is within 10 %",
         "наскільки усталений відгук може відрізнятися від 1: 0.10 — у межах 10 %",
+    ),
+    (
+        "how far the open loop's phase is from -180° at the crossover: the less, the nearer the loop is to oscillating",
+        "наскільки фаза розімкненого контуру далека від -180° на частоті перетину: що менше, то ближче контур до коливань",
     ),
     (
         "how many automatic peaks to mark on each solid line, from 20 Hz up; 0 = none",
@@ -740,6 +759,7 @@ static UA: &[(&str, &str)] = &[
     ("overshoot", "перерегулювання"),
     ("peak", "пік"),
     ("phase (deg)", "фаза (°)"),
+    ("phase margin (°)", "запас за фазою (°)"),
     (
         "playback speed relative to the flight",
         "швидкість відтворення відносно польоту",
@@ -766,9 +786,12 @@ static UA: &[(&str, &str)] = &[
     ("response", "відгук"),
     ("rest", "спокої"),
     ("rise", "підйом"),
+    ("rise time (ms)", "наростання (мс)"),
     ("rows differ", "рядків різняться"),
     ("rpm", "об/хв"),
     ("running", "рахується"),
+    ("sensitivity (Hz)", "чутливість (Гц)"),
+    ("sensitivity (dB)", "чутливість (дБ)"),
     ("session", "сесія"),
     ("setpoint", "уставка"),
     ("setpoint minus gyro", "уставка мінус гіро"),
@@ -836,12 +859,28 @@ static UA: &[(&str, &str)] = &[
         "значення debug-режиму логу, в окремому рядку",
     ),
     (
+        "the delay from setpoint to gyro, by cross-correlation",
+        "затримка від уставки до гіро за взаємною кореляцією",
+    ),
+    (
         "the filtered gyro, what the PID controller sees",
         "відфільтроване гіро, те, що бачить PID-регулятор",
     ),
     (
         "the flight modes active at the pointer or the cursor, on the same card",
         "режими польоту під вказівником або курсором, на тій самій картці",
+    ),
+    (
+        "the frequency at which the closed loop falls to -3 dB: up to there the gyro follows the setpoint",
+        "частота, на якій замкнений контур спадає до -3 дБ: до неї гіро йде за уставкою",
+    ),
+    (
+        "the frequency at which the loop amplifies a disturbance the most",
+        "частота, на якій контур підсилює збурення найбільше",
+    ),
+    (
+        "the frequency at which the open-loop gain is 0 dB",
+        "частота, на якій підсилення розімкненого контуру дорівнює 0 дБ",
     ),
     (
         "the frequency the notch removes; 0 switches it off",
@@ -897,6 +936,10 @@ static UA: &[(&str, &str)] = &[
     ),
     ("the lowest notch centre", "найнижчий центр notch"),
     (
+        "the most the loop amplifies a disturbance: below 4 dB is comfortable, 6 dB and more is too little stability margin",
+        "найбільше підсилення збурення контуром: менше 4 дБ — спокійно, 6 дБ і більше — замалий запас стійкості",
+    ),
+    (
         "the motor outputs, in the row under the axes (%)",
         "виходи моторів, у рядку під осями (%)",
     ),
@@ -911,6 +954,10 @@ static UA: &[(&str, &str)] = &[
     (
         "the notch quality: higher is narrower, with less delay and less removed",
         "добротність notch: вища — вужчий, з меншою затримкою і меншим вирізанням",
+    ),
+    (
+        "the peak of the mean response; the bar is the spread of the windows' peaks",
+        "пік середнього відгуку; риска — розкид піків окремих вікон",
     ),
     ("the rate the pilot asked for", "швидкість, яку задав пілот"),
     (
@@ -953,6 +1000,14 @@ static UA: &[(&str, &str)] = &[
     (
         "the time the cursor and the spectra show",
         "момент, який показують курсор і спектри",
+    ),
+    (
+        "the time the mean response takes from 10 % to 90 % of 1",
+        "час, за який середній відгук проходить від 10 % до 90 % від 1",
+    ),
+    (
+        "the time the response takes to reach 50 % (SR latency); the bar is its spread over the windows",
+        "час, за який відгук сягає 50 % (SR latency); риска — його розкид між вікнами",
     ),
     (
         "the top of the frequency axes; auto: half the logging rate",
@@ -1030,12 +1085,12 @@ static UA: &[(&str, &str)] = &[
         "пройти вкладками зараз, на відкритому лозі",
     ),
     (
-        "what the Latency plots show: the time the mean response takes to reach 50 % (SR latency), or the delay from setpoint to gyro by cross-correlation",
-        "що показують графіки затримки: час, за який середній відгук сягає 50 %, або затримку від уставки до гіро за взаємною кореляцією",
-    ),
-    (
         "what the rows show, on roll, pitch and yaw",
         "що показують ряди, на roll, pitch і yaw",
+    ),
+    (
+        "what the two narrow plots beside each response show, one point per log",
+        "що показують два вузькі графіки біля кожного відгуку, по точці на лог",
     ),
     (
         "what was read from the file: samples, frames, and what could not be read",

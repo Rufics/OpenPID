@@ -12,7 +12,8 @@ use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{HLine, Legend, Line, LineStyle, PlotPoints, Points};
 use openpid_analysis::step_windows;
 use openpid_analysis::{
-    FitnessLevel, StepMethod, StepOutput, StepParams, StepTargets, VerdictLevel, verdicts,
+    FitnessLevel, StepMethod, StepOutput, StepParams, StepPerformance, StepTargets, VerdictLevel,
+    verdicts,
 };
 use openpid_core::Axis;
 use openpid_core::settings::{PidGains, Settings};
@@ -22,7 +23,7 @@ use std::sync::Arc;
 pub const PANEL_W: f32 = 236.0;
 /// Width of the collapsed panel strip.
 const COLLAPSED_W: f32 = 26.0;
-/// Width of each of the Step tab's Peak and Latency plots.
+/// Width of each of the Step tab's two narrow plots.
 const SIDE_PLOT_W: f32 = 120.0;
 
 /// The tab's control panel on the right (R4): `body` draws the controls. Open
@@ -160,7 +161,7 @@ pub fn row_height(ui: &Ui, n: usize, extra: f32) -> f32 {
 
 // ------------------------------------------------------------------- step
 
-/// What the Latency plot of the Step tab shows.
+/// Which latency [`latency_values`] reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LatencyShown {
     /// Time for the mean response to reach 50 %.
@@ -170,6 +171,210 @@ pub enum LatencyShown {
     Xcorr,
 }
 
+/// A number of a step response that a narrow plot beside the response
+/// draws, one point per log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepNumber {
+    /// The peak of the mean response ([`peak_values`]).
+    Peak,
+    /// The SR latency: the time to 50 % ([`LatencyShown::HalfRise`]).
+    Latency,
+    /// The delay from setpoint to gyro ([`LatencyShown::Xcorr`]).
+    Delay,
+    /// `StepPerformance::rise_ms`.
+    RiseTime,
+    /// `StepPerformance::bandwidth_hz`.
+    Bandwidth,
+    /// `StepPerformance::sensitivity_db`.
+    SensitivityPeak,
+    /// `StepPerformance::sensitivity_hz`.
+    SensitivityFreq,
+    /// `StepPerformance::phase_margin_deg`.
+    PhaseMargin,
+    /// `StepPerformance::crossover_hz`.
+    Crossover,
+}
+
+/// What a horizontal line of a narrow plot stands for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mark {
+    /// Where the number is when the gyro follows the setpoint (grey).
+    Reference,
+    /// From here on the number asks for attention (amber).
+    Caution,
+    /// From here on it is too much (red).
+    Limit,
+}
+
+/// A sensitivity peak from here on is drawn against the caution line, dB.
+pub const SENSITIVITY_CAUTION_DB: f64 = 4.0;
+/// A sensitivity peak from here on leaves too little stability margin, dB.
+pub const SENSITIVITY_LIMIT_DB: f64 = 6.0;
+
+impl StepNumber {
+    /// Its name, as the hints of the list have it.
+    pub fn name(self) -> &'static str {
+        match self {
+            StepNumber::Peak => tr("Peak"),
+            StepNumber::Latency => tr("Latency"),
+            StepNumber::Delay => tr("SP-gyro delay"),
+            StepNumber::RiseTime => tr("Rise time"),
+            StepNumber::Bandwidth => tr("Bandwidth"),
+            StepNumber::SensitivityPeak => tr("Sensitivity peak"),
+            StepNumber::SensitivityFreq => tr("Sensitivity freq"),
+            StepNumber::PhaseMargin => tr("Phase margin"),
+            StepNumber::Crossover => tr("Crossover freq"),
+        }
+    }
+
+    /// The label of its plot's axis, with the unit (after the axis name).
+    pub fn axis_label(self) -> &'static str {
+        match self {
+            StepNumber::Peak => tr("peak"),
+            StepNumber::Latency => tr("latency (ms)"),
+            StepNumber::Delay => tr("SP-gyro delay (ms)"),
+            StepNumber::RiseTime => tr("rise time (ms)"),
+            StepNumber::Bandwidth => tr("bandwidth (Hz)"),
+            StepNumber::SensitivityPeak => tr("sensitivity (dB)"),
+            StepNumber::SensitivityFreq => tr("sensitivity (Hz)"),
+            StepNumber::PhaseMargin => tr("phase margin (°)"),
+            StepNumber::Crossover => tr("crossover (Hz)"),
+        }
+    }
+
+    /// What it is, in a sentence: the hint of the list.
+    pub fn hint(self) -> &'static str {
+        match self {
+            StepNumber::Peak => {
+                tr("the peak of the mean response; the bar is the spread of the windows' peaks")
+            }
+            StepNumber::Latency => tr(
+                "the time the response takes to reach 50 % (SR latency); the bar is its spread over the windows",
+            ),
+            StepNumber::Delay => tr("the delay from setpoint to gyro, by cross-correlation"),
+            StepNumber::RiseTime => tr("the time the mean response takes from 10 % to 90 % of 1"),
+            StepNumber::Bandwidth => tr(
+                "the frequency at which the closed loop falls to -3 dB: up to there the gyro follows the setpoint",
+            ),
+            StepNumber::SensitivityPeak => tr(
+                "the most the loop amplifies a disturbance: below 4 dB is comfortable, 6 dB and more is too little stability margin",
+            ),
+            StepNumber::SensitivityFreq => {
+                tr("the frequency at which the loop amplifies a disturbance the most")
+            }
+            StepNumber::PhaseMargin => tr(
+                "how far the open loop's phase is from -180° at the crossover: the less, the nearer the loop is to oscillating",
+            ),
+            StepNumber::Crossover => tr("the frequency at which the open-loop gain is 0 dB"),
+        }
+    }
+
+    /// The horizontal lines of its plot: the level and what it stands for.
+    pub fn marks(self) -> &'static [(f64, Mark)] {
+        match self {
+            StepNumber::Peak => &[(1.0, Mark::Reference)],
+            StepNumber::SensitivityPeak => &[
+                (SENSITIVITY_CAUTION_DB, Mark::Caution),
+                (SENSITIVITY_LIMIT_DB, Mark::Limit),
+            ],
+            _ => &[],
+        }
+    }
+
+    /// Values its plot always has in view, so that the logs are read
+    /// against the same frame and the lines of [`StepNumber::marks`] are
+    /// inside it.
+    pub fn in_view(self) -> &'static [f64] {
+        match self {
+            StepNumber::Peak => &[0.8, 1.5],
+            StepNumber::SensitivityPeak => &[0.0, 7.0],
+            StepNumber::PhaseMargin => &[0.0, 90.0],
+            _ => &[0.0],
+        }
+    }
+
+    /// The part of its plot's id that names it.
+    fn key(self) -> &'static str {
+        match self {
+            StepNumber::Peak => "peak",
+            StepNumber::Latency => "latency",
+            StepNumber::Delay => "delay",
+            StepNumber::RiseTime => "rise",
+            StepNumber::Bandwidth => "bandwidth",
+            StepNumber::SensitivityPeak => "sensitivity",
+            StepNumber::SensitivityFreq => "sensitivity-freq",
+            StepNumber::PhaseMargin => "margin",
+            StepNumber::Crossover => "crossover",
+        }
+    }
+}
+
+/// The pair of numbers the two narrow plots beside each response show: the
+/// "Plots" list of the panel, the five pairs the reference tool offers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SidePlots {
+    /// Peak and SR latency.
+    #[default]
+    PeakLatency,
+    /// SR latency and the delay from setpoint to gyro.
+    LatencyDelay,
+    /// Rise time and bandwidth.
+    RiseBandwidth,
+    /// Sensitivity peak and its frequency.
+    Sensitivity,
+    /// Phase margin and crossover frequency.
+    MarginCrossover,
+}
+
+impl SidePlots {
+    /// Every pair, in the order of the list.
+    pub const ALL: [SidePlots; 5] = [
+        SidePlots::PeakLatency,
+        SidePlots::LatencyDelay,
+        SidePlots::RiseBandwidth,
+        SidePlots::Sensitivity,
+        SidePlots::MarginCrossover,
+    ];
+
+    /// The numbers of the left and of the right plot.
+    pub fn numbers(self) -> [StepNumber; 2] {
+        match self {
+            SidePlots::PeakLatency => [StepNumber::Peak, StepNumber::Latency],
+            SidePlots::LatencyDelay => [StepNumber::Latency, StepNumber::Delay],
+            SidePlots::RiseBandwidth => [StepNumber::RiseTime, StepNumber::Bandwidth],
+            SidePlots::Sensitivity => [StepNumber::SensitivityPeak, StepNumber::SensitivityFreq],
+            SidePlots::MarginCrossover => [StepNumber::PhaseMargin, StepNumber::Crossover],
+        }
+    }
+
+    /// Its entry in the list, short enough for the panel's value column.
+    pub fn name(self) -> &'static str {
+        match self {
+            SidePlots::PeakLatency => tr("Peak | Latency"),
+            SidePlots::LatencyDelay => tr("Latency | SP-gyro delay"),
+            SidePlots::RiseBandwidth => tr("Rise time | Bandwidth"),
+            SidePlots::Sensitivity => tr("Sensitivity peak | freq"),
+            SidePlots::MarginCrossover => tr("Phase margin | Crossover"),
+        }
+    }
+
+    /// What its two numbers are, a line each: the hint of its entry.
+    pub fn hint(self) -> String {
+        let [left, right] = self.numbers();
+        format!(
+            "{}: {}\n{}: {}",
+            left.name(),
+            left.hint(),
+            right.name(),
+            right.hint()
+        )
+    }
+}
+
+/// What a narrow plot drew: the axis, the number, and for every log its
+/// value and, where it has one, the spread ([`side_values`]).
+pub type SidePlot = (Axis, StepNumber, Vec<(Slot, f64, Option<f64>)>);
+
 /// Step tab display options (not analysis parameters).
 #[derive(Debug, Clone, PartialEq)]
 pub struct StepDisplay {
@@ -177,8 +382,8 @@ pub struct StepDisplay {
     pub y_max: f64,
     /// Draw the histogram of the individual responses.
     pub raw: bool,
-    /// What the Latency plot shows.
-    pub latency: LatencyShown,
+    /// What the two narrow plots beside each response show.
+    pub side: SidePlots,
     /// The verdict table under the plots is open.
     pub details: bool,
 }
@@ -188,7 +393,7 @@ impl Default for StepDisplay {
         StepDisplay {
             y_max: 1.5,
             raw: false,
-            latency: LatencyShown::HalfRise,
+            side: SidePlots::default(),
             details: false,
         }
     }
@@ -240,18 +445,22 @@ fn step_controls(app: &mut App, ui: &mut Ui) {
             &smoothing,
         );
     }
-    panel::choice(
+    let pairs: Vec<(SidePlots, String, String)> = SidePlots::ALL
+        .iter()
+        .map(|pair| (*pair, pair.name().to_string(), pair.hint()))
+        .collect();
+    let side = app.tools.step_display.side;
+    panel::choice_explained(
         ui,
-        "step-latency",
-        tr("Latency"),
-        tr(
-            "what the Latency plots show: the time the mean response takes to reach 50 % (SR latency), or the delay from setpoint to gyro by cross-correlation",
+        "step-side",
+        tr("Plots"),
+        &format!(
+            "{}\n\n{}",
+            tr("what the two narrow plots beside each response show, one point per log"),
+            side.hint()
         ),
-        &mut app.tools.step_display.latency,
-        &[
-            (LatencyShown::HalfRise, tr("SR latency (50 %)").to_string()),
-            (LatencyShown::Xcorr, tr("SP-gyro delay (xcorr)").to_string()),
-        ],
+        &mut app.tools.step_display.side,
+        &pairs,
     );
     panel::drag(
         ui,
@@ -367,7 +576,8 @@ pub fn pid_text(settings: &Settings, g: &PidGains) -> String {
 }
 
 /// The Step tab (R4): the verdict table, then roll / pitch / yaw rows of the
-/// response with its Peak and Latency plots.
+/// response with its two narrow plots (Peak and Latency, or another pair of
+/// [`SidePlots`]).
 pub fn step(app: &mut App, ui: &mut Ui) {
     // the panel first, so it takes the right edge of the tab at full height
     // before anything wider than the window can stretch the tab
@@ -397,6 +607,7 @@ pub fn step(app: &mut App, ui: &mut Ui) {
         1.0 + targets.final_tol,
     );
     app.step_view.band = Some(band);
+    app.step_view.side.clear();
     let h = row_height(ui, axes.len(), 0.0);
     for axis in axes {
         let outputs: Vec<(Slot, Arc<Output>)> = rows
@@ -444,8 +655,11 @@ pub fn step(app: &mut App, ui: &mut Ui) {
                 &scale,
                 egui::vec2(w, h),
             );
-            peak_plot(ui, axis, &outputs, &display, w.min(SIDE_PLOT_W), h);
-            latency_plot(ui, axis, &outputs, &display, h);
+            for number in display.side.numbers() {
+                let values = side_values(&outputs, number);
+                side_plot(ui, axis, number, &values, h);
+                app.step_view.side.push((axis, number, values));
+            }
         });
     }
 }
@@ -917,57 +1131,81 @@ pub fn latency_values(
         .collect()
 }
 
-fn peak_plot(
-    ui: &mut Ui,
-    axis: Axis,
+/// What the narrow plot of `number` draws for every log: its value and,
+/// for the peak and the SR latency, the spread over the windows as the bar
+/// ([`peak_values`], [`latency_values`]); the performance numbers have no
+/// bar. A log without the number has no point.
+pub fn side_values(
     outputs: &[(Slot, Arc<Output>)],
-    _display: &StepDisplay,
-    _w: f32,
-    height: f32,
-) {
-    let values = peak_values(outputs);
-    crate::grid::plot(format!("step-peak-{}", axis.name()))
-        .width(SIDE_PLOT_W)
-        .height(height)
-        .y_axis_label(format!("{} {}", axis.name(), tr("peak")))
-        .include_y(0.8)
-        .include_y(1.5)
-        .include_x(0.5)
-        .include_x(values.len().max(1) as f64 + 0.5)
-        .show_x(false)
-        .allow_drag(false)
-        .allow_zoom(false)
-        .allow_scroll(false)
-        .show(ui, |pu| {
-            pu.hline(
-                HLine::new("1.0 ", 1.0)
-                    .color(crate::colormap::MUTED)
-                    .style(LineStyle::dashed_dense()),
-            );
-            per_log_points(pu, &values);
-        });
+    number: StepNumber,
+) -> Vec<(Slot, f64, Option<f64>)> {
+    let read = |of: fn(&StepPerformance) -> Option<f64>| {
+        outputs
+            .iter()
+            .filter_map(|(slot, o)| match o.as_ref() {
+                Output::Step(s) => of(&s.performance).map(|v| (*slot, v, None)),
+                _ => None,
+            })
+            .collect()
+    };
+    match number {
+        StepNumber::Peak => peak_values(outputs),
+        StepNumber::Latency => latency_values(outputs, LatencyShown::HalfRise),
+        StepNumber::Delay => latency_values(outputs, LatencyShown::Xcorr),
+        StepNumber::RiseTime => read(|p| p.rise_ms),
+        StepNumber::Bandwidth => read(|p| p.bandwidth_hz),
+        StepNumber::SensitivityPeak => read(|p| p.sensitivity_db),
+        StepNumber::SensitivityFreq => read(|p| p.sensitivity_hz),
+        StepNumber::PhaseMargin => read(|p| p.phase_margin_deg),
+        StepNumber::Crossover => read(|p| p.crossover_hz),
+    }
 }
 
-fn latency_plot(
+/// A narrow plot beside the response of `axis`: `number` of every log
+/// (`values`, from [`side_values`]) against the lines of its marks.
+fn side_plot(
     ui: &mut Ui,
     axis: Axis,
-    outputs: &[(Slot, Arc<Output>)],
-    display: &StepDisplay,
+    number: StepNumber,
+    values: &[(Slot, f64, Option<f64>)],
     height: f32,
 ) {
-    let values = latency_values(outputs, display.latency);
-    crate::grid::plot(format!("step-latency-{}", axis.name()))
+    let mut plot = crate::grid::plot(format!("step-{}-{}", number.key(), axis.name()))
         .width(SIDE_PLOT_W)
         .height(height)
-        .y_axis_label(format!("{} {}", axis.name(), tr("latency (ms)")))
-        .include_y(0.0)
+        .y_axis_label(format!("{} {}", axis.name(), number.axis_label()))
         .include_x(0.5)
         .include_x(values.len().max(1) as f64 + 0.5)
         .show_x(false)
         .allow_drag(false)
         .allow_zoom(false)
-        .allow_scroll(false)
-        .show(ui, |pu| per_log_points(pu, &values));
+        .allow_scroll(false);
+    for y in number.in_view() {
+        plot = plot.include_y(*y);
+    }
+    plot.show(ui, |pu| {
+        for (level, mark) in number.marks() {
+            let (name, color, style) = match mark {
+                Mark::Reference => (
+                    "1.0 ".to_string(),
+                    crate::colormap::MUTED,
+                    LineStyle::dashed_dense(),
+                ),
+                Mark::Caution => (
+                    format!("{level} dB"),
+                    verdict_color(VerdictLevel::Warn),
+                    LineStyle::dashed_loose(),
+                ),
+                Mark::Limit => (
+                    format!("{level} dB"),
+                    verdict_color(VerdictLevel::Fail),
+                    LineStyle::dashed_loose(),
+                ),
+            };
+            pu.hline(HLine::new(name, *level).color(color).style(style));
+        }
+        per_log_points(pu, values);
+    });
 }
 
 /// Errors of the Step tab's slots, shown once above the rows.
