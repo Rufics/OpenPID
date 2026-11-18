@@ -1247,6 +1247,18 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
                     }
                 }
             }
+            if ui
+                .button(tr("Without the first and last second"))
+                .on_hover_text(tr(
+                    "the stretch other analysis tools take, to compare numbers with theirs; a log of 10 s or less whole",
+                ))
+                .clicked()
+            {
+                ui.close();
+                if let Some(ends) = openpid_analysis::epoch::cut_ends(&session) {
+                    update = Some((Some(ends), false));
+                }
+            }
         });
         if ui
             .button(tr("All"))
