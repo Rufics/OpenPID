@@ -74,7 +74,7 @@ OPTIONS:
                   take-off and landing (throttle / motor rpm), `active` takes
                   the most active 20 s (stick input), `ends` leaves out the
                   first and the last second as other analysis tools do (a log
-                  of 10.5 s or less whole)
+                  of 10 s or less whole)
     --axis AXIS   roll, pitch or yaw
     --json        Machine-readable output
     --session-b M diff: session index in the second file (default: --session)

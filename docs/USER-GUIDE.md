@@ -122,7 +122,7 @@ cargo run --release -p openpid-app                      # or ./target/release/op
   pitch, which gives the step response the most windows. "Without the first
   and last second" takes the stretch other analysis tools take: from the
   second sample after the first second to one second before the end,
-  counted in samples, and a log of 10.5 s or less whole but its first
+  counted in samples, and a log of 10 s or less whole but its first
   sample. It ignores the ground time; choose it to put OpenPID's numbers
   beside theirs.
 - **A log opens on its Auto trim** (the "auto" badge in the label) when that is

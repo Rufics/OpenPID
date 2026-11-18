@@ -1250,7 +1250,7 @@ fn timeline_strip(app: &mut App, ui: &mut Ui, slot: Slot) -> bool {
             if ui
                 .button(tr("Without the first and last second"))
                 .on_hover_text(tr(
-                    "the stretch other analysis tools take, to compare numbers with theirs; a log of 10.5 s or less whole",
+                    "the stretch other analysis tools take, to compare numbers with theirs; a log of 10 s or less whole",
                 ))
                 .clicked()
             {

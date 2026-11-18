@@ -99,7 +99,7 @@ M (≈ 2–3 days): the strip 1, auto-trim ½, integration and tests 1.
 calibration, `docs/calibration/DECISIONS.md`): the third entry of the Auto
 menu, `epoch::cut_ends`, and `--epoch ends`. It is the stretch the reference
 tool of the calibration takes: samples `fs + 2` to `n − fs` (0-based,
-`fs·(T − 2) − 1` samples), a log of at most 10.5 s from its second sample to
+`fs·(T − 2) − 1` samples), a log of at most 10 s from its second sample to
 its end; the bounds are the times of those samples. The automatic trim stays
 the default. Like "Most active 20 s" it is not marked as auto. The bounds of
 an epoch are now rounded to the microsecond, not truncated, so a bound taken

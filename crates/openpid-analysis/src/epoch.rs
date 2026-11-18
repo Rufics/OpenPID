@@ -133,10 +133,10 @@ pub fn most_active(s: &FlightSession, window_s: f64) -> Option<Epoch> {
     })
 }
 
-/// A log at most this long is taken whole by [`cut_ends`] (seconds). The
-/// calibration placed the switch between 10 and 11 s (rounds 16 and 17);
-/// the middle of that interval until a round narrows it.
-pub const CUT_ENDS_WHOLE_UP_TO_S: f64 = 10.5;
+/// A log at most this long is taken whole by [`cut_ends`] (seconds): the
+/// calibration saw a log of 10 s taken whole and logs of 10.1 to 13 s
+/// trimmed (rounds 16 to 18).
+pub const CUT_ENDS_WHOLE_UP_TO_S: f64 = 10.0;
 
 /// The stretch the common desktop analysis tools take: the log without its
 /// first and last second, from sample `fs + 2` to sample `n − fs` (counting
@@ -314,7 +314,7 @@ mod tests {
         let e = cut_ends(&s).unwrap();
         assert_eq!(covered(&s, e), (1, 10_000));
         // just above the switch: trimmed
-        let s = flight(10.6, 0.0, false);
+        let s = flight(10.1, 0.0, false);
         let e = cut_ends(&s).unwrap();
         assert_eq!(covered(&s, e), (1002, s.timebase.len() - 1000 + 1));
     }
