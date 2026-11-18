@@ -145,7 +145,7 @@ pub const DECIDED: [(&str, &str); 2] = [
         "D-012",
         "the stretch of a log the analyses take by default: OpenPID's automatic stretch, from \
          one second after the start to one second before the end; the reference tool's from \
-         sample fs + 2, fs·(T − 2) − 1 samples, a log of 10.5 s or less from its second \
+         sample fs + 2, fs·(T − 2) − 1 samples, a log of 10 s or less from its second \
          sample; the owner kept OpenPID's as the default and gave the reference tool's as a \
          choice, \"Without the first and last second\" (2026-11-18, #200). The copy differs \
          from OpenPID's result on OpenPID's stretch and agrees with OpenPID's result on the \
@@ -1707,9 +1707,10 @@ mod tests {
         // a long log: from sample fs + 2, fs·(T − 2) − 1 samples
         assert_eq!(samples("b1-spc-2k", 0), (2002, 2000 * 21 - 1, 46_000));
         assert_eq!(samples("b1-spc-2k", 1), (2003, 2000 * 21 - 2, 46_000));
-        // one of 10.5 s or less: all but its first sample
-        assert_eq!(samples("l3-2k", 0), (1, 20_999, 21_000));
-        assert_eq!(samples("l6-1k", 0), (1, 10_499, 10_500));
+        // logs of 10.1 and 10.5 s: trimmed (round 18)
+        assert_eq!(samples("l1-2k", 0), (2002, 20_200 - 4001, 20_200));
+        assert_eq!(samples("l3-2k", 0), (2002, 21_000 - 4001, 21_000));
+        assert_eq!(samples("l6-1k", 0), (1002, 10_500 - 2001, 10_500));
         // one of 10.75 s: trimmed
         assert_eq!(samples("l4-2k", 0), (2002, 21_500 - 4001, 21_500));
         // a clock 2 % slow: the samples by the header's rate, the bounds by

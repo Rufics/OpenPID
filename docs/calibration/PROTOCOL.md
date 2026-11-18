@@ -81,7 +81,7 @@ that difference is taken out:
   logged number over 20);
 - **D-012**, the stretch: a spectrum or a map that fails on OpenPID's
   stretch is held again against OpenPID's result on the reference tool's
-  stretch (from sample `fs + 2`, `fs·(T − 2) − 1` samples; a log of 10.5 s
+  stretch (from sample `fs + 2`, `fs·(T − 2) − 1` samples; a log of 10 s
   or less from its second sample: the choice "Without the first and last
   second" of decision D-012 = A, #200), computed from the log; a copy that
   agrees there is this decided difference, with the numbers of both. One

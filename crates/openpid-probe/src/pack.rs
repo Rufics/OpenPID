@@ -1161,9 +1161,8 @@ pub fn app_epoch(session: &FlightSession) -> Epoch {
 }
 
 /// The longest log the reference tool takes whole, seconds: a log of 10 s
-/// is taken whole, one of 11 s is not (round 17); decision D-012 takes
-/// 10.5 s until a round narrows the switch.
-const WHOLE_UP_TO_S: f64 = 10.5;
+/// is taken whole (round 16), logs of 10.1 s and longer are not (round 18).
+const WHOLE_UP_TO_S: f64 = 10.0;
 
 /// The stretch of a log the reference tool analyses, as decision D-012 = A
 /// gives it to `OpenPID` as a choice ("Without the first and last second",
