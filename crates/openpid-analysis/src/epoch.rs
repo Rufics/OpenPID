@@ -1,6 +1,7 @@
 //! Automatic analysis windows (docs/design/analysis-window, R4): trim the
-//! take-off and landing by throttle and motor rpm, or pick the most active
-//! stretch for the step response.
+//! take-off and landing by throttle and motor rpm, pick the most active
+//! stretch for the step response, or cut one second off each end, as the
+//! common desktop analysis tools do (decision D-012 of the calibration).
 
 use openpid_core::analysis::Epoch;
 use openpid_core::{Axis, ChannelId, FlightSession};
@@ -132,6 +133,35 @@ pub fn most_active(s: &FlightSession, window_s: f64) -> Option<Epoch> {
     })
 }
 
+/// A log at most this long is taken whole by [`cut_ends`] (seconds). The
+/// calibration placed the switch between 10 and 11 s (rounds 16 and 17);
+/// the middle of that interval until a round narrows it.
+pub const CUT_ENDS_WHOLE_UP_TO_S: f64 = 10.5;
+
+/// The stretch the common desktop analysis tools take: the log without its
+/// first and last second, from sample `fs + 2` to sample `n − fs` (counting
+/// from 0; `fs·(T − 2) − 1` samples of a log of `n = fs·T`); a log of at
+/// most [`CUT_ENDS_WHOLE_UP_TO_S`] from its second sample to its end (the
+/// first sample is never taken). Bounds are the timestamps of those samples,
+/// so the stretch is exact on a log with jitter. `None` for a log of fewer
+/// than three samples. Decision D-012 of the calibration (docs/calibration).
+pub fn cut_ends(s: &FlightSession) -> Option<Epoch> {
+    let n = s.timebase.len();
+    if n < 3 {
+        return None;
+    }
+    let fs = (1.0e6 / crate::prepare::nominal_dt_us(s)).round() as usize;
+    let (a, b) = if n as f64 / fs.max(1) as f64 <= CUT_ENDS_WHOLE_UP_TO_S {
+        (1, n - 1)
+    } else {
+        (fs + 2, n - fs)
+    };
+    (a < b).then(|| Epoch {
+        start_s: seconds(s, a),
+        end_s: seconds(s, b),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,5 +288,41 @@ mod tests {
         s.channels
             .remove(&ChannelId::Setpoint { axis: Axis::Pitch });
         assert_eq!(most_active(&s, 20.0), None, "no setpoint");
+    }
+
+    /// Samples `[a, b)` that the epoch covers.
+    fn covered(s: &FlightSession, e: Epoch) -> (usize, usize) {
+        crate::prepare::epoch_range(s, Some(e))
+    }
+
+    #[test]
+    fn cut_ends_leaves_out_one_second_at_each_end() {
+        // 20 s at 1 kHz: samples 1002 to 19 000, 17 999 of them
+        let s = flight(20.0, 0.0, false);
+        let n = s.timebase.len();
+        assert_eq!(n, 20_000);
+        let e = cut_ends(&s).unwrap();
+        assert_eq!(covered(&s, e), (1002, 19_001));
+        assert_eq!(19_001 - 1002, 1000 * (20 - 2) - 1);
+        // the ground time does not matter: it is not the automatic trim
+        assert_eq!(cut_ends(&flight(20.0, 3.0, true)), Some(e));
+    }
+
+    #[test]
+    fn cut_ends_takes_a_short_log_whole_but_its_first_sample() {
+        let s = flight(10.0, 0.0, false);
+        let e = cut_ends(&s).unwrap();
+        assert_eq!(covered(&s, e), (1, 10_000));
+        // just above the switch: trimmed
+        let s = flight(10.6, 0.0, false);
+        let e = cut_ends(&s).unwrap();
+        assert_eq!(covered(&s, e), (1002, s.timebase.len() - 1000 + 1));
+    }
+
+    #[test]
+    fn cut_ends_needs_three_samples() {
+        let mut s = flight(1.0, 0.0, false);
+        s.timebase.time_us.truncate(2);
+        assert_eq!(cut_ends(&s), None);
     }
 }

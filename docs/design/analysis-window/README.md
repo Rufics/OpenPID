@@ -95,6 +95,16 @@ M (≈ 2–3 days): the strip 1, auto-trim ½, integration and tests 1.
   instead of being a `Polygon` among the items; a full-height polygon fed the
   auto-bounds and grew the Y axis by the margin (5 %) every frame.
 
+**"Without the first and last second"** (2026-11-18, decision D-012 of the
+calibration, `docs/calibration/DECISIONS.md`): the third entry of the Auto
+menu, `epoch::cut_ends`, and `--epoch ends`. It is the stretch the reference
+tool of the calibration takes: samples `fs + 2` to `n − fs` (0-based,
+`fs·(T − 2) − 1` samples), a log of at most 10.5 s from its second sample to
+its end; the bounds are the times of those samples. The automatic trim stays
+the default. Like "Most active 20 s" it is not marked as auto. The bounds of
+an epoch are now rounded to the microsecond, not truncated, so a bound taken
+from a sample's time keeps that sample.
+
 Deviations: "Most active 20 s" is not marked as auto (it is an explicit user
 choice); the strip handles are 4 px at rest and 8 px under the pointer or while
 dragging, the grab zone is 8 px (22 px in touch), as in the Log viewer.

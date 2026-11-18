@@ -67,8 +67,10 @@ pub fn epoch_range(session: &FlightSession, epoch: Option<Epoch>) -> (usize, usi
     let t = &session.timebase.time_us;
     let Some(e) = epoch else { return (0, t.len()) };
     let Some(&t0) = t.first() else { return (0, 0) };
-    let lo = t0 + (e.start_s.max(0.0) * 1.0e6) as i64;
-    let hi = t0 + (e.end_s.max(0.0) * 1.0e6) as i64;
+    // rounded, not truncated: a bound taken from a sample's own time
+    // (9.999 s is 9 998 999.999… µs in floating point) keeps that sample
+    let lo = t0 + (e.start_s.max(0.0) * 1.0e6).round() as i64;
+    let hi = t0 + (e.end_s.max(0.0) * 1.0e6).round() as i64;
     let a = t.partition_point(|&x| x < lo);
     let b = t.partition_point(|&x| x <= hi);
     (a, b.max(a))

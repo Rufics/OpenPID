@@ -207,6 +207,9 @@ fn run_analyses() {
         "auto",
     ]);
     assert!(!ok && err.contains("less than 5 s in the air"), "{err}");
+    // one second off each end, counted in samples (1002 to n − 1000)
+    let (ok, _, err) = run(&["run", "psd", sharp, "--epoch", "ends"]);
+    assert!(ok && err.contains("epoch 1.00..38.59 s"), "{err}");
     let (ok, _, err) = run(&["run", "step", f, "--epoch", "5"]);
     assert!(!ok && err.contains("A..B"));
     let (ok, _, err) = run(&["run", "step"]);

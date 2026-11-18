@@ -72,7 +72,9 @@ OPTIONS:
                   notch_hz, notch_cutoff_hz (0 switches a stage off)
     --epoch A..B  Analyse only seconds A to B of the session; `auto` trims the
                   take-off and landing (throttle / motor rpm), `active` takes
-                  the most active 20 s (stick input)
+                  the most active 20 s (stick input), `ends` leaves out the
+                  first and the last second as other analysis tools do (a log
+                  of 10.5 s or less whole)
     --axis AXIS   roll, pitch or yaw
     --json        Machine-readable output
     --session-b M diff: session index in the second file (default: --session)
@@ -91,7 +93,7 @@ struct Args {
     analysis: Option<String>,
     file: Option<PathBuf>,
     epoch: Option<(f64, f64)>,
-    /// `auto` or `active` from `--epoch`.
+    /// `auto`, `active` or `ends` from `--epoch`.
     epoch_mode: Option<String>,
     set: Vec<(String, f64)>,
     axis: Option<String>,
@@ -137,14 +139,16 @@ fn parse_args() -> Result<Args, String> {
                 args.project = Some(PathBuf::from(it.next().ok_or("--project needs a path")?));
             }
             "--epoch" => {
-                let v = it.next().ok_or("--epoch needs A..B, auto or active")?;
-                if v == "auto" || v == "active" {
+                let v = it
+                    .next()
+                    .ok_or("--epoch needs A..B, auto, active or ends")?;
+                if v == "auto" || v == "active" || v == "ends" {
                     args.epoch_mode = Some(v);
                     continue;
                 }
                 let (a, b) = v
                     .split_once("..")
-                    .ok_or("--epoch needs the form A..B, auto or active")?;
+                    .ok_or("--epoch needs the form A..B, auto, active or ends")?;
                 let a: f64 = a
                     .trim()
                     .parse()
@@ -519,6 +523,9 @@ fn cmd_run(args: &Args) -> Result<(), String> {
         Some("active") => Some(
             openpid_analysis::epoch::most_active(s, openpid_analysis::epoch::ACTIVE_WINDOW_S)
                 .ok_or("--epoch active: no setpoint, or the log is shorter than 20 s")?,
+        ),
+        Some("ends") => Some(
+            openpid_analysis::epoch::cut_ends(s).ok_or("--epoch ends: fewer than three samples")?,
         ),
         _ => args
             .epoch
