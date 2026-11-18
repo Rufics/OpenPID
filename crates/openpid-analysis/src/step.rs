@@ -280,7 +280,7 @@ pub fn count_windows(
     let fs = sp.fs;
     let input = sp.filled();
     if p.method == StepMethod::Division {
-        let windows = Windows::over(0, input.len(), fs);
+        let windows = Windows::over(0, input.len(), fs, p.window_s);
         let used = (0..windows.count)
             .filter(|index| {
                 let at = windows.start(*index)..windows.start(*index) + windows.length;
@@ -436,7 +436,7 @@ fn division(p: &StepParams, sp: &Prepared, gy: &Prepared) -> Result<StepOutput, 
     let fs = sp.fs;
     let input = sp.filled();
     let output = gy.filled();
-    let windows = Windows::over(0, input.len().min(output.len()), fs);
+    let windows = Windows::over(0, input.len().min(output.len()), fs, p.window_s);
     if windows.count == 0 {
         return Err(AnalysisError::NotEnoughData(format!(
             "{} samples: a window needs {} and another {} after it",

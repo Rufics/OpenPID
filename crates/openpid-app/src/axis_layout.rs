@@ -499,9 +499,6 @@ fn step_controls(app: &mut App, ui: &mut Ui) {
             (StepMethod::Wiener, tr("Wiener with cut-off").to_string()),
         ],
     );
-    if division {
-        return;
-    }
     panel::drag(
         ui,
         tr("Window"),
@@ -513,6 +510,9 @@ fn step_controls(app: &mut App, ui: &mut Ui) {
         0.5..=10.0,
         " s",
     );
+    if division {
+        return;
+    }
     panel::drag(
         ui,
         tr("Cut-off"),

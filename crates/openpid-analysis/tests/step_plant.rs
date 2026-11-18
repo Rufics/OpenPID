@@ -143,6 +143,33 @@ fn latency_equals_the_plant_delay_for_a_white_input() {
 }
 
 #[test]
+fn the_window_length_sets_the_windows() {
+    // a window of 4 s is twice as long and twice as far from the next as
+    // one of 2 s: on 12 s, (12 − 4) / 0.1 = 80 windows, not 200
+    let s = session(12.0, white);
+    let ctx = AnalysisCtx {
+        session: &s,
+        epoch: None,
+    };
+    let two = StepAnalysis.run(&ctx, &StepParams::default()).unwrap();
+    let four = StepAnalysis
+        .run(
+            &ctx,
+            &StepParams {
+                window_s: 4.0,
+                ..StepParams::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(two.windows_total, 200);
+    assert_eq!(four.windows_total, 80);
+    assert!(
+        (four.metrics.latency_ms.unwrap() - DELAY as f64).abs() <= 1.0,
+        "the same plant through longer windows"
+    );
+}
+
+#[test]
 fn stick_input_latency_and_y_offset_correction() {
     let s = session(12.0, stick);
     let ctx = AnalysisCtx {

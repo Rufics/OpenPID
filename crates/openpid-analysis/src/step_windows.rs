@@ -32,12 +32,11 @@ use std::f64::consts::TAU;
 /// window of each: the same number of samples at every log rate.
 pub const SMOOTHING: [(&str, usize); 4] = [("off", 1), ("low", 5), ("medium", 11), ("high", 21)];
 
-/// Length of a window, seconds.
-pub const WINDOW_S: f64 = 2.0;
-/// Distance between the starts of two windows, seconds: a fortieth of a
-/// window, as version 0.94 of the reference tool has it (0.9 had a
-/// twentieth, and half the windows).
-pub const HOP_S: f64 = 0.05;
+/// Windows per window length between the starts of two windows: a window
+/// starts a fortieth of a window after the one before, as version 0.94 of
+/// the reference tool has it at every window length (0.9 had a twentieth,
+/// and half the windows).
+pub const HOPS_PER_WINDOW: f64 = 40.0;
 /// Length of the response that is kept, seconds.
 pub const SHOWN_S: f64 = 0.5;
 /// The mean distance of the stick from its centre a window needs, deg/s.
@@ -77,13 +76,14 @@ pub struct Windows {
 }
 
 impl Windows {
-    /// The windows of the `samples` samples that start at sample `first`,
-    /// at `fs`. As the reference tool counts them, a stretch of exactly one
-    /// window holds none: the count is the whole number of hops in what is
-    /// left after one window.
-    pub fn over(first: usize, samples: usize, fs: f64) -> Windows {
-        let length = ((WINDOW_S * fs).round() as usize).max(2);
-        let hop = ((HOP_S * fs).round() as usize).max(1);
+    /// The windows of `window_s` seconds of the `samples` samples that
+    /// start at sample `first`, at `fs`, a fortieth of a window apart. As
+    /// the reference tool counts them, a stretch of exactly one window holds
+    /// none: the count is the whole number of hops in what is left after one
+    /// window.
+    pub fn over(first: usize, samples: usize, fs: f64, window_s: f64) -> Windows {
+        let length = ((window_s * fs).round() as usize).max(2);
+        let hop = ((window_s / HOPS_PER_WINDOW * fs).round() as usize).max(1);
         Windows {
             first,
             length,
@@ -355,16 +355,23 @@ mod tests {
     #[test]
     fn the_windows_of_a_stretch() {
         // 30 s at 2 kHz less its first and last second and one sample
-        let w = Windows::over(2002, 55_999, 2000.0);
+        let w = Windows::over(2002, 55_999, 2000.0, 2.0);
         assert_eq!((w.first, w.length, w.hop, w.count), (2002, 4000, 100, 519));
         assert_eq!(w.start(518), 53_802);
         // the same seconds at other rates give the same number of windows
-        assert_eq!(Windows::over(1002, 27_999, 1000.0).count, 519);
-        assert_eq!(Windows::over(4002, 111_999, 4000.0).count, 519);
+        assert_eq!(Windows::over(1002, 27_999, 1000.0, 2.0).count, 519);
+        assert_eq!(Windows::over(4002, 111_999, 4000.0, 2.0).count, 519);
         // exactly one window, or less, holds none
-        assert_eq!(Windows::over(0, 4000, 2000.0).count, 0);
-        assert_eq!(Windows::over(0, 100, 2000.0).count, 0);
-        assert_eq!(Windows::over(0, 4100, 2000.0).count, 1);
+        assert_eq!(Windows::over(0, 4000, 2000.0, 2.0).count, 0);
+        assert_eq!(Windows::over(0, 100, 2000.0, 2.0).count, 0);
+        assert_eq!(Windows::over(0, 4100, 2000.0, 2.0).count, 1);
+        // windows of 4 and 5 s, a fortieth of their length apart: 339 and 263
+        // on the 38 s stretch of a 40 s log, as the reference tool counted
+        // them (round 18)
+        let w = Windows::over(2002, 75_999, 2000.0, 4.0);
+        assert_eq!((w.length, w.hop, w.count), (8000, 200, 339));
+        let w = Windows::over(2002, 75_999, 2000.0, 5.0);
+        assert_eq!((w.length, w.hop, w.count), (10_000, 250, 263));
     }
 
     /// A stick that moves to a new level within 200 deg/s every 150 …
@@ -448,7 +455,7 @@ mod tests {
     fn a_second_order_plant_gives_its_step_response() {
         let fs = 2000.0;
         let (setpoint, _) = delayed(40_000, 0);
-        let windows = Windows::over(2, 39_998, fs);
+        let windows = Windows::over(2, 39_998, fs, 2.0);
         // 15 Hz behind 5 ms: the curve is the plant's, overshoot and all
         let gyro = second_order(&setpoint, fs, 15.0, 10);
         let all = candidates(&setpoint, &gyro, fs, 0, windows, |_| true);
@@ -493,7 +500,7 @@ mod tests {
     fn the_reading_of_a_delayed_axis() {
         let (setpoint, gyro) = delayed(20_000, 20);
         let fs = 2000.0;
-        let windows = Windows::over(2, 19_998, fs);
+        let windows = Windows::over(2, 19_998, fs, 2.0);
         assert_eq!(windows.count, 159);
         let all = candidates(&setpoint, &gyro, fs, 0, windows, |_| true);
         assert_eq!(all.len(), 159);
