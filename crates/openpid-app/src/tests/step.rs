@@ -244,19 +244,27 @@ fn the_step_tab_ships_with_the_division_and_draws_what_the_reference_tool_reads(
         assert_eq!(Some(delay[0].1), step.metrics.latency_ms);
         assert_eq!(delay[0].2, None);
     }
-    // the panel of the division: its method and its smoothing, none of the
-    // fields of the Wiener estimate
-    assert!(ui.has("Method") && ui.has("Smoothing"));
-    for field in [
-        "Cut-off",
-        "Min input",
-        "High input",
-        "Window",
-        "Y correction",
-    ] {
+    // the panel of the division: its method, its smoothing and the window
+    // length, none of the other fields of the Wiener estimate
+    assert!(ui.has("Method") && ui.has("Smoothing") && ui.has("Window"));
+    for field in ["Cut-off", "Min input", "High input", "Y correction"] {
         assert!(!ui.has(field), "{field}");
     }
     let (_, plain) = result(&mut ui, Axis::Roll);
+    // windows of 4 s: half as many as of 2 s, a fortieth of 4 s apart
+    ui.set("Window", 4.0);
+    assert_eq!(ui.app().tools.step.window_s, 4.0);
+    let (_, long) = result(&mut ui, Axis::Roll);
+    let (Output::Step(two), Output::Step(four)) = (plain.as_ref(), long.as_ref()) else {
+        panic!("step results");
+    };
+    assert!(
+        four.windows_total < two.windows_total / 2 + 2,
+        "{} windows of 4 s against {} of 2 s",
+        four.windows_total,
+        two.windows_total
+    );
+    ui.set("Window", 2.0);
     ui.choose("Smoothing", "high");
     assert_eq!(ui.app().tools.step.smoothing, 3);
     let (_, smoothed) = result(&mut ui, Axis::Roll);
