@@ -115,3 +115,13 @@ What it has to learn before its report can stand for a round:
 
 And the capture plan: the "Motors" channel's single plot, and a "Reset" of
 the step response window before each log.
+
+**After the fixes** (#180, `3e1ec34`, 2026-11-18): `compare` on the same 88
+copies gives 69 PASS, 19 decided differences and no FAIL, the readings
+above to their digits. The decided differences are D-012 on 18 copies
+(the nine spectrum curves of `e1` and `e2` over the full range and below
+100 Hz at 1 kHz, four throttle maps and five time maps of the unfiltered
+gyro; on the reference tool's stretch they agree, the spectra to 0.002 …
+0.007 dB in the median and the maps on 99.47 … 100 % of their pixels) and
+D-008 on the main window's lower plot. The "Motors" copy of the fixed plan
+was not in this run.
