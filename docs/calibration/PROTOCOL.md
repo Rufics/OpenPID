@@ -9,17 +9,19 @@ is the procedure, end to end; what the rounds found is in
 
 ```sh
 cargo run -p openpid-probe -- list                 # the rounds and their logs
-cargo run -p openpid-probe -- pack 17 --out pack17 --built-from "$(git rev-parse --short HEAD)"
+cargo run -p openpid-probe -- pack 18 --out pack18 --built-from "$(git rev-parse --short HEAD)"
 ```
 
 The pack is a pure function of the round and of the commit: built twice it
 is the same bytes, and the packs of rounds 1 to 16 are held to theirs by the
-tests. It holds:
+tests. A round holds at most about sixteen logs: the script types their
+names into the open dialog at once, and the dialog takes 250 characters of
+them. It holds:
 
 | File | What it is |
 |---|---|
 | `*.bbl` | the probe logs, Betaflight 2025.12 |
-| `manifest.json` | what is true about each log (with its size and FNV-1a hash); from round 17 on also what is true about the channels beyond the gyro a log carries (`channels`), the three answers of the stick's path (`inputs` of an axis) and the filters typed into the filter simulator (`filters`) |
+| `manifest.json` | what is true about each log (with its size and FNV-1a hash); from round 17 on also what is true about the channels beyond the gyro a log carries (`channels`), the three answers of the stick's path (`inputs` of an axis) and the filters typed into the filter simulator (`filters`); from round 18 on what a log does beyond what the craft's logs do (`flight.quirks`: header lines, a clock that runs off the header's rate, frames left out) |
 | `ours.json` | what OpenPID computes for the same logs: the spectra of every axis (up to round 16 the power density, on the log without its first and last second). From round 17 on, on the stretch the app takes as a log comes up (its automatic trim) and at the app's own default settings: the spectrum the Spectrum tab draws (the reference tool's curve once decision D-001 is in), for the logs of the spectrum window only, and for a log of its list of channels the spectra of those channels; the step response of every log of that window |
 | `predictions.json` | where a model exists, what it expects the reference tool to show, written before the run |
 | `steps.json`, `capture.ps1`, `run.cmd`, `README.txt` | the capture script and its steps |
@@ -80,8 +82,15 @@ that difference is taken out:
 - **D-012**, the stretch: a spectrum or a map that fails on OpenPID's
   stretch is held again against OpenPID's result on the reference tool's
   stretch (from sample `fs + 2`, `fs·(T − 2) − 1` samples; a log of 10.5 s
-  or less whole), computed from the log; a copy that agrees there is this
-  decided difference, with the numbers of both.
+  or less from its second sample: the choice "Without the first and last
+  second" of decision D-012 = A, #200), computed from the log; a copy that
+  agrees there is this decided difference, with the numbers of both. One
+  that agrees on neither is held one sample later as well (from `fs + 3`,
+  where some logs of rounds 8 to 11 were read), for its numbers.
+  From round 18 on every such copy (spectra, maps, step response) is held
+  on both stretches, whether or not it agrees on OpenPID's own, and the
+  summary counts the copies that agree on the reference tool's: what the
+  choice of D-012 = A gives a user.
 
 | Copy | Held against | Tolerance |
 |---|---|---|
@@ -89,7 +98,7 @@ that difference is taken out:
 | spectrum, one entry of the list of channels | every line of the copy, of any pen, with OpenPID's spectrum of the channel the entry stands for (Gyro, Gyro prefilt, Dterm, Pterm, Fterm, Set point, PID error, PIDsum, debug of the axis's place); the line and the channel that agree best. "Motors" draws one plot of every motor: each line with the motor nearest it, in the reference tool's units (D-008). "Dterm prefilt" has no counterpart and is only photographed | as the spectrum |
 | step response | the mean response of the copy's newest run (the window keeps every run before it, one colour each, until "Reset") against time with OpenPID's at the copy's window length | 0.01 |
 | step response, Peak plot | the middle of the newest run's bar with OpenPID's Peak | 0.01 |
-| throttle and time maps | the cells of OpenPID's map placed on the picture's pixels: as many as the map has, whole, or from the middle of the first to the middle of the last, or in the time window one column more (its second drawn twice; its first two left out, D-006), whichever of those the axes allow agrees best; every pixel in the middle of a cell as a colour step between the two ends of the copy's colour bar, with OpenPID's value there on the same scale (decibels when the bar's lower end is below 0); a picture of 16 bits, which is dithered, cell by cell from the mean colour of the cell; a copy without a bar takes the roll plot's | 99 % of the pixels (cells) within one colour step (the three steps a level of a 5-bit channel spans) |
+| throttle and time maps | the cells of OpenPID's map of the same channel (the two gyro channels; from round 18 on also the D term and the PID error of the time window's list) placed on the picture's pixels: as many as the map has, whole, or from the middle of the first to the middle of the last, or in the time window one column more (its second drawn twice; its first two left out, D-006), whichever of those the axes allow agrees best; every pixel in the middle of a cell as a colour step between the two ends of the copy's colour bar, with OpenPID's value there on the same scale (decibels when the bar's lower end is below 0); a picture of 16 bits, which is dithered, cell by cell from the mean colour of the cell; a copy without a bar takes the roll plot's | 99 % of the pixels (cells) within one colour step (the three steps a level of a 5-bit channel spans) |
 | throttle maps, printed numbers | the copy's `mean=` and `peak=` with OpenPID's (by the reference tool's rule: every column, the rows from a tenth up) | one unit of their last printed digit |
 | filter simulator | every curve of the manifest's set of filters (`filters`), computed with OpenPID's filter simulator at the set's loop rate, or of the results file, with the copy's nearest curve, a point of the copy known to half a unit of its metafile each way; and every delay the copy prints, at 1 Hz, by filter, by column (an RPM notch once a motor) | magnitude 0.001, delay 0.001 ms, phase 0.1°, step 0.001; a printed delay to its last digit |
 | log viewer | every line of the plot, matched by its colour to the nearest channel of the decoded log (smoothed as the copy's line smoothing is set, by the rule round 16 observed); a point counts as on the channel when its value lies between the lowest and the highest value the channel takes within half a device unit plus 1.5 samples of its time | 0.5 % of the axis span |
@@ -135,7 +144,8 @@ section may be left out:
   place) and `motor1` … `motor4` (listed under roll), for the copies of the
   spectrum window with one entry of its list of channels chosen.
 - `probes[].step[]`: times in ms, the mean response, the Peak.
-- `maps[]`: `window` is `throttle` or `time`; `x` are the columns (throttle
+- `maps[]`: `window` is `throttle` or `time`; `channel` is `gyro`,
+  `gyro_unfiltered`, `dterm`, `piderror` or `setpoint`; `x` are the columns (throttle
   in percent or time in seconds), `y` the rows in Hz, `z` the values row by
   row (`z[row · len(x) + column]`); `decibels` (default `false`) says
   whether they are decibels; amplitudes are converted to decibels when the
