@@ -1558,6 +1558,10 @@ fn the_pack_of_round_17_says_what_every_channel_and_every_input_holds() {
     assert!(!names("i1-chan-2k", 2).contains(&"dterm".to_string()));
     assert!(!names("i1-chan-2k", 2).contains(&"motor1".to_string()));
     assert_eq!(names("e1-spec-1k", 0), ["gyro", "gyro_unfiltered"]);
+    // a probe of another window carries no spectra: they are curves of
+    // every bin, as the Spectrum tab draws them by default
+    assert!(names("e3-step-2k", 0).is_empty());
+    assert!(names("e5-maps-2k", 1).is_empty());
     // a P term of a tone of 4 at 120 Hz stands out of its floor
     let pterm = &ours_probe("i1-chan-2k")["axes"][0]["spectra"][7];
     assert_eq!(

@@ -15,7 +15,7 @@ use crate::signal::{AxisSamples, Carrier, FlightSpec, Wave, band_bins};
 use crate::step_model;
 use crate::truth::ResponseTruth;
 use openpid_analysis::{
-    Analysis, AnalysisCtx, Epoch, PsdAnalysis, PsdParams, StepAnalysis, StepParams,
+    Analysis, AnalysisCtx, Epoch, Project, PsdAnalysis, PsdParams, StepAnalysis, StepParams,
 };
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, LogFormat, OpenOptions, PidTerm};
 use openpid_dsp::Fft;
@@ -41,10 +41,12 @@ const TRUTH_FROM_ROUND: u32 = 7;
 /// Seconds left out at each end of a log before `OpenPID`'s own analysis, as
 /// the reference tool leaves them out (`docs/DESIGN.md` §6.7).
 const TRIM_S: f64 = 1.0;
-/// The last round whose `ours.json` holds the spectra alone. The packs of
-/// rounds 1 to 16 keep their bytes; from round 17 on `ours.json` also
-/// holds `OpenPID`'s step response of every probe of that window, which
-/// `openpid-probe compare` holds the reference tool's copies against.
+/// The last round whose `ours.json` holds the spectra alone, and holds them
+/// as the power density. The packs of rounds 1 to 16 keep their bytes;
+/// from round 17 on `ours.json` also holds `OpenPID`'s step response of
+/// every probe of that window, and its spectra are what the Spectrum tab
+/// draws by default ([`app_psd`]), which `openpid-probe compare` holds the
+/// reference tool's copies against.
 pub const SPECTRA_ONLY_UP_TO: u32 = 16;
 
 /// Why a pack could not be built.
@@ -266,8 +268,10 @@ pub struct Spectrum {
     pub segments: usize,
     /// Frequency of every bin, Hz.
     pub freq: Vec<f64>,
-    /// `10·log10` of the power density, (deg/s)²/Hz, before the smoothing
-    /// the Spectrum tab draws with.
+    /// Up to round [`SPECTRA_ONLY_UP_TO`], `10·log10` of the power
+    /// density, (deg/s)²/Hz, before the smoothing the Spectrum tab draws
+    /// with; from the round after it, the spectrum at the parameters the
+    /// Spectrum tab comes up with ([`app_psd`]), dB.
     pub power_db: Vec<f64>,
 }
 
@@ -277,7 +281,9 @@ pub struct OursAxis {
     /// `roll`, `pitch` or `yaw`.
     pub axis: &'static str,
     /// The spectra of the Spectrum tab: the full range and the range below
-    /// 100 Hz, for both gyro channels.
+    /// 100 Hz, for both gyro channels. From the round after
+    /// [`SPECTRA_ONLY_UP_TO`] on, only a probe of the spectrum window has
+    /// them.
     pub spectra: Vec<Spectrum>,
 }
 
@@ -661,11 +667,31 @@ fn logged(
         })
 }
 
-/// The spectra of the Spectrum tab for one axis.
+/// The parameters of the spectrum the Spectrum tab draws as it comes up:
+/// those of a new project. The analysis's own default is the power
+/// density; the app's is whatever a new project says (the curve of the
+/// reference tool once decision D-001 is in), and this takes it up
+/// without a change here.
+pub fn app_psd() -> PsdParams {
+    Project::default().psd
+}
+
+/// The parameters of the spectra of the pack of `round`: the power density
+/// up to round [`SPECTRA_ONLY_UP_TO`], whose packs keep their bytes; the
+/// app's ([`app_psd`]) from the round after it.
+fn pack_psd(round: u32) -> PsdParams {
+    if round > SPECTRA_ONLY_UP_TO {
+        app_psd()
+    } else {
+        PsdParams::default()
+    }
+}
+
+/// The spectra of the Spectrum tab for one axis, on the parameters `psd`.
 pub(crate) fn spectra(
     session: &FlightSession,
     axis: Axis,
-    epoch: Epoch,
+    (epoch, psd): (Epoch, &PsdParams),
     probe: &'static str,
 ) -> Result<Vec<Spectrum>, PackError> {
     let mut out = Vec::new();
@@ -674,18 +700,20 @@ pub(crate) fn spectra(
         (GyroStage::Raw, "gyro_unfiltered"),
     ] {
         let id = ChannelId::Gyro { axis, stage };
-        out.extend(spectrum_of(session, (&id, channel), epoch, probe)?);
+        out.extend(spectrum_of(session, (&id, channel), (epoch, psd), probe)?);
     }
     Ok(out)
 }
 
 /// `OpenPID`'s two spectra of the channel `id`, named `name` in the
-/// results: the two columns of the Spectrum tab, the whole range with
-/// quarter-second segments and below 100 Hz with one-second segments.
+/// results, on the parameters `psd`: the two columns of the Spectrum tab,
+/// the whole range with quarter-second segments and below 100 Hz with
+/// one-second segments (a spectrum of the whole stretch, the curve, has no
+/// segments and is the same in both, the second cut at 100 Hz).
 pub(crate) fn spectrum_of(
     session: &FlightSession,
     (id, name): (&ChannelId, &'static str),
-    epoch: Epoch,
+    (epoch, psd): (Epoch, &PsdParams),
     probe: &'static str,
 ) -> Result<Vec<Spectrum>, PackError> {
     let ctx = AnalysisCtx {
@@ -698,7 +726,7 @@ pub(crate) fn spectrum_of(
             channel: id.clone(),
             segment_s,
             max_hz,
-            ..PsdParams::default()
+            ..psd.clone()
         };
         let psd = PsdAnalysis
             .run(&ctx, &params)
@@ -763,7 +791,7 @@ pub fn listed_channel(name: &str, axis: Axis) -> Option<ChannelId> {
 fn listed_spectra(
     session: &FlightSession,
     axis: Axis,
-    epoch: Epoch,
+    (epoch, psd): (Epoch, &PsdParams),
     probe: &'static str,
 ) -> Result<Vec<Spectrum>, PackError> {
     let motors: &[&'static str] = if axis == Axis::Roll {
@@ -776,7 +804,7 @@ fn listed_spectra(
         let Some(id) = listed_channel(name, axis).filter(|id| session.channel(id).is_some()) else {
             continue;
         };
-        out.extend(spectrum_of(session, (&id, name), epoch, probe)?);
+        out.extend(spectrum_of(session, (&id, name), (epoch, psd), probe)?);
     }
     Ok(out)
 }
@@ -1056,11 +1084,55 @@ pub(crate) fn ours_step(
     })
 }
 
-/// The part of a flight `OpenPID` analyses: all but its first and last
-/// second, as the reference tool.
+/// The part of a flight the packs up to round [`SPECTRA_ONLY_UP_TO`]
+/// analyse: all but its first and last second, as the reference tool was
+/// taken to; from the round after it the packs take the app's stretch,
+/// [`app_epoch`].
 pub(crate) fn epoch_of(flight: &FlightSpec) -> Epoch {
     Epoch {
         start_s: TRIM_S,
+        end_s: flight.duration_s - TRIM_S,
+    }
+}
+
+/// The stretch of a log `OpenPID` analyses as the log comes up: its
+/// automatic trim (one second inside the first and the last moment in the
+/// air, by the throttle and the motor speeds), or the whole log where it
+/// has none. The packs of rounds up to [`SPECTRA_ONLY_UP_TO`] were
+/// computed on [`epoch_of`], a second off each end, which on a probe holds
+/// one sample more at the end.
+pub fn app_epoch(session: &FlightSession) -> Epoch {
+    openpid_analysis::epoch::auto(session).unwrap_or_else(|| {
+        let t = &session.timebase.time_us;
+        let end = match (t.first(), t.last()) {
+            (Some(a), Some(b)) => (b - a) as f64 / 1.0e6,
+            _ => 0.0,
+        };
+        Epoch {
+            start_s: 0.0,
+            end_s: end,
+        }
+    })
+}
+
+/// The longest log the reference tool takes whole, seconds: a log of 10 s
+/// is taken whole, one of 11 s is not (round 17); decision D-012 takes
+/// 10.5 s until a round narrows the switch.
+const WHOLE_UP_TO_S: f64 = 10.5;
+
+/// The stretch of a log the reference tool analyses (decision D-012, where
+/// `OpenPID` keeps its own by default): from sample `fs + 2`, `fs·(T − 2) −
+/// 1` samples, so up to the sample one second before the end; a log of
+/// [`WHOLE_UP_TO_S`] or less whole.
+pub(crate) fn reference_epoch(flight: &FlightSpec) -> Epoch {
+    if flight.duration_s <= WHOLE_UP_TO_S {
+        return Epoch {
+            start_s: 0.0,
+            end_s: flight.duration_s,
+        };
+    }
+    Epoch {
+        start_s: (flight.fs + 2.0) / flight.fs,
         end_s: flight.duration_s - TRIM_S,
     }
 }
@@ -1368,7 +1440,13 @@ fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
     let flight = &probe.flight;
     let bytes = log_of(probe)?;
     let session = read_back(probe, &bytes)?;
-    let epoch = epoch_of(flight);
+    let later = round > SPECTRA_ONLY_UP_TO;
+    let epoch = if later {
+        app_epoch(&session)
+    } else {
+        epoch_of(flight)
+    };
+    let psd = pack_psd(round);
     let mut axes = Vec::new();
     let mut step = Vec::new();
     let mut ours = Vec::new();
@@ -1403,10 +1481,16 @@ fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
                 .flatten(),
             inputs: stick_paths(flight, axis),
         });
-        let mut spectra = spectra(&session, axis, epoch, id)?;
-        if round > SPECTRA_ONLY_UP_TO && probe.area == Area::Spectrum && !flight.carried.is_empty()
-        {
-            spectra.extend(listed_spectra(&session, axis, epoch, id)?);
+        // from the round after SPECTRA_ONLY_UP_TO on, a spectrum is a curve
+        // of every bin of the stretch: only the probes of the spectrum
+        // window carry theirs
+        let mut spectra = if later && probe.area != Area::Spectrum {
+            Vec::new()
+        } else {
+            spectra(&session, axis, (epoch, &psd), id)?
+        };
+        if later && probe.area == Area::Spectrum && !flight.carried.is_empty() {
+            spectra.extend(listed_spectra(&session, axis, (epoch, &psd), id)?);
         }
         ours.push(OursAxis {
             axis: axis_name(axis),

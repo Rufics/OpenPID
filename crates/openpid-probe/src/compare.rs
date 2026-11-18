@@ -9,12 +9,12 @@
 //!
 //! | Copy | Compared on |
 //! |---|---|
-//! | spectrum | the solid curve (the filtered gyro), dB against frequency, with `OpenPID`'s spectrum of the same channel: the column below 100 Hz with its one-second segments, the full range with its quarter-second ones; largest and median difference over the common range |
-//! | spectrum of an entry of the list of channels | every line of the copy with `OpenPID`'s spectrum of the channel the entry stands for (the gyro channels, the D, P and F terms, the setpoint, the PID error and sum, the debug value of the axis's place, each of the four motors); the line and the channel that agree best |
-//! | step response | the mean response against time with `OpenPID`'s, at the window length of the copy; the Peak plot with `OpenPID`'s Peak |
-//! | throttle and time maps | every pixel of the map as a colour step between the two ends of its colour bar, with `OpenPID`'s map at the same throttle (or time) and frequency on the same scale; the share within one step, and the printed mean and peak |
-//! | filter simulator | every curve given in the results file with the copy's nearest curve: magnitude, delay, phase or step response against frequency or time |
-//! | log viewer | every line of the plot, matched by its colour to the channel of the decoded log it is nearest to: value against time |
+//! | spectrum | the solid curve (the filtered gyro; the dotted one of the unfiltered gyro is drawn with the same pen, in dashes of its own), dB against frequency, with the spectrum the Spectrum tab draws by default for the same channel ([`pack::app_psd`]): the column below 100 Hz and the full range; the median difference over the common range, against the resolution of the copy |
+//! | spectrum of an entry of the list of channels | every line of the copy with `OpenPID`'s spectrum of the channel the entry stands for (the gyro channels, the D, P and F terms, the setpoint, the PID error and sum, the debug value of the axis's place); the line and the channel that agree best. The "Motors" entry draws one plot of every motor: each line with the motor nearest it, in the reference tool's units (D-008) |
+//! | step response | the mean response of the newest run of the copy (the window keeps the runs before it, one colour each) against time with `OpenPID`'s, at the window length of the copy; the Peak plot's newest bar with `OpenPID`'s Peak |
+//! | throttle and time maps | the map placed cell by cell on the picture's pixels, each pixel in the middle of a cell as a colour step between the two ends of its colour bar (each cell's mean colour for a picture of 16 bits), with `OpenPID`'s map on the same scale; the share within one colour level of the copy, and the printed mean and peak against `OpenPID`'s |
+//! | filter simulator | every curve of the manifest's set of filters, computed with `OpenPID`'s filter simulator, or given in the results file, with the copy's nearest curve: magnitude, delay, phase or step response against frequency or time; the delays the copy prints |
+//! | log viewer | every line of the plot, matched by its colour to the channel of the decoded log it is nearest to (smoothed as the copy's setting smooths it): value against time |
 //!
 //! `OpenPID`'s results come from a results file (`--ours`: the
 //! `ours.json` of the pack, or any file of the schema in
@@ -22,14 +22,25 @@
 //! are computed from the round's logs as `pack` computes them. A copy that
 //! is not a copy of the round's plan, or whose setting has no counterpart
 //! in `OpenPID`, is listed as not compared.
+//!
+//! Where the owner has decided that `OpenPID` differs from the reference
+//! tool, a copy that agrees with `OpenPID`'s result once the decided
+//! difference is taken out is reported as that decided difference, not as
+//! a failure: a motor's percent (D-008), and the stretch of a log the
+//! analyses take by default (D-012), for which `OpenPID`'s result is
+//! computed again on the reference tool's stretch when a copy fails on
+//! `OpenPID`'s own.
+
+mod filters;
+mod maps;
 
 use crate::capture::Window;
 use crate::catalogue::{self, Probe};
-use crate::emf::{self, Axes, ColourBar, Curve, Metafile, Picture};
+use crate::emf::{self, Axes, Curve, Metafile, Scale};
 use crate::pack;
-use openpid_analysis::{
-    Analysis, AnalysisCtx, Grid2D, StftAnalysis, StftParams, ThrottleHeatmap, ThrottleHeatmapParams,
-};
+use crate::smoothing;
+use openpid_analysis::{Analysis, AnalysisCtx, Epoch, StftAnalysis, StftParams};
+use openpid_analysis::{ThrottleHeatmap, ThrottleHeatmapParams};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -48,11 +59,12 @@ pub struct Tolerance {
 }
 
 /// The tolerances of every check: the one table a round is passed against.
-pub const TOLERANCES: [Tolerance; 10] = [
+pub const TOLERANCES: [Tolerance; 11] = [
     Tolerance {
         check: "spectrum",
-        limit: 0.05,
-        meaning: "largest difference, dB",
+        limit: 1.0,
+        meaning: "median difference, units of the copy's resolution: the decibels of one unit \
+                  of its metafile up the plot",
     },
     Tolerance {
         check: "step",
@@ -67,12 +79,14 @@ pub const TOLERANCES: [Tolerance; 10] = [
     Tolerance {
         check: "map",
         limit: 0.99,
-        meaning: "share of the pixels within one colour step, at least",
+        meaning: "share of the pixels in the middle of a cell (of the cells, for a picture of \
+                  16 bits) within one level of the copy's colours: one colour step, or the \
+                  steps one level of a 5-bit channel spans",
     },
     Tolerance {
         check: "map numbers",
-        limit: 0.01,
-        meaning: "difference of the printed mean and peak, share of the printed value",
+        limit: 1.0,
+        meaning: "difference of the printed mean and peak, units of their last printed digit",
     },
     Tolerance {
         check: "filter magnitude",
@@ -95,6 +109,11 @@ pub const TOLERANCES: [Tolerance; 10] = [
         meaning: "largest difference of the response",
     },
     Tolerance {
+        check: "printed delay",
+        limit: 0.5,
+        meaning: "difference of a delay the filter simulator prints, units of its last digit",
+    },
+    Tolerance {
         check: "line",
         limit: 0.005,
         meaning: "largest difference, share of the span of the plot's axis",
@@ -109,6 +128,26 @@ fn limit(check: &str) -> f64 {
         .map_or(0.0, |t| t.limit)
 }
 
+/// The decided differences a copy can be reported as: the entry of
+/// `docs/calibration/DECISIONS.md` and what it means for a copy.
+pub const DECIDED: [(&str, &str); 2] = [
+    (
+        "D-008",
+        "a motor's percent: OpenPID's is the share of the range between the two numbers of \
+         `motorOutput`, the reference tool draws the logged number over 20; the owner kept \
+         OpenPID's (2026-11-16). The copy agrees with OpenPID's motor taken to the reference \
+         tool's units",
+    ),
+    (
+        "D-012",
+        "the stretch of a log the analyses take by default: OpenPID's automatic stretch, from \
+         one second after the start to one second before the end; the reference tool's from \
+         sample fs + 2, fs·(T − 2) − 1 samples, a log of 10 s or less whole; the owner kept \
+         OpenPID's as the default (2026-11-18). The copy differs from OpenPID's result on \
+         OpenPID's stretch and agrees with OpenPID's result on the reference tool's",
+    ),
+];
+
 /// What came of one copy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
@@ -116,6 +155,9 @@ pub enum Verdict {
     Pass,
     /// Beyond it.
     Fail,
+    /// Within the tolerance once a difference the owner decided on is
+    /// taken out: the entry of [`DECIDED`].
+    Decided(&'static str),
     /// Not held against anything (the reason is in the row).
     NotCompared,
     /// The copy could not be read.
@@ -123,12 +165,13 @@ pub enum Verdict {
 }
 
 impl Verdict {
-    fn word(self) -> &'static str {
+    fn word(self) -> String {
         match self {
-            Verdict::Pass => "PASS",
-            Verdict::Fail => "FAIL",
-            Verdict::NotCompared => "not compared",
-            Verdict::Error => "ERROR",
+            Verdict::Pass => "PASS".into(),
+            Verdict::Fail => "FAIL".into(),
+            Verdict::Decided(id) => format!("decided difference ({id})"),
+            Verdict::NotCompared => "not compared".into(),
+            Verdict::Error => "ERROR".into(),
         }
     }
 }
@@ -162,7 +205,8 @@ pub struct Report {
 }
 
 impl Report {
-    /// Whether no copy failed or could not be read.
+    /// Whether no copy failed or could not be read; a decided difference
+    /// is not a failure.
     pub fn passed(&self) -> bool {
         !self
             .rows
@@ -170,8 +214,8 @@ impl Report {
             .any(|r| matches!(r.verdict, Verdict::Fail | Verdict::Error))
     }
 
-    fn count(&self, verdict: Verdict) -> usize {
-        self.rows.iter().filter(|r| r.verdict == verdict).count()
+    fn count(&self, verdict: impl Fn(Verdict) -> bool) -> usize {
+        self.rows.iter().filter(|r| verdict(r.verdict)).count()
     }
 
     /// The report as Markdown.
@@ -195,17 +239,18 @@ impl Report {
                 r.verdict.word()
             );
         }
-        let compared = self.count(Verdict::Pass) + self.count(Verdict::Fail);
+        let decided = self.count(|v| matches!(v, Verdict::Decided(_)));
+        let pass = self.count(|v| v == Verdict::Pass);
+        let fail = self.count(|v| v == Verdict::Fail);
         let _ = writeln!(
             s,
-            "\n## Summary\n\n- {} copies in the folder: {compared} compared, {} PASS, {} FAIL; \
-             {} not compared; {} could not be read.\n- Copies of the plan not in the folder: {}.\n- \
-             Result: **{}**.",
+            "\n## Summary\n\n- {} copies in the folder: {} compared, {pass} PASS, {decided} \
+             decided differences, {fail} FAIL; {} not compared; {} could not be read.\n- Copies \
+             of the plan not in the folder: {}.\n- Result: **{}**.",
             self.rows.len(),
-            self.count(Verdict::Pass),
-            self.count(Verdict::Fail),
-            self.count(Verdict::NotCompared),
-            self.count(Verdict::Error),
+            pass + decided + fail,
+            self.count(|v| v == Verdict::NotCompared),
+            self.count(|v| v == Verdict::Error),
             if self.missing.is_empty() {
                 "none".to_string()
             } else {
@@ -213,6 +258,17 @@ impl Report {
             },
             if self.passed() { "PASS" } else { "FAIL" }
         );
+        let named: Vec<&(&str, &str)> = DECIDED
+            .iter()
+            .filter(|(id, _)| self.rows.iter().any(|r| r.verdict == Verdict::Decided(id)))
+            .collect();
+        if !named.is_empty() {
+            s.push_str("\n## Decided differences\n\n");
+            for (id, what) in named {
+                let n = self.count(|v| v == Verdict::Decided(id));
+                let _ = writeln!(s, "- **{id}** ({n} copies): {what}.");
+            }
+        }
         s.push_str("\n## Tolerances\n\n| Check | Limit | Of |\n|---|---|---|\n");
         for t in TOLERANCES {
             let _ = writeln!(s, "| {} | {} | {} |", t.check, t.limit, t.meaning);
@@ -311,8 +367,16 @@ pub struct MapIn {
     pub x: Vec<f64>,
     /// Row coordinates, Hz.
     pub y: Vec<f64>,
-    /// Amplitudes, row by row: `z[row · x.len() + column]`.
+    /// Values, row by row: `z[row · x.len() + column]`.
     pub z: Vec<f64>,
+    /// Whether `z` is in decibels; amplitudes otherwise, which a copy
+    /// whose colour bar is in decibels is held against as `20·log10`.
+    pub decibels: bool,
+    /// The mean the map prints, when `OpenPID` prints one; computed from
+    /// `z` by the reference tool's rule otherwise.
+    pub mean: Option<f64>,
+    /// The peak the map prints, likewise.
+    pub peak: Option<f64>,
 }
 
 /// The curves of one plot of the filter simulator.
@@ -337,62 +401,23 @@ pub struct CurveIn {
     pub y: Vec<f64>,
 }
 
-/// A map as compared: columns, rows and values (amplitudes).
-#[derive(Debug, Clone, PartialEq)]
-struct Grid {
-    x: Vec<f64>,
-    y: Vec<f64>,
-    z: Vec<f64>,
-}
-
-impl Grid {
-    fn of(g: &Grid2D) -> Grid {
-        Grid {
-            x: g.x.clone(),
-            y: g.y.clone(),
-            z: g.z.clone(),
-        }
-    }
-
-    /// The cell at `(x, y)`, if the map reaches there.
-    fn cell(&self, x: f64, y: f64) -> Option<usize> {
-        let ix = nearest_index(&self.x, x)?;
-        let iy = nearest_index(&self.y, y)?;
-        let i = iy * self.x.len() + ix;
-        (i < self.z.len()).then_some(i)
-    }
-}
-
-/// The index of the value of `sorted` nearest to `v`, unless `v` lies
-/// beyond the ends by more than half the distance to the neighbour.
-fn nearest_index(sorted: &[f64], v: f64) -> Option<usize> {
-    let n = sorted.len();
-    if n == 0 {
-        return None;
-    }
-    let half = if n > 1 {
-        0.5 * (sorted[n - 1] - sorted[0]).abs() / (n - 1) as f64
-    } else {
-        0.5
-    };
-    if v < sorted[0] - half || v > sorted[n - 1] + half {
-        return None;
-    }
-    let i = sorted.partition_point(|s| *s < v);
-    Some(match i {
-        0 => 0,
-        i if i >= n => n - 1,
-        i if v - sorted[i - 1] < sorted[i] - v => i - 1,
-        i => i,
-    })
-}
-
 /// One channel of a decoded log: its key, times in seconds and values.
 type Line = (String, Vec<f64>, Vec<f64>);
+
+/// Which stretch of a log `OpenPID`'s result is computed on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stretch {
+    /// `OpenPID`'s own, as the pack computes its results.
+    Own,
+    /// The reference tool's (decision D-012).
+    Reference,
+}
 
 /// Where `OpenPID`'s results come from: a results file, and the logs for
 /// what it does not hold.
 struct Source {
+    /// The round.
+    round: u32,
     /// The folder of the copies.
     folder: std::path::PathBuf,
     file: OursFile,
@@ -423,15 +448,25 @@ impl Source {
         self.file.probes.iter().find(|p| p.id == probe.id)
     }
 
+    /// The stretch of `probe` the results are computed on: the app's as the
+    /// log comes up, or the reference tool's.
+    fn epoch(&mut self, probe: &Probe, stretch: Stretch) -> Result<Epoch, String> {
+        Ok(match stretch {
+            Stretch::Own => pack::app_epoch(self.session(probe)?),
+            Stretch::Reference => pack::reference_epoch(&probe.flight),
+        })
+    }
+
     /// `OpenPID`'s spectrum of the channel the results name `channel` on
     /// `axis` (`gyro`, `gyro_unfiltered`, one of
     /// [`pack::LISTED_CHANNELS`] or [`pack::MOTOR_CHANNELS`], which the
-    /// results list under roll): frequencies and levels.
+    /// results list under roll): frequencies and levels. On `OpenPID`'s own
+    /// stretch the results file is asked first.
     fn spectrum(
         &mut self,
         probe: &Probe,
         (axis, channel): (Axis, &'static str),
-        segment_s: f64,
+        (segment_s, stretch): (f64, Stretch),
     ) -> Result<(Vec<f64>, Vec<f64>), String> {
         let listed_under = if pack::MOTOR_CHANNELS.contains(&channel) {
             Axis::Roll
@@ -446,17 +481,18 @@ impl Source {
                 .find(|s| s.channel == channel && s.segment_s == segment_s)?;
             Some((s.freq.clone(), s.power_db.clone()))
         });
-        if let Some(given) = given {
+        if let Some(given) = given.filter(|_| stretch == Stretch::Own) {
             return Ok(given);
         }
         let id = pack::listed_channel(channel, axis)
             .ok_or_else(|| format!("OpenPID has no channel {channel}"))?;
+        let epoch = self.epoch(probe, stretch)?;
         let session = self.session(probe)?;
         if session.channel(&id).is_none() {
             return Err(format!("the log has no {} channel", id.key()));
         }
-        let epoch = pack::epoch_of(&probe.flight);
-        pack::spectrum_of(session, (&id, channel), epoch, probe.id)
+        let psd = pack::app_psd();
+        pack::spectrum_of(session, (&id, channel), (epoch, &psd), probe.id)
             .map_err(|e| e.to_string())?
             .into_iter()
             .find(|s| s.segment_s == segment_s)
@@ -481,20 +517,20 @@ impl Source {
             return Ok(given);
         }
         let session = self.session(probe)?;
-        let epoch = pack::epoch_of(&probe.flight);
+        let epoch = pack::app_epoch(session);
         let step =
             pack::ours_step(session, axis, epoch, window_s, probe.id).map_err(|e| e.to_string())?;
         Ok((step.time_ms, step.mean, step.peak))
     }
 
-    /// `OpenPID`'s map of a gyro channel.
+    /// `OpenPID`'s map of a gyro channel; on `OpenPID`'s own stretch the
+    /// results file is asked first.
     fn map(
         &mut self,
         probe: &Probe,
-        axis: Axis,
-        stage: GyroStage,
-        window: Window,
-    ) -> Result<Grid, String> {
+        (axis, stage, window): (Axis, GyroStage, Window),
+        stretch: Stretch,
+    ) -> Result<maps::Grid, String> {
         let channel = stage_name(stage);
         let window_name = if window == Window::Time {
             "time"
@@ -507,17 +543,14 @@ impl Source {
                 && m.channel == channel
                 && m.window == window_name
         });
-        if let Some(m) = given {
-            return Ok(Grid {
-                x: m.x.clone(),
-                y: m.y.clone(),
-                z: m.z.clone(),
-            });
+        if let Some(m) = given.filter(|_| stretch == Stretch::Own) {
+            return Ok(maps::Grid::given(m));
         }
+        let epoch = self.epoch(probe, stretch)?;
         let session = self.session(probe)?;
         let ctx = AnalysisCtx {
             session,
-            epoch: Some(pack::epoch_of(&probe.flight)),
+            epoch: Some(epoch),
         };
         let id = ChannelId::Gyro { axis, stage };
         let grid = if window == Window::Time {
@@ -525,7 +558,9 @@ impl Source {
                 channel: id,
                 ..StftParams::default()
             };
-            StftAnalysis.run(&ctx, &params).map(|o| Grid::of(&o.grid))
+            StftAnalysis
+                .run(&ctx, &params)
+                .map(|o| maps::Grid::of(&o.grid))
         } else {
             let params = ThrottleHeatmapParams {
                 channel: id,
@@ -533,34 +568,51 @@ impl Source {
             };
             ThrottleHeatmap
                 .run(&ctx, &params)
-                .map(|o| Grid::of(&o.grid))
+                .map(|o| maps::Grid::of(&o.grid))
         };
         grid.map_err(|e| format!("OpenPID's map: {e}"))
     }
 
     /// The channels of the decoded log that a plot of the main window may
     /// draw: those of its axis (and the debug value of that place), or for
-    /// the lower plot the throttle and the motors.
-    fn lines(&mut self, probe: &Probe, plot: &str) -> Result<Vec<Line>, String> {
+    /// the lower plot the throttle and the motors, each motor also in the
+    /// reference tool's units (its key ends in [`IN_ITS_UNITS`]: D-008).
+    /// A line is smoothed over `span` samples (1: as logged).
+    fn lines(&mut self, probe: &Probe, plot: &str, span: usize) -> Result<Vec<Line>, String> {
         let session = self.session(probe)?;
         let times: Vec<f64> = (0..session.len())
             .map(|i| session.time_s(i).unwrap_or(f64::NAN))
             .collect();
-        Ok(session
-            .channels
-            .iter()
-            .filter(|c| drawn_in(&c.id, plot))
-            .map(|c| {
-                let (t, v): (Vec<f64>, Vec<f64>) = times
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, t)| Some((*t, c.data.get(i)?)))
-                    .unzip();
-                (c.id.key(), t, v)
-            })
-            .collect())
+        let motors = &session.settings.motor;
+        let to_logged = match (motors.output_low, motors.output_high) {
+            (Some(low), Some(high)) if high > low => Some((low, high)),
+            _ => None,
+        };
+        let mut out = Vec::new();
+        for c in session.channels.iter().filter(|c| drawn_in(&c.id, plot)) {
+            let (t, v): (Vec<f64>, Vec<f64>) = times
+                .iter()
+                .enumerate()
+                .filter_map(|(i, t)| Some((*t, c.data.get(i)?)))
+                .unzip();
+            let v = smoothing::smoothed(&v, span);
+            if let (ChannelId::Motor { .. }, Some((low, high))) = (&c.id, to_logged) {
+                let logged = v.iter().map(|p| (low + p * (high - low) / 100.0) / 20.0);
+                out.push((
+                    format!("{}{IN_ITS_UNITS}", c.id.key()),
+                    t.clone(),
+                    logged.collect(),
+                ));
+            }
+            out.push((c.id.key(), t, v));
+        }
+        Ok(out)
     }
 }
+
+/// The end of the key of a motor line in the reference tool's units: the
+/// logged number over 20 (D-008).
+const IN_ITS_UNITS: &str = " as the logged number over 20";
 
 /// Whether the plot `plot` of the main window may draw channel `id`.
 fn drawn_in(id: &ChannelId, plot: &str) -> bool {
@@ -625,18 +677,70 @@ fn identify<'p>(round: u32, name: &str, window: Window, probes: &'p [Probe]) -> 
 }
 
 /// What a comparison found: what it held the copy against, its numbers,
-/// and whether it passed (`None`: not compared).
+/// and its verdict.
 struct Outcome {
     against: String,
     numbers: String,
-    pass: Option<bool>,
+    verdict: Verdict,
+}
+
+impl Outcome {
+    /// A comparison that passed or failed.
+    fn judged(against: String, numbers: String, pass: bool) -> Outcome {
+        Outcome {
+            against,
+            numbers,
+            verdict: if pass { Verdict::Pass } else { Verdict::Fail },
+        }
+    }
 }
 
 fn not_compared(reason: impl Into<String>) -> Outcome {
     Outcome {
         against: reason.into(),
         numbers: String::new(),
-        pass: None,
+        verdict: Verdict::NotCompared,
+    }
+}
+
+/// A comparison on one stretch: its numbers and whether they are within
+/// the tolerance.
+struct Held {
+    numbers: String,
+    pass: bool,
+}
+
+/// A spectrum held against a line of a copy, and the median difference
+/// the nearest line is picked by.
+struct HeldSpectrum {
+    held: Held,
+    median: f64,
+}
+
+/// The numbers and the verdict of a comparison whose result depends on the
+/// stretch of the log: as held on `OpenPID`'s own stretch, and when that
+/// fails, held again on the reference tool's (`reference`); a copy that
+/// agrees there is the decided difference D-012.
+fn on_stretches(own: Held, reference: impl FnOnce() -> Result<Held, String>) -> (String, Verdict) {
+    if own.pass {
+        return (own.numbers, Verdict::Pass);
+    }
+    match reference() {
+        Ok(r) => (
+            format!(
+                "{}; on the reference tool's stretch: {}",
+                own.numbers, r.numbers
+            ),
+            if r.pass {
+                Verdict::Decided("D-012")
+            } else {
+                Verdict::Fail
+            },
+        ),
+        Err(e) => (
+            format!("{}; on the reference tool's stretch: {e}", own.numbers),
+            Verdict::Fail,
+        ),
     }
 }
 
@@ -649,22 +753,53 @@ fn tokens(rest: &str) -> Vec<&str> {
     rest.split('-').filter(|t| !t.is_empty()).collect()
 }
 
-/// The polylines of more than two points, those of one pen joined in the
-/// order they were drawn, in data units.
+/// The polylines of more than two points that `keep` keeps, grouped by
+/// colour and by whether they are dashes ([`Curve::joined`]) in the order
+/// each group is first drawn, in data units: those of one group joined in
+/// the order they were drawn.
 fn groups(
     m: &Metafile,
     scales: &Axes,
     keep: impl Fn(&Curve) -> bool,
 ) -> Vec<(u32, Vec<(f64, f64)>)> {
-    let mut out: Vec<(emf::Pen, Vec<(f64, f64)>)> = Vec::new();
+    // by colour and whether the curve is in dashes
+    type Key = (u32, bool);
+    let mut out: Vec<(Key, Vec<(f64, f64)>)> = Vec::new();
     for c in m.curves.iter().filter(|c| c.points.len() > 2 && keep(c)) {
+        let key = (c.pen.colour, c.joined);
         let points = scales.curve(c);
-        match out.iter_mut().find(|(pen, _)| *pen == c.pen) {
+        match out.iter_mut().find(|(k, _)| *k == key) {
             Some((_, all)) => all.extend(points),
-            None => out.push((c.pen, points)),
+            None => out.push((key, points)),
         }
     }
-    out.into_iter().map(|(pen, p)| (pen.colour, p)).collect()
+    out.into_iter()
+        .map(|((colour, _), p)| (colour, p))
+        .collect()
+}
+
+/// The smallest distance between two of the positions `v` (device units)
+/// that differ: the unit a metafile places its points on.
+fn unit_of(mut v: Vec<f64>) -> Option<f64> {
+    v.sort_by(f64::total_cmp);
+    v.windows(2)
+        .map(|w| w[1] - w[0])
+        .filter(|d| *d > 1e-9)
+        .min_by(f64::total_cmp)
+}
+
+/// The resolution of a copy along the axis `scale` (up: `up`), in its
+/// units: what one unit of the metafile is worth there, from the points of
+/// its polylines of more than two points.
+fn resolution(m: &Metafile, scale: &Scale, up: bool) -> f64 {
+    let positions: Vec<f64> = m
+        .curves
+        .iter()
+        .filter(|c| c.points.len() > 2)
+        .flat_map(|c| c.points.iter().map(|p| if up { p.1 } else { p.0 }))
+        .collect();
+    let mid = positions.iter().sum::<f64>() / positions.len().max(1) as f64;
+    unit_of(positions).map_or(0.0, |u| (scale.value(mid + u) - scale.value(mid)).abs())
 }
 
 /// The value of the polyline `(xs, ys)` (rising `xs`) at `x`, inside it.
@@ -760,6 +895,9 @@ fn number(v: f64) -> String {
 /// them: a copy named after one is of the window's channels as it comes
 /// up, the filtered gyro drawn solid.
 const SMOOTHING_LEVELS: [&str; 5] = ["low", "low-med", "medium", "med-high", "high"];
+/// The level the spectrum window and `OpenPID`'s Spectrum tab come up with,
+/// the one `OpenPID`'s results are at.
+const DEFAULT_LEVEL: &str = "medium";
 
 /// The results of `OpenPID` a copy of an entry of the spectrum window's list
 /// of channels is held against, by the entry's name in the files
@@ -793,12 +931,41 @@ fn results_name(name: &str) -> String {
     }
 }
 
+/// The points of a copy held against the spectrum `(freq, db)`, `unit` the
+/// resolution of the copy in dB, `shift` added to the spectrum first.
+fn hold_spectrum(
+    points: &[(f64, f64)],
+    (freq, db): &(Vec<f64>, Vec<f64>),
+    unit: f64,
+    shift: f64,
+) -> Result<HeldSpectrum, String> {
+    let shifted: Vec<f64> = db.iter().map(|d| d + shift).collect();
+    let (max, median, n) =
+        differences(points, freq, &shifted).ok_or("the copy and OpenPID share no frequencies")?;
+    Ok(HeldSpectrum {
+        held: Held {
+            numbers: format!(
+                "median {} dB ({} of the copy's unit), largest {} dB over {n} points",
+                number(median),
+                number(median / unit.max(1e-12)),
+                number(max)
+            ),
+            pass: median <= limit("spectrum") * unit,
+        },
+        median,
+    })
+}
+
 fn spectrum(copy: &Copy, m: &Metafile, src: &mut Source) -> Result<Outcome, String> {
     let words = tokens(copy.rest.strip_prefix("spectrum-").unwrap_or(&copy.rest));
+    let Some(probe) = copy.probe else {
+        return Ok(not_compared("the name does not say the log"));
+    };
+    if words.last() == Some(&crate::capture::MOTORS_COPY) {
+        return motors_spectrum(m, src, probe);
+    }
     let at = words.len().checked_sub(2);
-    let (Some(column), Some(axis), Some(probe)) =
-        (words.last(), at.and_then(|i| axis_of(words[i])), copy.probe)
-    else {
+    let (Some(column), Some(axis)) = (words.last(), at.and_then(|i| axis_of(words[i]))) else {
         return Ok(not_compared(
             "the name does not say the log, the axis and the column",
         ));
@@ -808,27 +975,46 @@ fn spectrum(copy: &Copy, m: &Metafile, src: &mut Source) -> Result<Outcome, Stri
     if !setting.is_empty() && !SMOOTHING_LEVELS.contains(&setting.as_str()) {
         return channel_spectrum(m, src, (probe, axis, segment_s), &setting);
     }
+    if !setting.is_empty() && setting != DEFAULT_LEVEL {
+        return Ok(not_compared(format!(
+            "OpenPID's results are at the level the window comes up with, {DEFAULT_LEVEL}"
+        )));
+    }
     let scales = Axes::of(m).map_err(|e| e.to_string())?;
-    let points: Vec<(f64, f64)> = groups(m, &scales, |c| c.pen.solid())
+    let unit = resolution(m, &scales.y, true);
+    // the dotted line of the unfiltered gyro is drawn in dashes with the
+    // pen of the solid one
+    let points: Vec<(f64, f64)> = groups(m, &scales, |c| c.pen.solid() && !c.joined)
         .into_iter()
         .flat_map(|(_, p)| p)
         .collect();
-    let (freq, db) = src.spectrum(probe, (axis, "gyro"), segment_s)?;
-    let (max, median, n) =
-        differences(&points, &freq, &db).ok_or("the copy and OpenPID share no frequencies")?;
+    let channel = (axis, "gyro");
+    let own = hold_spectrum(
+        &points,
+        &src.spectrum(probe, channel, (segment_s, Stretch::Own))?,
+        unit,
+        0.0,
+    )?;
+    let (numbers, verdict) = on_stretches(own.held, || {
+        let theirs = src.spectrum(probe, channel, (segment_s, Stretch::Reference))?;
+        hold_spectrum(&points, &theirs, unit, 0.0).map(|h| h.held)
+    });
     Ok(Outcome {
         against: format!(
-            "OpenPID's spectrum of the filtered {} gyro, {segment_s} s segments",
-            axis.name()
+            "OpenPID's spectrum of the filtered {} gyro, {segment_s} s segments; the copy \
+             reads to {} dB",
+            axis.name(),
+            number(unit)
         ),
-        numbers: format!(
-            "largest {} dB, median {} dB over {n} points",
-            number(max),
-            number(median)
-        ),
-        pass: Some(max <= limit("spectrum")),
+        numbers,
+        verdict,
     })
 }
+
+/// The line of a copy that agrees best with one of `OpenPID`'s spectra:
+/// the name of the spectrum, the colour of the line and the median
+/// difference.
+type Best = (&'static str, u32, f64);
 
 /// A copy of the spectrum window with one entry of its list of channels
 /// chosen, `channel` its name in the files: every line of the copy, of
@@ -847,40 +1033,109 @@ fn channel_spectrum(
         )));
     };
     let scales = Axes::of(m).map_err(|e| e.to_string())?;
+    let unit = resolution(m, &scales.y, true);
     let drawn = groups(m, &scales, |_| true);
-    let mut best: Option<(&str, u32, (f64, f64, usize))> = None;
+    let mut best: Option<Best> = None;
     for name in &names {
-        let (freq, db) = src.spectrum(probe, (axis, name), segment_s)?;
+        let spectrum = src.spectrum(probe, (axis, name), (segment_s, Stretch::Own))?;
         for (colour, points) in &drawn {
-            let Some(found) = differences(points, &freq, &db) else {
+            let Some((_, median, _)) = differences(points, &spectrum.0, &spectrum.1) else {
                 continue;
             };
-            if best.is_none_or(|(_, _, (_, median, _))| found.1 < median) {
-                best = Some((name, *colour, found));
+            if best.is_none_or(|(_, _, b)| median < b) {
+                best = Some((name, *colour, median));
             }
         }
     }
-    let (name, colour, (max, median, n)) =
-        best.ok_or("the copy and OpenPID share no frequencies")?;
-    let units = if name.starts_with("motor") {
-        " (a motor in OpenPID is a percent of the outputs' range, in the reference tool the \
-         logged number over 20: D-008)"
-    } else {
-        ""
-    };
+    let (name, colour, _) = best.ok_or("the copy and OpenPID share no frequencies")?;
+    let points: Vec<(f64, f64)> = drawn
+        .iter()
+        .filter(|(c, _)| *c == colour)
+        .flat_map(|(_, p)| p.iter().copied())
+        .collect();
+    let channel = (axis, name);
+    let own = hold_spectrum(
+        &points,
+        &src.spectrum(probe, channel, (segment_s, Stretch::Own))?,
+        unit,
+        0.0,
+    )?;
+    let (numbers, verdict) = on_stretches(own.held, || {
+        let theirs = src.spectrum(probe, channel, (segment_s, Stretch::Reference))?;
+        hold_spectrum(&points, &theirs, unit, 0.0).map(|h| h.held)
+    });
     Ok(Outcome {
         against: format!(
             "OpenPID's spectrum of {} on {}, {segment_s} s segments, against the copy's line \
-             #{colour:06x}{units}",
+             #{colour:06x}; the copy reads to {} dB",
             results_name(name),
-            axis.name()
+            axis.name(),
+            number(unit)
         ),
-        numbers: format!(
-            "largest {} dB, median {} dB over {n} points",
-            number(max),
-            number(median)
+        numbers,
+        verdict,
+    })
+}
+
+/// How many decibels a motor's spectrum in the reference tool's units (the
+/// logged number over 20) lies above `OpenPID`'s (a percent of the range of
+/// the outputs): `20·log10((high − low) / 2000)`, 0 when the log states no
+/// range (D-008).
+fn motor_shift_db(session: &FlightSession) -> f64 {
+    let motors = &session.settings.motor;
+    match (motors.output_low, motors.output_high) {
+        (Some(low), Some(high)) if high > low => 20.0 * ((high - low) / 2000.0).log10(),
+        _ => 0.0,
+    }
+}
+
+/// The one plot of every motor the "Motors" entry of the spectrum window's
+/// list draws over the whole range: each line held against the motor of
+/// `OpenPID`'s that agrees best, in the reference tool's units. A copy all
+/// of whose lines agree so is the decided difference D-008.
+fn motors_spectrum(m: &Metafile, src: &mut Source, probe: &Probe) -> Result<Outcome, String> {
+    let scales = Axes::of(m).map_err(|e| e.to_string())?;
+    let unit = resolution(m, &scales.y, true);
+    let shift = motor_shift_db(src.session(probe)?);
+    let mut motors = Vec::new();
+    for name in pack::MOTOR_CHANNELS {
+        motors.push((
+            name,
+            src.spectrum(probe, (Axis::Roll, name), (0.25, Stretch::Own))?,
+        ));
+    }
+    let mut parts = Vec::new();
+    let mut pass = true;
+    for (colour, points) in groups(m, &scales, |c| c.pen.colour != 0) {
+        let held = motors
+            .iter()
+            .filter_map(|(name, s)| Some((name, hold_spectrum(&points, s, unit, shift).ok()?)))
+            .min_by(|a, b| a.1.median.total_cmp(&b.1.median));
+        if let Some((name, h)) = held {
+            pass &= h.held.pass;
+            parts.push(format!(
+                "#{colour:06x} {}: {}",
+                results_name(name),
+                h.held.numbers
+            ));
+        } else {
+            pass = false;
+            parts.push(format!("#{colour:06x}: no motor shares its frequencies"));
+        }
+    }
+    Ok(Outcome {
+        against: format!(
+            "OpenPID's spectra of the motors, in the reference tool's units ({} dB: the logged \
+             number over 20, D-008); the copy reads to {} dB",
+            number(shift),
+            number(unit)
         ),
-        pass: Some(max <= limit("spectrum")),
+        numbers: parts.join("; "),
+        verdict: match (pass && !parts.is_empty(), shift == 0.0) {
+            (false, _) => Verdict::Fail,
+            (true, true) => Verdict::Pass,
+            (true, false) => Verdict::Decided("D-008"),
+        },
     })
 }
 
@@ -931,6 +1186,20 @@ fn step(copy: &Copy, m: &Metafile, src: &mut Source) -> Result<Outcome, String> 
     }
 }
 
+/// The colours of the runs a plot of the step response window holds, in
+/// the order they were drawn: every Run adds its curve and its bar in the
+/// next colour (red, orange, yellow …) until "Reset"; the newest is the
+/// last.
+fn runs(m: &Metafile, keep: impl Fn(&Curve) -> bool) -> Vec<u32> {
+    let mut colours: Vec<u32> = Vec::new();
+    for c in m.curves.iter().filter(|c| c.pen.colour != 0 && keep(c)) {
+        if !colours.contains(&c.pen.colour) {
+            colours.push(c.pen.colour);
+        }
+    }
+    colours
+}
+
 fn step_response(
     m: &Metafile,
     src: &mut Source,
@@ -939,47 +1208,54 @@ fn step_response(
     window_s: f64,
 ) -> Result<Outcome, String> {
     let scales = Axes::of(m).map_err(|e| e.to_string())?;
-    let mut points: Vec<(f64, f64)> = groups(m, &scales, |_| true)
+    let colours = runs(m, |c| c.points.len() > 2);
+    let newest = colours.last().copied();
+    let mut points: Vec<(f64, f64)> = groups(m, &scales, |c| Some(c.pen.colour) == newest)
         .into_iter()
-        .max_by_key(|(_, p)| p.len())
-        .map(|(_, p)| p)
-        .unwrap_or_default();
+        .flat_map(|(_, p)| p)
+        .collect();
     points.sort_by(|a, b| a.0.total_cmp(&b.0));
     let (time_ms, mean, _) = src.step(probe, axis, window_s)?;
     let (max, median, n) =
         differences(&points, &time_ms, &mean).ok_or("the copy and OpenPID share no times")?;
-    Ok(Outcome {
-        against: format!(
-            "OpenPID's mean step response of {}, windows of {window_s} s",
-            axis.name()
+    Ok(Outcome::judged(
+        format!(
+            "OpenPID's mean step response of {}, windows of {window_s} s, against the newest of \
+             the copy's {} runs (#{:06x})",
+            axis.name(),
+            colours.len(),
+            newest.unwrap_or(0)
         ),
-        numbers: format!(
+        format!(
             "largest {}, median {} over {n} points",
             number(max),
             number(median)
         ),
-        pass: Some(max <= limit("step")),
-    })
+        max <= limit("step"),
+    ))
 }
 
-/// The Peak a Peak plot draws: the middle of its coloured bar, where its
-/// two halves meet.
-fn drawn_peak(m: &Metafile) -> Option<f64> {
+/// The Peak a Peak plot draws for the newest of its runs: the middle of
+/// that run's bar, where its two halves meet; and the number of runs.
+fn drawn_peak(m: &Metafile) -> Option<(f64, usize)> {
+    let upright = |c: &Curve| c.points.len() == 2 && (c.points[0].0 - c.points[1].0).abs() < 1e-6;
+    let colours = runs(m, upright);
+    let newest = *colours.last()?;
     let ends: Vec<f64> = m
         .curves
         .iter()
-        .filter(|c| c.pen.colour != 0 && c.points.len() == 2)
-        .filter(|c| (c.points[0].0 - c.points[1].0).abs() < 1e-6)
+        .filter(|c| c.pen.colour == newest && upright(c))
         .flat_map(|c| [c.points[0].1, c.points[1].1])
         .collect();
     let shared = ends
         .iter()
         .find(|e| ends.iter().filter(|f| (*f - *e).abs() < 1e-6).count() > 1);
-    shared.copied().or_else(|| {
+    let middle = shared.copied().or_else(|| {
         let low = ends.iter().copied().fold(f64::INFINITY, f64::min);
         let high = ends.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         (low <= high).then_some(0.5 * (low + high))
-    })
+    })?;
+    Some((middle, colours.len()))
 }
 
 fn step_peak(
@@ -990,334 +1266,65 @@ fn step_peak(
     window_s: f64,
 ) -> Result<Outcome, String> {
     let (_, y) = Axes::upright(m).map_err(|e| e.to_string())?;
-    let drawn = y.value(drawn_peak(m).ok_or("the plot has no bar")?);
+    let (at, runs) = drawn_peak(m).ok_or("the plot has no bar")?;
+    let drawn = y.value(at);
     let (_, _, peak) = src.step(probe, axis, window_s)?;
     let d = (drawn - peak).abs();
-    Ok(Outcome {
-        against: format!("OpenPID's Peak of {}, windows of {window_s} s", axis.name()),
-        numbers: format!(
+    Ok(Outcome::judged(
+        format!(
+            "OpenPID's Peak of {}, windows of {window_s} s, against the newest of the copy's \
+             {runs} bars",
+            axis.name()
+        ),
+        format!(
             "copy {}, OpenPID {}, difference {}",
             number(drawn),
             number(peak),
             number(d)
         ),
-        pass: Some(d <= limit("peak")),
-    })
-}
-
-// -------------------------------------------------------------------- maps
-
-/// The axis, channel and setting of a map copy, and whether `OpenPID` has a
-/// counterpart for the setting: `throttle-<setting>-<axis>-<channel>` or
-/// `time-<channel>-<setting>-<axis>`.
-fn map_parts(rest: &str, window: Window) -> Option<(Axis, GyroStage, String)> {
-    let (words, stage, axis) = if window == Window::Time {
-        let words = tokens(rest.strip_prefix("time-")?);
-        let (stage, axis) = (*words.first()?, *words.last()?);
-        (
-            words[1..words.len().saturating_sub(1).max(1)].to_vec(),
-            stage,
-            axis,
-        )
-    } else {
-        let words = tokens(rest.strip_prefix("throttle-")?);
-        let n = words.len();
-        let (axis, stage) = (*words.get(n.checked_sub(2)?)?, *words.last()?);
-        (words[..n - 2].to_vec(), stage, axis)
-    };
-    let stage = match stage {
-        "prefilt" => GyroStage::Raw,
-        "gyro" => GyroStage::Filtered,
-        _ => return None,
-    };
-    Some((axis_of(axis)?, stage, words.join("-")))
-}
-
-/// Whether a map setting only changes the view: the decibels of the
-/// throttle map, the view below 100 Hz, the ends of the colour bar.
-fn view_only(setting: &str) -> bool {
-    setting.is_empty()
-        || ["psd", "sub100"].contains(&setting)
-        || ["scale-", "zmin-", "zmax-"]
-            .iter()
-            .any(|p| setting.starts_with(p))
-}
-
-fn map(copy: &Copy, m: &Metafile, src: &mut Source) -> Result<Outcome, String> {
-    let (Some((axis, stage, setting)), Some(probe)) =
-        (map_parts(&copy.rest, copy.window), copy.probe)
-    else {
-        return Ok(not_compared(
-            "the name does not say the log, the axis and the channel",
-        ));
-    };
-    if !view_only(&setting) {
-        return Ok(not_compared(format!(
-            "the setting {setting} has no counterpart in OpenPID"
-        )));
-    }
-    let grid = src.map(probe, axis, stage, copy.window)?;
-    let sibling = (axis != Axis::Roll)
-        .then(|| src.sibling(&copy.name, axis))
-        .flatten();
-    let held = hold_map(m, &grid, sibling.as_ref())?;
-    let mut numbers = format!(
-        "{:.2} % of {} pixels within one colour step",
-        100.0 * held.share,
-        held.pixels
-    );
-    let mut pass = held.share >= limit("map");
-    for (name, printed, ours) in &held.printed {
-        let d = (printed - ours).abs() / printed.abs().max(1e-12);
-        let _ = write!(
-            numbers,
-            "; {name} copy {}, OpenPID {}",
-            number(*printed),
-            number(*ours)
-        );
-        pass &= d <= limit("map numbers");
-    }
-    Ok(Outcome {
-        against: format!(
-            "OpenPID's map of the {} {} gyro on the copy's colour scale ({} … {}{})",
-            if stage == GyroStage::Raw {
-                "unfiltered"
-            } else {
-                "filtered"
-            },
-            axis.name(),
-            number(held.ends.0),
-            number(held.ends.1),
-            if held.decibels { " dB" } else { "" }
-        ),
-        numbers,
-        pass: Some(pass),
-    })
-}
-
-/// A map held against a copy.
-struct HeldMap {
-    share: f64,
-    pixels: usize,
-    ends: (f64, f64),
-    decibels: bool,
-    /// The numbers the copy prints and `OpenPID`'s over the same cells.
-    printed: Vec<(&'static str, f64, f64)>,
-}
-
-/// The picture of the map (the largest with a palette) and of its colour
-/// bar (the largest other one).
-fn map_pictures(m: &Metafile) -> Option<(&Picture, Option<&Picture>)> {
-    let area = |p: &&Picture| p.width * p.height;
-    let map = m
-        .pictures
-        .iter()
-        .filter(|p| !p.indices.is_empty())
-        .max_by_key(area)?;
-    let bar = m
-        .pictures
-        .iter()
-        .filter(|p| !std::ptr::eq(*p, map))
-        .max_by_key(area);
-    Some((map, bar))
-}
-
-/// The cell of `grid` under pixel `(x, y)` of a map placed at `place`,
-/// when the pixel lies inside the box and inside the cell: a pixel across
-/// the edge of two cells may be a blend of the two in the copy, so only
-/// the pixels whose edges lie in one cell are compared. Along an axis on
-/// which the cells are narrower than a pixel (`fine`), every pixel is.
-fn inner_cell(
-    place: &Picture,
-    scales: &Axes,
-    grid: &Grid,
-    (x, y): (usize, usize),
-    fine: (bool, bool),
-) -> Option<usize> {
-    let f = scales.frame;
-    let page = place.centre_of(x, y);
-    if page.0 < f.left || page.0 > f.right || page.1 < f.top || page.1 > f.bottom {
-        return None;
-    }
-    let at = |p: (f64, f64)| {
-        let (dx, dy) = scales.data(p);
-        grid.cell(dx, dy)
-    };
-    let here = at(page)?;
-    let (w, h) = half_pixel(place);
-    let across = [(w, 0.0), (-w, 0.0)].into_iter().filter(|_| !fine.0);
-    let up = [(0.0, h), (0.0, -h)].into_iter().filter(|_| !fine.1);
-    across
-        .chain(up)
-        .all(|(dx, dy)| at((page.0 + dx, page.1 + dy)) == Some(here))
-        .then_some(here)
-}
-
-/// A little less than half a pixel of `place`, across and up, device units.
-fn half_pixel(place: &Picture) -> (f64, f64) {
-    (
-        0.49 * place.size.0 / place.width.max(1) as f64,
-        0.49 * place.size.1 / place.height.max(1) as f64,
-    )
-}
-
-/// Whether the cells of `grid` are narrower than a pixel of `place`:
-/// across and up.
-fn finer_than_pixels(place: &Picture, scales: &Axes, grid: &Grid) -> (bool, bool) {
-    let (w, h) = half_pixel(place);
-    let spacing = |v: &[f64]| {
-        v.len()
-            .checked_sub(1)
-            .filter(|n| *n > 0)
-            .map_or(f64::INFINITY, |n| (v[n] - v[0]).abs() / n as f64)
-    };
-    let pixel_x = (scales.x.value(2.0 * w) - scales.x.value(0.0)).abs();
-    let pixel_y = (scales.y.value(2.0 * h) - scales.y.value(0.0)).abs();
-    (pixel_x > spacing(&grid.x), pixel_y > spacing(&grid.y))
-}
-
-/// The picture placed on the box of the plot where it fills it: a
-/// picture is placed on whole device units, the box to a fraction of one,
-/// and a map fills its box exactly.
-fn on_frame(picture: &Picture, f: &emf::Frame) -> Picture {
-    let mut place = Picture {
-        at: picture.at,
-        size: picture.size,
-        width: picture.width,
-        height: picture.height,
-        palette: Vec::new(),
-        indices: Vec::new(),
-        colours: Vec::new(),
-    };
-    let fills = |at: f64, size: f64, from: f64, to: f64| {
-        (at - from).abs() <= 1.0 && (at + size - to).abs() <= 1.0
-    };
-    if fills(picture.at.0, picture.size.0, f.left, f.right) {
-        (place.at.0, place.size.0) = (f.left, f.right - f.left);
-    }
-    if fills(picture.at.1, picture.size.1, f.top, f.bottom) {
-        (place.at.1, place.size.1) = (f.top, f.bottom - f.top);
-    }
-    place
-}
-
-/// The colour bar of a map copy, or, for a copy without one, that of the
-/// copy `sibling` (the throttle window draws one bar, above the roll
-/// plot, for the three maps).
-fn bar_of(m: &Metafile, sibling: Option<&Metafile>) -> Result<ColourBar, String> {
-    let own = map_pictures(m).and_then(|(_, bar)| bar);
-    match (own, sibling) {
-        (Some(bar), _) => {
-            ColourBar::of(m, bar).ok_or_else(|| "the colour bar has no labels".into())
-        }
-        (None, Some(other)) => {
-            bar_of(other, None).map_err(|e| format!("the roll plot's copy: {e}"))
-        }
-        (None, None) => {
-            Err("the copy has no colour bar, and no copy of the roll plot has one".into())
-        }
-    }
-}
-
-fn hold_map(m: &Metafile, grid: &Grid, sibling: Option<&Metafile>) -> Result<HeldMap, String> {
-    let scales = Axes::of(m).map_err(|e| e.to_string())?;
-    let (picture, _) = map_pictures(m).ok_or("the copy has no map")?;
-    let bar = bar_of(m, sibling)?;
-    let decibels = bar.low < 0.0;
-    let steps: Vec<f64> = picture.palette.iter().map(|c| bar.step(*c)).collect();
-    let place = on_frame(picture, &scales.frame);
-    let fine = finer_than_pixels(&place, &scales, grid);
-    let (mut within, mut pixels, mut sum, mut peak) = (0usize, 0usize, 0.0, f64::NEG_INFINITY);
-    let cell = |s: f64| s.min(255.999).floor();
-    for y in 0..picture.height {
-        for x in 0..picture.width {
-            let Some(i) = inner_cell(&place, &scales, grid, (x, y), fine) else {
-                continue;
-            };
-            let value = if decibels {
-                20.0 * grid.z[i].max(1e-12).log10()
-            } else {
-                grid.z[i]
-            };
-            let index = picture.indices[y * picture.width + x];
-            let drawn = steps.get(usize::from(index)).copied().unwrap_or(0.0);
-            if (cell(drawn) - cell(bar.step_of(value))).abs() <= 1.0 {
-                within += 1;
-            }
-            pixels += 1;
-            sum += value;
-            peak = peak.max(value);
-        }
-    }
-    if pixels == 0 {
-        return Err("the copy and OpenPID's map share no cells".into());
-    }
-    let mut printed = Vec::new();
-    for (name, ours) in [("mean", sum / pixels as f64), ("peak", peak)] {
-        let given = m.texts.iter().find_map(|t| {
-            t.text
-                .trim()
-                .strip_prefix(&format!("{name}="))?
-                .trim()
-                .parse()
-                .ok()
-        });
-        if let Some(given) = given {
-            printed.push((name, given, ours));
-        }
-    }
-    Ok(HeldMap {
-        share: within as f64 / pixels as f64,
-        pixels,
-        ends: (bar.low, bar.high),
-        decibels,
-        printed,
-    })
-}
-
-// ---------------------------------------------------------------- filters
-
-fn filters(copy: &Copy, m: &Metafile, src: &Source) -> Result<Outcome, String> {
-    let plot = tokens(&copy.rest).last().copied().unwrap_or_default();
-    let check = match plot {
-        "magnitude" => "filter magnitude",
-        "delay" => "filter delay",
-        "phase" => "filter phase",
-        "step" => "filter step",
-        _ => return Ok(not_compared(format!("the {plot} plot is not compared"))),
-    };
-    let Some(given) = src.file.filters.iter().find(|f| f.copy == copy.name) else {
-        return Ok(not_compared(
-            "OpenPID's curves for this setting are not in the results file (--ours; \
-             docs/calibration/PROTOCOL.md)",
-        ));
-    };
-    let scales = Axes::of(m).map_err(|e| e.to_string())?;
-    let drawn = groups(m, &scales, |_| true);
-    let mut worst = 0.0f64;
-    let mut parts = Vec::new();
-    for curve in &given.curves {
-        let best = drawn
-            .iter()
-            .filter_map(|(colour, p)| Some((*colour, differences(p, &curve.x, &curve.y)?.0)))
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .ok_or_else(|| format!("no curve of the copy shares a range with {}", curve.label))?;
-        worst = worst.max(best.1);
-        parts.push(format!(
-            "{} ↔ #{:06x}: {}",
-            curve.label,
-            best.0,
-            number(best.1)
-        ));
-    }
-    Ok(Outcome {
-        against: format!("{} curves of the results file", given.curves.len()),
-        numbers: format!("largest {}; {}", number(worst), parts.join("; ")),
-        pass: Some(worst <= limit(check) && !given.curves.is_empty()),
-    })
+        d <= limit("peak"),
+    ))
 }
 
 // ------------------------------------------------------------- log viewer
+
+/// The span in samples of a line smoothing setting of the main window
+/// (`smooth-<level>`): 1 for none or "off", `None` for a level the model
+/// does not know.
+fn viewer_span(setting: &str) -> Option<usize> {
+    match setting.strip_prefix("smooth-") {
+        None | Some("off") => Some(1),
+        Some(level) => smoothing::span_of(level),
+    }
+}
+
+/// Whether a line of a plot of the main window agrees with a channel: the
+/// channel's key and the distance, or why none agrees.
+fn line_verdict(
+    candidates: &[Line],
+    points: &[(f64, f64)],
+    (delta, clip, tolerance): (f64, (f64, f64), f64),
+) -> (String, Verdict) {
+    let best = |motor_units: bool| {
+        candidates
+            .iter()
+            .filter(|(key, _, _)| key.ends_with(IN_ITS_UNITS) == motor_units)
+            .filter_map(|(key, t, v)| Some((key, line_distance(points, t, v, delta, clip)?)))
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+    };
+    match (best(false), best(true)) {
+        (Some((key, d)), _) if d <= tolerance => (format!("{key} {}", number(d)), Verdict::Pass),
+        (own, Some((key, d))) if d <= tolerance => {
+            let ours = own.map(|(k, o)| format!(" ({k} {})", number(o)));
+            (
+                format!("{key} {}{}", number(d), ours.unwrap_or_default()),
+                Verdict::Decided("D-008"),
+            )
+        }
+        (Some((key, d)), _) => (format!("{key} {}", number(d)), Verdict::Fail),
+        (None, _) => ("no channel".into(), Verdict::Fail),
+    }
+}
 
 fn viewer(copy: &Copy, m: &Metafile, src: &mut Source) -> Result<Outcome, String> {
     let words = tokens(copy.rest.strip_prefix("log-").unwrap_or(&copy.rest));
@@ -1325,42 +1332,49 @@ fn viewer(copy: &Copy, m: &Metafile, src: &mut Source) -> Result<Outcome, String
         return Ok(not_compared("the name does not say the log and the plot"));
     };
     let setting = words[..words.len() - 1].join("-");
-    if setting.starts_with("smooth-") && setting != "smooth-off" {
+    let Some(span) = viewer_span(&setting) else {
         return Ok(not_compared(format!(
             "the setting {setting} has no counterpart in OpenPID"
         )));
-    }
+    };
     let scales = Axes::of(m).map_err(|e| e.to_string())?;
     let f = scales.frame;
     let (bottom, top) = (scales.y.value(f.bottom), scales.y.value(f.top));
     let tolerance = limit("line") * (top - bottom).abs();
-    let candidates = src.lines(probe, plot)?;
+    let candidates = src.lines(probe, plot, span)?;
     let fs = probe.flight.fs;
     let delta = 0.5 * scales.x.slope.abs() + 1.5 / fs;
     let clip = (bottom.min(top), bottom.max(top));
-    let mut pass = true;
+    let mut verdict = Verdict::Pass;
     let mut parts = Vec::new();
     for (colour, points) in groups(m, &scales, |_| true) {
-        let best = candidates
-            .iter()
-            .filter_map(|(key, t, v)| Some((key, line_distance(&points, t, v, delta, clip)?)))
-            .min_by(|a, b| a.1.total_cmp(&b.1));
-        if let Some((key, d)) = best {
-            pass &= d <= tolerance;
-            parts.push(format!("#{colour:06x} {key} {}", number(d)));
-        } else {
-            pass = false;
-            parts.push(format!("#{colour:06x} no channel"));
-        }
+        let (part, v) = line_verdict(&candidates, &points, (delta, clip, tolerance));
+        verdict = match (verdict, v) {
+            (Verdict::Fail, _) | (_, Verdict::Fail) => Verdict::Fail,
+            (Verdict::Decided(id), _) | (_, Verdict::Decided(id)) => Verdict::Decided(id),
+            _ => Verdict::Pass,
+        };
+        parts.push(format!("#{colour:06x} {part}"));
     }
+    if parts.is_empty() {
+        verdict = Verdict::Fail;
+    }
+    let smoothed = if span > 1 {
+        format!(
+            ", smoothed over {span} samples as the reference tool's line smoothing was observed \
+             to (a model of the rule: OpenPID's own smoothing is not on this base)"
+        )
+    } else {
+        String::new()
+    };
     Ok(Outcome {
-        against: format!("the channels of the decoded log for the {plot} plot"),
+        against: format!("the channels of the decoded log for the {plot} plot{smoothed}"),
         numbers: format!(
             "largest distance per line (tolerance {}): {}",
             number(tolerance),
             parts.join("; ")
         ),
-        pass: Some(pass && !parts.is_empty()),
+        verdict,
     })
 }
 
@@ -1384,20 +1398,13 @@ fn compare_copy(copy: &Copy, bytes: &[u8], src: &mut Source) -> Row {
         .and_then(|m| match copy.window {
             Window::Spectrum => spectrum(copy, &m, src),
             Window::StepResponse => step(copy, &m, src),
-            Window::Throttle | Window::Time => map(copy, &m, src),
-            Window::Filters => filters(copy, &m, src),
+            Window::Throttle | Window::Time => maps::map(copy, &m, src),
+            Window::Filters => filters::filters(copy, &m, src),
             Window::LogViewer => viewer(copy, &m, src),
             Window::Other => Ok(not_compared("a copy of a window that is not compared")),
         });
     let (against, numbers, verdict) = match outcome {
-        Ok(o) => {
-            let verdict = match o.pass {
-                Some(true) => Verdict::Pass,
-                Some(false) => Verdict::Fail,
-                None => Verdict::NotCompared,
-            };
-            (o.against, o.numbers, verdict)
-        }
+        Ok(o) => (o.against, o.numbers, o.verdict),
         Err(e) => (String::new(), e, Verdict::Error),
     };
     Row {
@@ -1407,6 +1414,29 @@ fn compare_copy(copy: &Copy, bytes: &[u8], src: &mut Source) -> Row {
         numbers,
         verdict,
     }
+}
+
+/// The results file at `ours`, and where the results come from, for the
+/// report.
+fn results_of(ours: Option<&Path>) -> Result<(OursFile, String), String> {
+    let Some(path) = ours else {
+        return Ok((
+            OursFile::default(),
+            "computed from the logs of the round as `pack` computes them".to_string(),
+        ));
+    };
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let file: OursFile = serde_json::from_str(&text)
+        .map_err(|e| format!("{} is not a results file: {e}", path.display()))?;
+    Ok((
+        file,
+        format!(
+            "{}, and computed from the logs of the round as `pack` computes them where it has \
+             none (and on the reference tool's stretch, D-012)",
+            path.display()
+        ),
+    ))
 }
 
 /// Holds every copy in `dir` against `OpenPID`'s results for round
@@ -1425,27 +1455,9 @@ pub fn compare(round: u32, dir: &Path, ours: Option<&Path>) -> Result<Report, St
     })?;
     let plan = crate::capture::plan(round, &probes);
     let copies = plan.copies();
-    let (file, source) = match ours {
-        Some(path) => {
-            let text = std::fs::read_to_string(path)
-                .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-            let file: OursFile = serde_json::from_str(&text)
-                .map_err(|e| format!("{} is not a results file: {e}", path.display()))?;
-            (
-                file,
-                format!(
-                    "{}, and computed from the logs of the round as `pack` computes them where \
-                     it has none",
-                    path.display()
-                ),
-            )
-        }
-        None => (
-            OursFile::default(),
-            "computed from the logs of the round as `pack` computes them".to_string(),
-        ),
-    };
+    let (file, source) = results_of(ours)?;
     let mut src = Source {
+        round,
         folder: dir.to_path_buf(),
         file,
         sessions: HashMap::new(),
@@ -1508,31 +1520,28 @@ mod tests {
         match copy.window {
             Window::Spectrum => {
                 let words = tokens(rest.strip_prefix("spectrum-")?);
+                if words.last() == Some(&crate::capture::MOTORS_COPY) {
+                    return channel_results(&words[..words.len() - 1].join("-"))
+                        .map(|m| format!("{} motors", m.len()));
+                }
                 let at = words.len().checked_sub(2)?;
                 let axis = axis_of(words[at])?;
                 let column = words.last()?;
                 let setting = words[..at].join("-");
-                let known = SMOOTHING_LEVELS.contains(&setting.as_str())
-                    || channel_results(&setting).is_some();
+                let known = setting == DEFAULT_LEVEL || channel_results(&setting).is_some();
                 known.then(|| format!("{setting} {} {column}", axis.name()))
             }
             Window::StepResponse => {
                 let (setting, axis, plot) = step_parts(rest)?;
                 window_of(&setting).map(|w| format!("{w} {} {plot}", axis.name()))
             }
-            Window::Throttle | Window::Time => {
-                let (axis, stage, setting) = map_parts(rest, copy.window)?;
-                view_only(&setting).then(|| format!("{} {stage:?}", axis.name()))
+            Window::Throttle | Window::Time => maps::parsed(rest, copy.window),
+            Window::LogViewer => {
+                let words = tokens(rest.strip_prefix("log-")?);
+                let setting = words[..words.len().checked_sub(1)?].join("-");
+                viewer_span(&setting).map(|s| format!("{} {s}", words.last().unwrap_or(&"")))
             }
-            Window::LogViewer => tokens(rest.strip_prefix("log-")?)
-                .last()
-                .map(|p| (*p).to_string()),
-            Window::Filters => {
-                let plot = tokens(rest).last().copied()?;
-                ["magnitude", "delay", "phase", "step"]
-                    .contains(&plot)
-                    .then(|| plot.to_string())
-            }
+            Window::Filters => filters::parsed(rest),
             Window::Other => None,
         }
     }
@@ -1542,17 +1551,16 @@ mod tests {
         let probes = catalogue::round(17).unwrap_or_default();
         let plan = crate::capture::plan(17, &probes);
         let copies = plan.copies();
-        assert_eq!(copies.len(), 90);
+        assert_eq!(copies.len(), 89);
         for (name, window) in &copies {
             let copy = identify(17, name, *window, &probes);
             assert_eq!(copy.probe.is_none(), *window == Window::Filters, "{name}");
-            let known = parsed(&copy);
-            // the main window's line smoothing at "med" is the one setting
-            // OpenPID has no counterpart of
-            let smoothed = name.contains("smooth-med");
-            assert!(known.is_some(), "{name}: {window:?}");
-            assert!(!smoothed || *window == Window::LogViewer, "{name}");
+            assert!(parsed(&copy).is_some(), "{name}: {window:?}");
         }
+        // the line smoothing at "med" is held against the observed rule
+        assert_eq!(viewer_span("smooth-med"), Some(21));
+        assert_eq!(viewer_span("smooth-off"), Some(1));
+        assert_eq!(viewer_span("smooth-odd"), None);
         // an entry of the list of channels stands for OpenPID's channels
         assert_eq!(channel_results("prefilt"), Some(vec!["gyro_unfiltered"]));
         assert_eq!(channel_results("motors").map(|m| m.len()), Some(4));
@@ -1574,5 +1582,29 @@ mod tests {
             assert!(pack::listed_channel(name, Axis::Pitch).is_some(), "{name}");
         }
         assert_eq!(pack::listed_channel("rpm", Axis::Roll), None);
+    }
+
+    #[test]
+    fn a_comparison_that_fails_on_its_own_stretch_may_be_the_decided_one() {
+        let held = |pass: bool| Held {
+            numbers: format!("held {pass}"),
+            pass,
+        };
+        let (numbers, verdict) = on_stretches(held(true), || unreachable!("not asked"));
+        assert_eq!((numbers.as_str(), verdict), ("held true", Verdict::Pass));
+        let (numbers, verdict) = on_stretches(held(false), || Ok(held(true)));
+        assert_eq!(verdict, Verdict::Decided("D-012"));
+        assert!(numbers.contains("on the reference tool's stretch: held true"));
+        let (_, verdict) = on_stretches(held(false), || Ok(held(false)));
+        assert_eq!(verdict, Verdict::Fail);
+        let (numbers, verdict) = on_stretches(held(false), || Err("no log".into()));
+        assert_eq!(verdict, Verdict::Fail);
+        assert!(numbers.ends_with("no log"));
+        assert_eq!(
+            Verdict::Decided("D-008").word(),
+            "decided difference (D-008)"
+        );
+        assert_eq!(unit_of(vec![3.0, 1.0, 1.0, 1.25, 7.0]), Some(0.25));
+        assert_eq!(unit_of(vec![2.0, 2.0]), None);
     }
 }

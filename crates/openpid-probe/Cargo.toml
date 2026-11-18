@@ -12,6 +12,7 @@ openpid-core = { workspace = true }
 openpid-dsp = { workspace = true }
 openpid-fmt-blackbox = { workspace = true }
 openpid-analysis = { workspace = true }
+openpid-sim = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -29,13 +29,14 @@ COMMANDS:
            Hold every vector copy (.emf) in <capture-results-dir> that the round's
            capture plan made against OpenPID's own result for the same log and
            setting, and write a Markdown report: one row per copy with its numbers
-           and PASS or FAIL against the tolerances, and a summary. OpenPID's results
-           are taken from --ours (the pack's ours.json, or a file of the schema in
-           docs/calibration/PROTOCOL.md) and computed from the round's logs, as pack
-           computes them, where the file has none. Without --out the report is
-           printed. Exits with 1 when a copy fails or cannot be read; a copy that is
-           not the plan's, or whose setting OpenPID has no counterpart for, is listed
-           as not compared.
+           and PASS or FAIL against the tolerances, or the decided difference
+           (DECISIONS.md) it agrees with once that is taken out, and a summary.
+           OpenPID's results are taken from --ours (the pack's ours.json, or a file
+           of the schema in docs/calibration/PROTOCOL.md) and computed from the
+           round's logs, at the app's default settings, where the file has none.
+           Without --out the report is printed. Exits with 1 when a copy fails or
+           cannot be read; a copy that is not the plan's, or whose setting OpenPID
+           has no counterpart for, is listed as not compared.
 
 ROUNDS:
     1 to 3   The spectrum. Round 3 is the hold-out: a flight as a craft flies it, which

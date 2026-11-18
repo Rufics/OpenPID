@@ -159,6 +159,11 @@ pub struct Curve {
     pub pen: Pen,
     /// Its points, device units: x to the right, y down.
     pub points: Vec<(f64, f64)>,
+    /// Drawn on from the current position (`EMR_POLYLINETO16`) rather than
+    /// as a polyline of its own: the dashes of a line the program breaks
+    /// up itself. The reference tool draws a dotted line so, with the pen
+    /// of the solid one beside it.
+    pub joined: bool,
 }
 
 /// A text as drawn.
@@ -222,6 +227,9 @@ pub struct Picture {
     pub indices: Vec<u8>,
     /// The colour of every pixel, `0xRRGGBB`, rows from the top.
     pub colours: Vec<u32>,
+    /// The bits of the coarsest of its three colour channels: 8 for a
+    /// picture with a palette or of 24 or 32 bits, 5 for one of 16.
+    pub depth: u32,
 }
 
 impl Picture {
@@ -494,6 +502,7 @@ impl Reader {
         self.out.curves.push(Curve {
             pen: self.state.pen,
             points,
+            joined: r.kind == POLYLINE_TO16,
         });
         Ok(())
     }
@@ -635,6 +644,11 @@ fn dib(info: &[u8], bits: &[u8]) -> Result<Picture, &'static str> {
     if bits.len() < stride * h.height {
         return Err("the pixels lie outside the record");
     }
+    let depth = match (h.bits, masks) {
+        (16, Some(m)) => m.iter().map(|c| c.count_ones()).min().unwrap_or(0).min(8),
+        (16, None) => 5,
+        _ => 8,
+    };
     let mut picture = Picture {
         at: (0.0, 0.0),
         size: (0.0, 0.0),
@@ -643,6 +657,7 @@ fn dib(info: &[u8], bits: &[u8]) -> Result<Picture, &'static str> {
         palette,
         indices: Vec::new(),
         colours: Vec::with_capacity(h.width * h.height),
+        depth,
     };
     for y in 0..h.height {
         let stored = if h.top_down { y } else { h.height - 1 - y };
@@ -1145,7 +1160,13 @@ impl ColourBar {
     /// The colour step of `colour`, 0 … 256 from the lower end: where on
     /// the path of the bar's colours it lies nearest.
     pub fn step(&self, colour: u32) -> f64 {
-        let p = rgb(colour);
+        self.step_rgb(rgb(colour))
+    }
+
+    /// The colour step of the colour `p` (three numbers 0 … 255, which may
+    /// lie between whole ones: the mean colour of a few pixels), as
+    /// [`ColourBar::step`].
+    pub fn step_rgb(&self, p: [f64; 3]) -> f64 {
         let mut best = (f64::INFINITY, 0.0);
         for pair in self.path.windows(2) {
             let ((a, sa), (b, sb)) = (pair[0], pair[1]);
@@ -1166,6 +1187,38 @@ impl ColourBar {
             [(_, only)] => only,
             _ => best.1,
         }
+    }
+
+    /// How many colour steps one level of a colour channel of `depth` bits
+    /// spans along the bar, at least one: the levels of such a channel are
+    /// `255 / (2^depth − 1)` apart, and the bar's colours move by the
+    /// typical change of their fastest channel each step. A picture of
+    /// 8-bit channels resolves every step; one of 16 bits (5 bits a
+    /// channel) on the reference tool's colour map resolves three.
+    pub fn steps_per_level(&self, depth: u32) -> f64 {
+        let n = self.path.len();
+        if n < 2 || depth == 0 || depth >= 8 {
+            return 1.0;
+        }
+        let per_entry = 256.0 / n as f64;
+        let mut moves: Vec<f64> = self
+            .path
+            .windows(2)
+            .map(|p| {
+                (0..3)
+                    .map(|k| (p[1].0[k] - p[0].0[k]).abs())
+                    .fold(0.0, f64::max)
+            })
+            .map(|m| m / per_entry)
+            .filter(|m| *m > 1e-9)
+            .collect();
+        if moves.is_empty() {
+            return 1.0;
+        }
+        moves.sort_by(f64::total_cmp);
+        let typical = moves[moves.len() / 2];
+        let level = 255.0 / f64::from((1u32 << depth) - 1);
+        (level / typical).round().max(1.0)
     }
 
     /// The colour step of `value`, 0 … 256: its share of the way from the

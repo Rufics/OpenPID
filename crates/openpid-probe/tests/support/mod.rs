@@ -354,6 +354,28 @@ impl Plot {
     }
 }
 
+impl Plot {
+    /// A curve drawn as the reference tool draws a dotted line: in dashes
+    /// of a few points from the current position (`EMR_POLYLINETO16`),
+    /// with a solid pen of `rgb`.
+    pub fn dashes(&self, w: &mut Writer, rgb: u32, points: &[(f64, f64)]) {
+        w.modify_transform([0.125, 0.0, 0.0, 0.125, 0.0, 0.0], 2);
+        let pen = w.pen(rgb, 24, 0x10200);
+        let logical: Vec<(i16, i16)> = points
+            .iter()
+            .map(|p| {
+                let (x, y) = self.page(*p);
+                ((x * 8.0).round() as i16, (y * 8.0).round() as i16)
+            })
+            .collect();
+        for chunk in logical.chunks(5) {
+            w.polyline(chunk, true);
+        }
+        w.delete(pen);
+        w.modify_transform([8.0, 0.0, 0.0, 8.0, 0.0, 0.0], 2);
+    }
+}
+
 /// The colour of step `s` (0 … 255) of a map: black, red, yellow, white.
 pub fn hot(s: usize) -> u32 {
     let ramp = |from: usize| ((s.saturating_sub(from)) * 3).min(255) as u32;

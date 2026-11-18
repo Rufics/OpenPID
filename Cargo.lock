@@ -1786,6 +1786,7 @@ dependencies = [
  "openpid-core",
  "openpid-dsp",
  "openpid-fmt-blackbox",
+ "openpid-sim",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

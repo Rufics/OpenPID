@@ -46,6 +46,11 @@ mod step_at {
     /// The first log of the list; the next ones follow 37.9 pixels apart.
     pub const LOG: (u32, u32) = (3515, 177);
     pub const RUN: (u32, u32) = (3466, 821);
+    /// "Reset", beside "Run", which clears the plots of the earlier runs:
+    /// measured in round 17's picture of the window (`r17-e3-step-2k-step`,
+    /// 3686 × 2357 pixels; the button is pixels 3472 to 3633 across and
+    /// 767 to 830 down there).
+    pub const RESET: (u32, u32) = (3643, 821);
     pub const SMOOTHING_LIST: (u32, u32) = (3464, 1093);
     /// "off", "low", "medium", "high" of the open smoothing list.
     pub const SMOOTHING: [(&str, (u32, u32)); 4] = [
@@ -191,6 +196,12 @@ mod spectrum_at {
     pub const CHANNEL: (u32, u32) = (3515, 528);
     /// The distance between two rows of that list, tenths of a pixel.
     pub const CHANNEL_ROW_TENTHS: u32 = 381;
+    /// The one large plot the "Motors" entry of that list draws in place
+    /// of the six, left, top, right and bottom of its axes: measured in
+    /// round 17's picture of the window with the entry picked
+    /// (`r17-i1-chan-2k-spectrum-motors`, 3686 × 2357 pixels; the axes are
+    /// pixels 184 to 3132 across and 141 to 2121 down there).
+    pub const MOTORS_PLOT: (u32, u32, u32, u32) = (189, 145, 3212, 2184);
 
     /// The middle of row `row` (from 0) of the list of channels.
     pub fn channel(row: usize) -> (u32, u32) {
@@ -219,6 +230,9 @@ pub const SPECTRUM_CHANNELS: [(&str, &str, bool); 11] = [
     ("motors", "Motors", true),
     ("debug", "debug", true),
 ];
+/// The name in the files of the copy of the one plot the "Motors" entry
+/// draws: the eight motors over the whole range.
+pub const MOTORS_COPY: &str = "all";
 /// The lower end of the spectrum plots round 17 types for the other
 /// channels, dB, and the one the window comes up with: the floor of a
 /// motor line, the logged number over 20, lies near -67 dB.
@@ -2550,8 +2564,10 @@ pub fn channel_file(round: u32, probe: &str, channel: &str, plot: &str) -> Strin
 /// Run and a picture of the window with its list as it comes up; then
 /// every entry of [`SPECTRUM_CHANNELS`] picked in turn, a Run and a picture
 /// after each pick, and the plots of roll copied, below 100 Hz and over
-/// the whole range, for the entries `OpenPID` has a counterpart of. "Gyro"
-/// is picked again at the end, and the lower end typed back.
+/// the whole range, for the entries `OpenPID` has a counterpart of; the
+/// "Motors" entry draws one large plot of every motor in place of the six,
+/// which is copied alone ([`MOTORS_COPY`]). "Gyro" is picked again at the
+/// end, and the lower end typed back.
 fn spectrum_channels(steps: &mut Vec<Step>, round: u32, id: &str, row: usize) {
     let at = |name: &str, position: (u32, u32)| click(SPECTRUM, "shot", name, position);
     let y = log_row(spectrum_at::LOG.1, row);
@@ -2573,7 +2589,10 @@ fn spectrum_channels(steps: &mut Vec<Step>, round: u32, id: &str, row: usize) {
         steps.push(at("Run", spectrum_at::RUN));
         steps.push(settle(SPECTRUM, Some(20.0), 1.2));
         steps.push(shot(SPECTRUM, channel_file(round, id, name, "")));
-        if copied {
+        if copied && name == "motors" {
+            let file = channel_file(round, id, name, MOTORS_COPY);
+            copy_axes(steps, SPECTRUM, "motors", spectrum_at::MOTORS_PLOT, file);
+        } else if copied {
             for column in [1, 0] {
                 let plot = format!("{}-{}", AXES[0], COLUMNS[column]);
                 copy_plot(steps, 0, column, channel_file(round, id, name, &plot));
@@ -2604,11 +2623,14 @@ fn maps_as_they_come(steps: &mut Vec<Step>, round: u32, id: &str, row: usize) {
     time_channel(steps, TIME_CHANNELS[0]);
 }
 
-/// A log of the step response window as the window comes up: chosen in
-/// row `row` of its list, a Run, a picture, and copies of the response and
-/// the Peak of the three axes.
+/// A log of the step response window as the window comes up: the plots of
+/// the earlier runs cleared ("Reset"; every Run adds a curve of its own to
+/// them otherwise), the log chosen in row `row` of its list, a Run, a
+/// picture, and copies of the response and the Peak of the three axes.
 fn step_as_it_comes(steps: &mut Vec<Step>, round: u32, id: &str, row: usize) {
     let log = StepLog { round, id };
+    steps.push(step_click("Reset", step_at::RESET));
+    steps.push(pause(1500));
     log.choose(steps, row);
     log.run(steps, Some(""));
     log.copies(steps, "", &NINE[..2]);
@@ -5535,7 +5557,7 @@ mod tests {
         assert_eq!(shots.len(), 41);
 
         let copies = names_of(&plan, "clip_save");
-        assert_eq!(copies.len(), 90);
+        assert_eq!(copies.len(), 89);
         // the most valuable first: the flights made for no question and the
         // channels, then the stick's path, then the leftovers of round 16
         let first = |part: &str| copies.iter().position(|c| c.contains(part)).unwrap();
@@ -5561,7 +5583,32 @@ mod tests {
         );
         let count = |part: &str| copies.iter().filter(|c| c.contains(part)).count();
         assert_eq!(count("e1-spec-1k"), 6);
-        assert_eq!(count("i1-chan-2k"), 20);
+        // nine entries with two plots each, and the one plot of the motors
+        assert_eq!(count("i1-chan-2k"), 19);
+        assert!(copies.contains(&"r17-i1-chan-2k-spectrum-motors-all"));
+        // the step response window cleared before each of its logs
+        let resets: Vec<usize> = plan
+            .steps
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.name.as_deref() == Some("Reset"))
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(resets.len(), 3);
+        for (i, id) in resets
+            .iter()
+            .zip(["e3-step-2k", "e4-step-8k", "j1-path-2k"])
+        {
+            let chosen = plan.steps[*i..]
+                .iter()
+                .find(|s| s.name.as_deref().is_some_and(|n| n.starts_with("log ")));
+            assert_eq!(
+                chosen.and_then(|s| s.name.as_deref()),
+                Some(format!("log {id}").as_str())
+            );
+            assert_eq!(plan.steps[*i].at, Some(step_at::RESET));
+            assert_eq!(plan.steps[*i].window, Some(STEP));
+        }
         assert_eq!(count("e5-maps-2k"), 12);
         assert_eq!(count("e3-step-2k"), 6);
         assert_eq!(count("e6-view-2k"), 4);
@@ -5577,7 +5624,7 @@ mod tests {
         let note = String::from_utf8_lossy(&files[2].1).into_owned();
         let minutes = (plan.seconds() / 60.0).ceil() as usize;
         assert!(note.contains(&format!("{minutes} minutes")), "{note}");
-        assert!(note.contains("41 pictures") && note.contains("90 plots"));
+        assert!(note.contains("41 pictures") && note.contains("89 plots"));
     }
 
     #[test]
@@ -5607,7 +5654,14 @@ mod tests {
                 assert!(between.iter().any(|s| s.name.as_deref() == Some("Run")));
                 assert_eq!(between.iter().filter(|s| s.action == "shot").count(), 1);
                 let copied = between.iter().filter(|s| s.action == "clip_save").count();
-                assert_eq!(copied, if SPECTRUM_CHANNELS[k].2 { 2 } else { 0 }, "{k}");
+                let (name, _, plots) = SPECTRUM_CHANNELS[k];
+                let want = match (plots, name) {
+                    (false, _) => 0,
+                    // the one large plot of the motors
+                    (true, "motors") => 1,
+                    (true, _) => 2,
+                };
+                assert_eq!(copied, want, "{k}");
             }
         }
         // the rows: the first two at the highlighted rows of round 16's

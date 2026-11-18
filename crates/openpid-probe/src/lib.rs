@@ -29,6 +29,8 @@
 //!   as, and the calibration of a plot's axes from its ticks.
 //! - [`compare`]: the copies of a round held against `OpenPID`'s own
 //!   results for the same logs (`openpid-probe compare`).
+//! - [`smoothing`]: the line smoothing of the reference tool's main window
+//!   as observed, which `compare` holds those copies against.
 //! - [`cli`]: the command line of the `openpid-probe` binary.
 
 pub mod capture;
@@ -39,6 +41,7 @@ pub mod emf;
 pub mod model;
 pub mod pack;
 pub mod signal;
+pub mod smoothing;
 pub mod step_model;
 pub mod truth;
 
