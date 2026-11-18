@@ -1099,8 +1099,8 @@ pub(crate) fn epoch_of(flight: &FlightSpec) -> Epoch {
 /// automatic trim (one second inside the first and the last moment in the
 /// air, by the throttle and the motor speeds), or the whole log where it
 /// has none. The packs of rounds up to [`SPECTRA_ONLY_UP_TO`] were
-/// computed on [`epoch_of`], a second off each end, which on a probe holds
-/// one sample more at the end.
+/// computed on the log without its first and last second, which on a probe
+/// holds one sample more at the end.
 pub fn app_epoch(session: &FlightSession) -> Epoch {
     openpid_analysis::epoch::auto(session).unwrap_or_else(|| {
         let t = &session.timebase.time_us;
