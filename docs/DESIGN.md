@@ -90,8 +90,9 @@ openpid/
 │  ├─ openpid-dsp/            # pure mathematics, no I/O
 │  ├─ openpid-analysis/       # analyses on top of core + dsp
 │  ├─ openpid-sim/            # filter simulation, signal generator
-│  ├─ openpid-fmt-blackbox/   # own binary Blackbox decoder
+│  ├─ openpid-fmt-blackbox/   # own binary Blackbox decoder, and a writer of Betaflight logs
 │  ├─ openpid-fmt-csv/        # CSV from blackbox_decode (compatibility)
+│  ├─ openpid-probe/          # calibration probes: flights of exactly known content (ADR-0006)
 │  ├─ openpid-cli/            # the `openpid` binary
 │  └─ openpid-app/            # the `openpid-gui` binary
 ├─ tests/
@@ -110,6 +111,7 @@ Dependency rules between the crates (checked in CI through `cargo deny` and an o
 - `dsp` depends only on `core` (for the unit types) and `rustfft`.
 - `fmt-*` depend only on `core`.
 - `analysis`, `sim` → `core`, `dsp`.
+- `probe` → `core`, `analysis`, `fmt-blackbox` (it writes its flights as logs and analyses them as any log); nothing depends on it.
 - `app`, `cli` → everything above; **nothing depends on `app`**.
 
 ---
