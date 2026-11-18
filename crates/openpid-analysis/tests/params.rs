@@ -3,8 +3,8 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 use openpid_analysis::{
-    Analysis, AnalysisCtx, AnalysisError, PsdAnalysis, PsdParams, StepAnalysis, StepParams,
-    StftAnalysis, StftParams, ThrottleHeatmap, ThrottleHeatmapParams,
+    Analysis, AnalysisCtx, AnalysisError, PsdAnalysis, PsdParams, StepAnalysis, StepMethod,
+    StepParams, StftAnalysis, StftParams, ThrottleHeatmap, ThrottleHeatmapParams,
 };
 use openpid_core::{Axis, ChannelId, GyroStage, LogFormat, OpenOptions};
 use openpid_dsp::Window;
@@ -136,10 +136,12 @@ fn validation_and_variants() {
             ..Default::default()
         }
     )));
+    // the parameters of the Wiener estimate (the division has none of them)
     assert!(matches!(
         StepAnalysis.run(
             &ctx,
             &StepParams {
+                method: StepMethod::Wiener,
                 window_s: 100.0,
                 response_s: 0.5,
                 ..Default::default()
@@ -151,6 +153,7 @@ fn validation_and_variants() {
         StepAnalysis.run(
             &ctx,
             &StepParams {
+                method: StepMethod::Wiener,
                 min_input: 1.0e6,
                 ..Default::default()
             }
@@ -161,6 +164,7 @@ fn validation_and_variants() {
     assert!(bad(StepAnalysis.run(
         &ctx,
         &StepParams {
+            method: StepMethod::Wiener,
             settle_range: (1.5, 0.5),
             ..Default::default()
         }
@@ -169,6 +173,7 @@ fn validation_and_variants() {
     match StepAnalysis.run(
         &ctx,
         &StepParams {
+            method: StepMethod::Wiener,
             min_input: 20.0,
             settle_range: (10.0, 11.0),
             ..Default::default()
@@ -183,6 +188,7 @@ fn validation_and_variants() {
         .run(
             &ctx,
             &StepParams {
+                method: StepMethod::Wiener,
                 axis: Axis::Roll,
                 min_input: 20.0,
                 smooth_ms: 5.0,
