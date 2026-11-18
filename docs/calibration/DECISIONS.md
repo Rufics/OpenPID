@@ -242,8 +242,8 @@ Taken by the owner on 2026-11-11:
 | The exact value | none: a choice of which part of a log is analysed |
 | Options | **A.** Keep the automatic stretch as the default, and add the reference tool's stretch as a choice beside it ("as the reference tool": from sample `fs + 2`, `fs·(T − 2) − 1` samples, a log of 10 s or less whole), so that a log can be put side by side with the reference tool exactly. **B.** The reference tool's stretch as the default, the automatic one as a choice: every number is the reference tool's out of the box, the time on the ground included. **C.** Keep it as it is and say so in the user guide |
 | Recommendation | A. The time on the ground is not the flight and does not belong in a spectrum or a map; the exact stretch as a choice makes the comparison with the reference tool (#176) exact without making OpenPID analyse the ground by default |
-| The owner's decision | |
-| Carried out by | |
+| The owner's decision | **A** (2026-11-18): the automatic trim stays the default; the reference tool's stretch is a choice beside it |
+| Carried out by | #200: "Without the first and last second" in the Auto menu and `--epoch ends` (`epoch::cut_ends`); a log of 10.5 s or less whole until a round narrows the switch |
 
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's

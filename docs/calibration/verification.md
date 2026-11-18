@@ -91,7 +91,9 @@ reference tool's stretch every copy agrees to its resolution. The step
 response is not affected. The automatic stretch is also a different rule
 on a flown log (it leaves out the time on the ground) and on a log under
 11 s (the reference tool takes it whole). What OpenPID should do is entry
-D-012 of [DECISIONS.md](DECISIONS.md).
+D-012 of [DECISIONS.md](DECISIONS.md): the owner kept the automatic
+stretch as the default and added the reference tool's as a choice
+(2026-11-18, #200). OpenPID's default is therefore unchanged by round 17.
 
 ## The tools
 
