@@ -539,8 +539,18 @@ fn step_response_matches_the_reference_tool() {
         // the division, OpenPID's default, is what the reference tool
         // computes: on these flown logs it takes the same windows to one
         // and reads the peak and the latency as the reference does (the logs
-        // run at 997 and 1013 Hz; OpenPID puts them on an even 1 kHz grid)
+        // run at 997 and 1013 Hz; OpenPID puts them on an even 1 kHz grid).
+        // The reference numbers are of version 0.9, which had no distance
+        // to the median: it is left out here
         let out = StepAnalysis.run(
+            &ctx,
+            &StepParams {
+                axis,
+                dist_to_median: false,
+                ..Default::default()
+            },
+        );
+        let web = StepAnalysis.run(
             &ctx,
             &StepParams {
                 axis,
@@ -556,7 +566,7 @@ fn step_response_matches_the_reference_tool() {
             },
         );
         let Some((n, peak, latency)) = reference else {
-            for out in [out, wiener] {
+            for out in [out, web, wiener] {
                 assert!(
                     matches!(out, Err(AnalysisError::NotEnoughData(_))),
                     "{name} {axis:?}: the reference has insufficient data, we have {:?}",
@@ -570,9 +580,10 @@ fn step_response_matches_the_reference_tool() {
         let ours_peak = out.spread.peak_mean;
         // the reference numbers are of version 0.9 of the tool, whose
         // windows were 0.1 s apart; since 0.94 they are 0.05 s apart, and
-        // so are ours: twice the windows
+        // so are ours: twice the windows, and the web edition's one more
+        // at the end of the stretch
         assert!(
-            out.windows_used.abs_diff(2 * n) <= 3,
+            out.windows_used.abs_diff(2 * n) <= 4,
             "{name} {axis:?}: {} windows, twice the reference's {n}",
             out.windows_used
         );
@@ -584,6 +595,15 @@ fn step_response_matches_the_reference_tool() {
         assert!(
             (ours_latency - latency).abs() <= 0.5,
             "{name} {axis:?}: SR latency {ours_latency:.2} ms, reference {latency}"
+        );
+        // the distance to the median leaves out the windows that settle
+        // far from the others: on these flights 0 … 8 of 26 … 160
+        let web = web.unwrap();
+        assert!(
+            web.windows_used <= out.windows_used && web.windows_used * 2 >= out.windows_used,
+            "{name} {axis:?}: {} windows near the median of {}",
+            web.windows_used,
+            out.windows_used
         );
         // the former estimate on the same logs: near, not the same
         let out = wiener.unwrap();

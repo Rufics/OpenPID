@@ -1,30 +1,36 @@
 //! The step response of an axis from windows of the flight, one spectral
 //! division per window ([`crate::StepMethod::Division`]).
 //!
-//! This is the rule found in the reference tool by comparing what it draws
-//! for synthetic logs of known content (decision D-002, issue #172), on
-//! arrays of samples:
+//! This is the rule of the web edition 1.0 of the reference tool (decision
+//! D-015), found by comparing what it draws for synthetic logs of known
+//! content; version 0.94 had the same rule without the padding to a power
+//! of two and without the distance to the median (decision D-002, issue
+//! #172). On arrays of samples:
 //!
 //! 1. the filtered gyro is smoothed by a local regression over 1, 5, 11 or
 //!    21 samples ([`SMOOTHING`]); the setpoint is not;
 //! 2. the samples are cut into windows of two seconds, a fortieth of a
-//!    window (0.05 s) apart ([`Windows`]);
-//! 3. in every window the setpoint and the gyro go through a Hann window
-//!    and are followed by 200 zeros; the gyro's transform is divided by the
+//!    window (0.05 s) apart, from the first sample on ([`Windows`]);
+//! 3. in every window the setpoint and the gyro go through a Hann window,
+//!    are followed by 200 zeros and padded with more zeros to a power of
+//!    two ([`padded_length`]); the gyro's transform is divided by the
 //!    setpoint's with a small constant in the denominator; the result, back
 //!    in time, is summed up, and its first half second is the window's
 //!    response ([`response`]);
 //! 4. a window counts when the stick was off its centre by 20 deg/s or more
-//!    on average ([`stick_moved`]), and when its response stays between 0.5
-//!    and 1.5 from 150 ms on ([`settled`]);
+//!    on average ([`stick_moved`]), when its response stays between 0.5
+//!    and 1.5 from 150 ms on ([`settled`]), and when the mean of that part
+//!    of its response lies within three scaled median absolute deviations
+//!    of the median over the windows that passed so far ([`near_median`]);
 //! 5. the curve is the mean of the windows that count, and the latency is
 //!    read from the windows ([`read`]).
 //!
 //! The peak is this program's own (decision D-003): the highest value of the
 //! whole curve, with the spread of the windows' highest values as its bar.
 //! The reference tool reads the peak in the first 150 ms of the curve and
-//! the bar among the first 150 samples of each window, so a response that
-//! tops later than that reads lower than it gets.
+//! the bar over the first 150 ms of each window (version 0.94: its first
+//! 150 samples), so a response that tops later than that reads lower than
+//! it gets.
 //!
 //! On plants whose step response is known in closed form the curve is the
 //! true response to a few thousandths.
@@ -46,15 +52,23 @@ pub const HOPS_PER_WINDOW: f64 = 40.0;
 pub const SHOWN_S: f64 = 0.5;
 /// The mean distance of the stick from its centre a window needs, deg/s.
 pub const STICK_MEAN: f64 = 20.0;
-/// Where a response has to stay from [`settled_from`] on.
-pub const SETTLED: (f64, f64) = (0.5, 1.5);
+/// The width of the band around 1 a response has to stay in from
+/// [`settled_from`] on: 0.5 … 1.5 ("SS width" in the reference tool).
+pub const SETTLED_WIDTH: f64 = 1.0;
+/// How many scaled median absolute deviations the mean of a settled
+/// response may lie from the median of them ("Dist. to median").
+pub const MEDIAN_DISTANCE: f64 = 3.0;
+/// The median absolute deviation times this is the standard deviation of a
+/// normal distribution.
+const MAD_SCALE: f64 = 1.4826;
 /// Zeros that follow a window before its transform: the same number at
 /// every log rate.
 const PAD: usize = 200;
 /// The constant in the denominator of the division, for transforms divided
-/// by their length.
+/// by the length of a window and its 200 zeros.
 const FLOOR: f64 = 1.0e-4;
-/// From here on a response has to stay inside [`SETTLED`], seconds.
+/// From here on a response has to stay inside the band of [`SETTLED_WIDTH`]
+/// around 1, seconds.
 const SETTLED_FROM_S: f64 = 0.15;
 /// The level at which the latency of a window is read.
 const LATENCY_LEVEL: f64 = 0.5;
@@ -79,18 +93,23 @@ pub struct Windows {
 
 impl Windows {
     /// The windows of `window_s` seconds of the `samples` samples that
-    /// start at sample `first`, at `fs`, a fortieth of a window apart. As
-    /// the reference tool counts them, a stretch of exactly one window holds
-    /// none: the count is the whole number of hops in what is left after one
-    /// window.
+    /// start at sample `first`, at `fs`, a fortieth of a window apart: the
+    /// first starts at the first sample, and every window that ends at the
+    /// last sample or before it counts. (Version 0.94 of the reference tool
+    /// had one window fewer: a stretch of exactly one window held none.)
     pub fn over(first: usize, samples: usize, fs: f64, window_s: f64) -> Windows {
         let length = ((window_s * fs).round() as usize).max(2);
         let hop = ((window_s / HOPS_PER_WINDOW * fs).round() as usize).max(1);
+        let count = if samples < length {
+            0
+        } else {
+            (samples - length) / hop + 1
+        };
         Windows {
             first,
             length,
             hop,
-            count: samples.saturating_sub(length) / hop,
+            count,
         }
     }
 
@@ -98,6 +117,14 @@ impl Windows {
     pub fn start(&self, index: usize) -> usize {
         self.first + index * self.hop
     }
+}
+
+/// The length of the transforms of a window of `length` samples: the
+/// window and its 200 zeros, padded with more zeros to the next power of
+/// two (the web edition of the reference tool; version 0.94 took the window
+/// and its 200 zeros alone).
+pub fn padded_length(length: usize) -> usize {
+    (length + PAD).next_power_of_two()
 }
 
 /// What the response of every window of one length is computed with: the
@@ -119,9 +146,10 @@ impl Divider {
         }
     }
 
-    /// The transform of a window through the Hann window, zeros after it.
+    /// The transform of a window through the Hann window, zeros after it
+    /// up to [`padded_length`].
     fn through(&self, x: &[f64]) -> Vec<Complex<f64>> {
-        let mut buf = vec![Complex::new(0.0, 0.0); self.hann.len() + PAD];
+        let mut buf = vec![Complex::new(0.0, 0.0); padded_length(self.hann.len())];
         for ((slot, v), hann) in buf.iter_mut().zip(x).zip(&self.hann) {
             slot.re = v * hann;
         }
@@ -133,8 +161,10 @@ impl Divider {
     fn response(&self, setpoint: &[f64], gyro: &[f64], points: usize) -> Vec<f64> {
         let input = self.through(setpoint);
         let mut output = self.through(gyro);
-        let padded = input.len();
-        let floor = FLOOR * (padded * padded) as f64;
+        // the transforms are divided by the window and its 200 zeros, not
+        // by their padded length
+        let divisor = (self.hann.len() + PAD) as f64;
+        let floor = FLOOR * divisor * divisor;
         for (y, x) in output.iter_mut().zip(&input) {
             *y = *y * x.conj() / (x.norm_sqr() + floor);
         }
@@ -173,12 +203,82 @@ pub fn settled_from(fs: f64) -> usize {
     (SETTLED_FROM_S * fs).round() as usize
 }
 
-/// Whether a `response` stays inside 0.5 … 1.5 from sample `from` on.
-pub fn settled(response: &[f64], from: usize) -> bool {
-    response.len() > from
-        && response[from..]
-            .iter()
-            .all(|v| *v > SETTLED.0 && *v < SETTLED.1)
+/// Whether a `response` stays inside `1 ± width/2` (both ends included)
+/// from sample `from` on.
+pub fn settled(response: &[f64], from: usize, width: f64) -> bool {
+    let band = 1.0 - width / 2.0..=1.0 + width / 2.0;
+    response.len() > from && response[from..].iter().all(|v| band.contains(v))
+}
+
+/// The mean of a `response` from sample `from` on: where it settles.
+fn settled_mean(response: &[f64], from: usize) -> f64 {
+    let tail = &response[from.min(response.len())..];
+    tail.iter().sum::<f64>() / tail.len() as f64
+}
+
+/// The median of `values`: the mean of the two middle ones for an even
+/// number; `NaN` for none.
+fn median(values: &[f64]) -> f64 {
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let n = sorted.len();
+    match n {
+        0 => f64::NAN,
+        _ if n % 2 == 1 => sorted[n / 2],
+        _ => f64::midpoint(sorted[n / 2 - 1], sorted[n / 2]),
+    }
+}
+
+/// Which of the `windows` lie near the others ("Dist. to median"): the
+/// mean of each response from sample `from` on, `v`, within `distance`
+/// times the scaled median absolute deviation, `1.4826·median|v − m|`, of
+/// their median `m`.
+pub fn near_median(windows: &[WindowResponse], from: usize, distance: f64) -> Vec<bool> {
+    let means: Vec<f64> = windows
+        .iter()
+        .map(|w| settled_mean(&w.response, from))
+        .collect();
+    let middle = median(&means);
+    let deviations: Vec<f64> = means.iter().map(|v| (v - middle).abs()).collect();
+    let limit = distance * MAD_SCALE * median(&deviations);
+    deviations.iter().map(|d| *d <= limit).collect()
+}
+
+/// Which windows count: the limits of a settled response.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Acceptance {
+    /// The first sample from which a response has to stay settled
+    /// ([`settled_from`]).
+    pub from: usize,
+    /// The width of the band around 1 it has to stay in ([`settled`]).
+    pub width: f64,
+    /// How far from the median of the others the mean of a settled
+    /// response may lie, in scaled median absolute deviations
+    /// ([`near_median`]); `None` for no such test.
+    pub median_distance: Option<f64>,
+}
+
+impl Acceptance {
+    /// The web edition's limits at `fs`: from 150 ms, 0.5 … 1.5, within
+    /// three deviations of the median.
+    pub fn at(fs: f64) -> Acceptance {
+        Acceptance {
+            from: settled_from(fs),
+            width: SETTLED_WIDTH,
+            median_distance: Some(MEDIAN_DISTANCE),
+        }
+    }
+
+    /// The `windows` that keep these limits, in their order.
+    pub fn keep(&self, mut windows: Vec<WindowResponse>) -> Vec<WindowResponse> {
+        windows.retain(|w| settled(&w.response, self.from, self.width));
+        if let Some(distance) = self.median_distance {
+            let near = near_median(&windows, self.from, distance);
+            let mut near = near.into_iter();
+            windows.retain(|_| near.next().unwrap_or(false));
+        }
+        windows
+    }
 }
 
 /// Samples of the response that is kept, at `fs`: half a second and its
@@ -258,10 +358,10 @@ fn spread(values: &[f64]) -> (f64, f64) {
     (mean, var.sqrt())
 }
 
-/// The [`Reading`] of the windows of [`candidates`]: those whose response
-/// stays inside 0.5 … 1.5 from sample `from` on count.
-pub fn read(mut windows: Vec<WindowResponse>, fs: f64, from: usize) -> Reading {
-    windows.retain(|w| settled(&w.response, from));
+/// The [`Reading`] of the windows of [`candidates`]: those that keep the
+/// limits of `acceptance` count.
+pub fn read(windows: Vec<WindowResponse>, fs: f64, acceptance: &Acceptance) -> Reading {
+    let windows = acceptance.keep(windows);
     let points = shown(fs);
     let n = windows.len() as f64;
     let mean: Vec<f64> = (0..points)
@@ -350,24 +450,165 @@ mod tests {
 
     #[test]
     fn the_windows_of_a_stretch() {
-        // 30 s at 2 kHz less its first and last second and one sample
-        let w = Windows::over(2002, 55_999, 2000.0, 2.0);
-        assert_eq!((w.first, w.length, w.hop, w.count), (2002, 4000, 100, 519));
-        assert_eq!(w.start(518), 53_802);
+        // the web edition's stretch of a 30 s log at 2 kHz: samples 2 000 to
+        // 58 000, both included
+        let w = Windows::over(2000, 56_001, 2000.0, 2.0);
+        assert_eq!((w.first, w.length, w.hop, w.count), (2000, 4000, 100, 521));
+        // the last window ends at the stretch's last sample or before it,
+        // the next would end after it
+        assert_eq!(w.start(520) + w.length - 1, 57_999);
+        assert!(w.start(521) + w.length - 1 > 58_000);
         // the same seconds at other rates give the same number of windows
-        assert_eq!(Windows::over(1002, 27_999, 1000.0, 2.0).count, 519);
-        assert_eq!(Windows::over(4002, 111_999, 4000.0, 2.0).count, 519);
-        // exactly one window, or less, holds none
-        assert_eq!(Windows::over(0, 4000, 2000.0, 2.0).count, 0);
+        assert_eq!(Windows::over(1000, 28_001, 1000.0, 2.0).count, 521);
+        assert_eq!(Windows::over(4000, 112_001, 4000.0, 2.0).count, 521);
+        // exactly one window holds one, less holds none
+        assert_eq!(Windows::over(0, 4000, 2000.0, 2.0).count, 1);
+        assert_eq!(Windows::over(0, 3999, 2000.0, 2.0).count, 0);
         assert_eq!(Windows::over(0, 100, 2000.0, 2.0).count, 0);
-        assert_eq!(Windows::over(0, 4100, 2000.0, 2.0).count, 1);
-        // windows of 4 and 5 s, a fortieth of their length apart: 339 and 263
-        // on the 38 s stretch of a 40 s log, as the reference tool counted
-        // them (round 18)
-        let w = Windows::over(2002, 75_999, 2000.0, 4.0);
-        assert_eq!((w.length, w.hop, w.count), (8000, 200, 339));
-        let w = Windows::over(2002, 75_999, 2000.0, 5.0);
-        assert_eq!((w.length, w.hop, w.count), (10_000, 250, 263));
+        assert_eq!(Windows::over(0, 4100, 2000.0, 2.0).count, 2);
+        // windows of 2, 4 and 5 s, a fortieth of their length apart, on the
+        // 38 s stretch of a 40 s log: 721, 341 and 265, of which the web
+        // edition accepted 721, 341 and 264 on roll (round W2)
+        let w = Windows::over(2000, 76_001, 2000.0, 2.0);
+        assert_eq!((w.length, w.hop, w.count), (4000, 100, 721));
+        let w = Windows::over(2000, 76_001, 2000.0, 4.0);
+        assert_eq!((w.length, w.hop, w.count), (8000, 200, 341));
+        let w = Windows::over(2000, 76_001, 2000.0, 5.0);
+        assert_eq!((w.length, w.hop, w.count), (10_000, 250, 265));
+    }
+
+    #[test]
+    fn the_transforms_are_padded_to_a_power_of_two() {
+        // a window, its 200 zeros, and zeros up to the next power of two
+        assert_eq!(padded_length(4000), 8192);
+        assert_eq!(padded_length(3896), 4096);
+        assert_eq!(padded_length(3897), 8192);
+        assert_eq!(padded_length(2000), 4096);
+        assert_eq!(padded_length(8000), 16_384);
+        assert_eq!(padded_length(10_000), 16_384);
+        assert_eq!(padded_length(20_000), 32_768);
+        let divider = Divider::new(4000);
+        assert_eq!(divider.through(&vec![1.0; 4000]).len(), 8192);
+    }
+
+    #[test]
+    fn the_padding_changes_the_response_and_not_its_level() {
+        // the response of a window of 3 900 samples, whose 200 zeros make
+        // 4 100, against the same window cut to 3 896, whose 200 zeros make
+        // 4 096: both are transformed at a power of two (8 192 and 4 096)
+        let (setpoint, gyro) = delayed(3900, 20);
+        let long = response(&setpoint, &gyro, 1001);
+        let short = response(&setpoint[..3896], &gyro[..3896], 1001);
+        for r in [&long, &short] {
+            assert!(r[..19].iter().all(|v| v.abs() < 0.03), "{:?}", &r[..20]);
+            assert!(r[22..].iter().all(|v| (v - 1.0).abs() < 0.2));
+        }
+        // a window of 4 000 samples, transformed at 8 192 points, against
+        // the transform over its 4 200 samples alone (version 0.94): the
+        // same response to a few thousandths, not to the last digit
+        let (setpoint, gyro) = delayed(4000, 20);
+        let padded = response(&setpoint, &gyro, 1001);
+        let unpadded = unpadded_response(&setpoint, &gyro, 1001);
+        let largest = padded
+            .iter()
+            .zip(&unpadded)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f64::max);
+        assert!(largest > 1.0e-6 && largest < 0.05, "{largest}");
+    }
+
+    /// The response of a window transformed over the window and its 200
+    /// zeros alone, as version 0.94 of the reference tool had it.
+    fn unpadded_response(setpoint: &[f64], gyro: &[f64], points: usize) -> Vec<f64> {
+        let fft = Fft::new();
+        let hann = Divider::new(setpoint.len()).hann;
+        let through = |x: &[f64]| {
+            let mut buf = vec![Complex::new(0.0, 0.0); x.len() + PAD];
+            for ((slot, v), w) in buf.iter_mut().zip(x).zip(&hann) {
+                slot.re = v * w;
+            }
+            fft.forward_inplace(&mut buf);
+            buf
+        };
+        let input = through(setpoint);
+        let mut output = through(gyro);
+        let floor = FLOOR * (input.len() * input.len()) as f64;
+        for (y, x) in output.iter_mut().zip(&input) {
+            *y = *y * x.conj() / (x.norm_sqr() + floor);
+        }
+        fft.inverse_inplace(&mut output);
+        output
+            .iter()
+            .take(points)
+            .scan(0.0, |sum, h| {
+                *sum += h.re;
+                Some(*sum)
+            })
+            .collect()
+    }
+
+    /// A window whose response is `level` from the start.
+    fn flat(index: usize, level: f64) -> WindowResponse {
+        WindowResponse {
+            index,
+            response: vec![level; 1001],
+        }
+    }
+
+    #[test]
+    fn a_window_far_from_the_median_is_left_out() {
+        // nine windows settle near 1, one at 1.3: within 0.5 … 1.5, but
+        // far from the others
+        let mut windows: Vec<WindowResponse> = (0..9)
+            .map(|i| flat(i, 1.0 + 0.01 * (i as f64 - 4.0)))
+            .collect();
+        windows.push(flat(9, 1.3));
+        // the median is 1.005, the deviations 0.005 … 0.045 and 0.295,
+        // their median 0.025: the limit is 3 · 1.4826 · 0.025 = 0.111
+        let near = near_median(&windows, 300, 3.0);
+        assert_eq!(near.iter().filter(|n| **n).count(), 9);
+        assert!(!near[9]);
+        // the median of an even number of values is the mean of the middle
+        // two
+        assert_eq!(median(&[3.0, 1.0, 2.0, 10.0]), 2.5);
+        assert_eq!(median(&[3.0, 1.0, 2.0]), 2.0);
+        assert!(median(&[]).is_nan());
+        let fs = 2000.0;
+        let on = read(windows.clone(), fs, &Acceptance::at(fs));
+        assert_eq!(on.windows.len(), 9);
+        assert!(on.windows.iter().all(|w| w.index < 9));
+        assert!((on.mean[500] - 1.0).abs() < 1.0e-12, "{}", on.mean[500]);
+        // without the test the window counts, and pulls the mean up
+        let off = Acceptance {
+            median_distance: None,
+            ..Acceptance::at(fs)
+        };
+        let all = read(windows.clone(), fs, &off);
+        assert_eq!(all.windows.len(), 10);
+        assert!((all.mean[500] - 1.03).abs() < 1.0e-12, "{}", all.mean[500]);
+        // the test is over the windows that settled: a window that leaves
+        // the band does not move the median
+        windows.push(flat(10, 1.6));
+        windows.push(flat(11, 1.7));
+        assert_eq!(
+            read(windows.clone(), fs, &Acceptance::at(fs)).windows.len(),
+            9
+        );
+        // a wider band takes them in, and then the median test leaves out
+        // all three
+        let wide = Acceptance {
+            width: 2.0,
+            ..Acceptance::at(fs)
+        };
+        assert_eq!(read(windows.clone(), fs, &wide).windows.len(), 9);
+        let wide = Acceptance {
+            median_distance: None,
+            ..wide
+        };
+        assert_eq!(read(windows, fs, &wide).windows.len(), 12);
+        // one window is its own median
+        let one = near_median(&[flat(0, 1.2)], 300, 3.0);
+        assert_eq!(one, vec![true]);
     }
 
     /// A stick that moves to a new level within 200 deg/s every 150 …
@@ -405,17 +646,17 @@ mod tests {
         assert!(r[20] > 0.85 && r[22] > 0.95, "{:?}", &r[20..23]);
         assert_eq!(settled_from(2000.0), 300);
         assert_eq!(shown(2000.0), 1001);
-        assert!(stick_moved(&setpoint) && settled(&r, 300));
+        assert!(stick_moved(&setpoint) && settled(&r, 300, 1.0));
         // a stick near its centre does not count
         let quiet: Vec<f64> = setpoint.iter().map(|v| v / 10.0).collect();
         assert!(!stick_moved(&quiet) && !stick_moved(&[]));
         // ... nor does a response that leaves 0.5 … 1.5 after 150 ms
         let mut low = r.clone();
         low[299] = 0.4;
-        assert!(settled(&low, 300));
+        assert!(settled(&low, 300, 1.0));
         low[300] = 0.4;
-        assert!(!settled(&low, 300) && settled(&low, 301));
-        assert!(!settled(&low[..200], 300));
+        assert!(!settled(&low, 300, 1.0) && settled(&low, 301, 1.0));
+        assert!(!settled(&low[..200], 300, 1.0));
         assert!(response(&[1.0], &[1.0], 10).is_empty());
     }
 
@@ -455,7 +696,7 @@ mod tests {
         // 15 Hz behind 5 ms: the curve is the plant's, overshoot and all
         let gyro = second_order(&setpoint, fs, 15.0, 10);
         let all = candidates(&setpoint, &gyro, fs, 0, windows, |_| true);
-        let r = read(all, fs, settled_from(fs));
+        let r = read(all, fs, &Acceptance::at(fs));
         assert!(r.windows.len() > 170, "{}", r.windows.len());
         for i in (10..1000).step_by(10) {
             let truth = second_order_step(15.0, (i - 10) as f64 / fs);
@@ -481,7 +722,7 @@ mod tests {
         // curve's top, not in the first 150 ms, where it is still rising
         let gyro = second_order(&setpoint, fs, 2.5, 10);
         let all = candidates(&setpoint, &gyro, fs, 0, windows, |_| true);
-        let r = read(all, fs, settled_from(fs));
+        let r = read(all, fs, &Acceptance::at(fs));
         assert!(r.windows.len() > 150, "{}", r.windows.len());
         let top = r.mean.iter().copied().fold(f64::MIN, f64::max);
         // a response this slow is read low by the method: 1.19 where the
@@ -506,11 +747,18 @@ mod tests {
         let (setpoint, gyro) = delayed(20_000, 20);
         let fs = 2000.0;
         let windows = Windows::over(2, 19_998, fs, 2.0);
-        assert_eq!(windows.count, 159);
+        assert_eq!(windows.count, 160);
         let all = candidates(&setpoint, &gyro, fs, 0, windows, |_| true);
-        assert_eq!(all.len(), 159);
-        let r = read(all.clone(), fs, settled_from(fs));
-        assert_eq!((r.windows.len(), r.mean.len()), (159, 1001));
+        assert_eq!(all.len(), 160);
+        let r = read(all.clone(), fs, &Acceptance::at(fs));
+        // every response settles, and those of eleven windows settle a
+        // little farther from the others than three deviations
+        assert_eq!((r.windows.len(), r.mean.len()), (149, 1001));
+        let off = Acceptance {
+            median_distance: None,
+            ..Acceptance::at(fs)
+        };
+        assert_eq!(read(all.clone(), fs, &off).windows.len(), 160);
         assert!((r.peak - 1.0).abs() < 0.03, "{}", r.peak);
         // the first sample above 0.5 is the 20th: 21 samples of 0.5 ms
         // less a millisecond
@@ -521,11 +769,11 @@ mod tests {
         assert_eq!(delay_ms(&[1.0], &[1.0], fs), None);
         // smoothing blurs the step and leaves its place
         let smoothed = candidates(&setpoint, &gyro, fs, 3, windows, |_| true);
-        let high = read(smoothed, fs, settled_from(fs));
+        let high = read(smoothed, fs, &Acceptance::at(fs));
         assert!(high.mean[19] > r.mean[19] + 0.2 && high.mean[21] < r.mean[21] - 0.1);
         // a level beyond the list is the last of it
         let beyond = candidates(&setpoint, &gyro, fs, 9, windows, |_| true);
-        assert_eq!(read(beyond, fs, settled_from(fs)), high);
+        assert_eq!(read(beyond, fs, &Acceptance::at(fs)), high);
         // windows that may not be taken are left out, and so are windows
         // that reach beyond the samples
         let half = candidates(&setpoint, &gyro, fs, 0, windows, |at| at.start < 8000);
@@ -533,11 +781,11 @@ mod tests {
         let short = candidates(&setpoint[..10_000], &gyro, fs, 0, windows, |_| true);
         assert_eq!(short.len(), 60);
         // no window: no curve
-        let none = read(Vec::new(), fs, 300);
+        let none = read(Vec::new(), fs, &Acceptance::at(fs));
         assert!(none.peak.is_nan() && none.latency_ms.is_nan());
         assert_eq!((none.peak_spread, none.latency_spread_ms), (0.0, 0.0));
         // one window has no spread
-        let one = read(all[..1].to_vec(), fs, 300);
+        let one = read(all[..1].to_vec(), fs, &Acceptance::at(fs));
         assert_eq!((one.windows.len(), one.peak_spread), (1, 0.0));
     }
 }
