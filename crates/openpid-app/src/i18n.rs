@@ -430,6 +430,10 @@ static UA: &[(&str, &str)] = &[
         "логарифмічна вісь частот на повному спектрі",
     ),
     (
+        "a moving average of the curve's decibels over 51, 151, 301 or 601 points, as in the reference tool; medium by default. The points are closer for a longer log, so the same level is a narrower band",
+        "ковзне середнє децибелів кривої по 51, 151, 301 або 601 точці, як в еталонному інструменті; за замовчуванням середнє. Що довший лог, то ближчі точки, тож той самий рівень — вужча смуга",
+    ),
+    (
         "a moving average of the power over 0, 2, 4, 8, 16 or 32 Hz; medium (8 Hz) by default",
         "ковзне середнє потужності по 0, 2, 4, 8, 16 або 32 Гц; за замовчуванням середнє (8 Гц)",
     ),
@@ -596,10 +600,6 @@ static UA: &[(&str, &str)] = &[
         "how the craft was set up, in plain words: firmware, rates, PID gains, filters, motors",
         "як налаштовано апарат, простими словами: прошивка, частоти, PID, фільтри, мотори",
     ),
-    (
-        "how wide the smoothing of the curve is, as in the reference tool; medium by default. The same level is a wider band for a shorter log",
-        "наскільки широке згладжування кривої, як в еталонному інструменті; за замовчуванням середнє. Той самий рівень — ширша смуга для коротшого логу",
-    ),
     ("judged", "оцінено"),
     (
         "keys: Right / Enter, Left, Esc",
@@ -657,6 +657,7 @@ static UA: &[(&str, &str)] = &[
     ),
     ("magnitude (dB)", "амплітуда (дБ)"),
     ("markers", "мітки"),
+    ("max", "максимальна"),
     ("med-high", "вище середньої"),
     ("medium", "середня"),
     ("motors", "мотори"),

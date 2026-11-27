@@ -106,8 +106,8 @@ impl Default for Project {
             touch_mode: false,
             axis: Axis::Roll,
             step: StepParams::default(),
-            // decision D-001: the Spectrum tab and `run psd` draw the
-            // reference tool's curve unless the density is asked for
+            // decisions D-001 and D-015: the Spectrum tab and `run psd` draw
+            // the reference tool's curve unless the density is asked for
             psd: PsdParams {
                 method: crate::psd::PsdMethod::Curve,
                 ..PsdParams::default()

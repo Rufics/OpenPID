@@ -77,10 +77,12 @@ OPTIONS:
                   take-off and landing (throttle / motor rpm), `active` takes
                   the most active 20 s (stick input)
     --axis AXIS   roll, pitch or yaw
-    --method M    psd: `curve` is one transform of the whole analysis window with its
-                  decibels smoothed, as the reference tool draws it; `density` is
-                  Welch's averaged power density
-    --smoothing L psd, curve: low, low-med, medium (default), med-high or high
+    --method M    psd: `curve` is one transform of the whole analysis window, zero-padded
+                  to a power of two, with its decibels smoothed, as the reference
+                  tool's web edition draws it; `density` is Welch's averaged power
+                  density
+    --smoothing L psd, curve: a moving average of the decibels over low (51 points),
+                  medium (151, the default), high (301) or max (601)
     --json        Machine-readable output
     --session-b M diff: session index in the second file (default: --session)
     --cli         diff / run recommend: the firmware's commands instead of the table / JSON
@@ -590,7 +592,7 @@ fn cmd_run(args: &Args) -> Result<(), String> {
                 None => base.psd.smoothing,
                 Some(name) => openpid_analysis::CURVE_LEVELS
                     .iter()
-                    .position(|level| *level == name)
+                    .position(|level| level.eq_ignore_ascii_case(name))
                     .ok_or_else(|| {
                         format!(
                             "unknown smoothing level {name}: {}",

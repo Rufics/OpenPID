@@ -54,15 +54,17 @@ off by default) for the full-spectrum column.
   error, Setpoint, mapped to a channel per axis; only the gyro has a prefilt
   counterpart (`gyro.raw`). Projects keep `spectrum_channel` (the roll channel
   of the quantity); `psd.channel` follows the selected axis for the JSON export.
-- **Spectrum** (added with decision D-001, issue #171): **smoothed curve** (default) or **power density**, one list in
-  the Data section under Prefilt. The curve is `PsdMethod::Curve`, the
-  reference tool's curve; the density is the Welch estimate this tab was
+- **Spectrum** (added with decision D-001, issue #171): **smoothed curve**
+  (default) or **power density**, one list in the Data section under
+  Prefilt. The curve is `PsdMethod::Curve`, the curve of the reference
+  tool's web edition 1.0 (decision D-015); the density is the Welch estimate this tab was
   designed around. The choice is an analysis parameter (`psd.method`), kept
   by projects; a project saved before it opens as the density it was saved
   with.
-- **Smoothing**: for the curve its five levels low / low-med / medium /
-  med-high / high (`psd.smoothing`, part of the analysis: the curve comes
-  smoothed and is not smoothed again for display). For the density off / low
+- **Smoothing**: for the curve its four levels low / medium / high / max, a
+  moving average of the decibels over 51 / 151 / 301 / 601 points
+  (`psd.smoothing`, part of the analysis: the curve comes smoothed and is not
+  smoothed again for display), default medium. For the density off / low
   / low-med / medium / med-high / high: a moving average of the linear power
   over 0 / 2 / 4 / 8 / 16 / 32 Hz (`smooth_power`, which keeps the total
   power), default medium. The list is the same control in both cases.

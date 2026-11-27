@@ -210,22 +210,24 @@ The control panel on the right (hover any field for its explanation):
 - **Spectrum**: what the curves are.
   - **smoothed curve** (default): one transform of the whole analysis window
     whose decibel values are smoothed along the frequency. It is the curve the
-    reference tool draws, within a hundredth of a decibel, so its numbers and
-    the ones in tuning guides are the same. In it the height of a peak follows its width
+    web edition 1.0 of the reference tool draws (decision D-015), within a
+    ten-thousandth of a decibel on the same samples, so its numbers and the
+    ones in tuning guides are the same. In it the height of a peak follows its width
     as well as its strength: broad noise, such as motor noise that moves with
     the throttle, shows well; a steady tone at one frequency almost vanishes
-    (20 deg/s over the whole flight is a bump of under 4 dB); white noise
+    (20 deg/s over the whole flight is a bump of a few decibels); white noise
     reads 6.8 dB below its true density.
   - **power density**: Welch's method, the averaged power of 0.25 s segments
     (1 s for the plots below 100 Hz) in unit²/Hz. Noise reads its true density
     and a steady resonance stands tens of decibels above it. Use it to find a
     fixed resonance, and to read absolute levels.
-- **Smoothing**: for the smoothed curve low / low-med / **medium** (default) /
-  med-high / high, as in the reference tool; the same level is a wider band
-  for a shorter log (at medium about 5 Hz either side for 12 s, 1.4 Hz for
-  47 s). For the power density off / low / low-med / **medium** (default) /
-  med-high / high, a moving average of the power over 0 / 2 / 4 / 8 / 16 /
-  32 Hz.
+- **Smoothing**: for the smoothed curve low / **medium** (default) / high /
+  max, as in the reference tool: a moving average of the decibels over 51 /
+  151 / 301 / 601 points of the curve. The points are closer together for a
+  longer log, so the same level is a narrower band in hertz (at medium about
+  ±2.3 Hz for 24 s at 1 kHz, ±9.2 Hz for 8 s at 2 kHz). For the power
+  density off / low / low-med / **medium** (default) / med-high / high, a
+  moving average of the power over 0 / 2 / 4 / 8 / 16 / 32 Hz.
 - **dB**, **Log frequency** (a logarithmic axis on the full spectrum),
   **Y min** / **Y max**: automatic by default (the drawn data above 2 Hz, the
   same for every plot so the rows compare); click **auto** to fix an end, the
@@ -532,7 +534,7 @@ with a new log.
 | Log viewer | `openpid info <log>`, `openpid decode <log> --scaled` |
 | Log check | `openpid info <log>`: the `fitness` block (the `fitness` field with `--json`) |
 | Step response | `openpid run step <log> --axis pitch --epoch 2..12` (`--json` carries `verdicts` against the project's targets, or the defaults) |
-| Spectrum | `openpid run psd <log> --channel gyro.raw.roll` (`--method density` for the power density, `--smoothing high` for another level of the curve) |
+| Spectrum | `openpid run psd <log> --channel gyro.raw.roll` (`--method density` for the power density, `--smoothing high` for another level of the curve: low, medium, high or max) |
 | Freq × throttle | `openpid run thr-heatmap <log> [--png out.png]` |
 | Freq × time | `openpid run stft <log> --channel motor.0` |
 | Filter Sim | `openpid run filter-sim <log> --set lpf1_hz=100,lpf1_type=1` |

@@ -168,7 +168,7 @@ fn run_analyses() {
     assert!(ok && std::fs::metadata(&tmp).unwrap().len() > 100);
     std::fs::remove_file(&tmp).ok();
     // the spectrum: the smoothed curve of the whole log unless the density
-    // is asked for (decision D-001)
+    // is asked for (decisions D-001 and D-015)
     let psd = |extra: &[&str]| {
         let mut args = vec!["run", "psd", f];
         args.extend_from_slice(extra);
@@ -195,15 +195,18 @@ fn run_analyses() {
             .collect();
         db.windows(2).map(|w| (w[1] - w[0]).abs()).sum::<f64>() / db.len() as f64
     };
+    // the transform is zero-padded to a power of two
+    let points = curve["freq"].as_array().unwrap().len();
+    assert!((points - 1).is_power_of_two(), "{points}");
     assert!(moves(&psd(&["--smoothing", "high"])) < moves(&curve));
+    assert!(moves(&psd(&["--smoothing", "max"])) < moves(&psd(&["--smoothing", "high"])));
     assert!(moves(&psd(&["--smoothing", "low"])) > moves(&curve));
+    // the level names as the reference tool writes them
+    assert_eq!(psd(&["--smoothing", "Medium"]), curve);
     let (ok, _, err) = run(&["run", "psd", f, "--method", "welch"]);
     assert!(!ok && err.contains("unknown method welch"), "{err}");
     let (ok, _, err) = run(&["run", "psd", f, "--smoothing", "none"]);
-    assert!(
-        !ok && err.contains("low, low-med, medium, med-high, high"),
-        "{err}"
-    );
+    assert!(!ok && err.contains("low, medium, high, max"), "{err}");
     let (ok, _, err) = run(&["run", "nope", f]);
     assert!(!ok && err.contains("unknown analysis"));
     let (ok, _, err) = run(&["run", "step", f, "--axis", "diagonal"]);

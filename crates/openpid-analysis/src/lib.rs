@@ -33,7 +33,7 @@ pub use prepare::{Prepared, prepare};
 pub use project::{Project, ProjectSlot};
 pub use psd::{
     CURVE_LEVELS, PsdAnalysis, PsdMethod, PsdOutput, PsdParams, curve_db, curve_level_db,
-    curve_window,
+    curve_transform_len, curve_window,
 };
 pub use recommend::{Finding, FindingStatus, Recommend, RecommendOutput, RecommendParams};
 pub use rpm::{RpmEstimateOutput, RpmEstimateParams, RpmEstimator};

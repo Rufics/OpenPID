@@ -34,7 +34,7 @@ const X_LABEL_H: f32 = 18.0;
 const FULL_SHARE: f32 = 0.6;
 
 /// Smoothing levels of the power density: the width (Hz) of the moving
-/// average over the power. The curve has its own five levels
+/// average over the power. The curve has its own four levels
 /// ([`CURVE_LEVELS`]), which are part of how it is computed.
 pub const SMOOTHING: [(&str, f64); 6] = [
     ("off", 0.0),
@@ -752,7 +752,7 @@ fn controls(app: &mut App, ui: &mut Ui) {
                 "spectrum-smoothing",
                 tr("Smoothing"),
                 tr(
-                    "how wide the smoothing of the curve is, as in the reference tool; medium by default. The same level is a wider band for a shorter log",
+                    "a moving average of the curve's decibels over 51, 151, 301 or 601 points, as in the reference tool; medium by default. The points are closer for a longer log, so the same level is a narrower band",
                 ),
                 &mut app.tools.psd.smoothing,
                 &levels,

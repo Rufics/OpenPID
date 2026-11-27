@@ -50,62 +50,33 @@ pub fn box_filter_2d(z: &[f64], nx: usize, ny: usize, wx: usize, wy: usize) -> V
     out
 }
 
-/// The tricube weight at a distance of `d` window half-widths.
-fn tricube(d: f64) -> f64 {
-    let d = d.abs().min(1.0);
-    (1.0 - d * d * d).powi(3)
-}
-
-/// `values` smoothed by a local regression over `window` points (LOWESS of
-/// degree one on an even grid): at every point the value of the line fitted
-/// to the `window` nearest points, the weights tricube and scaled so that
-/// the farthest of those points weighs nothing. Away from the ends the
-/// window is centred and the fit is a weighted mean; at an end the window
-/// stays inside the data and the line carries the slope into the end.
-///
-/// An even `window` counts as the next odd one. A `window` below three, or
-/// values shorter than the window, come back unchanged.
-pub fn local_line(values: &[f64], window: usize) -> Vec<f64> {
-    let n = values.len();
-    let window = window | 1;
-    if window < 3 || n < window {
-        return values.to_vec();
+/// Centred moving average over `w` points whose window is cut at the ends:
+/// at every point the mean of the values from `w/2` before it to `w/2`
+/// after it, over the points that exist, so near an end the window is
+/// lopsided and holds fewer points (unlike [`moving_average`], which shrinks
+/// it symmetrically). An even `w` counts as the next odd one; a `w` below
+/// two leaves the values as they are.
+pub fn moving_average_cut(x: &[f64], w: usize) -> Vec<f64> {
+    let n = x.len();
+    let half = w / 2;
+    if n == 0 || half == 0 {
+        return x.to_vec();
     }
-    let half = window / 2;
-    let kernel: Vec<f64> = (0..window)
-        .map(|j| tricube((j as f64 - half as f64) / half as f64))
-        .collect();
-    let total: f64 = kernel.iter().sum();
-    let mut out = vec![0.0; n];
-    for (i, value) in out.iter_mut().enumerate().take(n - half).skip(half) {
-        let slice = &values[i - half..=i + half];
-        *value = slice.iter().zip(&kernel).map(|(v, w)| v * w).sum::<f64>() / total;
+    // running sums: the mean of x[lo..hi] is (sum[hi] − sum[lo]) / (hi − lo)
+    let mut sum = Vec::with_capacity(n + 1);
+    sum.push(0.0);
+    let mut total = 0.0;
+    for v in x {
+        total += v;
+        sum.push(total);
     }
-    let mut end = |i: usize| {
-        let first = i.saturating_sub(half).min(n - window);
-        let reach = (i - first).max(first + window - 1 - i) as f64;
-        // weighted least squares of v = a + b·(j − i): `a` is the value at i
-        let (mut sw, mut sx, mut sxx, mut sv, mut sxv) = (0.0, 0.0, 0.0, 0.0, 0.0);
-        for (j, v) in values.iter().enumerate().skip(first).take(window) {
-            let x = j as f64 - i as f64;
-            let w = tricube(x / reach);
-            sw += w;
-            sx += w * x;
-            sxx += w * x * x;
-            sv += w * v;
-            sxv += w * x * v;
-        }
-        let det = sw * sxx - sx * sx;
-        out[i] = if det.abs() > f64::EPSILON * sw * sxx {
-            (sxx * sv - sx * sxv) / det
-        } else {
-            sv / sw
-        };
-    };
-    for i in (0..half).chain(n - half..n) {
-        end(i);
-    }
-    out
+    (0..n)
+        .map(|i| {
+            let lo = i.saturating_sub(half);
+            let hi = (i + half + 1).min(n);
+            (sum[hi] - sum[lo]) / (hi - lo) as f64
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -125,48 +96,44 @@ mod tests {
     }
 
     #[test]
-    fn local_line_leaves_a_line_as_it_is_ends_included() {
-        let line: Vec<f64> = (0..400).map(|i| 3.0 - 0.25 * f64::from(i)).collect();
-        for window in [5, 35, 121, 285] {
-            for (got, want) in local_line(&line, window).iter().zip(&line) {
-                assert!((got - want).abs() < 1.0e-9, "window {window}");
-            }
+    fn moving_average_cut_is_the_mean_of_the_points_that_exist() {
+        let x = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
+        // inside: the centred mean of five points; at the ends fewer of them
+        let s = moving_average_cut(&x, 5);
+        let want = [2.0, 2.5, 3.0, 4.0, 5.0, 5.5, 6.0];
+        for (got, want) in s.iter().zip(want) {
+            assert!((got - want).abs() < 1.0e-12, "{s:?}");
         }
-        // too short for the window, or no window: unchanged
-        assert_eq!(local_line(&line[..100], 121), line[..100]);
-        assert_eq!(local_line(&line, 1), line);
-        // an even window is the next odd one
-        assert_eq!(local_line(&line, 34), local_line(&line, 35));
+        // an even width is the next odd one; one or none leaves the values
+        assert_eq!(moving_average_cut(&x, 4), s);
+        assert_eq!(moving_average_cut(&x, 1), x);
+        assert_eq!(moving_average_cut(&x, 0), x);
+        assert!(moving_average_cut(&[], 5).is_empty());
+        // a window wider than the values: every point is a mean of what exists
+        let wide = moving_average_cut(&[0.0, 3.0, 9.0], 101);
+        assert!(wide.iter().all(|v| (v - 4.0).abs() < 1.0e-12), "{wide:?}");
     }
 
     #[test]
-    fn local_line_spreads_a_point_as_the_tricube() {
-        let mut x = vec![0.0; 301];
-        x[150] = 1.0;
-        let s = local_line(&x, 121);
-        assert!((s.iter().sum::<f64>() - 1.0).abs() < 1.0e-12);
-        // the weight is zero 60 points away and symmetric
-        assert!(s[90].abs() < 1.0e-15 && s[210].abs() < 1.0e-15);
-        assert!(s[91] > 0.0 && (s[91] - s[209]).abs() < 1.0e-15);
-        let peak = s[150];
-        assert!((s[180] / peak - tricube(0.5)).abs() < 1.0e-12);
-        assert!((peak - 0.014_400).abs() < 1.0e-5, "{peak}");
-    }
-
-    #[test]
-    fn local_line_follows_a_slope_into_the_end() {
-        // a step far from the start: the first points are a line through
-        // level values, so they stay level; a mean cut at the end would too,
-        // but a ramp at the very start is kept where a cut mean would bend it
-        let ramp: Vec<f64> = (0..200)
-            .map(|i| if i < 60 { f64::from(i) } else { 60.0 })
-            .collect();
-        let s = local_line(&ramp, 41);
+    fn moving_average_cut_spreads_a_point_evenly_and_keeps_a_level() {
+        let mut x = vec![0.0; 1001];
+        x[500] = 151.0;
+        let s = moving_average_cut(&x, 151);
+        for (i, v) in s.iter().enumerate() {
+            let want = if (425..=575).contains(&i) { 1.0 } else { 0.0 };
+            assert!((v - want).abs() < 1.0e-12, "{i}: {v}");
+        }
+        // a level stays the level up to the very ends
+        let level = vec![-37.5; 2000];
         assert!(
-            s[0].abs() < 1.0e-9 && (s[10] - 10.0).abs() < 1.0e-9,
-            "{} {}",
-            s[0],
-            s[10]
+            moving_average_cut(&level, 601)
+                .iter()
+                .all(|v| (v + 37.5).abs() < 1.0e-9)
         );
+        // the first point is the mean of itself and the half window after it
+        let ramp: Vec<f64> = (0..400).map(f64::from).collect();
+        let r = moving_average_cut(&ramp, 51);
+        assert!((r[0] - 12.5).abs() < 1.0e-9 && (r[399] - 386.5).abs() < 1.0e-9);
+        assert!((r[200] - 200.0).abs() < 1.0e-9);
     }
 }

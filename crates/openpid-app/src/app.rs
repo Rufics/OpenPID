@@ -241,8 +241,8 @@ impl Default for Tools {
         Tools {
             axis: Axis::Roll,
             step: StepParams::default(),
-            // decision D-001: the Spectrum tab draws the reference tool's
-            // curve unless the density is asked for
+            // decisions D-001 and D-015: the Spectrum tab draws the curve of
+            // the reference tool's web edition unless the density is asked for
             psd: PsdParams {
                 method: openpid_analysis::PsdMethod::Curve,
                 ..PsdParams::default()

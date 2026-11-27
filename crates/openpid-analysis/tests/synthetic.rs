@@ -92,7 +92,7 @@ fn psd_finds_the_injected_tone() {
 
 #[test]
 fn the_curve_is_one_transform_of_the_epoch_smoothed_in_decibels() {
-    use openpid_analysis::{PsdMethod, curve_db, curve_window};
+    use openpid_analysis::{PsdMethod, curve_db, curve_transform_len, curve_window};
     // white noise of 3 deg/s RMS: a density of 9 (deg/s)² over half the rate
     let spec = SignalSpec {
         duration_s: 12.0,
@@ -132,14 +132,18 @@ fn the_curve_is_one_transform_of_the_epoch_smoothed_in_decibels() {
             )
             .unwrap()
     };
-    let out = curve(2, None);
+    let out = curve(1, None);
     let x = s.channel(&channel).unwrap().data.values();
     assert_eq!(out.method, PsdMethod::Curve);
     assert_eq!((out.nperseg, out.segments), (x.len(), 1));
-    assert_eq!(out.freq.len(), x.len() / 2 + 1);
-    assert!((out.freq[1] - out.fs / x.len() as f64).abs() < 1.0e-12);
+    // the transform is zero-padded to the next power of two
+    let nfft = curve_transform_len(x.len());
+    assert!(nfft.is_power_of_two() && nfft >= x.len() && nfft < 2 * x.len());
+    assert_eq!(out.freq.len(), nfft / 2 + 1);
+    assert!((out.freq[1] - out.fs / nfft as f64).abs() < 1.0e-12);
+    assert!((out.freq.last().unwrap() - out.fs / 2.0).abs() < 1.0e-9);
     // it is the curve of the samples themselves
-    let by_hand = curve_db(&openpid_dsp::Fft::new(), x, out.fs, 2);
+    let by_hand = curve_db(&openpid_dsp::Fft::new(), x, out.fs, 1);
     assert_eq!(out.power_db, by_hand);
     for (p, db) in out.power.iter().zip(&out.power_db) {
         assert!((10.0 * p.log10() - db).abs() < 1.0e-9);
@@ -179,8 +183,7 @@ fn the_curve_is_one_transform_of_the_epoch_smoothed_in_decibels() {
     assert!(line > 25.0, "{line}");
 
     // a higher level is a wider window, and a flatter curve
-    let points = out.freq.len();
-    assert!(curve_window(4, points) > curve_window(2, points));
+    assert!(curve_window(3) > curve_window(1));
     let spread = |o: &openpid_analysis::PsdOutput| {
         let v: Vec<f64> = o
             .freq
@@ -192,10 +195,10 @@ fn the_curve_is_one_transform_of_the_epoch_smoothed_in_decibels() {
         let m = v.iter().sum::<f64>() / v.len() as f64;
         (v.iter().map(|d| (d - m).powi(2)).sum::<f64>() / v.len() as f64).sqrt()
     };
-    assert!(spread(&curve(4, None)) < spread(&out));
+    assert!(spread(&curve(3, None)) < spread(&out));
     assert!(spread(&curve(0, None)) > spread(&out));
     // the upper bound cuts the curve, it does not change it
-    let low = curve(2, Some(100.0));
+    let low = curve(1, Some(100.0));
     assert!(low.freq.last().is_some_and(|f| *f <= 100.0 && *f > 99.9));
     assert_eq!(low.power_db[..], out.power_db[..low.power_db.len()]);
 }
@@ -211,7 +214,7 @@ fn the_method_and_the_level_are_part_of_what_a_spectrum_is() {
     };
     let density = PsdParams::default();
     assert_eq!(density.method, PsdMethod::Density);
-    assert_eq!(density.smoothing, 2);
+    assert_eq!(density.smoothing, 1, "medium");
     let curve = PsdParams {
         method: PsdMethod::Curve,
         ..PsdParams::default()
@@ -220,7 +223,7 @@ fn the_method_and_the_level_are_part_of_what_a_spectrum_is() {
     assert_ne!(
         hash(&curve),
         hash(&PsdParams {
-            smoothing: 3,
+            smoothing: 2,
             ..curve.clone()
         })
     );

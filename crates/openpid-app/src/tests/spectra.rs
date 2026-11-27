@@ -61,9 +61,10 @@ fn spectrum_controls_change_what_is_drawn() {
 fn spectrum_draws_the_curve_by_default_and_the_density_on_request() {
     use openpid_analysis::PsdMethod;
     let mut ui = Ui::open(&[LOG_4_2], Tab::Spectrum);
-    // decision D-001: the reference tool's curve at its default level
+    // decisions D-001 and D-015: the reference tool's curve at its default
+    // level
     assert_eq!(ui.app().tools.psd.method, PsdMethod::Curve);
-    assert_eq!(ui.app().tools.psd.smoothing, 2, "medium");
+    assert_eq!(ui.app().tools.psd.smoothing, 1, "medium");
     // every finished full-range spectrum of the filtered roll gyro: method,
     // segments, frequency step and how much the curve moves from point to
     // point
@@ -98,12 +99,12 @@ fn spectrum_draws_the_curve_by_default_and_the_density_on_request() {
     // one transform of the whole analysis window: steps far below 1 Hz
     assert!(step < 0.5, "{step}");
     // a higher level is a flatter curve
-    ui.app_mut().tools.psd.smoothing = 4;
+    ui.app_mut().tools.psd.smoothing = 3;
     ui.settle();
     let both = spectra(&ui);
     assert_eq!(both.len(), 2, "{both:?}");
     assert!(both.iter().any(|s| s.3 < medium), "{both:?}");
-    ui.app_mut().tools.psd.smoothing = 2;
+    ui.app_mut().tools.psd.smoothing = 1;
 
     // the density: averaged segments, its own smoothing list and a segment
     assert!(!ui.sees("Segment"));
