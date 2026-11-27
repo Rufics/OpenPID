@@ -73,8 +73,7 @@ OPTIONS:
     --epoch A..B  Analyse only seconds A to B of the session; `auto` trims the
                   take-off and landing (throttle / motor rpm), `active` takes
                   the most active 20 s (stick input), `ends` leaves out the
-                  first and the last second as other analysis tools do (a log
-                  of 10 s or less whole)
+                  first and the last second as other analysis tools do
     --axis AXIS   roll, pitch or yaw
     --json        Machine-readable output
     --session-b M diff: session index in the second file (default: --session)
@@ -525,7 +524,8 @@ fn cmd_run(args: &Args) -> Result<(), String> {
                 .ok_or("--epoch active: no setpoint, or the log is shorter than 20 s")?,
         ),
         Some("ends") => Some(
-            openpid_analysis::epoch::cut_ends(s).ok_or("--epoch ends: fewer than three samples")?,
+            openpid_analysis::epoch::cut_ends(s)
+                .ok_or("--epoch ends: the log is 2 s or shorter")?,
         ),
         _ => args
             .epoch

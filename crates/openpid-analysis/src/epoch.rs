@@ -1,7 +1,8 @@
 //! Automatic analysis windows (docs/design/analysis-window, R4): trim the
 //! take-off and landing by throttle and motor rpm, pick the most active
 //! stretch for the step response, or cut one second off each end, as the
-//! common desktop analysis tools do (decision D-012 of the calibration).
+//! reference tool's web edition 1.0 does (decisions D-012 and D-015 of the
+//! calibration).
 
 use openpid_core::analysis::Epoch;
 use openpid_core::{Axis, ChannelId, FlightSession};
@@ -133,31 +134,21 @@ pub fn most_active(s: &FlightSession, window_s: f64) -> Option<Epoch> {
     })
 }
 
-/// A log at most this long is taken whole by [`cut_ends`] (seconds): the
-/// calibration saw a log of 10 s taken whole and logs of 10.1 to 13 s
-/// trimmed (rounds 16 to 18).
-pub const CUT_ENDS_WHOLE_UP_TO_S: f64 = 10.0;
-
-/// The stretch the common desktop analysis tools take: the log without its
-/// first and last second, from sample `fs + 2` to sample `n − fs` (counting
-/// from 0; `fs·(T − 2) − 1` samples of a log of `n = fs·T`); a log of at
-/// most [`CUT_ENDS_WHOLE_UP_TO_S`] from its second sample to its end (the
-/// first sample is never taken). Bounds are the timestamps of those samples,
-/// so the stretch is exact on a log with jitter. `None` for a log of fewer
-/// than three samples. Decision D-012 of the calibration (docs/calibration).
+/// The stretch of the reference tool's web edition 1.0 (decision D-015 of
+/// the calibration, carrying out D-012): the log without its first and last
+/// second, the samples `i` with `1 ≤ i/fs ≤ T − 1` counted from the first
+/// sample, that is samples `fs` to `n − fs`, both included
+/// (`n − 2·fs + 1` samples of a log of `n = fs·T`), at every rate and
+/// length: a short log is not taken whole. `fs` is the header's rate. The
+/// bounds are the timestamps of those samples, so the stretch is exact on a
+/// log with jitter. `None` when the log is 2 s or shorter (fewer than two
+/// samples would be left).
 pub fn cut_ends(s: &FlightSession) -> Option<Epoch> {
     let n = s.timebase.len();
-    if n < 3 {
-        return None;
-    }
-    let fs = (1.0e6 / crate::prepare::nominal_dt_us(s)).round() as usize;
-    let (a, b) = if n as f64 / fs.max(1) as f64 <= CUT_ENDS_WHOLE_UP_TO_S {
-        (1, n - 1)
-    } else {
-        (fs + 2, n - fs)
-    };
-    (a < b).then(|| Epoch {
-        start_s: seconds(s, a),
+    let fs = ((1.0e6 / crate::prepare::nominal_dt_us(s)).round() as usize).max(1);
+    let b = n.checked_sub(fs)?;
+    (fs < b).then(|| Epoch {
+        start_s: seconds(s, fs),
         end_s: seconds(s, b),
     })
 }
@@ -297,32 +288,39 @@ mod tests {
 
     #[test]
     fn cut_ends_leaves_out_one_second_at_each_end() {
-        // 20 s at 1 kHz: samples 1002 to 19 000, 17 999 of them
+        // 20 s at 1 kHz: samples 1000 to 19 000, both included, 18 001 of them
         let s = flight(20.0, 0.0, false);
         let n = s.timebase.len();
         assert_eq!(n, 20_000);
         let e = cut_ends(&s).unwrap();
-        assert_eq!(covered(&s, e), (1002, 19_001));
-        assert_eq!(19_001 - 1002, 1000 * (20 - 2) - 1);
+        assert_eq!(covered(&s, e), (1000, 19_001));
+        assert_eq!(19_001 - 1000, n - 2 * 1000 + 1);
         // the ground time does not matter: it is not the automatic trim
         assert_eq!(cut_ends(&flight(20.0, 3.0, true)), Some(e));
     }
 
     #[test]
-    fn cut_ends_takes_a_short_log_whole_but_its_first_sample() {
+    fn cut_ends_trims_a_short_log_too() {
+        // 10 s: samples 1000 to 9000, no rule that takes it whole
         let s = flight(10.0, 0.0, false);
         let e = cut_ends(&s).unwrap();
-        assert_eq!(covered(&s, e), (1, 10_000));
-        // just above the switch: trimmed
-        let s = flight(10.1, 0.0, false);
+        assert_eq!(covered(&s, e), (1000, 9001));
+        let s = flight(11.0, 0.0, false);
         let e = cut_ends(&s).unwrap();
-        assert_eq!(covered(&s, e), (1002, s.timebase.len() - 1000 + 1));
+        assert_eq!(covered(&s, e), (1000, 10_001));
     }
 
     #[test]
-    fn cut_ends_needs_three_samples() {
+    fn cut_ends_needs_a_log_over_two_seconds() {
+        assert_eq!(cut_ends(&flight(2.0, 0.0, false)), None);
+        assert_eq!(cut_ends(&flight(1.0, 0.0, false)), None);
         let mut s = flight(1.0, 0.0, false);
         s.timebase.time_us.truncate(2);
         assert_eq!(cut_ends(&s), None);
+        // one sample past 2 s leaves samples 1000 and 1001
+        let mut s = flight(3.0, 0.0, false);
+        s.timebase.time_us.truncate(2001);
+        let e = cut_ends(&s).unwrap();
+        assert_eq!(covered(&s, e), (1000, 1002));
     }
 }

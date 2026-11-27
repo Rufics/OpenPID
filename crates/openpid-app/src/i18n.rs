@@ -932,8 +932,8 @@ static UA: &[(&str, &str)] = &[
         "стіки під вказівником або курсором, у правому нижньому куті рядка газу й моторів",
     ),
     (
-        "the stretch other analysis tools take, to compare numbers with theirs; a log of 10 s or less whole",
-        "відрізок, який беруть інші інструменти аналізу, щоб порівнювати числа з їхніми; лог до 10 с — увесь",
+        "the stretch other analysis tools take, to compare numbers with theirs",
+        "відрізок, який беруть інші інструменти аналізу, щоб порівнювати числа з їхніми",
     ),
     (
         "the tab with what this proposal was read from",
