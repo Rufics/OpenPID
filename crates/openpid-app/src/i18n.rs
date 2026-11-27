@@ -157,6 +157,7 @@ static UA: &[(&str, &str)] = &[
     ("Details", "Деталі"),
     ("Differences only", "Лише відмінності"),
     ("Display", "Показ"),
+    ("Dist. to median", "Відст. до медіани"),
     ("Done", "Готово"),
     ("Drop a log here, or", "Перетягніть лог сюди або"),
     ("Dyn max", "Дин. макс"),
@@ -450,6 +451,10 @@ static UA: &[(&str, &str)] = &[
     (
         "a term of the PID output, in the firmware's units, on the axis rows",
         "складова виходу PID в одиницях прошивки, у рядках осей",
+    ),
+    (
+        "a window counts only when the level its response settles at lies within three scaled median absolute deviations of the median of the other windows, as in the web edition of the reference tool; off takes every window that stays between 0.5 and 1.5",
+        "вікно зараховується, лише якщо рівень, на якому усталюється його відгук, лежить у межах трьох масштабованих медіанних абсолютних відхилень від медіани інших вікон, як у вебверсії еталонного інструмента; вимкнено — враховується кожне вікно, що лишається між 0,5 та 1,5",
     ),
     ("all", "усі"),
     (

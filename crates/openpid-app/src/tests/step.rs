@@ -198,6 +198,12 @@ fn the_step_tab_ships_with_the_division_and_draws_what_the_reference_tool_reads(
     // the reference tool analyses a log without its first and last second,
     // from two samples in: the same stretch here
     set_epoch(&mut ui, Some((1.001, 38.6)));
+    // the screenshots are of version 0.9, which had no distance to the
+    // median: it is switched off for them, and on by default
+    assert!(ui.app().tools.step.dist_to_median);
+    assert!(ui.is_checked("Dist. to median"));
+    ui.check("Dist. to median", false);
+    assert!(!ui.app().tools.step.dist_to_median);
     let result = |ui: &mut Ui, axis: Axis| -> (Slot, Arc<Output>) {
         let p = StepParams {
             axis,
@@ -219,8 +225,9 @@ fn the_step_tab_ships_with_the_division_and_draws_what_the_reference_tool_reads(
         };
         assert_eq!(step.method, StepMethod::Division);
         // the screenshots are of version 0.9, whose windows were 0.1 s
-        // apart; ours follow 0.94: 0.05 s, twice the windows
-        assert!(step.windows_used.abs_diff(2 * windows) <= 3, "{axis:?}");
+        // apart; ours follow the web edition: 0.05 s, twice the windows,
+        // and one more at the end of the stretch
+        assert!(step.windows_used.abs_diff(2 * windows) <= 4, "{axis:?}");
         // the Peak plot: the point and its bar
         let drawn = peak_values(&shown);
         assert_eq!(drawn.len(), 1);
@@ -231,10 +238,12 @@ fn the_step_tab_ships_with_the_division_and_draws_what_the_reference_tool_reads(
         );
         assert_eq!(drawn[0].2, Some(step.spread.peak_sd));
         // the Latency plot shows the SR latency of the windows, not the
-        // half-way time of the mean curve
+        // half-way time of the mean curve (within 0.6 ms of version 0.9's:
+        // pitch has some 26 windows, and a window more or less moves their
+        // mean by a few tenths of a millisecond)
         let drawn = latency_values(&shown, LatencyShown::HalfRise);
         assert!(
-            (drawn[0].1 - latency).abs() < 0.5,
+            (drawn[0].1 - latency).abs() < 0.6,
             "{axis:?}: {}",
             drawn[0].1
         );
@@ -244,13 +253,24 @@ fn the_step_tab_ships_with_the_division_and_draws_what_the_reference_tool_reads(
         assert_eq!(Some(delay[0].1), step.metrics.latency_ms);
         assert_eq!(delay[0].2, None);
     }
-    // the panel of the division: its method, its smoothing and the window
-    // length, none of the other fields of the Wiener estimate
+    // the panel of the division: its method, its smoothing, the window
+    // length and the distance to the median, none of the other fields of
+    // the Wiener estimate
     assert!(ui.has("Method") && ui.has("Smoothing") && ui.has("Window"));
     for field in ["Cut-off", "Min input", "High input", "Y correction"] {
         assert!(!ui.has(field), "{field}");
     }
+    // the distance to the median leaves out the windows that settle far
+    // from the others
+    let (_, every) = result(&mut ui, Axis::Roll);
+    ui.check("Dist. to median", true);
+    assert!(ui.app().tools.step.dist_to_median);
     let (_, plain) = result(&mut ui, Axis::Roll);
+    let (Output::Step(every), Output::Step(near)) = (every.as_ref(), plain.as_ref()) else {
+        panic!("step results");
+    };
+    assert!(near.windows_used < every.windows_used);
+    assert_eq!(near.windows_total, every.windows_total);
     // windows of 4 s: half as many as of 2 s, a fortieth of 4 s apart
     ui.set("Window", 4.0);
     assert_eq!(ui.app().tools.step.window_s, 4.0);
@@ -284,6 +304,7 @@ fn the_step_tab_ships_with_the_division_and_draws_what_the_reference_tool_reads(
     ] {
         assert!(ui.has(field), "{field}");
     }
+    assert!(!ui.has("Dist. to median"));
     let (_, wiener) = result(&mut ui, Axis::Roll);
     let Output::Step(w) = wiener.as_ref() else {
         panic!("a step result");

@@ -40,6 +40,23 @@ fn params_hash_by_value() {
     };
     assert_ne!(hash(&a), hash(&b));
     assert_eq!(hash(&a), hash(&StepParams::default()));
+    // the limits of the division are part of the key
+    for other in [
+        StepParams {
+            dist_to_median: false,
+            ..Default::default()
+        },
+        StepParams {
+            median_distance: 2.0,
+            ..Default::default()
+        },
+        StepParams {
+            settled_width: 2.0,
+            ..Default::default()
+        },
+    ] {
+        assert_ne!(hash(&a), hash(&other));
+    }
     let p = PsdParams::default();
     assert_ne!(
         hash(&p),
@@ -160,6 +177,28 @@ fn validation_and_variants() {
         ),
         Err(AnalysisError::NotEnoughData(_))
     ));
+    // the band of the division must have a width, and the distance to the
+    // median must be a distance
+    for p in [
+        StepParams {
+            settled_width: 0.0,
+            ..Default::default()
+        },
+        StepParams {
+            settled_width: f64::NAN,
+            ..Default::default()
+        },
+        StepParams {
+            median_distance: -1.0,
+            ..Default::default()
+        },
+        StepParams {
+            median_distance: f64::NAN,
+            ..Default::default()
+        },
+    ] {
+        assert!(bad(StepAnalysis.run(&ctx, &p)));
+    }
     // the settle range must be a range
     assert!(bad(StepAnalysis.run(
         &ctx,
