@@ -984,6 +984,7 @@ mod tests {
                 &PsdOutput {
                     channel: ChannelId::Throttle,
                     unit: String::new(),
+                    method: crate::psd::PsdMethod::Density,
                     fs: 1.0,
                     nperseg: 1,
                     segments: 1,

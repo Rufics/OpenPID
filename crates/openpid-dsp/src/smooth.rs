@@ -50,6 +50,35 @@ pub fn box_filter_2d(z: &[f64], nx: usize, ny: usize, wx: usize, wy: usize) -> V
     out
 }
 
+/// Centred moving average over `w` points whose window is cut at the ends:
+/// at every point the mean of the values from `w/2` before it to `w/2`
+/// after it, over the points that exist, so near an end the window is
+/// lopsided and holds fewer points (unlike [`moving_average`], which shrinks
+/// it symmetrically). An even `w` counts as the next odd one; a `w` below
+/// two leaves the values as they are.
+pub fn moving_average_cut(x: &[f64], w: usize) -> Vec<f64> {
+    let n = x.len();
+    let half = w / 2;
+    if n == 0 || half == 0 {
+        return x.to_vec();
+    }
+    // running sums: the mean of x[lo..hi] is (sum[hi] − sum[lo]) / (hi − lo)
+    let mut sum = Vec::with_capacity(n + 1);
+    sum.push(0.0);
+    let mut total = 0.0;
+    for v in x {
+        total += v;
+        sum.push(total);
+    }
+    (0..n)
+        .map(|i| {
+            let lo = i.saturating_sub(half);
+            let hi = (i + half + 1).min(n);
+            (sum[hi] - sum[lo]) / (hi - lo) as f64
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,5 +93,47 @@ mod tests {
         let z = [0.0, 0.0, 0.0, 0.0, 9.0, 0.0, 0.0, 0.0, 0.0];
         let f = box_filter_2d(&z, 3, 3, 3, 3);
         assert!(f.iter().all(|v| (v - 1.0).abs() < 1e-12));
+    }
+
+    #[test]
+    fn moving_average_cut_is_the_mean_of_the_points_that_exist() {
+        let x = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
+        // inside: the centred mean of five points; at the ends fewer of them
+        let s = moving_average_cut(&x, 5);
+        let want = [2.0, 2.5, 3.0, 4.0, 5.0, 5.5, 6.0];
+        for (got, want) in s.iter().zip(want) {
+            assert!((got - want).abs() < 1.0e-12, "{s:?}");
+        }
+        // an even width is the next odd one; one or none leaves the values
+        assert_eq!(moving_average_cut(&x, 4), s);
+        assert_eq!(moving_average_cut(&x, 1), x);
+        assert_eq!(moving_average_cut(&x, 0), x);
+        assert!(moving_average_cut(&[], 5).is_empty());
+        // a window wider than the values: every point is a mean of what exists
+        let wide = moving_average_cut(&[0.0, 3.0, 9.0], 101);
+        assert!(wide.iter().all(|v| (v - 4.0).abs() < 1.0e-12), "{wide:?}");
+    }
+
+    #[test]
+    fn moving_average_cut_spreads_a_point_evenly_and_keeps_a_level() {
+        let mut x = vec![0.0; 1001];
+        x[500] = 151.0;
+        let s = moving_average_cut(&x, 151);
+        for (i, v) in s.iter().enumerate() {
+            let want = if (425..=575).contains(&i) { 1.0 } else { 0.0 };
+            assert!((v - want).abs() < 1.0e-12, "{i}: {v}");
+        }
+        // a level stays the level up to the very ends
+        let level = vec![-37.5; 2000];
+        assert!(
+            moving_average_cut(&level, 601)
+                .iter()
+                .all(|v| (v + 37.5).abs() < 1.0e-9)
+        );
+        // the first point is the mean of itself and the half window after it
+        let ramp: Vec<f64> = (0..400).map(f64::from).collect();
+        let r = moving_average_cut(&ramp, 51);
+        assert!((r[0] - 12.5).abs() < 1.0e-9 && (r[399] - 386.5).abs() < 1.0e-9);
+        assert!((r[200] - 200.0).abs() < 1.0e-9);
     }
 }

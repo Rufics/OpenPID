@@ -342,7 +342,12 @@ PTB's "SR Latency" is the time the mean response takes to reach 50 % (our *delay
 
 ### 6.3 2D spectral analyzer (PSD)
 
-Welch: `nfft` segments (default 1024 at 4 kHz; parameterised in seconds), 50 % overlap, Hann, averaged periodograms, units `(°/s)²/Hz` with a dB or linear option. Channels: gyro raw/filtered, D-term, PID error, setpoint, motor, debug[n]. A/B comparison on one axis.
+Two methods (`PsdMethod`), chosen on the tab; channels: gyro raw/filtered, D-term, PID error, setpoint, motor, debug[n]; A/B comparison on one axis.
+
+- **Curve** (the tab's and the CLI's default; decisions D-001 and D-015, issues #171 and #166): the curve the reference tool's web edition 1.0 draws, identified from its outputs on synthetic logs. One transform of the whole analysis window as it is (nothing removed, the mean left in) through a symmetric Hann window over its `n` samples, zero-padded to the next power of two at or above `n` (`curve_transform_len`: 32 768 points for 24 001 samples); the level `10·log10(2·|X|² / (fs·n))` with `n` the number of samples, not the padded length, the window's loss not put back and the points at 0 Hz and at the Nyquist frequency not doubled. The decibel values are then smoothed by a centred moving average over 51, 151, 301 or 601 points for low, medium (the default), high and max (`curve_window`, `openpid_dsp::smooth::moving_average_cut`): the same number of points whatever their spacing, and at the ends the mean over the points that exist. It is not a density: noise reads 6.8 dB below its density, a steady tone almost vanishes, and the same level is a wider band in hertz for a shorter log (the points are `fs / nfft` apart). Version 0.94 of the reference tool, which D-001 first followed, took no padding and smoothed by a local regression over five levels; the web edition replaced it (D-015).
+- **Density** (the default of the type, and what the advice and the motor-noise analyses are built on): Welch, `nfft` segments (default 1024 at 4 kHz; parameterised in seconds), 50 % overlap, Hann, averaged periodograms with the window's loss put back, units `(°/s)²/Hz` with a dB or linear option.
+
+The web edition analyses the samples from 1 s to T − 1 s of a log of T seconds, both ends included (`fs·(T − 2) + 1` samples); OpenPID analyses the analysis window chosen for the log, and `--epoch 1..T-1` (both ends included) takes the same samples.
 
 ### 6.4 Freq × throttle heatmap
 
@@ -382,9 +387,10 @@ What the reference tool shows by default, from the owner's PIDtoolbox Pro v0.9 s
 | Step | Y correction | a control exists; the default is not recorded | off | it rescales every window to end at 1, which would hide a response that really settles off 1 |
 | Spectrum | Layout | roll, pitch, yaw, each with a "Sub 100Hz" panel | the same: three rows × (full range, below 100 Hz) | the low range is where propwash and frame resonances are |
 | Spectrum | Unfiltered gyro | gyro solid, gyro prefilt dotted | the same, on | the effect of the filters is on screen without a second plot |
-| Spectrum | Smoothing | medium | medium (a moving average over 8 Hz of the power) | same |
-| Spectrum | Window | Hann | Hann; 0.25 s segments, 1 s for the column below 100 Hz | the longer segment gives 1 Hz bins where 4 Hz bins leave 25 points |
-| Spectrum | Level | its own dB scale | (°/s)²/Hz in dB, the range automatic | the absolute levels of the two tools differ, so a copied Y range would cut our curves |
+| Spectrum | Curve | one transform of the whole log, zero-padded to a power of two, its decibels smoothed by a moving average (web edition 1.0) | the same curve by default (D-001, option A; D-015, option A); Welch's power density as the second choice | a user who knows the reference tool reads the same numbers; the density stays one click away because it is the exact quantity and the one that shows a steady resonance |
+| Spectrum | Smoothing | Medium of four levels: Low, Medium, High, Max, a moving average over 51, 151, 301 or 601 points | the same four levels for the curve, medium; for the density a moving average over 8 Hz of the power | same |
+| Spectrum | Window | Hann, the whole log, zero-padded to the next power of two | the same for the curve; for the density 0.25 s segments, 1 s for the column below 100 Hz | the longer segment gives 1 Hz bins where 4 Hz bins leave 25 points |
+| Spectrum | Level | `10·log10(2·\|X\|² / (fs·n))`, `n` the samples, the window's loss not put back, 0 Hz and Nyquist not doubled | the same for the curve; for the density (°/s)²/Hz in dB; the range automatic | the curve reads noise 6.8 dB below its density; the automatic range fits either |
 | Freq × throttle | Columns | gyro prefilt beside gyro (its preset 1) | the same, per log | before and after the filters side by side |
 | Freq × throttle | Throttle axis | 0–100 % | 0–100 %; "Zoom to the flown range" as an option | a zoomed axis stretched 25 bins into blocks |
 | Freq × throttle | Lines over the maps | none from the data; fixed 20 / 60 Hz guides in its "<100Hz" view | none; "RPM overlay" and "Notches" as options | the owner: a line from the data reads as part of the map |
