@@ -275,6 +275,21 @@ Taken by the owner on 2026-11-11:
 | The owner's decision | **B** (2026-11-27): the map of any stretch stays |
 | Carried out by | #203 (the user guide) |
 
+### D-015 Which edition of the reference tool OpenPID follows
+
+| Field | |
+|---|---|
+| Id | D-015 |
+| Area | Every area: the rules the decisions D-001 to D-007 and D-012 took from version 0.94 |
+| Probe | round W1 (2026-11-27): four logs of round 17 in the web edition 1.0 ([web.md](web.md)) |
+| The reference tool shows | the web edition 1.0 computes the spectrum, both maps and the stretch differently from 0.94 (zero-padding to a power of two, moving averages instead of the local line, a centred column of 3 % on the throttle map, 0.03 s on the time map, the stretch `fs … fs·(T − 1)`), prints the filter delays at 25 Hz, and keeps other step response windows |
+| OpenPID shows | the rules of 0.94, as decided: 0.23 … 0.35 dB off the web edition in the median of a spectrum, 1.5 … 2 % on the throttle map's numbers |
+| The exact value | none: which edition users compare with |
+| Options | **A.** Follow the web edition 1.0: the decided rules are moved to it (spectrum, both maps, the filter simulator's delays, the stretch of "Without the first and last second"); the step response once a round has found its windows. OpenPID's own decisions stay (D-008, D-009, the automatic stretch of D-012, D-013, D-014). **B.** Stay with 0.94 and describe the web edition's differences. **C.** Both, with a choice of edition |
+| Recommendation | A: the web edition is the one in use, its differences are small and known exactly, and its zero-padding removes the scalloping of a tone between bins |
+| The owner's decision | **A** (2026-11-27) |
+| Carried out by | |
+
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
 call.
