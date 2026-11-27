@@ -115,6 +115,10 @@ static UA: &[(&str, &str)] = &[
     ("Cinematic", "Кіно"),
     ("Clear markers", "Прибрати маркери"),
     (
+        "Click or tap the plot to place the cursor and then the second mark.",
+        "Клацніть або торкніться графіка, щоб поставити курсор, а потім другу мітку.",
+    ),
+    (
         "Click or tap the plot to place the cursor, then set the epoch from it.",
         "Клацніть або торкніться графіка, щоб поставити курсор, і виставте епоху з нього.",
     ),
@@ -203,6 +207,7 @@ static UA: &[(&str, &str)] = &[
     ("Language", "Мова"),
     ("Latency", "Затримка"),
     ("Light", "Світла"),
+    ("Line smoothing", "Згладжування ліній"),
     ("Link scales", "Спільна шкала"),
     ("Log", "Лог"),
     ("Log check", "Перевірка логу"),
@@ -250,6 +255,7 @@ static UA: &[(&str, &str)] = &[
     ("Notches", "Нотчі"),
     ("Note", "Примітка"),
     ("ON THE LOG", "НА ЛОЗІ"),
+    ("Off", "Вимк."),
     (
         "Okabe-Ito line colours and viridis heatmaps, readable with colour-vision deficiencies",
         "кольори ліній Okabe–Ito і теплові карти viridis, розрізнювані при порушеннях кольорового зору",
@@ -280,6 +286,7 @@ static UA: &[(&str, &str)] = &[
     ("Peak prominence", "Виразність піка"),
     ("Peaks", "Піки"),
     ("Per motor", "По моторах"),
+    ("Period", "Період"),
     ("Pitch D gain", "D по pitch"),
     ("Pitch P & I gain", "P та I по pitch"),
     ("Play", "Відтворити"),
@@ -652,6 +659,10 @@ static UA: &[(&str, &str)] = &[
     ),
     ("magnitude (dB)", "амплітуда (дБ)"),
     ("markers", "мітки"),
+    (
+        "measures a period: the next click or long press places a second mark, and the time from the cursor to it is read out with its frequency; off removes the mark",
+        "вимірює період: наступне клацання або довге натискання ставить другу мітку, і час від курсора до неї показано разом із частотою; вимкнення прибирає мітку",
+    ),
     ("med-high", "вище середньої"),
     ("medium", "середня"),
     ("motors", "мотори"),
@@ -781,6 +792,10 @@ static UA: &[(&str, &str)] = &[
     ("sim as flown (dashed)", "sim як у польоті (пунктир)"),
     ("smooth", "згладжування"),
     ("smoothing", "згладжування"),
+    (
+        "smooths every line as drawn and its value at the cursor: a centred moving average over 3, 5, 11 or 21 samples, cut at the log's ends; the channels and the analyses stay as logged",
+        "згладжує кожну лінію на графіку та її значення під курсором: центроване ковзне середнє за 3, 5, 11 або 21 відліком, обрізане на краях логу; канали та аналізи лишаються як у лозі",
+    ),
     ("solo", "лише цей"),
     (
         "something is off; the text says what to look at",
@@ -938,6 +953,10 @@ static UA: &[(&str, &str)] = &[
     (
         "the throttle, in the row under the axes (%)",
         "газ, у рядку під осями (%)",
+    ),
+    (
+        "the time from the cursor to the second mark, and one over it",
+        "час від курсора до другої мітки та обернена до нього величина",
     ),
     (
         "the time of the cursor; the values at it are on every row",

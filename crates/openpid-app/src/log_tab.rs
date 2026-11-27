@@ -2,7 +2,9 @@
 //! pitch and yaw rows of the docked log at one shared scale, a row for the
 //! throttle and the motors under them (and rows for motor speeds, debug and
 //! other channels when chosen), the values at the cursor on every row, and
-//! the quantities as a checklist in the panel on the right.
+//! the quantities as a checklist in the panel on the right. The lines can be
+//! smoothed for reading as the reference tool's web edition 1.0 smooths
+//! them (D-011, D-015), and a second mark measures a period (D-011).
 
 use crate::app::App;
 use crate::axis_layout::control_panel;
@@ -16,7 +18,10 @@ use crate::views::{
 use crate::worker::Slot;
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{Line, PlotPoints, PlotTransform, VLine};
-use openpid_core::{Axis, ChannelId, FlightSession, GyroStage, PidTerm};
+use openpid_core::{Axis, Channel, ChannelId, FlightSession, GyroStage, PidTerm};
+use openpid_dsp::smooth::CutMovingAverage;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Width of the y-axis labels, the same on every row so the time axes line up.
 const Y_AXIS_W: f32 = 64.0;
@@ -194,6 +199,175 @@ fn colour(q: LogQuantity, k: usize) -> Color32 {
     }
 }
 
+/// The line smoothing of the rows (D-011), as the reference tool's web
+/// edition 1.0 smooths its main window (D-015): off, or level `S` of 2, 5,
+/// 10 and 20, a centred moving average over `2·floor(S/2) + 1` samples
+/// (3, 5, 11, 21), cut at the log's ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum LineSmoothing {
+    /// The lines as logged.
+    #[default]
+    Off,
+    /// Level 2: over 3 samples.
+    Two,
+    /// Level 5: over 5 samples.
+    Five,
+    /// Level 10: over 11 samples.
+    Ten,
+    /// Level 20: over 21 samples.
+    Twenty,
+}
+
+impl LineSmoothing {
+    pub const ALL: [LineSmoothing; 5] = [
+        LineSmoothing::Off,
+        LineSmoothing::Two,
+        LineSmoothing::Five,
+        LineSmoothing::Ten,
+        LineSmoothing::Twenty,
+    ];
+
+    /// The level as the web edition lists it (0: off).
+    pub fn level(self) -> usize {
+        match self {
+            LineSmoothing::Off => 0,
+            LineSmoothing::Two => 2,
+            LineSmoothing::Five => 5,
+            LineSmoothing::Ten => 10,
+            LineSmoothing::Twenty => 20,
+        }
+    }
+
+    /// The name in the list, as the web edition prints it.
+    pub fn name(self) -> &'static str {
+        match self {
+            LineSmoothing::Off => tr("Off"),
+            LineSmoothing::Two => "2",
+            LineSmoothing::Five => "5",
+            LineSmoothing::Ten => "10",
+            LineSmoothing::Twenty => "20",
+        }
+    }
+
+    /// The moving average of the level, over `2·floor(level/2) + 1` samples
+    /// (one when off).
+    pub fn smoother(self) -> CutMovingAverage {
+        CutMovingAverage::new(self.level())
+    }
+
+    /// The value of sample `i` as the rows draw it; `None` when it is not valid.
+    fn value_at(self, data: &openpid_core::Series, i: usize) -> Option<f64> {
+        if self == LineSmoothing::Off {
+            return data.get(i);
+        }
+        self.smoother().at(data.values(), |j| data.is_valid(j), i)
+    }
+}
+
+/// Samples smoothed at a time: a line is smoothed as its parts come into
+/// view, and a part once smoothed is kept.
+const SMOOTH_CHUNK: usize = 4096;
+
+/// The smoothed lines of the docked log at one level. Smoothing is a
+/// display setting: the channels, the analyses and the exports never see it.
+#[derive(Debug, Default)]
+pub struct SmoothCache {
+    /// The session and the level the lines belong to.
+    of: Option<(Arc<FlightSession>, LineSmoothing)>,
+    lines: HashMap<ChannelId, SmoothedLine>,
+}
+
+#[derive(Debug)]
+struct SmoothedLine {
+    values: Vec<f64>,
+    /// Which chunks of `values` are smoothed.
+    done: Vec<bool>,
+}
+
+impl SmoothCache {
+    /// How many lines are smoothed, for the tests.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.lines.len()
+    }
+
+    /// The samples `from..to` of channel `c` of `s` as drawn at `level`:
+    /// the logged values when off, else smoothed, with the chunks that
+    /// cover the range (and their windows, which reach `h` samples beyond)
+    /// computed on first use.
+    fn values<'a>(
+        &'a mut self,
+        s: &Arc<FlightSession>,
+        level: LineSmoothing,
+        c: &'a Channel,
+        (from, to): (usize, usize),
+    ) -> &'a [f64] {
+        let data = &c.data;
+        if level == LineSmoothing::Off {
+            return &data.values()[from..to];
+        }
+        let average = level.smoother();
+        if !self
+            .of
+            .as_ref()
+            .is_some_and(|(o, l)| Arc::ptr_eq(o, s) && *l == level)
+        {
+            self.of = Some((s.clone(), level));
+            self.lines.clear();
+        }
+        let n = data.len();
+        let line = self
+            .lines
+            .entry(c.id.clone())
+            .or_insert_with(|| SmoothedLine {
+                values: vec![0.0; n],
+                done: vec![false; n.div_ceil(SMOOTH_CHUNK)],
+            });
+        for k in from / SMOOTH_CHUNK..to.div_ceil(SMOOTH_CHUNK) {
+            if line.done[k] {
+                continue;
+            }
+            let (a, b) = (k * SMOOTH_CHUNK, ((k + 1) * SMOOTH_CHUNK).min(n));
+            let v = average.smooth_range(data.values(), |i| data.is_valid(i), a, b);
+            line.values[a..b].copy_from_slice(&v);
+            line.done[k] = true;
+        }
+        &line.values[from..to]
+    }
+}
+
+/// Colour of the second mark of the period (vermilion, apart from the
+/// cursor's violet; the reference tool marks a period in red).
+const MARK: Color32 = Color32::from_rgb(213, 94, 0);
+
+/// `v` rounded to `digits` significant digits, without trailing exponent.
+fn significant(v: f64, digits: i32) -> String {
+    if v == 0.0 || !v.is_finite() {
+        return format!("{v}");
+    }
+    let mag = |x: f64| x.abs().log10().floor() as i32;
+    let p = 10f64.powi(mag(v) - digits + 1);
+    let r = (v / p).round() * p;
+    let decimals = (digits - 1 - mag(r)).max(0) as usize;
+    format!("{r:.decimals$}")
+}
+
+/// The read-out of a period of `dt_s` seconds: "Δt = 6681 ms · 0.1497 Hz";
+/// milliseconds without decimals from 100 ms, else with one, and the
+/// frequency to four significant digits.
+pub(crate) fn period_text(dt_s: f64) -> String {
+    let ms = dt_s.abs() * 1000.0;
+    let ms = if ms >= 100.0 {
+        format!("{ms:.0}")
+    } else {
+        format!("{ms:.1}")
+    };
+    if dt_s == 0.0 {
+        return format!("Δt = {ms} ms");
+    }
+    format!("Δt = {ms} ms · {} Hz", significant(1.0 / dt_s.abs(), 4))
+}
+
 /// Display options of the tab.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LogDisplay {
@@ -208,6 +382,8 @@ pub struct LogDisplay {
     /// Marks where the flight modes change, on the throttle / motors row
     /// (off by default, owner 2026-11-10).
     pub mode_marks: bool,
+    /// The line smoothing of every row (off by default, D-011, D-015).
+    pub smoothing: LineSmoothing,
 }
 
 impl Default for LogDisplay {
@@ -224,6 +400,7 @@ impl Default for LogDisplay {
             sticks: true,
             modes: true,
             mode_marks: false,
+            smoothing: LineSmoothing::Off,
         }
     }
 }
@@ -358,12 +535,28 @@ fn rows(app: &App, s: &FlightSession) -> Vec<RowSpec> {
 #[derive(Default)]
 struct Interaction {
     cursor: Option<f64>,
+    /// Whether the period is being measured: a click then places the second mark.
+    period: bool,
+    /// The second mark of the period.
+    mark: Option<f64>,
     /// Time under the pointer, when it is over a row.
     hover: Option<f64>,
     hovered: Option<(Slot, bool)>,
     drag_to: Option<(Slot, bool, f64)>,
     drag_started: bool,
     drag_stopped: bool,
+}
+
+impl Interaction {
+    /// A click, a tap or a long press at time `t`: the cursor, or while the
+    /// period is measured and the cursor is placed, the second mark.
+    fn place(&mut self, t: f64) {
+        if self.period && self.cursor.is_some() {
+            self.mark = Some(t);
+        } else {
+            self.cursor = Some(t);
+        }
+    }
 }
 
 /// The tab.
@@ -380,17 +573,16 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
     let gap = ui.spacing().item_spacing.y;
     let weights: f32 = specs.iter().map(|r| r.weight).sum();
     let unit_h = ((ui.available_height() - gap * specs.len() as f32 - 20.0) / weights).max(40.0);
+    if app.tools.log_display.smoothing == LineSmoothing::Off {
+        app.viewer.smoothed = SmoothCache::default();
+    }
     let mut act = Interaction {
         cursor: app.viewer.cursor_s,
+        period: app.viewer.period,
+        mark: app.viewer.mark_s.filter(|_| app.viewer.period),
         ..Interaction::default()
     };
-    let t0 = s.timebase.time_us.first().copied().unwrap_or(0);
-    let xs: Vec<f64> = s
-        .timebase
-        .time_us
-        .iter()
-        .map(|t| (t - t0) as f64 / 1.0e6)
-        .collect();
+    let xs = times(&s);
     let last = specs.len() - 1;
     let mut first: Option<PlotTransform> = None;
     // the sticks sit on the throttle / motors row, else on the last row
@@ -443,6 +635,7 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
     }
     let prev_hover = app.viewer.hover_handle;
     app.viewer.cursor_s = act.cursor;
+    app.viewer.mark_s = act.mark;
     app.viewer.hover_handle = act.hovered;
     // the drag is recognised a few pixels after the press: use the handle hovered at the press
     if act.drag_started
@@ -463,7 +656,7 @@ pub fn log_viewer(app: &mut App, ui: &mut Ui) {
 fn row(
     app: &mut App,
     ui: &mut Ui,
-    (slot, s, xs): (Slot, &FlightSession, &[f64]),
+    (slot, s, xs): (Slot, &Arc<FlightSession>, &[f64]),
     spec: &RowSpec,
     height: f32,
     last: bool,
@@ -506,21 +699,8 @@ fn row(
             let Some(c) = s.channel(&line.id) else {
                 continue;
             };
-            let (scale, symbol) = display_unit(&c.unit, &app.prefs);
-            let v = c.data.values();
-            let to = to.min(v.len());
-            let from = from.min(to);
-            let mut pts = decimate(
-                &xs[from..to],
-                &v[from..to],
-                |i| c.data.is_valid(i + from),
-                px * 2,
-            );
-            if scale != 1.0 {
-                for p in &mut pts {
-                    p[1] *= scale;
-                }
-            }
+            let symbol = display_unit(&c.unit, &app.prefs).1;
+            let pts = line_points(app, s, xs, c, (from, to), px * 2);
             pu.line(
                 Line::new(format!("{} ({symbol})", line.name), PlotPoints::from(pts))
                     .color(line.colour)
@@ -538,6 +718,9 @@ fn row(
                     .width(1.5),
             );
         }
+        if let Some(t) = act.mark {
+            pu.vline(VLine::new(tr("Period"), t).color(MARK).width(1.5));
+        }
         pointer(app, pu, touch, act);
         transform = Some(*pu.transform());
     });
@@ -546,6 +729,31 @@ fn row(
     app.probes
         .record(format!("log/{}", spec.key), &shown.transform);
     transform.unwrap_or(shown.transform)
+}
+
+/// The points of channel `c` of `s` between the samples `from..to`, as a
+/// row draws them: smoothed at the chosen level, decimated to about
+/// `max_points`, in the display unit.
+fn line_points(
+    app: &mut App,
+    s: &Arc<FlightSession>,
+    xs: &[f64],
+    c: &Channel,
+    (from, to): (usize, usize),
+    max_points: usize,
+) -> Vec<[f64; 2]> {
+    let scale = display_unit(&c.unit, &app.prefs).0;
+    let level = app.tools.log_display.smoothing;
+    let to = to.min(c.data.len()).min(xs.len());
+    let from = from.min(to);
+    let v = app.viewer.smoothed.values(s, level, c, (from, to));
+    let mut pts = decimate(&xs[from..to], v, |i| c.data.is_valid(i + from), max_points);
+    if scale != 1.0 {
+        for p in &mut pts {
+            p[1] *= scale;
+        }
+    }
+    pts
 }
 
 /// Clicks, long presses and epoch drags on a row.
@@ -573,12 +781,12 @@ fn pointer(app: &mut App, pu: &egui_plot::PlotUi<'_>, touch: bool, act: &mut Int
     if resp.clicked()
         && let Some(p) = pu.pointer_coordinate()
     {
-        act.cursor = Some(p.x);
+        act.place(p.x);
     }
     if resp.long_touched()
         && let Some(p) = resp.interact_pointer_pos()
     {
-        act.cursor = Some(pu.transform().value_from_position(p).x);
+        act.place(pu.transform().value_from_position(p).x);
     }
     // in touch mode a finger held still for a moment places the cursor too
     // (not every backend reports long touches)
@@ -593,7 +801,7 @@ fn pointer(app: &mut App, pu: &egui_plot::PlotUi<'_>, touch: bool, act: &mut Int
             if p.distance(p0) > LONG_PRESS_SLOP_PX {
                 app.viewer.press = None; // it is a pan
             } else if now - t0 >= LONG_PRESS_S {
-                act.cursor = Some(pu.transform().value_from_position(p0).x);
+                act.place(pu.transform().value_from_position(p0).x);
                 app.viewer.press = None;
             }
         }
@@ -808,6 +1016,29 @@ fn draw_sticks(
     card
 }
 
+/// The times of the samples, s from the first.
+fn times(s: &FlightSession) -> Vec<f64> {
+    let t0 = s.timebase.time_us.first().copied().unwrap_or(0);
+    s.timebase
+        .time_us
+        .iter()
+        .map(|t| (t - t0) as f64 / 1.0e6)
+        .collect()
+}
+
+/// The value of sample `i` of `c` read out at the cursor: as drawn, smoothed
+/// at the chosen level, in the display unit.
+fn cursor_value(app: &App, c: &Channel, i: usize) -> Option<f64> {
+    let v = app.tools.log_display.smoothing.value_at(&c.data, i)?;
+    Some(v * display_unit(&c.unit, &app.prefs).0)
+}
+
+/// The sample at or just after time `t` (s from the start of the log).
+fn sample_at(xs: &[f64], t: f64) -> usize {
+    xs.partition_point(|x| *x < t)
+        .min(xs.len().saturating_sub(1))
+}
+
 /// The names of the row's lines in their colours, with the value at the
 /// cursor once there is one: the legend and the read-out in one.
 fn read_out(
@@ -821,10 +1052,7 @@ fn read_out(
 ) {
     let frame = *transform.frame();
     let painter = ui.painter().with_clip_rect(frame);
-    let at = cursor.map(|t| {
-        xs.partition_point(|x| *x < t)
-            .min(xs.len().saturating_sub(1))
-    });
+    let at = cursor.map(|t| sample_at(xs, t));
     let font = egui::FontId::proportional(11.5);
     let bg = if crate::theme::is_dark() {
         Color32::from_rgba_unmultiplied(16, 17, 20, 210)
@@ -833,12 +1061,12 @@ fn read_out(
     };
     let mut x = frame.left() + 6.0;
     for line in &spec.series {
-        let text = match (at, s.channel(&line.id)) {
-            (Some(i), Some(c)) if c.data.is_valid(i) => {
-                let (scale, _) = display_unit(&c.unit, &app.prefs);
-                format!("{} {:.0}", line.name, c.data.values()[i] * scale)
-            }
-            _ => line.name.clone(),
+        let value = at
+            .zip(s.channel(&line.id))
+            .and_then(|(i, c)| cursor_value(app, c, i));
+        let text = match value {
+            Some(v) => format!("{} {v:.0}", line.name),
+            None => line.name.clone(),
         };
         let galley = painter.layout_no_wrap(text, font.clone(), line.colour);
         let r = egui::Rect::from_min_size(egui::pos2(x, frame.top() + 3.0), galley.size())
@@ -872,6 +1100,20 @@ fn controls(app: &mut App, ui: &mut Ui) {
     if r.changed() {
         app.tools.log_display.y_scale = y / rate.0;
     }
+    let levels: Vec<(LineSmoothing, String)> = LineSmoothing::ALL
+        .iter()
+        .map(|l| (*l, l.name().to_string()))
+        .collect();
+    panel::choice(
+        ui,
+        "log-smoothing",
+        tr("Line smoothing"),
+        tr(
+            "smooths every line as drawn and its value at the cursor: a centred moving average over 3, 5, 11 or 21 samples, cut at the log's ends; the channels and the analyses stay as logged",
+        ),
+        &mut app.tools.log_display.smoothing,
+        &levels,
+    );
     panel::section(ui, tr("Quantities"));
     for q in LogQuantity::ALL {
         let logged = session
@@ -894,6 +1136,7 @@ fn controls(app: &mut App, ui: &mut Ui) {
     }
     other_channels(app, ui, session.as_deref());
     cursor_rows(app, ui);
+    period_rows(app, ui);
     panel::check(
         ui,
         &mut app.tools.log_display.sticks,
@@ -977,6 +1220,64 @@ pub(crate) fn row_summary(app: &App) -> Vec<(&'static str, Vec<String>)> {
         .into_iter()
         .map(|r| (r.key, r.series.into_iter().map(|l| l.name).collect()))
         .collect()
+}
+
+/// The period: a second mark and the time from the cursor to it.
+fn period_rows(app: &mut App, ui: &mut Ui) {
+    let r = panel::check(
+        ui,
+        &mut app.viewer.period,
+        tr("Period"),
+        tr(
+            "measures a period: the next click or long press places a second mark, and the time from the cursor to it is read out with its frequency; off removes the mark",
+        ),
+    );
+    if r.changed() && !app.viewer.period {
+        app.viewer.mark_s = None;
+    }
+    if !app.viewer.period {
+        return;
+    }
+    match (app.viewer.cursor_s, app.viewer.mark_s) {
+        (Some(c), Some(m)) => {
+            ui.label(RichText::new(period_text(m - c)).color(MARK))
+                .on_hover_text(tr(
+                    "the time from the cursor to the second mark, and one over it",
+                ));
+        }
+        _ => {
+            ui.label(
+                RichText::new(tr(
+                    "Click or tap the plot to place the cursor and then the second mark.",
+                ))
+                .color(MUTED),
+            );
+        }
+    }
+}
+
+/// The values of a line of a row and the value at time `t` read out on it,
+/// as drawn, for the tests: the whole log, not decimated.
+#[cfg(test)]
+pub(crate) fn line_summary(
+    app: &mut App,
+    row: &str,
+    line: &str,
+    t: f64,
+) -> Option<(Vec<f64>, Option<f64>)> {
+    let s = app
+        .dock_slot()
+        .and_then(|s| app.loaded(s))
+        .and_then(|l| l.current().cloned())?;
+    let spec = rows(app, &s).into_iter().find(|r| r.key == row)?;
+    let id = spec.series.into_iter().find(|l| l.name == line)?.id;
+    let c = s.channel(&id)?;
+    let xs = times(&s);
+    let values = line_points(app, &s, &xs, c, (0, xs.len()), usize::MAX)
+        .into_iter()
+        .map(|p| p[1])
+        .collect();
+    Some((values, cursor_value(app, c, sample_at(&xs, t))))
 }
 
 /// The cursor's time and the epoch bounds set from it.

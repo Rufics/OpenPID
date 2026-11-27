@@ -3,11 +3,12 @@
 
 use super::{LOG_4_2, LOG_2025, jobs};
 use crate::app::Tab;
-use crate::log_tab::{LogQuantity, row_summary};
+use crate::log_tab::{LineSmoothing, LogQuantity, line_summary, period_text, row_summary};
 use crate::testkit::{Ui, at_every_size};
 use crate::worker::Slot;
 use eframe::egui::Key;
 use openpid_core::{Axis, ChannelId, FlightMode, GyroStage};
+use openpid_dsp::smooth::CutMovingAverage;
 
 fn rows(ui: &Ui) -> Vec<&'static str> {
     row_summary(ui.app()).iter().map(|r| r.0).collect()
@@ -260,4 +261,145 @@ fn mode_changes_of_a_log_without_modes() {
         ui.app().viewer.modes.is_none(),
         "no modes on the card either"
     );
+}
+
+/// Picks `level` in the list of the line smoothing; the harness leaves the
+/// list open after a pick.
+fn pick(ui: &mut Ui, level: LineSmoothing) {
+    if ui.has(level.name()) {
+        ui.click(level.name());
+    } else {
+        ui.choose_exact("Line smoothing", level.name());
+    }
+}
+
+/// The line smoothing (D-011, D-015): the web edition's list Off, 2, 5, 10
+/// and 20, off by default; a level smooths what the rows draw and the values
+/// at the cursor, never the channels.
+#[test]
+fn line_smoothing_smooths_what_the_rows_draw() {
+    at_every_size(|screen| {
+        let mut ui = Ui::open_on(&[LOG_2025], Tab::LogViewer, screen);
+        assert_eq!(ui.app().tools.log_display.smoothing, LineSmoothing::Off);
+        assert!(ui.has("Line smoothing"));
+        let gyro = |ui: &mut Ui| line_summary(ui.app_mut(), "roll", "gyro", 14.2).unwrap();
+        let (off, off_at) = gyro(&mut ui);
+        let session = ui.app().loaded(Slot::A).unwrap().current().unwrap().clone();
+        let id = ChannelId::Gyro {
+            axis: Axis::Roll,
+            stage: GyroStage::Filtered,
+        };
+        let logged = session.channel(&id).unwrap().data.clone();
+        assert_eq!(off.as_slice(), logged.values(), "off: the lines as logged");
+        // the list holds the five levels, each of which can be picked
+        ui.choose_exact("Line smoothing", LineSmoothing::Two.name());
+        for level in LineSmoothing::ALL {
+            assert!(ui.has(level.name()), "{level:?} in the list");
+        }
+        for level in [2, 3, 0, 4].map(|k| LineSmoothing::ALL[k]) {
+            pick(&mut ui, level);
+            assert_eq!(ui.app().tools.log_display.smoothing, level);
+        }
+        assert_eq!(ui.app().tools.log_display.smoothing, LineSmoothing::Twenty);
+        assert_eq!(
+            LineSmoothing::ALL.map(|l| (l.name(), l.smoother().width())),
+            [("Off", 1), ("2", 3), ("5", 5), ("10", 11), ("20", 21)]
+        );
+        // the rows drew their lines smoothed: gyro and setpoint on three
+        // axes, the throttle and four motors
+        assert_eq!(ui.app().viewer.smoothed.len(), 11);
+        let (smooth, smooth_at) = gyro(&mut ui);
+        let want = CutMovingAverage::new(21).smooth_range(
+            logged.values(),
+            |i| logged.is_valid(i),
+            0,
+            logged.len(),
+        );
+        assert_eq!(smooth.len(), want.len());
+        assert!(smooth.iter().zip(&want).all(|(a, b)| (a - b).abs() < 1e-9));
+        assert!(
+            smooth.iter().zip(&off).any(|(a, b)| (a - b).abs() > 1.0),
+            "smoothed"
+        );
+        // the value at the cursor is the smoothed one
+        let (off_at, smooth_at) = (off_at.unwrap(), smooth_at.unwrap());
+        assert!(want.iter().any(|v| (v - smooth_at).abs() < 1e-9));
+        assert!(logged.values().contains(&off_at));
+        // the row was drawn at that level, and the log is as it was
+        ui.plot("log/roll").click(14.2);
+        assert!(ui.app().viewer.cursor_s.is_some());
+        let now = ui.app().loaded(Slot::A).unwrap().current().unwrap().clone();
+        assert_eq!(
+            now.channel(&id).unwrap().data,
+            logged,
+            "the channel untouched"
+        );
+        // the motors row is smoothed too
+        let motors = line_summary(ui.app_mut(), "motors", "M1", 14.2).unwrap().0;
+        pick(&mut ui, LineSmoothing::Off);
+        assert_eq!(ui.app().viewer.smoothed.len(), 0, "off frees the lines");
+        let raw = line_summary(ui.app_mut(), "motors", "M1", 14.2).unwrap().0;
+        assert_ne!(motors, raw);
+    });
+}
+
+/// The period (D-011): with the toggle on a click places a second mark, the
+/// time from the cursor to it is read out with its frequency, and the
+/// toggle off removes the mark.
+#[test]
+fn period_places_a_second_mark_and_reads_out_the_time() {
+    at_every_size(|screen| {
+        let mut ui = Ui::open_on(&[LOG_2025], Tab::LogViewer, screen);
+        assert!(!ui.app().viewer.period, "off by default");
+        ui.check("Period", true);
+        assert!(ui.sees("then the second mark"));
+        // no cursor yet: the first click places it, the next one the mark
+        let tol = ui.plot("log/roll").x_tolerance();
+        ui.plot("log/roll").click(5.0);
+        let cursor = ui.app().viewer.cursor_s.expect("the cursor");
+        assert!((cursor - 5.0).abs() <= tol);
+        assert_eq!(ui.app().viewer.mark_s, None);
+        ui.plot("log/pitch").click(12.0);
+        let mark = ui.app().viewer.mark_s.expect("the second mark");
+        assert!((mark - 12.0).abs() <= tol);
+        assert_eq!(ui.app().viewer.cursor_s, Some(cursor), "the cursor stays");
+        // two known times read out
+        ui.app_mut().viewer.cursor_s = Some(1.0);
+        ui.app_mut().viewer.mark_s = Some(7.681);
+        ui.settle();
+        assert!(ui.sees("Δt = 6681 ms · 0.1497 Hz"));
+        // off: the mark goes, and a click places the cursor again
+        ui.check("Period", false);
+        assert_eq!(ui.app().viewer.mark_s, None);
+        assert!(!ui.sees("Δt"));
+        ui.plot("log/roll").click(9.0);
+        assert!((ui.app().viewer.cursor_s.unwrap() - 9.0).abs() <= tol);
+        assert_eq!(ui.app().viewer.mark_s, None);
+    });
+}
+
+#[test]
+fn a_long_press_places_the_second_mark() {
+    // a finger held still on a touch screen (held past the time of a click)
+    let mut ui = Ui::open(&[LOG_4_2], Tab::LogViewer);
+    ui.app_mut().touch_mode = true;
+    ui.check("Period", true);
+    ui.app_mut().viewer.cursor_s = Some(0.5);
+    let at = ui.plot("log/roll").x_mid() + 4.0 * ui.plot("log/roll").x_tolerance();
+    ui.plot("log/roll").hold(at, 60);
+    let mark = ui.app().viewer.mark_s.expect("long press placed the mark");
+    assert!((mark - at).abs() <= ui.plot("log/roll").x_tolerance());
+    assert_eq!(ui.app().viewer.cursor_s, Some(0.5));
+}
+
+#[test]
+fn the_period_read_out() {
+    assert_eq!(period_text(6.681), "Δt = 6681 ms · 0.1497 Hz");
+    assert_eq!(period_text(-6.681), "Δt = 6681 ms · 0.1497 Hz");
+    assert_eq!(period_text(0.1), "Δt = 100 ms · 10.00 Hz");
+    assert_eq!(period_text(0.0425), "Δt = 42.5 ms · 23.53 Hz");
+    assert_eq!(period_text(0.000_05), "Δt = 0.1 ms · 20000 Hz");
+    assert_eq!(period_text(0.000_123_45), "Δt = 0.1 ms · 8100 Hz");
+    assert_eq!(period_text(1.0 / 9.999_96), "Δt = 100 ms · 10.00 Hz");
+    assert_eq!(period_text(0.0), "Δt = 0.0 ms");
 }

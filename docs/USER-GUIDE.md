@@ -86,6 +86,18 @@ cargo run --release -p openpid-app                      # or ./target/release/op
   have is greyed. The default is Gyro, Setpoint, Motors and Throttle.
 - **At the top left of each row** the names of its lines in their colours,
   with the values at the cursor once you place it.
+- **Line smoothing** (panel, under Y scale): Off (the default, the lines as
+  logged), 2, 5, 10 or 20, the list of the reference tool's web edition 1.0.
+  Level S replaces every sample of every line on every row by the mean of
+  the `2·floor(S/2) + 1` samples centred on it (3, 5, 11 or 21), as the web
+  edition does; at the log's two ends the mean is over the samples that
+  exist, so the first sample of a ramp 0, 1, 2, … reads 5 at level 20 (the
+  mean of samples 0 … 10). A one-sample spike of 500 deg/s reads 166.7,
+  100, 45.5 or 23.8. The width is counted in samples, so on a 4 kHz log
+  level 20 spans about 5 ms. The values at the cursor are read from the
+  smoothed lines. Samples the log marks invalid take no part and stay gaps.
+  Only what is drawn changes: the channels, every analysis and every export
+  use the logged values.
 - **The sticks** at the bottom right of the throttle / motors row: the left
   box throttle (up) and yaw (across), the right box pitch (up) and roll
   (across), as on a mode-2 transmitter. They follow the pointer while it is
@@ -125,6 +137,14 @@ cargo run --release -p openpid-app                      # or ./target/release/op
 - **Cursor**: click or tap a row (or rest a finger on it in touch mode). The
   panel shows its **Position**; **start = cursor** / **end = cursor** set an
   epoch bound of the docked log from it.
+- **Period** (panel, under the cursor): measures the time between two
+  moments. Turn it on; the next click, tap or long press places a second
+  mark, a vermilion line through every row (without a cursor yet, the first
+  click places the cursor and the next one the mark). Every later click
+  moves the mark, the cursor stays (type its **Position** to move it). The
+  panel reads "Δt = 6681 ms · 0.1497 Hz": the time from the cursor to the
+  mark (whole milliseconds from 100 ms, one decimal below) and one over it,
+  to four significant digits. Turning Period off removes the mark.
 - **Epoch bounds** can also be dragged on any row (the parts outside the
   epoch are dimmed; 8 px handles, 22 px in touch mode); dragging away from a
   handle pans.

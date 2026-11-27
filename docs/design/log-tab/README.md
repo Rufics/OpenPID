@@ -67,6 +67,32 @@ right panel as on the other reworked tabs.
   bounds drag on any row; the cursor (click, tap, long press) gives
   **Position** in the panel and **start = cursor** / **end = cursor**.
 - One log at a time, the docked one, as on Freq × time.
+- **Line smoothing** (`LogDisplay::smoothing`, `LineSmoothing`; the owner's
+  decisions D-011 = C, 2026-11-17, and D-015 = A, 2026-11-27: OpenPID
+  follows the reference tool's web edition 1.0): a list in the panel under
+  Y scale with the web edition's levels Off (the default), 2, 5, 10 and 20.
+  Level S is a centred moving average over `2·floor(S/2) + 1` samples
+  (3, 5, 11, 21; `openpid_dsp::smooth::CutMovingAverage`), cut at the
+  log's ends: there the mean is over the samples that exist, so a ramp
+  0, 1, 2, … of 7 000 samples starts at 5 and ends at 6 994 at level 20,
+  and a one-sample pulse of height P becomes P/3, P/5, P/11 or P/21, as
+  round W2 found the web edition draws them. Invalid samples take no part
+  and stay invalid. The width is counted in samples. The smoothing applies
+  to every line drawn and to the values at the cursor, never to the
+  channels, the analyses or the exports. A line is smoothed in chunks of
+  4096 samples as they come into view (each window reaching its `h`
+  samples beyond, with running sums) and kept until the level or the log
+  changes (`SmoothCache`), so panning and redrawing cost nothing more; off
+  frees them. Version 0.94 of the reference tool smoothed with a local
+  quadratic regression over 11 … 81 samples ("low" … "high"); OpenPID
+  followed it under D-011 until D-015.
+- **Period** (`ViewerState::period`, `ViewerState::mark_s`; D-011 = C): a
+  check box under the cursor rows. While it is on, a click, a tap or a long
+  press places a second mark (the first one places the cursor when there
+  is none), drawn through every row like the cursor in vermilion; the panel
+  reads "Δt = 6681 ms · 0.1497 Hz" (whole milliseconds from 100 ms, else
+  one decimal; the frequency to four significant digits). Off removes the
+  mark. Both marks are display state, not saved.
 
 ## Tests
 
@@ -77,7 +103,14 @@ places the cursor); `channel_filter_and_toggles_edit_the_channel_list`
 (folded list, filter); `cursor_buttons_set_the_epoch`,
 `epoch_bounds_can_be_dragged_on_the_plot` and
 `horizontal_pinch_zooms_time_only_and_a_long_press_places_the_cursor`
-unchanged in behaviour.
+unchanged in behaviour. D-011 and D-015:
+`line_smoothing_smooths_what_the_rows_draw` (the five levels Off, 2, 5, 10
+and 20, Off by default, level 20 draws the moving average of 21 samples
+and reads the cursor from it, the channel untouched, the motors smoothed
+too), `period_places_a_second_mark_and_reads_out_the_time`,
+`a_long_press_places_the_second_mark`, `the_period_read_out`, and the
+pulse, cut-end (the ramp's 5 and 6 994), part-of-the-series,
+invalid-sample, "off" and noise tests of `openpid_dsp::smooth`.
 
 ## Implementation
 

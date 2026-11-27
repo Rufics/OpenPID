@@ -22,6 +22,12 @@ use std::sync::Arc;
 pub struct ViewerState {
     /// Time (s) of the last click, tap or long press on the log viewer plot.
     pub cursor_s: Option<f64>,
+    /// The period is measured: a click places the second mark (D-011).
+    pub period: bool,
+    /// Time (s) of the second mark of the period.
+    pub mark_s: Option<f64>,
+    /// The lines of the Log viewer as smoothed for drawing.
+    pub smoothed: crate::log_tab::SmoothCache,
     /// A finger resting on the plot: when it started (s) and where, for the long press.
     pub press: Option<(f64, egui::Pos2)>,
     pub channel_filter: String,
