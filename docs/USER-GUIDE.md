@@ -230,15 +230,21 @@ The control panel on the right (hover any field for its explanation):
 Maps of the spectrum against throttle (DESIGN §6.4), roll, pitch and yaw
 stacked. Every log gets two columns: the unfiltered gyro (**prefilt**) and
 the chosen quantity, on one colour scale, so the work of the filters reads as
-a darker map. The maps are computed as the reference tool computes its own,
-so a map here and a map there of the same log and window can be read side by
-side, down to the two numbers printed on them.
+a darker map. The maps are computed as the web edition 1.0 of the reference
+tool computes its own (decision D-015), so a map here and a map there of the
+same log and window can be read side by side, down to the two numbers
+printed on them. The reference tool's default window leaves out the first
+and the last second of the log; the same window here is the epoch `1 … T − 1`
+seconds of a log of `T` seconds.
 
 How a map is made: the analysis window is cut into segments of 0.3 s that
-overlap; each gets a spectrum and the mean of its throttle. The throttle axis
-has 100 bins of one percent; a bin averages the segments whose throttle lies
-within a percent of it, and the result is smoothed along the throttle and the
-frequency. The frequency axis runs to half the logging rate. All maps move
+overlap, the last one that fits included; each gets a spectrum (zero-padded to
+the next power of two, 1 024 points on a 2 kHz log, so a row is 1.95 Hz) and
+the mean of its throttle. The throttle axis has 100 bins of one percent; a bin
+averages the segments whose throttle lies within three percent centred on it
+(the bin drawn at 30.5 % takes 29 ≤ throttle < 32), and the result is smoothed
+along the throttle and the frequency. The frequency axis runs to half the
+logging rate. All maps move
 and zoom together; a double click resets them. With more than two logs the
 columns scroll sideways.
 
@@ -248,12 +254,15 @@ How to read it:
   on every map and every log; the colour bar on the right of each log has the
   ticks. The values carry no unit, on purpose: a cell is **not** the
   amplitude of a tone. The window of a segment is not compensated and the
-  map is smoothed, so a steady tone of amplitude A shows as about 0.035·A
+  map is smoothed, so a steady tone of amplitude A shows as about 0.07·A
   with the default smoothing. Compare maps with each other; for an amplitude
   in °/s use the Spectrum tab.
 - **mean=… peak=…** in the corner of every map: the mean and the largest
-  cell of that map, without the lowest tenth of the frequency rows (on a
-  2 kHz log, below about 100 Hz), three significant digits. The mean falls when the map
+  cell of that map over every throttle bin and the frequencies from 100 Hz
+  up, three significant digits. (The reference tool's view below 100 Hz
+  prints the numbers between its two frequency limits, 20 … 60 Hz by
+  default; the tab has no such view, the CLI gives them with
+  `--freq-lims 20..60`.) The mean falls when the map
   is quieter overall or when less of the throttle range was flown (an empty
   bin counts as 0, in decibels as −40 dB); the peak is the strongest spot,
   usually a motor line or a resonance, and falls with a higher smoothing.
@@ -268,9 +277,9 @@ The control panel on the right (hover any field for its explanation):
 
 - **Channel**: Gyro (default), D-term, P-term, PID sum, PID error, Setpoint;
   **Prefilt beside it** (the gyro only).
-- **Decibels**: the second matrix of the same analysis, the mean of the
-  segments' power density in decibels, on −40 … 10 dB; an empty bin is
-  −40 dB. It shows the quiet parts of a map that the linear view leaves dark.
+- **Decibels** (the reference tool's "PSD"): the second matrix of the same
+  analysis, the mean of the segments' power density in decibels, on
+  −40 … 10 dB; an empty bin is −40 dB. It shows the quiet parts of a map that the linear view leaves dark.
   The printed mean and peak are then those of the decibel map.
 - **Colour scale**: *0 … 0.5* (*−40 … 10* in decibels), the fixed scale;
   *automatic*, the 99th percentile of the log's maps above 20 Hz, for a log
@@ -551,7 +560,7 @@ with a new log.
 | Log check | `openpid info <log>`: the `fitness` block (the `fitness` field with `--json`) |
 | Step response | `openpid run step <log> --axis pitch --epoch 2..12` (`--json` carries `verdicts` against the project's targets, or the defaults) |
 | Spectrum | `openpid run psd <log> --channel gyro.raw.roll` |
-| Freq × throttle | `openpid run thr-heatmap <log> [--smoothing medium] [--db] [--png out.png]` (the JSON carries `mean`, `peak`, `mean_db`, `peak_db`, `counts`, `grid` and `grid_db`) |
+| Freq × throttle | `openpid run thr-heatmap <log> [--smoothing medium] [--db] [--freq-lims 20..60] [--png out.png]` (the JSON carries `mean`, `peak`, `mean_db`, `peak_db`, `counts`, `grid` and `grid_db`; with `--freq-lims` also `freq_lims`, the numbers between the two frequencies) |
 | Freq × time | `openpid run stft <log> --channel motor.0` |
 | Filter Sim | `openpid run filter-sim <log> --set lpf1_hz=100,lpf1_type=1` |
 | Motor noise (no tab) | `openpid run motor-noise <log>` |

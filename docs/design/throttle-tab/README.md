@@ -160,3 +160,28 @@ Tests: `throttle_maps_span_the_whole_range_and_print_their_mean_and_peak`,
 `throttle_decibels_show_the_second_matrix_of_the_same_result`,
 `throttle_colour_scale_is_fixed_automatic_or_typed_in`, and the earlier ones
 adapted. The pictures above show the tab before this revision.
+
+## Revision: the web edition 1.0 (2026-11-27, decision D-015)
+
+The owner decided that OpenPID follows the web edition 1.0 of the reference
+tool rather than version 0.94 (DESIGN §6.4). The panel is unchanged; the maps
+and their numbers changed:
+
+- **The map**: every segment is zero-padded to the next power of two (1 024
+  points at 2 kHz), so the rows are `fs / 1024` apart and reach half the log
+  rate itself (513 rows at 2 kHz instead of 300); the last segment that fits
+  is taken; column `j`, drawn from `j` to `j + 1` percent, holds the segments
+  with `j − 1 ≤ throttle < j + 2` (three percent, centred) instead of
+  `(c − 1, c + 1]`.
+- **Decibels** is the web edition's "PSD": the density of 0 Hz and of half
+  the rate is halved.
+- **mean= and peak=** count the rows of 100 Hz and up (they counted from a
+  tenth of the rows); the hint says so.
+- **Smoothing** keeps its five levels with "medium" by default, the
+  web edition's list.
+- **Not taken**: the web edition's view below 100 Hz ("< 100 Hz" with two
+  frequency limits, 20 … 60 Hz by default, between which its numbers are then
+  taken). "Max frequency" lowers the axis as before and changes no number;
+  the numbers of that view are in the CLI (`--freq-lims`).
+
+Tests: the same, with the top row at half the log rate.
