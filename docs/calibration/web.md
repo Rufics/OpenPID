@@ -68,3 +68,105 @@ full range), 0.27 dB on the map against time (tones 1.1 dB lower without the
 padding), 1.5 … 2 % on the printed numbers of the throttle map, and in the
 filter simulator's printed delays. Decision D-015 moves OpenPID to the web
 edition's rules.
+
+## Round W2 (2026-11-27): the rules
+
+Sixteen logs of earlier rounds (spectrum at 1, 2, 4 and 8 kHz, logs of 10
+and 11 s, the step response plants of round 4 and the windows of round 18,
+both maps at every level of their lists, a log of 61 s, every channel of
+`i1-chan-2k`, a log with motor speeds), the filter simulator at five
+settings and the main window's smoothing on one-sample pulses. 114
+pictures and 820 plots as numbers; the step response with every accepted
+window's trace ("Raw"). Every rule below reproduces the web edition's
+numbers to the precision of a 32-bit float unless it says otherwise.
+
+### The stretch
+
+The samples `i` with `In ≤ i/fs ≤ Out`, time counted from the first sample:
+from `ceil(In·fs)` to `floor(Out·fs)`. By default `In` = 1 s and
+`Out` = T − 1 s: samples `fs … fs·(T − 1)`. The same at 1, 2, 4 and 8 kHz
+and on logs of 10 and 11 s: there is no rule that takes a short log whole.
+Moving In and Out moves every analysis at once.
+
+### Step response
+
+- Windows of `W = window·fs` samples, `W/40` apart, from the stretch's
+  first sample, while a window fits.
+- Per window: setpoint and filtered gyro through a symmetric Hann window,
+  200 zeros after them (`M = W + 200`), **zero-padded further to the next
+  power of two**; both transforms over `M`; `H = Y·conj(X)/(|X|² + 0.0001)`;
+  back to time, the running sum, 0 … 500 ms. Only the padding differs from
+  0.94.
+- A window counts when the mean of `|setpoint|` is at least 20 deg/s, its
+  response stays within 1 ± (SS width)/2 from 150 ms to 500 ms, and
+  ("Dist. to median", on by default) the mean of its response from 150 to
+  500 ms lies within 3 scaled median absolute deviations (×1.4826) of the
+  median over the windows that passed the first two tests. All 24 window
+  counts of the round agree.
+- The curve is the mean of those windows. Peak is its highest value before
+  150 ms; the bar is the standard deviation of each window's highest value
+  in its first **150 ms** (0.94: 150 samples). The latency is read per
+  window at 0.5, as in 0.94.
+
+### Spectrum
+
+The transform length is the next power of two of the stretch's sample
+count, at every rate and length; the moving average spans 51, 151, 301 or
+601 **points** whatever the point spacing (a width in hertz is 4 … 12 dB
+off on the 10 s log). The level as in W1.
+
+### Freq × time
+
+- "Time smoothing" 1, 2, 5, 10 (Low … Max): segments of 600 samples
+  `600/F` samples apart (0.3, 0.15, 0.06, 0.03 s at 2 kHz). The first `F`
+  columns hold the segment that starts at their time, the later ones the
+  segment centred at it, at every level.
+- "Freq smoothing" 2, 5, 10, 20: a centred moving average of the dB rows
+  over 3, 5, 11, 21 rows, cut at the ends.
+- Its channels: Gyro (filt) `gyroADC`, Gyro (unfilt) `gyroUnfilt`, D term
+  `axisD`, P term, I term, Setpoint, RC cmd (the logged `rcCommand`), PID
+  error (setpoint − filtered gyro), PID sum (P + I + D + F), and D term raw:
+  minus the change of the filtered gyro from one sample to the next times a
+  factor that was not found.
+
+### Freq × throttle
+
+- 600-sample segments zero-padded to 1 024, 0.06 s apart for a stretch of
+  20 s or less and 0.1 s up to 60 s (above 60 s not asked), the last one
+  that fits kept; the throttle of a segment the mean of `setpoint[3]`/10.
+- **The column of throttle `j` (drawn at `j + 0.5` %) holds the segments
+  with `j − 1 ≤ T < j + 2`**: three percent, half open.
+- Smoothing level `n` (1 … 5, Low … High): a Gaussian of `n` rows by `5n`
+  columns, σ 4, as in 0.94.
+- "PSD": the mean of the segments' density in dB (0 Hz and Nyquist halved),
+  −40 dB for an empty column.
+- The printed mean and peak: over the rows of 100 Hz and up; with
+  "< 100 Hz" on, over the rows between the two frequency limits.
+
+### Filter simulator
+
+As in 0.94, at the chosen loop rate, with the delays printed at the chosen
+frequency (25 Hz by default, 1 Hz on request). The RPM notches fade:
+weight `min(1, (H1 − min)/fade)` times the harmonic's weight, the notch
+acting as `(1 − w) + w·H`; below the minimum frequency there are no RPM
+notches at all. Every one of the 89 printed delays agrees.
+
+### Main window
+
+Smoothing 2, 5, 10, 20: a centred moving average over 3, 5, 11, 21
+samples, cut at the log's ends. PID error = setpoint − filtered gyro (as
+OpenPID shows it: the difference of D-009 is gone). Motors as the logged
+number over 20 (D-008 keeps OpenPID's percent). Motor speeds from `eRPM`:
+`eRPM·100/(poles/2)/60` Hz.
+
+### Not settled after W2
+
+- The motor noise column's level per segment (its segments, 0.3 s every
+  0.15 s, and their counts are found), and the spectrum's "Filt. delay"
+  column.
+- The factor of "D term raw".
+- "Max start" of the step response (never active on these logs) and the
+  step response's smoothing levels.
+- The throttle map above 60 s and at other log rates; a log whose length is
+  not a whole number of seconds.
+
