@@ -183,18 +183,60 @@ pub fn choice<T: PartialEq + Copy>(
     value: &mut T,
     options: &[(T, String)],
 ) -> Response {
+    let options: Vec<(T, &str, &str)> = options
+        .iter()
+        .map(|(v, text)| (*v, text.as_str(), ""))
+        .collect();
+    combo(ui, (id, label, hint), value, &options, false)
+}
+
+/// [`choice`] among `options` that each say what they are on hover (value,
+/// text, hint), for a list whose entries need a sentence each. The texts
+/// may be longer than the value column: the box takes what the row has
+/// left and cuts a longer text short (the list shows it in full).
+pub fn choice_explained<T: PartialEq + Copy>(
+    ui: &mut Ui,
+    id: &str,
+    label: &str,
+    hint: &str,
+    value: &mut T,
+    options: &[(T, String, String)],
+) -> Response {
+    let options: Vec<(T, &str, &str)> = options
+        .iter()
+        .map(|(v, text, hint)| (*v, text.as_str(), hint.as_str()))
+        .collect();
+    combo(ui, (id, label, hint), value, &options, true)
+}
+
+/// The combo box of [`choice`] and [`choice_explained`]: `(id, label, hint)`
+/// of the row, `options` as (value, text, hint; none when empty).
+fn combo<T: PartialEq + Copy>(
+    ui: &mut Ui,
+    (id, label, hint): (&str, &str, &str),
+    value: &mut T,
+    options: &[(T, &str, &str)],
+    cut_short: bool,
+) -> Response {
     let current = options
         .iter()
-        .find(|(v, _)| v == value)
-        .map(|(_, t)| t.clone())
+        .find(|(v, _, _)| v == value)
+        .map(|(_, text, _)| (*text).to_string())
         .unwrap_or_default();
     row(ui, label, hint, |ui| {
-        egui::ComboBox::from_id_salt(id)
+        let mut combo = egui::ComboBox::from_id_salt(id)
             .selected_text(current)
-            .width(VALUE_W)
+            .width(VALUE_W);
+        if cut_short {
+            combo = combo.truncate();
+        }
+        combo
             .show_ui(ui, |ui| {
-                for (v, text) in options {
-                    ui.selectable_value(value, *v, text);
+                for (v, text, hint) in options {
+                    let option = ui.selectable_value(value, *v, *text);
+                    if !hint.is_empty() {
+                        option.on_hover_text(*hint);
+                    }
                 }
             })
             .response

@@ -5,7 +5,8 @@
 use openpid_analysis::{
     Analysis, AnalysisCtx, FilterSimAnalysis, FilterSimParams, MotorNoiseAnalysis,
     MotorNoiseParams, PsdAnalysis, PsdParams, RpmEstimateParams, RpmEstimator, StepAnalysis,
-    StepParams, ThrottleHeatmap, ThrottleHeatmapParams,
+    StepMethod, StepOutput, StepParams, StepPerformance, ThrottleHeatmap, ThrottleHeatmapParams,
+    step_performance::performance,
 };
 use openpid_core::{Axis, ChannelId, GyroStage};
 use openpid_sim::{MotorNoise, Noise, Plant, SetpointProfile, SignalSpec, ThrottleProfile, Tone};
@@ -48,6 +49,59 @@ fn step_response_recovers_the_plant() {
         "latency {latency}"
     );
     assert!(out.windows_used > 20);
+}
+
+#[test]
+fn step_output_carries_the_performance_numbers_of_its_mean() {
+    // a lag of 15 ms behind a delay of 8 ms, gain 1
+    let spec = SignalSpec {
+        duration_s: 12.0,
+        plant: Plant {
+            gain: 1.0,
+            tau_ms: 15.0,
+            delay_ms: 8.0,
+            damping: None,
+        },
+        noise: Noise {
+            white: 0.2,
+            motor: None,
+            ..Noise::default()
+        },
+        filter_hz: 0.0,
+        ..SignalSpec::default()
+    };
+    let s = spec.build();
+    let ctx = AnalysisCtx {
+        session: &s,
+        epoch: None,
+    };
+    for method in [StepMethod::Division, StepMethod::Wiener] {
+        let params = StepParams {
+            method,
+            ..StepParams::default()
+        };
+        let out = StepAnalysis.run(&ctx, &params).unwrap();
+        let p = out.performance;
+        assert_eq!(p, performance(&out.mean, out.fs), "{method:?}");
+        // the delay leaves the gain of the lag as it is: −3 dB at
+        // 1/(2π·15 ms) = 10.61 Hz, and 0.1 to 0.9 in 15 ms·ln 9 = 32.96 ms
+        let bandwidth = p.bandwidth_hz.unwrap();
+        assert!((bandwidth - 10.61).abs() < 0.6, "{method:?}: {bandwidth}");
+        let rise = p.rise_ms.unwrap();
+        assert!((rise - 32.96).abs() < 1.5, "{method:?}: {rise}");
+        // a lag behind a delay amplifies a disturbance a little, well under
+        // the 6.02 dB of a delay alone
+        let peak = p.sensitivity_db.unwrap();
+        assert!((1.0..4.0).contains(&peak), "{method:?}: {peak}");
+        assert!(p.phase_margin_deg.is_some() && p.crossover_hz.is_some());
+        // a result saved before these numbers existed loads without them
+        let mut saved = serde_json::to_value(&out).unwrap();
+        assert!(saved["performance"]["bandwidth_hz"].is_number());
+        saved.as_object_mut().unwrap().remove("performance");
+        let old: StepOutput = serde_json::from_value(saved).unwrap();
+        assert_eq!(old.performance, StepPerformance::default());
+        assert_eq!(old.mean, out.mean);
+    }
 }
 
 #[test]
