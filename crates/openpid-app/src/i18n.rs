@@ -255,6 +255,7 @@ static UA: &[(&str, &str)] = &[
     ("Notches", "Нотчі"),
     ("Note", "Примітка"),
     ("ON THE LOG", "НА ЛОЗІ"),
+    ("Off", "Вимк."),
     (
         "Okabe-Ito line colours and viridis heatmaps, readable with colour-vision deficiencies",
         "кольори ліній Okabe–Ito і теплові карти viridis, розрізнювані при порушеннях кольорового зору",
@@ -792,8 +793,8 @@ static UA: &[(&str, &str)] = &[
     ("smooth", "згладжування"),
     ("smoothing", "згладжування"),
     (
-        "smooths every line as drawn and its value at the cursor: a local quadratic fit over 11, 21, 41 or 81 samples; the channels and the analyses stay as logged",
-        "згладжує кожну лінію на графіку та її значення під курсором: локальна квадратична апроксимація за 11, 21, 41 або 81 відліком; канали та аналізи лишаються як у лозі",
+        "smooths every line as drawn and its value at the cursor: a centred moving average over 3, 5, 11 or 21 samples, cut at the log's ends; the channels and the analyses stay as logged",
+        "згладжує кожну лінію на графіку та її значення під курсором: центроване ковзне середнє за 3, 5, 11 або 21 відліком, обрізане на краях логу; канали та аналізи лишаються як у лозі",
     ),
     ("solo", "лише цей"),
     (

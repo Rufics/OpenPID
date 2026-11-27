@@ -3,7 +3,8 @@
 //! throttle and the motors under them (and rows for motor speeds, debug and
 //! other channels when chosen), the values at the cursor on every row, and
 //! the quantities as a checklist in the panel on the right. The lines can be
-//! smoothed for reading, and a second mark measures a period (D-011).
+//! smoothed for reading as the reference tool's web edition 1.0 smooths
+//! them (D-011, D-015), and a second mark measures a period (D-011).
 
 use crate::app::App;
 use crate::axis_layout::control_panel;
@@ -18,9 +19,9 @@ use crate::worker::Slot;
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{Line, PlotPoints, PlotTransform, VLine};
 use openpid_core::{Axis, Channel, ChannelId, FlightSession, GyroStage, PidTerm};
-use openpid_dsp::smooth::QuadraticLoess;
+use openpid_dsp::smooth::CutMovingAverage;
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 /// Width of the y-axis labels, the same on every row so the time axes line up.
 const Y_AXIS_W: f32 = 64.0;
@@ -198,71 +199,68 @@ fn colour(q: LogQuantity, k: usize) -> Color32 {
     }
 }
 
-/// The line smoothing of the rows (D-011): off, or a local quadratic
-/// regression with tricube weights over a span of samples, as the reference
-/// tool smooths its lines. The span is counted in samples: the reference
-/// tool was seen at 1 kHz only, so whether its span is samples or
-/// milliseconds is not known.
+/// The line smoothing of the rows (D-011), as the reference tool's web
+/// edition 1.0 smooths its main window (D-015): off, or level `S` of 2, 5,
+/// 10 and 20, a centred moving average over `2·floor(S/2) + 1` samples
+/// (3, 5, 11, 21), cut at the log's ends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum LineSmoothing {
     /// The lines as logged.
     #[default]
     Off,
-    Low,
-    Medium,
-    MedHigh,
-    High,
+    /// Level 2: over 3 samples.
+    Two,
+    /// Level 5: over 5 samples.
+    Five,
+    /// Level 10: over 11 samples.
+    Ten,
+    /// Level 20: over 21 samples.
+    Twenty,
 }
 
 impl LineSmoothing {
     pub const ALL: [LineSmoothing; 5] = [
         LineSmoothing::Off,
-        LineSmoothing::Low,
-        LineSmoothing::Medium,
-        LineSmoothing::MedHigh,
-        LineSmoothing::High,
+        LineSmoothing::Two,
+        LineSmoothing::Five,
+        LineSmoothing::Ten,
+        LineSmoothing::Twenty,
     ];
 
-    /// The span of the regression, samples (1: none).
-    pub fn span(self) -> usize {
+    /// The level as the web edition lists it (0: off).
+    pub fn level(self) -> usize {
         match self {
-            LineSmoothing::Off => 1,
-            LineSmoothing::Low => 11,
-            LineSmoothing::Medium => 21,
-            LineSmoothing::MedHigh => 41,
-            LineSmoothing::High => 81,
+            LineSmoothing::Off => 0,
+            LineSmoothing::Two => 2,
+            LineSmoothing::Five => 5,
+            LineSmoothing::Ten => 10,
+            LineSmoothing::Twenty => 20,
         }
     }
 
+    /// The name in the list, as the web edition prints it.
     pub fn name(self) -> &'static str {
         match self {
-            LineSmoothing::Off => tr("off"),
-            LineSmoothing::Low => tr("low"),
-            LineSmoothing::Medium => tr("medium"),
-            LineSmoothing::MedHigh => tr("med-high"),
-            LineSmoothing::High => tr("high"),
+            LineSmoothing::Off => tr("Off"),
+            LineSmoothing::Two => "2",
+            LineSmoothing::Five => "5",
+            LineSmoothing::Ten => "10",
+            LineSmoothing::Twenty => "20",
         }
     }
 
-    /// The smoother of the level, its weights computed once; `None` for off.
-    fn smoother(self) -> Option<&'static QuadraticLoess> {
-        static LEVELS: OnceLock<Vec<QuadraticLoess>> = OnceLock::new();
-        let levels = LEVELS.get_or_init(|| {
-            LineSmoothing::ALL[1..]
-                .iter()
-                .map(|l| QuadraticLoess::new(l.span()))
-                .collect()
-        });
-        let k = LineSmoothing::ALL.iter().position(|l| *l == self)?;
-        k.checked_sub(1).map(|k| &levels[k])
+    /// The moving average of the level, over `2·floor(level/2) + 1` samples
+    /// (one when off).
+    pub fn smoother(self) -> CutMovingAverage {
+        CutMovingAverage::new(self.level())
     }
 
     /// The value of sample `i` as the rows draw it; `None` when it is not valid.
     fn value_at(self, data: &openpid_core::Series, i: usize) -> Option<f64> {
-        match self.smoother() {
-            None => data.get(i),
-            Some(l) => l.at(data.values(), |j| data.is_valid(j), i),
+        if self == LineSmoothing::Off {
+            return data.get(i);
         }
+        self.smoother().at(data.values(), |j| data.is_valid(j), i)
     }
 }
 
@@ -305,9 +303,10 @@ impl SmoothCache {
         (from, to): (usize, usize),
     ) -> &'a [f64] {
         let data = &c.data;
-        let Some(loess) = level.smoother() else {
+        if level == LineSmoothing::Off {
             return &data.values()[from..to];
-        };
+        }
+        let average = level.smoother();
         if !self
             .of
             .as_ref()
@@ -329,7 +328,7 @@ impl SmoothCache {
                 continue;
             }
             let (a, b) = (k * SMOOTH_CHUNK, ((k + 1) * SMOOTH_CHUNK).min(n));
-            let v = loess.smooth_range(data.values(), |i| data.is_valid(i), a, b);
+            let v = average.smooth_range(data.values(), |i| data.is_valid(i), a, b);
             line.values[a..b].copy_from_slice(&v);
             line.done[k] = true;
         }
@@ -383,7 +382,7 @@ pub struct LogDisplay {
     /// Marks where the flight modes change, on the throttle / motors row
     /// (off by default, owner 2026-11-10).
     pub mode_marks: bool,
-    /// The line smoothing of every row (off by default, D-011).
+    /// The line smoothing of every row (off by default, D-011, D-015).
     pub smoothing: LineSmoothing,
 }
 
@@ -1110,7 +1109,7 @@ fn controls(app: &mut App, ui: &mut Ui) {
         "log-smoothing",
         tr("Line smoothing"),
         tr(
-            "smooths every line as drawn and its value at the cursor: a local quadratic fit over 11, 21, 41 or 81 samples; the channels and the analyses stay as logged",
+            "smooths every line as drawn and its value at the cursor: a centred moving average over 3, 5, 11 or 21 samples, cut at the log's ends; the channels and the analyses stay as logged",
         ),
         &mut app.tools.log_display.smoothing,
         &levels,

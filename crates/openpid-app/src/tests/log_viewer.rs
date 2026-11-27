@@ -8,7 +8,7 @@ use crate::testkit::{Ui, at_every_size};
 use crate::worker::Slot;
 use eframe::egui::Key;
 use openpid_core::{Axis, ChannelId, FlightMode, GyroStage};
-use openpid_dsp::smooth::QuadraticLoess;
+use openpid_dsp::smooth::CutMovingAverage;
 
 fn rows(ui: &Ui) -> Vec<&'static str> {
     row_summary(ui.app()).iter().map(|r| r.0).collect()
@@ -273,9 +273,9 @@ fn pick(ui: &mut Ui, level: LineSmoothing) {
     }
 }
 
-/// The line smoothing (D-011): a list of five levels, off by default; a
-/// level smooths what the rows draw and the values at the cursor, never the
-/// channels.
+/// The line smoothing (D-011, D-015): the web edition's list Off, 2, 5, 10
+/// and 20, off by default; a level smooths what the rows draw and the values
+/// at the cursor, never the channels.
 #[test]
 fn line_smoothing_smooths_what_the_rows_draw() {
     at_every_size(|screen| {
@@ -292,7 +292,7 @@ fn line_smoothing_smooths_what_the_rows_draw() {
         let logged = session.channel(&id).unwrap().data.clone();
         assert_eq!(off.as_slice(), logged.values(), "off: the lines as logged");
         // the list holds the five levels, each of which can be picked
-        ui.choose_exact("Line smoothing", LineSmoothing::Low.name());
+        ui.choose_exact("Line smoothing", LineSmoothing::Two.name());
         for level in LineSmoothing::ALL {
             assert!(ui.has(level.name()), "{level:?} in the list");
         }
@@ -300,26 +300,30 @@ fn line_smoothing_smooths_what_the_rows_draw() {
             pick(&mut ui, level);
             assert_eq!(ui.app().tools.log_display.smoothing, level);
         }
-        assert_eq!(ui.app().tools.log_display.smoothing, LineSmoothing::High);
+        assert_eq!(ui.app().tools.log_display.smoothing, LineSmoothing::Twenty);
+        assert_eq!(
+            LineSmoothing::ALL.map(|l| (l.name(), l.smoother().width())),
+            [("Off", 1), ("2", 3), ("5", 5), ("10", 11), ("20", 21)]
+        );
         // the rows drew their lines smoothed: gyro and setpoint on three
         // axes, the throttle and four motors
         assert_eq!(ui.app().viewer.smoothed.len(), 11);
-        let (high, high_at) = gyro(&mut ui);
-        let want = QuadraticLoess::new(81).smooth_range(
+        let (smooth, smooth_at) = gyro(&mut ui);
+        let want = CutMovingAverage::new(21).smooth_range(
             logged.values(),
             |i| logged.is_valid(i),
             0,
             logged.len(),
         );
-        assert_eq!(high.len(), want.len());
-        assert!(high.iter().zip(&want).all(|(a, b)| (a - b).abs() < 1e-9));
+        assert_eq!(smooth.len(), want.len());
+        assert!(smooth.iter().zip(&want).all(|(a, b)| (a - b).abs() < 1e-9));
         assert!(
-            high.iter().zip(&off).any(|(a, b)| (a - b).abs() > 1.0),
+            smooth.iter().zip(&off).any(|(a, b)| (a - b).abs() > 1.0),
             "smoothed"
         );
         // the value at the cursor is the smoothed one
-        let (off_at, high_at) = (off_at.unwrap(), high_at.unwrap());
-        assert!(want.iter().any(|v| (v - high_at).abs() < 1e-9));
+        let (off_at, smooth_at) = (off_at.unwrap(), smooth_at.unwrap());
+        assert!(want.iter().any(|v| (v - smooth_at).abs() < 1e-9));
         assert!(logged.values().contains(&off_at));
         // the row was drawn at that level, and the log is as it was
         ui.plot("log/roll").click(14.2);
