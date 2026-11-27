@@ -257,8 +257,8 @@ Taken by the owner on 2026-11-11:
 | The exact value | the probe's tones lie where their time stamps put them; on a real craft the time stamps are the flight controller's clock, the header's rate is the loop it was set to run |
 | Options | **A.** As the reference tool: samples by index at the header's rate, gaps joined, the stretch by the time stamps. Every number the reference tool's on such logs; a frequency off by as much as the loop runs off its setting, a phase jump at every gap. **B.** Keep OpenPID's grid by the time stamps and say so in the user guide: the frequencies where the clock puts them, a gap bridged. **C.** B, and a warning in the log check (U1) when a log's time stamps run more than 1 % off its header's rate or more than 1 % of its frames are missing, so that a user comparing the two programs knows why they differ |
 | Recommendation | C. The time stamps are the craft's own clock, and a spectrum with phase jumps at every gap is not the flight's; the warning tells the user where the two programs part. Logs that run off their rate or drop frames are rare on a healthy craft, and the round's other logs, whose clocks run true, agree |
-| The owner's decision | |
-| Carried out by | |
+| The owner's decision | **C** (2026-11-27): OpenPID keeps its grid by the time stamps; the log check warns and the user guide says why |
+| Carried out by | #203: the `clock` check (a warning past 1 %); on the logs of `tests/logs` it warns on four flown logs (−1.3 … +1.9 %, 1.5 and 6.2 % of the frames missing), so such logs are less rare than the recommendation assumed |
 
 ### D-014 The map against time of a short stretch
 
@@ -272,8 +272,8 @@ Taken by the owner on 2026-11-11:
 | The exact value | none: whether a map of a few seconds is worth showing |
 | Options | **A.** As the reference tool: no map below a stretch of 9 s (the switch lies between 8.75 and 10 s), with a line that says why. **B.** Keep OpenPID's map of any stretch and say in the user guide that the reference tool shows none below about 9 s |
 | Recommendation | B. A short log still has something to show, and OpenPID marks its stretch on the time axis; the two programs differ only where the reference tool shows nothing |
-| The owner's decision | |
-| Carried out by | |
+| The owner's decision | **B** (2026-11-27): the map of any stretch stays |
+| Carried out by | #203 (the user guide) |
 
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
