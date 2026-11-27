@@ -207,6 +207,15 @@ fn run_analyses() {
         "auto",
     ]);
     assert!(!ok && err.contains("less than 5 s in the air"), "{err}");
+    // one second off each end, counted in samples: 1000 to n − 1000 =
+    // 38 481 of this 1 kHz log, both included, at 1.002983 and 38.594192 s
+    let (ok, ends, err) = run(&["run", "psd", sharp, "--epoch", "ends"]);
+    assert!(ok && err.contains("epoch 1.00..38.59 s"), "{err}");
+    let (ok, exact, _) = run(&["run", "psd", sharp, "--epoch", "1.002983..38.594192"]);
+    assert!(ok && ends == exact, "the samples 1000 to 38 481");
+    // version 0.94's start, sample 1002, is another stretch
+    let (ok, later, _) = run(&["run", "psd", sharp, "--epoch", "1.004989..38.594192"]);
+    assert!(ok && ends != later);
     let (ok, _, err) = run(&["run", "step", f, "--epoch", "5"]);
     assert!(!ok && err.contains("A..B"));
     let (ok, _, err) = run(&["run", "step"]);

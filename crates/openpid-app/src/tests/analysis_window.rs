@@ -45,6 +45,26 @@ fn a_log_opens_on_its_automatic_trim_and_all_restores_the_whole_log() {
         "17 s: {}",
         ui.app().status
     );
+    // one second off each end, whatever the ground time; not auto: the
+    // samples fs to n − fs, both included
+    ui.click("Auto");
+    ui.click("Without the first and last second");
+    let l = ui.app().loaded(Slot::A).unwrap();
+    let ends = l.epoch.expect("a 17 s log is trimmed");
+    assert!(!l.epoch_auto);
+    assert!(
+        (ends.start_s - 1.0).abs() < 0.05 && ends.start_s < auto.start_s,
+        "{ends:?}"
+    );
+    assert!((duration(&ui) - 1.0 - ends.end_s).abs() < 0.05, "{ends:?}");
+    let s = l.current().unwrap();
+    let fs = (1.0e6 / openpid_analysis::prepare::nominal_dt_us(s)).round() as usize;
+    let n = s.timebase.len();
+    assert_eq!(
+        openpid_analysis::prepare::epoch_range(s, Some(ends)),
+        (fs, n - fs + 1),
+        "{ends:?}"
+    );
     // the strip is on every tab with slots, not on Settings
     for tab in Tab::ALL {
         ui.tab(tab);

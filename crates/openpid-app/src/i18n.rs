@@ -400,6 +400,10 @@ static UA: &[(&str, &str)] = &[
     ("Unmapped fields", "Незіставлені поля"),
     ("User guide", "Посібник користувача"),
     ("Window", "Вікно"),
+    (
+        "Without the first and last second",
+        "Без першої й останньої секунди",
+    ),
     ("Y correction", "Корекція Y"),
     ("Y max", "Y макс."),
     ("Y min", "Y мін."),
@@ -926,6 +930,10 @@ static UA: &[(&str, &str)] = &[
     (
         "the sticks at the pointer or the cursor, at the bottom right of the throttle / motors row",
         "стіки під вказівником або курсором, у правому нижньому куті рядка газу й моторів",
+    ),
+    (
+        "the stretch other analysis tools take, to compare numbers with theirs",
+        "відрізок, який беруть інші інструменти аналізу, щоб порівнювати числа з їхніми",
     ),
     (
         "the tab with what this proposal was read from",

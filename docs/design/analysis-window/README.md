@@ -95,6 +95,20 @@ M (≈ 2–3 days): the strip 1, auto-trim ½, integration and tests 1.
   instead of being a `Polygon` among the items; a full-height polygon fed the
   auto-bounds and grew the Y axis by the margin (5 %) every frame.
 
+**"Without the first and last second"** (2026-11-18, decision D-012 of the
+calibration, `docs/calibration/DECISIONS.md`; moved to the web edition 1.0
+by D-015 on 2026-11-27): the third entry of the Auto menu,
+`epoch::cut_ends`, and `--epoch ends`. It is the stretch the reference
+tool's web edition 1.0 takes (rounds W1 and W2): the samples `i` with
+`1 ≤ i/fs ≤ T − 1`, that is `fs` to `n − fs`, both included (0-based,
+`n − 2·fs + 1` samples), at every rate and on a log of any length (a log of
+2 s or less has none); `fs` is the header's rate and the bounds are the
+times of those samples. Version 0.94, which D-012 first followed, started
+two samples later and took a log of at most 10 s whole. The automatic trim
+stays the default. Like "Most active 20 s" it is not marked as auto. The bounds of
+an epoch are now rounded to the microsecond, not truncated, so a bound taken
+from a sample's time keeps that sample.
+
 Deviations: "Most active 20 s" is not marked as auto (it is an explicit user
 choice); the strip handles are 4 px at rest and 8 px under the pointer or while
 dragging, the grab zone is 8 px (22 px in touch), as in the Log viewer.
