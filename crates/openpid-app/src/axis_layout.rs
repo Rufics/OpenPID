@@ -511,6 +511,14 @@ fn step_controls(app: &mut App, ui: &mut Ui) {
         " s",
     );
     if division {
+        panel::check(
+            ui,
+            &mut app.tools.step.dist_to_median,
+            tr("Dist. to median"),
+            tr(
+                "a window counts only when the level its response settles at lies within three scaled median absolute deviations of the median of the other windows, as in the web edition of the reference tool; off takes every window that stays between 0.5 and 1.5",
+            ),
+        );
         return;
     }
     panel::drag(

@@ -163,15 +163,18 @@ lines. When Advice has a PID proposal for this axis, a line "Advice: A roll D
 ![Step response](screenshots/step.png)
 
 The response to a unit step, setpoint → gyro (DESIGN §6.2). The epoch is cut
-into windows of 2 s (the **Window** field), one every fortieth of a window (0.05 s); in each the gyro's spectrum is divided
-by the setpoint's; a window counts when the stick was 20 °/s from its centre
-on average and its response stays between 0.5 and 1.5 after 150 ms; the curve
-is the mean of those windows, and `n` in the legend is their number. The Peak
-is the highest point of the curve in its first 150 ms. This is
-what the reference tool computes, and the same numbers come out: on logs of
-known content the curve, the window count, the Peak and the SR latency agree
-with it to the last digit it draws. To compare with it on a log, set the
-epoch to what it analyses: from 1.001 s to one second before the end.
+into windows of 2 s (the **Window** field), one every fortieth of a window
+(0.05 s), from its first sample to its last; in each the gyro's spectrum is
+divided by the setpoint's; a window counts when the stick was 20 °/s from its
+centre on average, its response stays between 0.5 and 1.5 after 150 ms, and
+(**Dist. to median**) the level it settles at is not far from that of the
+other windows; the curve is the mean of those windows, and `n` in the legend
+is their number. The Peak is the highest point of the curve in its first
+150 ms. This is what the web edition 1.0 of the reference tool computes, and
+the same numbers come out: on logs of known content the curve, the window
+count, the Peak and the SR latency agree with it to the last digit it draws.
+To compare with it on a log, set the epoch to what it analyses: from 1 s to
+one second before the end.
 
 The control panel on the right (hover any field for its explanation):
 
@@ -182,6 +185,8 @@ The control panel on the right (hover any field for its explanation):
 | Y max | upper end of the response axis | 1.5 |
 | Raw responses | the individual windows behind the mean, as a density | off |
 | Method | windowed division (above), or Wiener with cut-off: OpenPID's former estimate, which rounds a sharp response and reads a peak a little high | windowed division |
+| Window | length of each window the response is computed on (1 to 5 s in the reference tool's list) | 2 s |
+| Dist. to median | windowed division: a window counts only when the mean of its response from 150 ms on lies within three scaled median absolute deviations (1.4826 × the median distance) of the median of the windows that passed the other tests, as in the web edition of the reference tool. Off takes every window that stays between 0.5 and 1.5 (version 0.94 of the reference tool) | on |
 
 With **Wiener with cut-off** the panel also has: Smoothing as a moving average
 over the mean (0 / 10 / 20 / 40 ms), Y correction (normalise every window on

@@ -27,11 +27,12 @@ use serde::{Deserialize, Serialize};
 pub enum StepMethod {
     /// Windows of 2 s every 0.05 s; in each the gyro's transform divided by
     /// the setpoint's after a Hann window ([`crate::step_windows`]); a
-    /// window counts when the stick was 20 deg/s from its centre on average
-    /// and its response stays between 0.5 and 1.5 after 150 ms; the plain
-    /// mean of those. What the reference tool computes
-    /// (decision D-002, issue #172); on plants of known
-    /// response it is the true response to a few thousandths.
+    /// window counts when the stick was 20 deg/s from its centre on average,
+    /// its response stays between 0.5 and 1.5 after 150 ms and settles near
+    /// the median of the others; the plain mean of those. What the web
+    /// edition 1.0 of the reference tool computes (decisions D-002 and
+    /// D-015); on plants of known response it is the true response to a few
+    /// thousandths.
     #[default]
     Division,
     /// Wiener deconvolution with a low-pass at `cutoff_hz`, windows chosen
@@ -43,8 +44,9 @@ pub enum StepMethod {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Parameters of [`StepAnalysis`]. With [`StepMethod::Division`] only
-/// `axis`, `smoothing` and the histogram fields are used: the windows and
-/// their limits are those of [`crate::step_windows`].
+/// `axis`, `smoothing`, `window_s`, `settled_width`, `dist_to_median`,
+/// `median_distance` and the histogram fields are used: the rest of the
+/// rule is that of [`crate::step_windows`].
 #[serde(default)]
 pub struct StepParams {
     /// Axis to analyse.
@@ -68,7 +70,19 @@ pub struct StepParams {
     /// A window whose response settles (mean of the last quarter) outside
     /// this range is dropped as a failed deconvolution: a gyro that ends at
     /// half or one and a half times the setpoint is not a step response.
+    /// [`StepMethod::Wiener`] only.
     pub settle_range: (f64, f64),
+    /// [`StepMethod::Division`]: the width of the band around 1 a window's
+    /// response has to stay in from 150 ms on ("SS width", 1: 0.5 … 1.5).
+    pub settled_width: f64,
+    /// [`StepMethod::Division`]: a window counts only when the mean of its
+    /// response from 150 ms on lies within `median_distance` scaled median
+    /// absolute deviations of the median of the windows that passed the
+    /// other tests ("Dist. to median", on as in the reference tool).
+    pub dist_to_median: bool,
+    /// The distance of `dist_to_median`, in scaled median absolute
+    /// deviations (3).
+    pub median_distance: f64,
     /// Boundary between the "low" and "high" input groups (deg/s; PID-Analyzer: 500).
     pub high_input: f64,
     /// Length of the response in seconds (0.5).
@@ -96,6 +110,9 @@ impl Default for StepParams {
             cutoff_hz: 25.0,
             min_input: 80.0,
             settle_range: (0.5, 1.5),
+            settled_width: step_windows::SETTLED_WIDTH,
+            dist_to_median: true,
+            median_distance: step_windows::MEDIAN_DISTANCE,
             high_input: 500.0,
             response_s: 0.5,
             smooth_ms: 0.0,
@@ -118,12 +135,15 @@ impl std::hash::Hash for StepParams {
             self.smooth_ms,
             self.hist_range.0,
             self.hist_range.1,
+            self.settled_width,
+            self.median_distance,
         ] {
             v.to_bits().hash(state);
         }
         self.superpos.hash(state);
         self.hist_bins.hash(state);
         self.y_offset.hash(state);
+        self.dist_to_median.hash(state);
         self.method.hash(state);
         self.smoothing.hash(state);
     }
@@ -178,7 +198,8 @@ pub struct StepOutput {
     /// Windows with enough stick input that went into the mean.
     pub windows_used: usize,
     /// Windows with enough stick input dropped because their response did not
-    /// settle within `settle_range`.
+    /// settle within `settle_range` (with [`StepMethod::Division`]: within
+    /// `settled_width`, or not near the median of the others).
     #[serde(default)]
     pub windows_rejected: usize,
     /// 2-D histogram of the individual responses: x = time (ms), y = amplitude, z = weight.
@@ -199,7 +220,7 @@ pub struct StepOutput {
 ///
 /// With [`StepMethod::Division`] they are what the reference tool shows:
 /// the peak is the highest value of the mean response in its first 150 ms,
-/// its deviation that of the highest of each window's first 150 samples;
+/// its deviation that of the highest of each window in its first 150 ms;
 /// the time to 50 % of a window is that of its first sample above 0.5,
 /// counted from one and less a millisecond; the deviations are sample
 /// deviations (`n − 1`).
@@ -449,10 +470,15 @@ fn division(p: &StepParams, sp: &Prepared, gy: &Prepared) -> Result<StepOutput, 
         mostly_valid(sp, gy, at)
     });
     let with_stick = candidates.len();
-    let read = step_windows::read(candidates, fs, step_windows::settled_from(fs));
+    let acceptance = step_windows::Acceptance {
+        from: step_windows::settled_from(fs),
+        width: p.settled_width,
+        median_distance: p.dist_to_median.then_some(p.median_distance),
+    };
+    let read = step_windows::read(candidates, fs, &acceptance);
     let used = read.windows.len();
     if used == 0 {
-        let (lo, hi) = step_windows::SETTLED;
+        let (lo, hi) = (1.0 - p.settled_width / 2.0, 1.0 + p.settled_width / 2.0);
         return Err(AnalysisError::NotEnoughData(if with_stick > 0 {
             format!(
                 "{with_stick} of {} windows had the stick {} deg/s from its centre on average, \
@@ -527,9 +553,14 @@ impl Analysis for StepAnalysis {
             || p.hist_bins < 2
             || p.settle_range.0.is_nan()
             || p.settle_range.0 >= p.settle_range.1
+            || p.settled_width.is_nan()
+            || p.settled_width <= 0.0
+            || p.median_distance.is_nan()
+            || p.median_distance < 0.0
         {
             return Err(AnalysisError::InvalidParams(
-                "window_s > response_s > 0, superpos >= 1, hist_bins >= 2, settle_range lo < hi"
+                "window_s > response_s > 0, superpos >= 1, hist_bins >= 2, settle_range lo < hi, \
+                 settled_width > 0, median_distance >= 0"
                     .into(),
             ));
         }
