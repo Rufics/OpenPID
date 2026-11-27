@@ -63,12 +63,13 @@ fn params_hash_by_value() {
             ..Default::default()
         })
     );
-    // the map of frequency against time: by default both lists at "low" and
-    // the rows to half the sample rate; every level is a job of its own
+    // the map of frequency against time: by default frequency "medium",
+    // time "max" and the rows to half the sample rate; every level is a job
+    // of its own
     let s = StftParams::default();
     assert_eq!(
         (s.smooth_freq, s.smooth_time, s.max_hz),
-        (FreqSmoothing::Low, TimeSmoothing::Low, None)
+        (FreqSmoothing::Medium, TimeSmoothing::Max, None)
     );
     let mut seen = vec![hash(&s)];
     for smooth_freq in FreqSmoothing::ALL {
@@ -238,7 +239,7 @@ fn validation_and_variants() {
         )
         .unwrap();
     assert!((st.grid.y.last().unwrap() - 500.0).abs() < 1e-9);
-    assert_eq!((st.nperseg, st.hop), (300, 60));
+    assert_eq!((st.nperseg, st.nfft, st.hop), (300, 512, 150));
     let bound = StftAnalysis
         .run(
             &ctx,
@@ -249,8 +250,10 @@ fn validation_and_variants() {
             },
         )
         .unwrap();
-    assert!((bound.grid.y.last().unwrap() - 200.0).abs() < 1e-9);
-    assert_eq!(bound.hop, 150);
+    // the rows up to 200 Hz, 1000/512 Hz apart: the last at 199.2 Hz
+    let top = *bound.grid.y.last().unwrap();
+    assert!(top <= 200.0 && top > 200.0 - 1000.0 / 512.0, "{top}");
+    assert_eq!(bound.hop, 30);
     // throttle heatmap on a short epoch with no complete segment
     let short = AnalysisCtx {
         session: s,

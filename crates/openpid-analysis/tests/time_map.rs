@@ -1,13 +1,14 @@
 //! The frequency × time map on signals made here, so that every expected
 //! number follows from the rule (`docs/DESIGN.md` §6.5) and the signal alone:
-//! where the segments lie and how many there are, what a tone, an offset and
-//! white noise read before the smoothing, and what the line fitted along the
-//! frequency does inside the axis and at its two ends.
+//! the lengths of the segment and of its transform, where the segments lie
+//! and how many there are (the first columns included), what a tone, an
+//! offset, a click and white noise read, and what the moving average along
+//! the frequency does inside the axis and at its two ends.
 #![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
 use openpid_analysis::stft::{
-    DB_SCALE, SEGMENT_S, SPAN_HIGH, SPAN_LOW, SPAN_MEDIUM, columns, line_weights, segment_len,
-    smooth_line,
+    DB_FLOOR, DB_SCALE, SEGMENT_S, column_count, moving_average, segment_len, segment_start,
+    transform_len,
 };
 use openpid_analysis::{
     Analysis, AnalysisCtx, AnalysisError, Epoch, FreqSmoothing, StftAnalysis, StftOutput,
@@ -18,6 +19,7 @@ use openpid_core::{
     Axis, Channel, ChannelId, ChannelSet, FirmwareInfo, FlightSession, GyroStage, Origin, Series,
     Settings, Timebase, Unit,
 };
+use std::f64::consts::TAU;
 
 /// The channel every test analyses.
 const GYRO: ChannelId = ChannelId::Gyro {
@@ -46,7 +48,9 @@ fn session(fs: f64, gyro: Vec<f64>) -> FlightSession {
         settings: Settings::default(),
         raw_headers: Vec::new(),
         timebase: Timebase::from_times(
-            (0..n).map(|i| (i as f64 * 1.0e6 / fs) as i64).collect(),
+            (0..n)
+                .map(|i| (i as f64 * 1.0e6 / fs).round() as i64)
+                .collect(),
             Some(1.0e6 / fs),
         ),
         channels,
@@ -66,6 +70,14 @@ fn params(smooth_freq: FreqSmoothing, smooth_time: TimeSmoothing) -> StftParams 
     }
 }
 
+/// The default levels, on [`GYRO`].
+fn defaults() -> StftParams {
+    StftParams {
+        channel: GYRO,
+        ..StftParams::default()
+    }
+}
+
 fn run_in(s: &FlightSession, epoch: Option<Epoch>, p: &StftParams) -> StftOutput {
     StftAnalysis
         .run(&AnalysisCtx { session: s, epoch }, p)
@@ -82,12 +94,10 @@ fn cell(out: &StftOutput, row: usize, column: usize) -> f64 {
     out.grid.z[row * out.grid.x.len() + column]
 }
 
-/// A tone of `amplitude` on bin `bin` of a segment of `nperseg` samples.
-fn tone(n: usize, nperseg: usize, bin: usize, amplitude: f64) -> Vec<f64> {
+/// A tone of `amplitude` on bin `bin` of a transform of `nfft` points.
+fn tone(n: usize, nfft: usize, bin: usize, amplitude: f64) -> Vec<f64> {
     (0..n)
-        .map(|i| {
-            amplitude * (std::f64::consts::TAU * (bin * i) as f64 / nperseg as f64 + 0.3).sin()
-        })
+        .map(|i| amplitude * (TAU * (bin * i) as f64 / nfft as f64 + 0.3).sin())
         .collect()
 }
 
@@ -104,73 +114,49 @@ fn white(n: usize) -> Vec<f64> {
         .collect()
 }
 
-/// Values that are neither level nor a line.
-fn wavy(rows: usize) -> Vec<f64> {
-    (0..rows)
-        .map(|i| -20.0 + 7.0 * (i as f64 * 0.9).sin() + 0.3 * i as f64 + ((i * i) % 7) as f64)
+/// The symmetric Hann window of `n` samples, written out.
+fn hann(n: usize) -> Vec<f64> {
+    (0..n)
+        .map(|i| 0.5 - 0.5 * (TAU * i as f64 / (n - 1) as f64).cos())
         .collect()
 }
 
-/// The smoothed value of row `i` written out from the rule, with the rows
-/// counted from 0 and not from `i`: the `span` nearest rows (shifted to stay
-/// inside), the weights `(1 − (d/d_max)³)³`, the line `a + b·j` of weighted
-/// least squares from its two normal equations, read at `i`.
-fn fit_by_the_rule(values: &[f64], i: usize, span: usize) -> f64 {
-    let rows = values.len() as isize;
-    let half = (span / 2) as isize;
-    let count = (span as isize).min(rows);
-    let first = (i as isize - half).clamp(0, rows - count);
-    let read: Vec<isize> = (first..first + count).collect();
-    let d_max = read
-        .iter()
-        .map(|j| (j - i as isize).abs())
-        .max()
-        .unwrap_or(0);
-    if d_max == 0 {
-        return values[i];
+/// `|Σ w[i]·e^(−2πj·d·i/nfft)|`: what the window makes of a tone `d` bins
+/// of the transform away, by the direct sum (no FFT).
+fn window_response(w: &[f64], nfft: usize, d: f64) -> f64 {
+    let (mut re, mut im) = (0.0, 0.0);
+    for (i, v) in w.iter().enumerate() {
+        let phase = TAU * d * i as f64 / nfft as f64;
+        re += v * phase.cos();
+        im -= v * phase.sin();
     }
-    let (mut sw, mut sx, mut sxx, mut sy, mut sxy) = (0.0, 0.0, 0.0, 0.0, 0.0);
-    for j in read {
-        let d = (j - i as isize).abs() as f64 / d_max as f64;
-        let w = (1.0 - d.powi(3)).powi(3);
-        let (x, y) = (j as f64, values[j as usize]);
-        sw += w;
-        sx += w * x;
-        sxx += w * x * x;
-        sy += w * y;
-        sxy += w * x * y;
-    }
-    let det = sw * sxx - sx * sx;
-    if det.abs() < 1e-9 {
-        // one row with a weight: no line
-        return sy / sw;
-    }
-    let b = (sw * sxy - sx * sy) / det;
-    let a = (sy - b * sx) / sw;
-    a + b * i as f64
+    re.hypot(im)
+}
+
+fn db(power: f64) -> f64 {
+    10.0 * power.log10()
 }
 
 fn close(a: f64, b: f64, tolerance: f64) -> bool {
     (a - b).abs() <= tolerance
 }
 
-const ALL_SPANS: [usize; 3] = [SPAN_LOW, SPAN_MEDIUM, SPAN_HIGH];
-
 #[test]
-fn the_levels_and_their_names() {
+fn the_levels_their_factors_and_their_names() {
     assert!((SEGMENT_S - 0.3).abs() < 1e-15);
-    assert_eq!((SPAN_LOW, SPAN_MEDIUM, SPAN_HIGH), (5, 11, 21));
     assert_eq!(DB_SCALE, (-30.0, 10.0));
-    assert_eq!(FreqSmoothing::default(), FreqSmoothing::Low);
-    assert_eq!(TimeSmoothing::default(), TimeSmoothing::Low);
-    let spans: Vec<usize> = FreqSmoothing::ALL.iter().map(|l| l.span()).collect();
-    assert_eq!(spans, [1, 5, 11, 21]);
-    let parts: Vec<usize> = TimeSmoothing::ALL
+    assert_eq!(DB_FLOOR, -120.0);
+    // the defaults of the web edition: time "Max", frequency "Medium"
+    assert_eq!(TimeSmoothing::default(), TimeSmoothing::Max);
+    assert_eq!(FreqSmoothing::default(), FreqSmoothing::Medium);
+    let freq: Vec<(usize, usize)> = FreqSmoothing::ALL
         .iter()
-        .map(|l| l.columns_per_segment())
+        .map(|l| (l.factor(), l.rows()))
         .collect();
-    assert_eq!(parts, [1, 2, 5, 10]);
-    let names = ["off", "low", "medium", "high"];
+    assert_eq!(freq, [(2, 3), (5, 5), (10, 11), (20, 21)]);
+    let time: Vec<usize> = TimeSmoothing::ALL.iter().map(|l| l.factor()).collect();
+    assert_eq!(time, [1, 2, 5, 10]);
+    let names = ["low", "medium", "high", "max"];
     for (i, name) in names.iter().enumerate() {
         assert_eq!(FreqSmoothing::ALL[i].name(), *name);
         assert_eq!(TimeSmoothing::ALL[i].name(), *name);
@@ -186,292 +172,277 @@ fn the_levels_and_their_names() {
             TimeSmoothing::ALL[i]
         );
     }
-    // "med", as the list of the reference tool writes it
-    assert_eq!(FreqSmoothing::parse("med"), Some(FreqSmoothing::Medium));
-    assert_eq!(TimeSmoothing::parse("med"), Some(TimeSmoothing::Medium));
-    for bad in ["", "Low", "medium-high", "2"] {
+    for bad in ["", "off", "Low", "med", "medium-high", "2"] {
         assert_eq!(FreqSmoothing::parse(bad), None, "{bad}");
         assert_eq!(TimeSmoothing::parse(bad), None, "{bad}");
     }
 }
 
 #[test]
-fn a_straight_line_passes_the_smoother_unchanged() {
-    // a line fitted to a line is that line, wherever the rows read lie:
-    // inside the axis and at both ends, at every span
-    let line: Vec<f64> = (0..60).map(|i| -35.0 + 0.7 * f64::from(i)).collect();
-    for span in ALL_SPANS {
-        let out = smooth_line(&line, span);
-        for (i, (a, b)) in out.iter().zip(&line).enumerate() {
-            assert!(close(*a, *b, 1e-9), "span {span} row {i}: {a} vs {b}");
-        }
-    }
-    // and a level stays level
-    for span in ALL_SPANS {
-        assert!(
-            smooth_line(&[-12.5; 30], span)
-                .iter()
-                .all(|v| close(*v, -12.5, 1e-9))
-        );
-    }
-}
-
-#[test]
-fn off_is_the_identity() {
-    let values = wavy(40);
-    assert_eq!(smooth_line(&values, FreqSmoothing::Off.span()), values);
-    assert_eq!(line_weights(40, 7, 1), (7, vec![1.0]));
-    assert_eq!(line_weights(40, 7, 0), (7, vec![1.0]), "no span: the row");
-    assert!(smooth_line(&[], SPAN_LOW).is_empty());
-}
-
-#[test]
-fn inside_the_axis_a_row_is_a_weighted_mean_of_its_neighbours() {
-    // the rows read lie evenly around the row, so the line is level at it:
-    // the weights are (1 − (d/h)³)³ over their sum, h = span/2 being the
-    // farthest row read, which therefore weighs nothing
-    for span in ALL_SPANS {
-        let h = span / 2;
-        let raw: Vec<f64> = (0..span)
-            .map(|k| (1.0 - (k.abs_diff(h) as f64 / h as f64).powi(3)).powi(3))
-            .collect();
-        let sum: f64 = raw.iter().sum();
-        let (first, weights) = line_weights(100, 50, span);
-        assert_eq!((first, weights.len()), (50 - h, span));
-        for (k, w) in weights.iter().enumerate() {
-            assert!(close(*w, raw[k] / sum, 1e-12), "span {span} tap {k}: {w}");
-        }
-        assert_eq!(weights[0], 0.0);
-        assert_eq!(weights[span - 1], 0.0);
-        // the same read off the answer to one row standing out of nothing
-        let mut impulse = vec![0.0; 100];
-        impulse[50] = 1.0;
-        let out = smooth_line(&impulse, span);
-        for (k, w) in weights.iter().enumerate() {
-            assert!(close(out[50 - h + k], *w, 1e-12));
-        }
-        assert!(out[..50 - h].iter().all(|v| *v == 0.0));
-        assert!(out[50 + h + 1..].iter().all(|v| *v == 0.0));
-    }
-    // the numbers themselves, to four decimals: span 5 is a mean of three rows
-    let (_, low) = line_weights(100, 50, SPAN_LOW);
-    for (w, expected) in low.iter().zip([0.0, 0.2863, 0.4274, 0.2863, 0.0]) {
-        assert!(close(*w, expected, 1e-4), "{low:?}");
-    }
-    // span 11, from the farthest row to the middle one
-    let (_, medium) = line_weights(100, 50, SPAN_MEDIUM);
-    for (w, expected) in medium
-        .iter()
-        .zip([0.0, 0.0201, 0.0832, 0.1417, 0.1686, 0.1728])
-    {
-        assert!(close(*w, expected, 1e-4), "{medium:?}");
-    }
-    // span 21: the middle row and the one beside it
-    let (_, high) = line_weights(100, 50, SPAN_HIGH);
-    assert!(close(high[10], 0.0864, 5e-5), "{high:?}");
-    assert!(close(high[9], 0.0862, 5e-5), "{high:?}");
-    assert!(close(high[1], 0.0017, 5e-5), "{high:?}");
-}
-
-#[test]
-fn at_the_ends_the_rows_lie_to_one_side_and_the_line_is_not_level() {
-    // row 0 at span 5 reads rows 0 … 4; the farthest is 4 rows away, so the
-    // weights of the fit are 1, (1 − 1/64)³, (1 − 1/8)³, (1 − 27/64)³ and 0
-    let (first, weights) = line_weights(50, 0, SPAN_LOW);
-    assert_eq!((first, weights.len()), (0, 5));
-    assert!(close(weights.iter().sum::<f64>(), 1.0, 1e-12));
-    // the value of a line at its own row: the offsets weigh out
-    let lever: f64 = weights.iter().enumerate().map(|(j, w)| w * j as f64).sum();
-    assert!(close(lever, 0.0, 1e-12));
-    // not a mean: the row itself weighs most, and a row on the far side
-    // weighs less than nothing
-    assert!(weights[0] > 0.6 && weights[3] < 0.0, "{weights:?}");
-    assert_eq!(weights[4], 0.0);
-    // row 1 reads the same five rows, 3 rows being the farthest
-    let (first, weights) = line_weights(50, 1, SPAN_LOW);
-    assert_eq!((first, weights.len()), (0, 5));
-    assert_eq!(weights[4], 0.0);
-    // the last rows mirror the first
-    let (first, mirrored) = line_weights(50, 48, SPAN_LOW);
-    assert_eq!(first, 45);
-    for (a, b) in mirrored.iter().rev().zip(&weights) {
-        assert!(close(*a, *b, 1e-12));
-    }
-    // every row of every span against the rule written out another way
-    let values = wavy(64);
-    for span in ALL_SPANS {
-        let out = smooth_line(&values, span);
+fn the_moving_average_inside_the_axis_and_at_its_ends() {
+    let values: Vec<f64> = (0..12).map(|i| f64::from(i * i % 7) - 2.5).collect();
+    for rows in [3, 5, 11, 21] {
+        let out = moving_average(&values, rows);
+        assert_eq!(out.len(), values.len());
+        let h = rows / 2;
         for (i, v) in out.iter().enumerate() {
-            let expected = fit_by_the_rule(&values, i, span);
-            assert!(close(*v, expected, 1e-9), "span {span} row {i}");
+            // the rows i − h … i + h that exist
+            let read: Vec<f64> = (0..values.len())
+                .filter(|j| j.abs_diff(i) <= h)
+                .map(|j| values[j])
+                .collect();
+            let mean = read.iter().sum::<f64>() / read.len() as f64;
+            assert!(close(*v, mean, 1e-12), "rows {rows} row {i}");
         }
-        // inside the axis nothing reaches beyond span/2 rows
-        let (first, weights) = line_weights(64, 30, span);
-        assert_eq!((first, weights.len()), (30 - span / 2, span));
     }
+    // the numbers at the ends, written out: three rows, then five
+    let v = [6.0, 0.0, 3.0, 9.0, 12.0, -6.0];
+    assert_eq!(moving_average(&v, 3), [3.0, 3.0, 4.0, 8.0, 5.0, 3.0]);
+    assert_eq!(
+        moving_average(&v, 5),
+        [3.0, 4.5, 6.0, 3.6, 4.5, 5.0],
+        "(6+0+3)/3, (6+0+3+9)/4, …, (9+12−6)/3"
+    );
+    // a level stays level, one row is the identity, nothing stays nothing
+    assert!(moving_average(&[-12.5; 30], 21).iter().all(|x| *x == -12.5));
+    assert_eq!(moving_average(&v, 1), v);
+    assert!(moving_average(&[], 5).is_empty());
+    // fewer values than rows: every row is the mean of all of them
+    assert_eq!(moving_average(&[1.0, 2.0, 6.0], 21), [3.0, 3.0, 3.0]);
 }
 
 #[test]
-fn with_fewer_rows_than_the_span_all_rows_are_read() {
-    for rows in 1..=SPAN_HIGH {
-        let values = wavy(rows);
-        let line: Vec<f64> = (0..rows).map(|i| 4.0 - 1.5 * i as f64).collect();
-        for span in ALL_SPANS {
-            let out = smooth_line(&values, span);
-            assert_eq!(out.len(), rows);
-            for (i, v) in out.iter().enumerate() {
-                let (first, weights) = line_weights(rows, i, span);
-                assert!(first + weights.len() <= rows);
-                assert_eq!(weights.len(), span.min(rows), "rows {rows} span {span}");
-                let expected = fit_by_the_rule(&values, i, span);
-                assert!(close(*v, expected, 1e-9), "rows {rows} span {span} row {i}");
-            }
-            for (a, b) in smooth_line(&line, span).iter().zip(&line) {
-                assert!(close(*a, *b, 1e-9), "rows {rows} span {span}");
-            }
+fn the_transform_is_the_segment_padded_to_a_power_of_two() {
+    // L = round(0.3·fs), then zeros to the next power of two: 1 024 points
+    // at 2 kHz, the rows 0 … 512, fs/1 024 = 1.953125 Hz apart
+    for (fs, nperseg, nfft) in [
+        (1000.0, 300, 512),
+        (2000.0, 600, 1024),
+        (4000.0, 1200, 2048),
+        (8000.0, 2400, 4096),
+        (1010.0, 303, 512),
+        (3200.0, 960, 1024),
+    ] {
+        assert_eq!(segment_len(fs), nperseg);
+        assert_eq!(transform_len(nperseg), nfft);
+        let out = map(
+            fs,
+            white(nperseg * 3),
+            FreqSmoothing::Medium,
+            TimeSmoothing::Low,
+        );
+        assert_eq!((out.nperseg, out.nfft), (nperseg, nfft), "{fs} Hz");
+        assert_eq!(out.grid.y.len(), nfft / 2 + 1);
+        for (k, f) in out.grid.y.iter().enumerate() {
+            assert!(close(*f, k as f64 * fs / nfft as f64, 1e-9));
         }
+        assert!(close(*out.grid.y.last().unwrap(), fs / 2.0, 1e-9));
     }
-    // one row and two rows have no line to fit: they stay
-    assert_eq!(smooth_line(&[3.0], SPAN_HIGH), [3.0]);
-    assert_eq!(smooth_line(&[3.0, -8.0], SPAN_LOW), [3.0, -8.0]);
-}
-
-#[test]
-#[should_panic(expected = "row 5 of 5")]
-fn the_weights_of_a_row_that_is_not_there() {
-    let _ = line_weights(5, 5, SPAN_LOW);
+    assert_eq!(transform_len(512), 512, "a power of two stays");
+    assert_eq!(segment_len(1.0), 2, "never shorter than two samples");
 }
 
 #[test]
 fn a_tone_on_a_bin_reads_its_power_density() {
-    // 2 kHz: L = round(0.3·2000) = 600 samples, a row is 2000/600 Hz. A tone
-    // of amplitude A on bin 60 (200 Hz): the sum of the window is L/2, so
-    // |X| = A·L/4 and 2·|X|²/(L·fs) = A²·L/(8·fs) = A²·0.0375:
-    // 20·log10(A) − 14.26 dB, and with half of |X| on either neighbour
-    // 6.02 dB less there. The window is symmetric, not periodic, so its sum
-    // is (L − 1)/2 and the bin reads 20·log10((L − 1)/L) = −0.014 dB lower:
-    // inside the 0.02 dB this is held to (−14.274 and −20.273 are read).
-    let (fs, nperseg, bin) = (2000.0, 600, 60);
-    assert_eq!(segment_len(fs), nperseg);
-    let on_bin = 10.0 * (nperseg as f64 / (8.0 * fs)).log10();
-    assert!(close(on_bin, -14.26, 0.005));
+    // 2 kHz: L = 600, nfft = 1 024. A tone of amplitude A on bin 100 of the
+    // transform (195.3 Hz): |X| = A·Σw/2 on its bin, Σw = (L − 1)/2 for the
+    // symmetric window, so 2·|X|²/(L·fs) = A²·(L − 1)²/(8·L·fs):
+    // 20·log10(A) − 14.27 dB. A bin d away holds A·|W(d)|/2, W the window's
+    // own transform, summed here directly.
+    let (fs, nperseg, nfft, bin) = (2000.0, 600, 1024, 100);
+    let w = hann(nperseg);
+    let sum: f64 = w.iter().sum();
+    assert!(close(sum, (nperseg - 1) as f64 / 2.0, 1e-9));
+    let scale = nperseg as f64 * fs;
     for amplitude in [1.0, 8.0, 40.0] {
         let level = 20.0 * f64::log10(amplitude);
-        let x = tone(6000, nperseg, bin, amplitude);
-        let raw = map(fs, x.clone(), FreqSmoothing::Off, TimeSmoothing::Low);
-        assert_eq!(raw.grid.y.len(), nperseg / 2 + 1, "bins 0 … L/2");
-        assert!(close(raw.grid.y[bin], 200.0, 1e-9));
-        assert!(close(*raw.grid.y.last().unwrap(), fs / 2.0, 1e-9));
-        for column in 0..raw.grid.x.len() {
-            assert!(close(cell(&raw, bin, column), level - 14.26, 0.02));
-            assert!(close(cell(&raw, bin - 1, column), level - 20.28, 0.03));
-            assert!(close(cell(&raw, bin + 1, column), level - 20.28, 0.03));
-            // two rows away the window leaves next to nothing
-            assert!(cell(&raw, bin + 2, column) < level - 60.0);
-            assert!(cell(&raw, bin - 2, column) < level - 60.0);
-        }
-        // "low": the mean of three rows with the weights 0.2863, 0.4274 and
-        // 0.2863, of the decibels: 0.5726 · 6.02 = 3.45 dB lower, −17.71
-        // (the reference tool's −17.7)
-        let low = map(fs, x.clone(), FreqSmoothing::Low, TimeSmoothing::Low);
+        let at = |d: i32| {
+            let x = amplitude * window_response(&w, nfft, f64::from(d)) / 2.0;
+            db(2.0 * x * x / scale)
+        };
+        assert!(close(at(0), level - 14.27, 0.005));
+        // the padded bins lie 600/1 024 of a segment's bin apart: the bins
+        // beside the tone keep most of it (−1.96 dB), two away −8.51 dB
+        assert!(close(at(1) - at(0), -1.96, 0.005), "{}", at(1) - at(0));
+        assert!(close(at(2) - at(0), -8.51, 0.005), "{}", at(2) - at(0));
+        let x = tone(6000, nfft, bin, amplitude);
+        let run = |level| map(fs, x.clone(), level, TimeSmoothing::Low);
+        let low = run(FreqSmoothing::Low);
+        let medium = run(FreqSmoothing::Medium);
+        let high = run(FreqSmoothing::High);
+        assert!(close(low.grid.y[bin], 195.3125, 1e-9));
         for column in 0..low.grid.x.len() {
-            assert!(close(cell(&low, bin, column), level - 17.70, 0.01));
-            let by_hand = 0.4274 * cell(&raw, bin, column)
-                + 0.2863 * (cell(&raw, bin - 1, column) + cell(&raw, bin + 1, column));
-            assert!(close(cell(&low, bin, column), by_hand, 0.01));
+            // "low", three rows: the mean of the decibels of bins 99 … 101
+            let three = (at(-1) + at(0) + at(1)) / 3.0;
+            assert!(close(cell(&low, bin, column), three, 0.002), "{column}");
+            // "medium", five rows: bins 98 … 102
+            let five = (at(-2) + at(-1) + at(0) + at(1) + at(2)) / 5.0;
+            assert!(close(cell(&medium, bin, column), five, 0.002));
+            let next = (at(-1) + at(0) + at(1) + at(2) + at(3)) / 5.0;
+            assert!(close(cell(&medium, bin + 1, column), next, 0.002));
+            // the wider means take more of the rows without the tone in
+            assert!(cell(&high, bin, column) < cell(&medium, bin, column) - 5.0);
         }
-        // a wider line takes more of the rows without the tone in
-        let medium = map(fs, x.clone(), FreqSmoothing::Medium, TimeSmoothing::Low);
-        let high = map(fs, x, FreqSmoothing::High, TimeSmoothing::Low);
-        assert!(cell(&medium, bin, 0) < cell(&low, bin, 0) - 20.0);
-        assert!(cell(&high, bin, 0) < cell(&medium, bin, 0) - 20.0);
+        // the levels of "low" and of the default, to two decimals
+        assert!(close(cell(&low, bin, 0) - level, -15.58, 0.005));
+        assert!(close(cell(&medium, bin, 0) - level, -18.46, 0.005));
     }
 }
 
 #[test]
-fn the_bin_of_zero_hertz_counts_once_and_the_last_bin_twice() {
-    // an offset c: |X₀| = c·L/2, and the bin of 0 Hz has no factor 2:
-    // c²·L/(4·fs) = c²·0.075, 20·log10(c) − 11.25 dB (with the 2 it would
-    // read 3.01 dB more). Bin 1 holds half of |X₀| and has the 2: 3.01 dB
-    // below bin 0, not 6.02. The mean is not removed.
-    let (fs, nperseg, c) = (2000.0, 600, 4.0_f64);
+fn the_bins_of_zero_hertz_and_of_half_the_rate_count_once() {
+    // An offset c: |X₀| = c·Σw, and the bin of 0 Hz has no factor 2:
+    // c²·(L − 1)²/(4·L·fs), 20·log10(c) − 11.26 dB; bin k holds c·|W(k)|
+    // with the 2. c·(−1)ⁱ is the same moved to the last bin, nfft/2, which
+    // has no factor 2 either. The mean is not removed.
+    let (fs, nperseg, nfft, c) = (2000.0, 600, 1024, 4.0_f64);
     let level = 20.0 * c.log10();
-    let offset = map(fs, vec![c; 3000], FreqSmoothing::Off, TimeSmoothing::Off);
-    let at_zero = 10.0 * (nperseg as f64 / (4.0 * fs)).log10();
-    assert!(close(at_zero, -11.25, 0.005));
-    for column in 0..offset.grid.x.len() {
-        assert!(close(cell(&offset, 0, column), level - 11.25, 0.02));
-        assert!(close(cell(&offset, 1, column), level - 14.26, 0.03));
-    }
-    // c·(−1)ⁱ is a tone on the last bin, L/2 (half the sample rate):
-    // |X| = c·L/2 again, and this bin does have the 2: 20·log10(c) − 8.24 dB
+    let w = hann(nperseg);
+    let scale = nperseg as f64 * fs;
+    let bin = |k: usize| {
+        let sides = if k == 0 { 1.0 } else { 2.0 };
+        level + db(sides * window_response(&w, nfft, k as f64).powi(2) / scale)
+    };
+    assert!(close(bin(0) - level, -11.26, 0.005));
+    let run = |x: Vec<f64>| map(fs, x, FreqSmoothing::Low, TimeSmoothing::Low);
+    let offset = run(vec![c; 3000]);
     let alternating: Vec<f64> = (0..3000).map(|i| if i % 2 == 0 { c } else { -c }).collect();
-    let top = map(fs, alternating, FreqSmoothing::Off, TimeSmoothing::Off);
-    for column in 0..top.grid.x.len() {
-        assert!(close(cell(&top, nperseg / 2, column), level - 8.24, 0.02));
+    let top = run(alternating);
+    let last = top.grid.y.len() - 1;
+    assert_eq!(last, nfft / 2);
+    for column in 0..offset.grid.x.len() {
+        // "low" at an end: the mean of the two rows that exist
+        let end = f64::midpoint(bin(0), bin(1));
+        assert!(close(cell(&offset, 0, column), end, 1e-6));
+        assert!(close(
+            cell(&offset, 1, column),
+            (bin(0) + bin(1) + bin(2)) / 3.0,
+            1e-6
+        ));
+        assert!(close(cell(&top, last, column), end, 1e-6));
     }
-    // nothing at all reads the floor of the logarithm, not −∞
-    let silence = map(fs, vec![0.0; 3000], FreqSmoothing::Low, TimeSmoothing::Low);
-    assert!(silence.grid.z.iter().all(|v| close(*v, -300.0, 1e-9)));
+    // a click: every bin holds the same |X|, so the rows inside the axis
+    // read 3.01 dB above the two end bins, which have no 2
+    let mut click = vec![0.0; 3000];
+    click[300] = 50.0;
+    let base = db(2500.0 * w[300].powi(2) / scale);
+    let doubled = base + 10.0 * 2f64.log10();
+    // column 0 holds samples 0 … 599: the click near its middle
+    let low = map(fs, click.clone(), FreqSmoothing::Low, TimeSmoothing::Low);
+    assert!(close(cell(&low, 0, 0), f64::midpoint(base, doubled), 1e-9));
+    assert!(close(cell(&low, 1, 0), (base + 2.0 * doubled) / 3.0, 1e-9));
+    assert!(close(cell(&low, 200, 0), doubled, 1e-9));
+    assert!(close(
+        cell(&low, last, 0),
+        f64::midpoint(base, doubled),
+        1e-9
+    ));
+    assert!(close(
+        cell(&low, last - 1, 0),
+        (base + 2.0 * doubled) / 3.0,
+        1e-9
+    ));
+    // "medium" at the ends: three rows of five, then four
+    let medium = map(fs, click, FreqSmoothing::Medium, TimeSmoothing::Low);
+    assert!(close(
+        cell(&medium, 0, 0),
+        (base + 2.0 * doubled) / 3.0,
+        1e-9
+    ));
+    assert!(close(
+        cell(&medium, 1, 0),
+        (base + 3.0 * doubled) / 4.0,
+        1e-9
+    ));
+    assert!(close(
+        cell(&medium, 2, 0),
+        (base + 4.0 * doubled) / 5.0,
+        1e-9
+    ));
+    assert!(close(cell(&medium, 3, 0), doubled, 1e-9));
+    assert!(close(
+        cell(&medium, last, 0),
+        (base + 2.0 * doubled) / 3.0,
+        1e-9
+    ));
+}
+
+#[test]
+fn nothing_at_all_reads_the_floor() {
+    // a channel that is all zero: every cell −120 dB, as the web edition
+    // draws it (each bin reads −300 dB before the smoothing; the floor holds
+    // the cells, not the bins)
+    let silence = map(
+        2000.0,
+        vec![0.0; 3000],
+        FreqSmoothing::Medium,
+        TimeSmoothing::Max,
+    );
+    assert!(silence.grid.z.iter().all(|v| *v == DB_FLOOR));
+    // noise of 0.01 deg/s RMS (a density of −70 dB) lies above it, noise
+    // of 10⁻⁵ (−130 dB) below it
+    let noise = |sigma: f64| {
+        let x = white(3000).iter().map(|v| v * sigma).collect();
+        map(2000.0, x, FreqSmoothing::Medium, TimeSmoothing::Max)
+    };
+    assert!(noise(1e-2).grid.z.iter().all(|v| *v > DB_FLOOR + 20.0));
+    assert!(noise(1e-5).grid.z.iter().all(|v| *v == DB_FLOOR));
 }
 
 #[test]
 fn white_noise_reads_its_density_less_the_window_and_the_mean_of_decibels() {
     // White noise of RMS σ at 2 kHz has the one-sided density σ²/(fs/2).
     // A cell holds 2·|X|²/(L·fs) with E|X|² = σ²·Σw² and Σw² = 3·L/8 for a
-    // Hann window, with no compensation for the window: the mean power of a
-    // cell is the density times 3/8, 4.26 dB below it. |X|² of a bin that is
-    // not 0 Hz or half the rate is exponentially distributed, and the mean
-    // of the decibels of such a value is 10·γ/ln(10) = 2.51 dB below the
-    // decibels of its mean (γ = 0.5772, Euler's constant): 6.77 dB below
-    // the density in all.
+    // Hann window (the zeros of the padding add nothing), with no
+    // compensation for the window: the mean power of a cell is the density
+    // times 3/8, 4.26 dB below it. |X|² of a bin that is not 0 Hz or half the
+    // rate is exponentially distributed, and the mean of the decibels of
+    // such a value is 10·γ/ln(10) = 2.51 dB below the decibels of its mean
+    // (γ = 0.5772, Euler's constant): 6.77 dB below the density in all.
     let (fs, sigma, n) = (2000.0, 5.0, 60_000);
     let x: Vec<f64> = white(n).iter().map(|v| v * sigma).collect();
-    let out = map(fs, x, FreqSmoothing::Off, TimeSmoothing::Off);
-    let (rows, nt) = (out.grid.y.len(), out.grid.x.len());
-    assert_eq!((rows, nt), (301, 98));
+    // "low" along the time: a segment apart, the columns independent
+    let out = map(fs, x.clone(), FreqSmoothing::Low, TimeSmoothing::Low);
+    let raw_rows = 513;
+    assert_eq!((out.grid.y.len(), out.grid.x.len()), (raw_rows, 100));
     let density = 10.0 * (sigma * sigma / (fs / 2.0)).log10();
     assert!(close(density, -16.02, 0.005));
     let window = 10.0 * f64::log10(3.0 / 8.0);
     let log_mean = -10.0 * 0.577_215_664_9 / std::f64::consts::LN_10;
     assert!(close(window, -4.26, 0.005) && close(log_mean, -2.51, 0.005));
-    // the rows 1 … L/2 − 1 of every column
-    let cells: Vec<f64> = (1..rows - 1)
-        .flat_map(|row| (0..nt).map(move |column| (row, column)))
+    // the mean of the rows 2 … 510 (the moving average keeps the mean of
+    // the decibels away from the ends)
+    let cells: Vec<f64> = (2..raw_rows - 2)
+        .flat_map(|row| (0..100).map(move |column| (row, column)))
         .map(|(row, column)| cell(&out, row, column))
         .collect();
     let mean = cells.iter().sum::<f64>() / cells.len() as f64;
-    // Tolerance: the decibels of an exponential value scatter by
-    // (10/ln 10)·π/√6 = 5.57 dB. The segments do not overlap, so the 98
-    // columns are independent; the window ties a bin to its neighbours
-    // (their powers correlate by 4/9 and by 1/36 two bins away), which makes
-    // 299 rows worth about 299 / (1 + 2·(4/9 + 1/36)) = 154. The mean of
-    // 98 · 154 values scatters by 5.57/√15092 = 0.045 dB; 0.15 dB is more
-    // than three of that.
+    // Tolerance: the decibels of one bin scatter by (10/ln 10)·π/√6 =
+    // 5.57 dB; the 100 columns are independent, and the 509 padded rows are
+    // worth about 150 independent bins (the padding puts 1.7 rows on a bin
+    // of the segment, and the window ties a bin to its neighbours): the mean
+    // scatters by about 5.57/√15 000 = 0.045 dB. 0.15 dB is three of that.
     assert!(
         close(mean, density + window + log_mean, 0.15),
         "mean {mean}, density {density}"
     );
-    // the scatter itself, as a check of the distribution: 5.57 dB
+    // the mean of three rows calms the scatter
     let var = cells.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / cells.len() as f64;
-    assert!(close(var.sqrt(), 5.57, 0.15), "{}", var.sqrt());
-    // the smoothing is of the decibels, so it keeps their mean and calms them
-    let x: Vec<f64> = white(n).iter().map(|v| v * sigma).collect();
-    let low = map(fs, x, FreqSmoothing::Low, TimeSmoothing::Off);
-    let smoothed: Vec<f64> = (3..rows - 3)
-        .flat_map(|row| (0..nt).map(move |column| (row, column)))
-        .map(|(row, column)| cell(&low, row, column))
+    assert!(var.sqrt() < 5.0, "{}", var.sqrt());
+    let high = map(fs, x, FreqSmoothing::High, TimeSmoothing::Low);
+    let wide: Vec<f64> = (10..raw_rows - 10)
+        .flat_map(|row| (0..100).map(move |column| (row, column)))
+        .map(|(row, column)| cell(&high, row, column))
         .collect();
-    let mean_low = smoothed.iter().sum::<f64>() / smoothed.len() as f64;
-    assert!(close(mean_low, mean, 0.05), "{mean_low} vs {mean}");
-    let var_low =
-        smoothed.iter().map(|v| (v - mean_low).powi(2)).sum::<f64>() / smoothed.len() as f64;
-    assert!(var_low.sqrt() < 0.85 * var.sqrt());
+    let mean_high = wide.iter().sum::<f64>() / wide.len() as f64;
+    assert!(close(mean_high, mean, 0.05), "{mean_high} vs {mean}");
+    let var_high = wide.iter().map(|v| (v - mean_high).powi(2)).sum::<f64>() / wide.len() as f64;
+    assert!(var_high.sqrt() < 0.6 * var.sqrt());
 }
 
 #[test]
 fn the_distance_between_segments_by_level_and_rate() {
-    // L = round(0.3·fs); off: L, low: L/2, medium: L/5, high: L/10, that is
+    // L = round(0.3·fs); low: L, medium: L/2, high: L/5, max: L/10, that is
     // 0.3, 0.15, 0.06 and 0.03 s
     for (fs, nperseg, hops) in [
         (1000.0, 300, [300, 150, 60, 30]),
@@ -487,131 +458,154 @@ fn the_distance_between_segments_by_level_and_rate() {
         }
     }
     // a part that is not whole is rounded, and never 0
-    assert_eq!(TimeSmoothing::Low.hop(303), 152);
-    assert_eq!(TimeSmoothing::Medium.hop(303), 61);
-    assert_eq!(TimeSmoothing::High.hop(303), 30);
-    assert_eq!(TimeSmoothing::High.hop(4), 1);
-    assert_eq!(TimeSmoothing::High.hop(2), 1);
-    assert_eq!(segment_len(3200.0), 960);
-    assert_eq!(segment_len(1.0), 2, "never shorter than two samples");
+    assert_eq!(TimeSmoothing::Medium.hop(303), 152);
+    assert_eq!(TimeSmoothing::High.hop(303), 61);
+    assert_eq!(TimeSmoothing::Max.hop(303), 30);
+    assert_eq!(TimeSmoothing::Max.hop(4), 1);
+    assert_eq!(TimeSmoothing::Max.hop(2), 1);
 }
 
 #[test]
-fn where_the_columns_lie_and_how_many_there_are() {
-    // Column m is centred on sample hop·m and takes [hop·m − L/2, … + L).
-    // The first: the lowest m with hop·m ≥ L/2. The last:
-    // floor((N − 1 − L) / hop). At 2 kHz, L = 600, L/2 = 300.
+fn how_many_columns_and_which_segment_each_holds() {
+    // Column k stands at sample k·hop of the stretch; there are
+    // floor((N − L)/hop) + 1 of them. The first F hold the segment that
+    // starts there, the later ones the segment centred there.
     //
-    // N = 56 000 (28 s):
-    //   off,    hop 600: m = 1 … floor(55399/600) = 92,   92 columns
-    //   low,    hop 300: m = 1 … floor(55399/300) = 184, 184 columns
-    //   medium, hop 120: m = 3 … floor(55399/120) = 461, 459 columns
-    //   high,   hop  60: m = 5 … floor(55399/60)  = 923, 919 columns
-    assert_eq!(columns(56_000, 600, 600), Some((1, 92)));
-    assert_eq!(columns(56_000, 600, 300), Some((1, 184)));
-    assert_eq!(columns(56_000, 600, 120), Some((3, 461)));
-    assert_eq!(columns(56_000, 600, 60), Some((5, 923)));
-    // N = 29 000 (14.5 s): floor(28399 / hop)
-    assert_eq!(columns(29_000, 600, 600), Some((1, 47)));
-    assert_eq!(columns(29_000, 600, 300), Some((1, 94)));
-    assert_eq!(columns(29_000, 600, 120), Some((3, 236)));
-    assert_eq!(columns(29_000, 600, 60), Some((5, 473)));
-    // the same stretches at 4 kHz, L = 1200: the same columns
-    assert_eq!(columns(112_000, 1200, 600), Some((1, 184)));
-    assert_eq!(columns(58_000, 1200, 600), Some((1, 94)));
-    // the shortest stretch with a column: hop·first ≤ N − 1 − L
-    assert_eq!(columns(901, 600, 300), Some((1, 1)));
-    assert_eq!(columns(900, 600, 300), None);
-    assert_eq!(columns(1201, 600, 600), Some((1, 1)));
-    assert_eq!(columns(1200, 600, 600), None);
-    assert_eq!(columns(961, 600, 120), Some((3, 3)));
-    assert_eq!(columns(960, 600, 120), None);
-    // shorter than a segment, and nothing at all
-    assert_eq!(columns(600, 600, 60), None);
-    assert_eq!(columns(0, 600, 60), None);
-    // an odd segment: L/2 is rounded down, as the first sample of a segment
-    assert_eq!(columns(2000, 303, 152), Some((1, 11)));
-    assert_eq!(columns(10, 3, 0), Some((1, 6)), "a distance of 0 is 1");
+    // N = 90 001 (the samples 2 000 … 92 000 of a log of 47 s at 2 kHz):
+    //   low,    hop 600: floor(89 401/600) + 1 = 150
+    //   medium, hop 300: floor(89 401/300) + 1 = 299
+    //   high,   hop 120: floor(89 401/120) + 1 = 746
+    //   max,    hop  60: floor(89 401/60)  + 1 = 1 491
+    for (hop, count) in [(600, 150), (300, 299), (120, 746), (60, 1491)] {
+        assert_eq!(column_count(90_001, 600, hop), Some(count));
+    }
+    // one segment is enough for one column; less is none
+    assert_eq!(column_count(600, 600, 60), Some(1));
+    assert_eq!(column_count(659, 600, 60), Some(1));
+    assert_eq!(column_count(660, 600, 60), Some(2));
+    assert_eq!(column_count(599, 600, 60), None);
+    assert_eq!(column_count(0, 600, 60), None);
+    assert_eq!(column_count(10, 3, 0), Some(8), "a distance of 0 is 1");
+    // the first-columns rule at 2 kHz
+    let max = TimeSmoothing::Max;
+    let starts: Vec<usize> = (0..14).map(|k| segment_start(k, 600, max)).collect();
+    assert_eq!(
+        starts,
+        [
+            0, 60, 120, 180, 240, 300, 360, 420, 480, 540, 300, 360, 420, 480
+        ]
+    );
+    for (level, factor) in TimeSmoothing::ALL.iter().zip([1, 2, 5, 10]) {
+        let hop = level.hop(600);
+        for k in 0..factor {
+            assert_eq!(segment_start(k, 600, *level), k * hop, "{level:?} {k}");
+        }
+        for k in factor..factor + 5 {
+            assert_eq!(segment_start(k, 600, *level), k * hop - 300, "{level:?}");
+        }
+    }
+    // at every rate and level the segments lie inside the stretch, the last
+    // one too
+    for fs in [1000.0, 2000.0, 4000.0, 8000.0, 1010.0] {
+        let nperseg = segment_len(fs);
+        for level in TimeSmoothing::ALL {
+            for n in [nperseg, nperseg + 1, 3 * nperseg + 7, 20 * nperseg] {
+                let count = column_count(n, nperseg, level.hop(nperseg)).unwrap();
+                let end = segment_start(count - 1, nperseg, level) + nperseg;
+                assert!(end <= n, "{fs} {level:?} {n}");
+            }
+        }
+    }
+}
 
-    // the analysis on the 28 s of an epoch: samples 4000 … 59 999 of 30 s
-    let s = session(2000.0, tone(60_000, 600, 60, 1.0));
+#[test]
+fn a_click_shows_which_segment_each_column_holds() {
+    // One sample of 50 at sample 1 000 (0.5 s) of a stretch at 2 kHz, "max":
+    // the column k holds the samples [s, s + 600) with s from the rule, and
+    // its bins read the click through the window there, w[1000 − s]
+    let (fs, nperseg, at) = (2000.0, 600, 1000);
+    let mut x = vec![0.0; 6000];
+    x[at] = 50.0;
+    let out = map(fs, x, FreqSmoothing::Medium, TimeSmoothing::Max);
+    let w = hann(nperseg);
+    let read = |k: usize| cell(&out, 200, k);
+    for k in 0..out.grid.x.len() {
+        let s = segment_start(k, nperseg, TimeSmoothing::Max);
+        let expected = if (s..s + nperseg).contains(&at) {
+            db(2.0 * 2500.0 * w[at - s].powi(2) / (nperseg as f64 * fs))
+        } else {
+            DB_FLOOR
+        };
+        assert!(close(read(k), expected, 1e-9), "column {k}");
+    }
+    // the columns 7, 8 and 9 start at 420, 480 and 540 and hold the click;
+    // column 10 is the segment centred at 600 (300 … 899), without it; the
+    // columns 12 … 14 are the segments of the columns 7 … 9 again
+    for k in 0..7 {
+        assert_eq!(read(k), DB_FLOOR, "column {k}");
+    }
+    assert!(read(7) > DB_FLOOR && read(8) > read(7) && read(9) > read(8));
+    assert_eq!((read(10), read(11)), (DB_FLOOR, DB_FLOOR));
+    assert_eq!((read(12), read(13), read(14)), (read(7), read(8), read(9)));
+    // the time of a column is k·hop/fs, whichever segment it holds
+    for (k, t) in out.grid.x.iter().enumerate() {
+        assert!(close(*t, k as f64 * 0.03, 1e-12));
+    }
+}
+
+#[test]
+fn the_columns_of_an_epoch_and_their_times() {
+    // a log of 47 s at 2 kHz, the stretch 1 … 46 s: the samples
+    // 2 000 … 92 000, both ends included, 90 001 samples
+    let s = session(2000.0, tone(94_000, 1024, 100, 1.0));
     let epoch = Some(Epoch {
-        start_s: 2.0,
-        end_s: 30.0,
+        start_s: 1.0,
+        end_s: 46.0,
     });
-    for (level, hop, first, count) in [
-        (TimeSmoothing::Off, 600, 1, 92),
-        (TimeSmoothing::Low, 300, 1, 184),
-        (TimeSmoothing::Medium, 120, 3, 459),
-        (TimeSmoothing::High, 60, 5, 919),
+    for (level, hop, count) in [
+        (TimeSmoothing::Low, 600, 150),
+        (TimeSmoothing::Medium, 300, 299),
+        (TimeSmoothing::High, 120, 746),
+        (TimeSmoothing::Max, 60, 1491),
     ] {
-        let out = run_in(&s, epoch, &params(FreqSmoothing::Low, level));
-        assert_eq!((out.nperseg, out.hop), (600, hop), "{level:?}");
+        let out = run_in(&s, epoch, &params(FreqSmoothing::Medium, level));
+        assert_eq!(
+            (out.nperseg, out.nfft, out.hop),
+            (600, 1024, hop),
+            "{level:?}"
+        );
         assert_eq!(
             (out.smooth_freq, out.smooth_time),
-            (FreqSmoothing::Low, level)
+            (FreqSmoothing::Medium, level)
         );
         assert_eq!(out.grid.x.len(), count, "{level:?}");
-        assert_eq!(out.grid.z.len(), count * 301);
-        // the time of a column is the middle of its segment, from the start
-        // of the session: the epoch starts at 2 s
+        assert_eq!(out.grid.z.len(), count * 513);
+        // the time of a column from the first sample of the log: 1 s, then
+        // a step of the distance
         let step = hop as f64 / 2000.0;
-        for (i, t) in out.grid.x.iter().enumerate() {
-            assert!(
-                close(*t, 2.0 + (first + i) as f64 * step, 1e-9),
-                "{level:?}"
-            );
+        for (k, t) in out.grid.x.iter().enumerate() {
+            assert!(close(*t, 1.0 + k as f64 * step, 1e-9), "{level:?}");
         }
-        // the last segment ends half a segment (0.15 s) or more before the
-        // stretch does, and one more column would not
-        let end_of_last = *out.grid.x.last().unwrap() + 0.15;
-        assert!(end_of_last <= 30.0 - 0.15 + 1e-9, "{level:?}");
-        assert!(end_of_last + step > 30.0 - 0.15 - 1.0 / 2000.0, "{level:?}");
+        assert!(close(*out.grid.x.last().unwrap(), 45.70, 1e-9), "{level:?}");
+        // a steady tone reads the same in every column
+        let first = cell(&out, 100, 0);
+        assert!((0..count).all(|k| close(cell(&out, 100, k), first, 1e-6)));
     }
-    assert!((s.timebase.len() as f64 / 2000.0 - 30.0).abs() < 1e-9);
 }
 
 #[test]
-fn a_tone_that_starts_shows_in_full_in_the_first_segment_inside_it() {
-    // 2 kHz, low: column m is the samples 300·m − 300 … 300·m + 299 and sits
-    // at 0.15·m s. Nothing until sample 3000 (1.5 s), then a tone on bin 60.
-    //   m = 9  (1.35 s): samples 2400 … 2999, all before the tone
-    //   m = 10 (1.50 s): samples 2700 … 3299, half inside: the half of the
-    //                    window that holds the tone sums to L/4, 6.02 dB less
-    //   m = 11 (1.65 s): samples 3000 … 3599, the first wholly inside
-    let (fs, nperseg, bin, start) = (2000.0, 600, 60, 3000);
-    let mut x = tone(9000, nperseg, bin, 10.0);
-    x[..start].fill(0.0);
-    let out = map(fs, x, FreqSmoothing::Off, TimeSmoothing::Low);
-    let full = 20.0 - 14.26;
-    // the grid starts at m = 1
-    let column = |m: usize| m - 1;
-    assert!(close(out.grid.x[column(9)], 1.35, 1e-9));
-    assert!(close(out.grid.x[column(10)], 1.50, 1e-9));
-    assert!(close(out.grid.x[column(11)], 1.65, 1e-9));
-    for m in 1..=9 {
-        assert!(cell(&out, bin, column(m)) < -250.0, "column {m}");
-    }
-    assert!(close(cell(&out, bin, column(10)), full - 6.02, 0.05));
-    for m in 11..=out.grid.x.len() {
-        assert!(close(cell(&out, bin, column(m)), full, 0.02), "column {m}");
-    }
-    // high puts ten columns on a segment: the first in full is the one
-    // centred 0.15 s after the start, m = 55 at 0.03·55 = 1.65 s again
-    let mut x = tone(9000, nperseg, bin, 10.0);
-    x[..start].fill(0.0);
-    let high = map(fs, x, FreqSmoothing::Off, TimeSmoothing::High);
-    let column = |m: usize| m - 5;
-    assert!(close(high.grid.x[column(55)], 1.65, 1e-9));
-    assert!(close(cell(&high, bin, column(55)), full, 0.02));
-    // the column before it still has 60 samples of nothing at its start,
-    // where the window is small: 0.055 dB less
-    assert!(cell(&high, bin, column(54)) < cell(&high, bin, column(55)) - 0.04);
-    assert!(
-        cell(&high, bin, column(45)) < -250.0,
-        "0.3 s before: nothing"
-    );
-    assert!(cell(&high, bin, column(46)) > -100.0, "the first sample in");
+fn a_short_stretch_still_has_a_map() {
+    // a log of 10 s with the first and the last second left out: 8 s,
+    // 16 001 samples, floor(15 401/60) + 1 = 257 columns (decision D-014:
+    // OpenPID draws the map of any stretch that holds a segment)
+    let s = session(2000.0, white(20_000));
+    let epoch = Some(Epoch {
+        start_s: 1.0,
+        end_s: 9.0,
+    });
+    let out = run_in(&s, epoch, &defaults());
+    assert_eq!(out.grid.x.len(), 257);
+    assert!(close(*out.grid.x.last().unwrap(), 1.0 + 256.0 * 0.03, 1e-9));
 }
 
 #[test]
@@ -619,99 +613,95 @@ fn the_frequency_range_is_cut_after_the_smoothing() {
     let (fs, n) = (4000.0, 12_000);
     let x: Vec<f64> = white(n)
         .iter()
-        .zip(tone(n, 1200, 150, 6.0))
+        .zip(tone(n, 2048, 256, 6.0))
         .map(|(a, b)| a + b)
         .collect();
     let s = session(fs, x);
     for level in FreqSmoothing::ALL {
-        let whole = run_in(&s, None, &params(level, TimeSmoothing::Low));
-        // to half the sample rate by default: bins 0 … 600 of 1200
-        assert_eq!(whole.grid.y.len(), 601);
+        let whole = run_in(&s, None, &params(level, TimeSmoothing::Medium));
+        // to half the sample rate by default: bins 0 … 1 024 of 2 048
+        assert_eq!(whole.grid.y.len(), 1025);
         assert!(close(*whole.grid.y.last().unwrap(), 2000.0, 1e-9));
         let cut = run_in(
             &s,
             None,
             &StftParams {
                 max_hz: Some(500.0),
-                ..params(level, TimeSmoothing::Low)
+                ..params(level, TimeSmoothing::Medium)
             },
         );
-        // the rows up to 500 Hz, 500 Hz included: bins 0 … 150
-        assert_eq!(cut.grid.y.len(), 151);
-        assert_eq!(cut.grid.y[..], whole.grid.y[..151]);
+        // the rows up to 500 Hz, 500 Hz included: bins 0 … 256
+        assert_eq!(cut.grid.y.len(), 257);
+        assert_eq!(cut.grid.y[..], whole.grid.y[..257]);
         assert_eq!(cut.grid.x, whole.grid.x);
         // and they are the rows of the whole map: the row at the cut was
         // smoothed with the rows above it
         let nt = whole.grid.x.len();
-        assert_eq!(cut.grid.z[..], whole.grid.z[..151 * nt], "{level:?}");
+        assert_eq!(cut.grid.z[..], whole.grid.z[..257 * nt], "{level:?}");
     }
     // a bound above half the rate changes nothing, one below the first row
     // keeps that row only
-    let above = run_in(
-        &s,
-        None,
-        &StftParams {
-            max_hz: Some(1e6),
-            ..params(FreqSmoothing::Low, TimeSmoothing::Low)
-        },
-    );
-    assert_eq!(above.grid.y.len(), 601);
-    let lowest = run_in(
-        &s,
-        None,
-        &StftParams {
-            max_hz: Some(1.0),
-            ..params(FreqSmoothing::Low, TimeSmoothing::Low)
-        },
-    );
-    assert_eq!(lowest.grid.y, [0.0]);
+    let bound = |max_hz| {
+        run_in(
+            &s,
+            None,
+            &StftParams {
+                max_hz: Some(max_hz),
+                ..defaults()
+            },
+        )
+    };
+    assert_eq!(bound(1e6).grid.y.len(), 1025);
+    assert_eq!(bound(1.0).grid.y, [0.0]);
 }
 
 #[test]
 fn what_the_result_says_about_itself() {
-    let out = map(
-        1000.0,
-        tone(2000, 300, 30, 2.0),
-        FreqSmoothing::Low,
-        TimeSmoothing::Low,
+    let out = run_in(
+        &session(1000.0, tone(2000, 512, 50, 2.0)),
+        None,
+        &defaults(),
     );
     assert_eq!(out.channel, GYRO);
     assert_eq!(out.unit, "deg/s");
     assert!(close(out.fs, 1000.0, 1e-9));
-    assert_eq!((out.nperseg, out.hop), (300, 150));
+    assert_eq!((out.nperseg, out.nfft, out.hop), (300, 512, 30));
     assert_eq!(out.grid.x_label, "time (s)");
     assert_eq!(out.grid.y_label, "frequency (Hz)");
     assert_eq!(out.grid.z_label, "power density (dB, (deg/s)²/Hz)");
-    // the rows are fs/L apart
-    assert!(close(out.grid.y[1] - out.grid.y[0], 1000.0 / 300.0, 1e-9));
+    // the rows are fs/nfft apart
+    assert!(close(out.grid.y[1] - out.grid.y[0], 1000.0 / 512.0, 1e-9));
     // the JSON of the CLI carries the levels by name
     let json = serde_json::to_value(&out).unwrap();
-    assert_eq!(json["smooth_freq"], "low");
-    assert_eq!(json["smooth_time"], "low");
-    assert_eq!(json["hop"], 150);
+    assert_eq!(json["smooth_freq"], "medium");
+    assert_eq!(json["smooth_time"], "max");
+    assert_eq!(
+        (json["hop"].as_u64(), json["nfft"].as_u64()),
+        (Some(30), Some(512))
+    );
 }
 
 #[test]
 fn a_segment_of_an_odd_number_of_samples() {
-    // 1010 Hz: L = round(303) = 303, bins 0 … 151, low: round(151.5) = 152
-    // samples apart; column m starts at 152·m − 151
+    // 1010 Hz: L = round(303) = 303, nfft 512, bins 0 … 256; max:
+    // round(30.3) = 30 samples apart; L/2 rounded down is 151
     let fs = 1010.0;
-    let out = map(fs, white(3030), FreqSmoothing::Low, TimeSmoothing::Low);
-    assert_eq!((out.nperseg, out.hop), (303, 152));
-    assert_eq!(out.grid.y.len(), 152);
-    let (first, last) = columns(3030, 303, 152).unwrap();
-    assert_eq!((first, last), (1, 17));
-    assert_eq!(out.grid.x.len(), 17);
-    assert!(close(out.grid.x[0], 152.0 / fs, 1e-6));
+    let out = map(fs, white(3030), FreqSmoothing::Medium, TimeSmoothing::Max);
+    assert_eq!((out.nperseg, out.nfft, out.hop), (303, 512, 30));
+    assert_eq!(out.grid.y.len(), 257);
+    assert_eq!(column_count(3030, 303, 30), Some(91));
+    assert_eq!(out.grid.x.len(), 91);
+    assert_eq!(segment_start(10, 303, TimeSmoothing::Max), 300 - 151);
+    assert!(close(out.grid.x[1], 30.0 / fs, 1e-6));
     assert!(out.grid.z.iter().all(|v| v.is_finite()));
 }
 
 #[test]
 fn a_stretch_too_short_for_a_segment_is_refused() {
-    // 2 kHz, low: the shortest stretch with a column is 901 samples
-    let fits = session(2000.0, white(901));
-    let short = session(2000.0, white(900));
-    let p = params(FreqSmoothing::Low, TimeSmoothing::Low);
+    // 2 kHz: a segment is 600 samples, and 600 samples give one column
+    let fits = session(2000.0, white(600));
+    let short = session(2000.0, white(599));
+    let p = defaults();
     assert_eq!(run_in(&fits, None, &p).grid.x.len(), 1);
     let refused = StftAnalysis.run(
         &AnalysisCtx {
@@ -722,7 +712,7 @@ fn a_stretch_too_short_for_a_segment_is_refused() {
     );
     match refused {
         Err(AnalysisError::NotEnoughData(why)) => {
-            assert_eq!(why, "900 samples, the first segment of 600 needs 901");
+            assert_eq!(why, "599 samples, a segment needs 600");
         }
         other => panic!("{other:?}"),
     }

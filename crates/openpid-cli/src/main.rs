@@ -32,8 +32,9 @@ COMMANDS:
              psd             Welch power spectral density of --channel
              thr-heatmap     frequency x throttle heatmap of --channel
              stft            frequency x time map of --channel: a column per segment of
-                             0.3 s, rows to half the log rate, a power density in
-                             decibels (--smooth-freq and --smooth-time set the two levels)
+                             0.3 s, zero-padded to a power of two, rows to half the log
+                             rate, a power density in decibels (--smooth-freq and
+                             --smooth-time set the two levels)
              motor-noise     per-motor harmonic amplitudes on the gyro (needs gyro.raw.<axis>;
                              motor speeds from eRPM or the rpm estimate)
              rpm             motor speed estimated from the gyro's noise peaks (needs
@@ -82,9 +83,10 @@ OPTIONS:
     --example     gen: print the default spec instead of generating
     --raw         Skip firmware-profile scaling and derived channels
     --out <path>  Write to a file instead of stdout
-    --smooth-freq L  stft: smoothing along the frequency, off, low (default), med or high
-    --smooth-time L  stft: distance between the columns, off (0.3 s), low (0.15 s, the
-                  default), med (0.06 s) or high (0.03 s)
+    --smooth-freq L  stft: mean of the decibels over rows along the frequency, low (3),
+                  medium (5, the default), high (11) or max (21)
+    --smooth-time L  stft: distance between the columns, low (0.3 s), medium (0.15 s),
+                  high (0.06 s) or max (0.03 s, the default)
     --png <path>  thr-heatmap / stft: also write the grid as a PNG image (viridis; stft:
                   on -30 … 10 dB)
     --project <p> run: take the log (slot A), session, epoch and tool parameters from
@@ -487,7 +489,7 @@ type Picture = (usize, usize, Vec<u8>);
 
 /// What is wrong with a level given to `--smooth-freq` or `--smooth-time`.
 fn bad_level(option: &str, level: &str) -> String {
-    format!("bad {option} {level}: off, low, med or high")
+    format!("bad {option} {level}: low, medium, high or max")
 }
 
 /// The map of frequency against time of `run stft`: the result, and the

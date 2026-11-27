@@ -2,8 +2,9 @@
 //! roll / pitch / yaw spectrograms of the docked log, the spectrum at the
 //! player's position beside each row, and the throttle under them on the
 //! same time axis. Every map is the one of DESIGN §6.5, computed as the
-//! reference tool computes its own: a power density in decibels, on
-//! −30 … 10 dB unless another scale is chosen (there is no linear colour).
+//! web edition 1.0 of the reference tool computes its own: a power density
+//! in decibels, on −30 … 10 dB unless another scale is chosen (there is no
+//! linear colour).
 //! Every control, the player's included, is in the panel on the right.
 
 use crate::app::App;
@@ -317,7 +318,7 @@ fn title(ui: &mut Ui, slot: Slot, q: Quantity, d: &TimeDisplay, pos: f64) {
                 .size(12.5),
         )
         .on_hover_text(tr(
-            "a cell is the power of the signal per Hz in decibels, smoothed along the frequency; it is not the amplitude of a tone",
+            "a cell is the power of the signal per Hz in decibels, averaged along the frequency; it is not the amplitude of a tone",
         ));
         ui.label(
             RichText::new(format!("{} {} {pos:.2} s", slot.name(), tr("spectrum at")))
@@ -602,23 +603,23 @@ fn controls(app: &mut App, ui: &mut Ui) {
     panel::section(ui, tr("Analysis"));
     level_choice(
         ui,
-        "time-smooth-freq",
-        tr("Smooth frequency"),
-        tr(
-            "how many rows a cell is smoothed over along the frequency: off none, low 5, medium 11, high 21; higher reads calmer and lowers and widens the lines",
-        ),
-        &mut app.tools.stft.smooth_freq,
-        &FreqSmoothing::ALL.map(|level| (level, level.name())),
-    );
-    level_choice(
-        ui,
         "time-smooth-time",
-        tr("Smooth time"),
+        tr("Time smoothing"),
         tr(
-            "how close the columns are: each is the spectrum of 0.3 s of the log, 0.3 s apart (off), 0.15 (low), 0.06 (medium) or 0.03 s (high); nothing is averaged along the time",
+            "how close the columns are: each is the spectrum of 0.3 s of the log, 0.3 s apart (low), 0.15 (medium), 0.06 (high) or 0.03 s (max); nothing is averaged along the time",
         ),
         &mut app.tools.stft.smooth_time,
         &TimeSmoothing::ALL.map(|level| (level, level.name())),
+    );
+    level_choice(
+        ui,
+        "time-smooth-freq",
+        tr("Freq smoothing"),
+        tr(
+            "how many rows a cell is averaged over along the frequency: low 3, medium 5, high 11, max 21; higher reads calmer and lowers and widens the lines",
+        ),
+        &mut app.tools.stft.smooth_freq,
+        &FreqSmoothing::ALL.map(|level| (level, level.name())),
     );
     let mut top = app.tools.stft.max_hz;
     panel::optional(
@@ -632,7 +633,7 @@ fn controls(app: &mut App, ui: &mut Ui) {
     app.tools.stft.max_hz = top.map(|hz| hz.clamp(MIN_TOP_HZ, MAX_TOP_HZ));
 }
 
-/// One of the two lists of levels (off, low, medium, high), named in the
+/// One of the two lists of levels (low, medium, high, max), named in the
 /// interface language.
 fn level_choice<T: PartialEq + Copy>(
     ui: &mut Ui,

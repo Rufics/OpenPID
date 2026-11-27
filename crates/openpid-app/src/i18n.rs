@@ -179,6 +179,7 @@ static UA: &[(&str, &str)] = &[
     ("Flight modes", "Режими польоту"),
     ("Frames", "Кадри"),
     ("Freestyle", "Фрістайл"),
+    ("Freq smoothing", "Згладж. частоти"),
     ("Freq × throttle", "Частота × газ"),
     ("Freq × time", "Частота × час"),
     ("Go to Advice", "До порад"),
@@ -353,8 +354,6 @@ static UA: &[(&str, &str)] = &[
     ("Skipped bytes", "Пропущені байти"),
     ("Sliders", "Повзунки"),
     ("Slot", "Слот"),
-    ("Smooth frequency", "Згладж. частоти"),
-    ("Smooth time", "Згладж. часу"),
     ("Smoothing", "Згладжування"),
     ("Spectrum", "Спектр"),
     ("Speed", "Швидкість"),
@@ -385,6 +384,7 @@ static UA: &[(&str, &str)] = &[
     ("Throttle boost", "Throttle boost"),
     ("Throttle curve", "Крива газу"),
     ("Throttle window ±", "Вікно газу ±"),
+    ("Time smoothing", "Згладж. часу"),
     ("To start", "На початок"),
     ("Touch mode", "Сенсорний режим"),
     ("Tour", "Тур"),
@@ -417,8 +417,8 @@ static UA: &[(&str, &str)] = &[
     ("Z min", "Z мін."),
     ("Zoom to the flown range", "Лише діапазон польоту"),
     (
-        "a cell is the power of the signal per Hz in decibels, smoothed along the frequency; it is not the amplitude of a tone",
-        "комірка — це потужність сигналу на Гц у децибелах, згладжена вздовж частоти; це не амплітуда тону",
+        "a cell is the power of the signal per Hz in decibels, averaged along the frequency; it is not the amplitude of a tone",
+        "комірка — це потужність сигналу на Гц у децибелах, усереднена вздовж частоти; це не амплітуда тону",
     ),
     (
         "a coloured line per motor and harmonic instead of one line at the mean of the motors",
@@ -564,8 +564,8 @@ static UA: &[(&str, &str)] = &[
         "наведіть на карту, щоб побачити значення",
     ),
     (
-        "how close the columns are: each is the spectrum of 0.3 s of the log, 0.3 s apart (off), 0.15 (low), 0.06 (medium) or 0.03 s (high); nothing is averaged along the time",
-        "наскільки щільно стоять стовпці: кожен — спектр 0.3 с логу, через 0.3 с (вимк.), 0.15 (низька), 0.06 (середня) або 0.03 с (висока); уздовж часу нічого не усереднюється",
+        "how close the columns are: each is the spectrum of 0.3 s of the log, 0.3 s apart (low), 0.15 (medium), 0.06 (high) or 0.03 s (max); nothing is averaged along the time",
+        "наскільки щільно стоять стовпці: кожен — спектр 0.3 с логу, через 0.3 с (низька), 0.15 (середня), 0.06 (висока) або 0.03 с (максимальна); уздовж часу нічого не усереднюється",
     ),
     (
         "how far a noise peak must stand above the spectrum around it to count",
@@ -588,8 +588,8 @@ static UA: &[(&str, &str)] = &[
         "скільки гармонік на мотор; 0 = стільки, скільки знімає RPM-фільтр",
     ),
     (
-        "how many rows a cell is smoothed over along the frequency: off none, low 5, medium 11, high 21; higher reads calmer and lowers and widens the lines",
-        "на скільки рядків згладжується комірка вздовж частоти: вимк. — жодного, низька — 5, середня — 11, висока — 21; вище дає спокійнішу карту, нижчі й ширші лінії",
+        "how many rows a cell is averaged over along the frequency: low 3, medium 5, high 11, max 21; higher reads calmer and lowers and widens the lines",
+        "за скількома рядками усереднюється комірка вздовж частоти: низька — 3, середня — 5, висока — 11, максимальна — 21; вище дає спокійнішу карту, нижчі й ширші лінії",
     ),
     (
         "how much D is raised in one proposal; small steps keep the motors cool",
@@ -659,6 +659,7 @@ static UA: &[(&str, &str)] = &[
     ),
     ("magnitude (dB)", "амплітуда (дБ)"),
     ("markers", "мітки"),
+    ("max", "максимальна"),
     ("med-high", "вище середньої"),
     ("medium", "середня"),
     ("motors", "мотори"),

@@ -132,7 +132,7 @@ fn throttle_heatmap_reuses_its_textures_and_names_thin_bins() {
     )));
     assert_eq!(ui.app().cache.len(), cached);
     ui.tab(Tab::TimeHeatmap);
-    assert!(ui.sees("Smooth frequency"));
+    assert!(ui.sees("Freq smoothing"));
 }
 
 #[test]
@@ -298,13 +298,16 @@ fn time_tab_stacks_the_axes_in_db_with_the_throttle_under_them() {
     );
     assert_eq!(ui.app().colour_scales, [(Slot::A, 10.0)]);
     assert!(ui.sees("colour scale -30 to 10"));
-    // both lists at "low", the rows to half the log rate
+    // the web edition's defaults, time "max" and frequency "medium"; the
+    // segment zero-padded to a power of two, the rows to half the log rate
     let (stft, t) = (ui.app().tools.stft.clone(), time_map(&ui));
     assert_eq!(
         (stft.smooth_freq, stft.smooth_time, stft.max_hz),
-        (FreqSmoothing::Low, TimeSmoothing::Low, None)
+        (FreqSmoothing::Medium, TimeSmoothing::Max, None)
     );
-    assert_eq!(t.hop * 2, t.nperseg);
+    assert_eq!(t.hop * 10, t.nperseg);
+    assert_eq!(t.nfft, t.nperseg.next_power_of_two());
+    assert_eq!(t.grid.y.len(), t.nfft / 2 + 1);
     assert!((t.grid.y.last().unwrap() - t.fs / 2.0).abs() < 1e-6);
     let (_, top) = ui.plot("time/roll").y_range();
     assert!((top - t.fs / 2.0).abs() < 0.01 * t.fs, "{top}");
@@ -325,36 +328,36 @@ fn time_map(ui: &Ui) -> openpid_analysis::StftOutput {
 #[test]
 fn time_tab_lists_set_the_two_levels_of_the_map() {
     let mut ui = Ui::open(&[LOG_2025], Tab::TimeHeatmap);
-    let low = time_map(&ui);
+    let first = time_map(&ui);
     let columns = |t: &openpid_analysis::StftOutput| t.grid.x.len();
-    assert!(ui.sees(&format!("column 1 of {}", columns(&low))));
+    assert!(ui.sees(&format!("column 1 of {}", columns(&first))));
     // along the frequency: the same grid, other cells; a job per axis
     for (name, level) in [
         ("high", FreqSmoothing::High),
-        ("medium", FreqSmoothing::Medium),
-        ("off", FreqSmoothing::Off),
+        ("max", FreqSmoothing::Max),
+        ("low", FreqSmoothing::Low),
     ] {
         let before = jobs(&ui, "stft");
-        ui.pick("Smooth frequency", name);
+        ui.pick("Freq smoothing", name);
         assert_eq!(ui.app().tools.stft.smooth_freq, level);
         assert_eq!(jobs(&ui, "stft"), before + 3, "{name}");
         let t = time_map(&ui);
         assert_eq!(t.smooth_freq, level);
         assert_eq!(
             (t.grid.x.len(), t.grid.y.len()),
-            (columns(&low), low.grid.y.len())
+            (columns(&first), first.grid.y.len())
         );
-        assert_ne!(t.grid.z, low.grid.z, "{name}");
+        assert_ne!(t.grid.z, first.grid.z, "{name}");
     }
-    ui.pick("Smooth frequency", "low");
-    assert_eq!(time_map(&ui).grid.z, low.grid.z, "the first result again");
+    ui.pick("Freq smoothing", "medium");
+    assert_eq!(time_map(&ui).grid.z, first.grid.z, "the first result again");
     // along the time: the distance between the columns, so their number
     for (name, level, per_segment) in [
-        ("off", TimeSmoothing::Off, 1),
-        ("medium", TimeSmoothing::Medium, 5),
-        ("high", TimeSmoothing::High, 10),
+        ("low", TimeSmoothing::Low, 1),
+        ("medium", TimeSmoothing::Medium, 2),
+        ("high", TimeSmoothing::High, 5),
     ] {
-        ui.pick("Smooth time", name);
+        ui.pick("Time smoothing", name);
         assert_eq!(ui.app().tools.stft.smooth_time, level);
         let t = time_map(&ui);
         assert_eq!(t.smooth_time, level);
@@ -368,9 +371,18 @@ fn time_tab_lists_set_the_two_levels_of_the_map() {
             assert!(ui.has_plot(&format!("time/{axis}")), "{name} {axis}");
         }
     }
-    // ten columns a segment: about five times those of "low", all drawn
+    // "high", five columns a segment, against the ten of "max": about half
     let high = time_map(&ui);
-    assert!(columns(&high) > 4 * columns(&low));
+    assert!(2 * columns(&high) <= columns(&first) + 2);
+    // the project keeps both levels
+    let saved = ui.app().project(Path::new("p.openpid.json"));
+    assert_eq!(
+        (saved.stft.smooth_freq, saved.stft.smooth_time),
+        (FreqSmoothing::Medium, TimeSmoothing::High)
+    );
+    // ten columns a segment, all drawn
+    ui.pick("Time smoothing", "max");
+    assert_eq!(time_map(&ui).grid.z, first.grid.z);
     let widest = ui
         .app()
         .heatmap_textures
@@ -380,20 +392,13 @@ fn time_tab_lists_set_the_two_levels_of_the_map() {
         .unwrap();
     let limit = ui.ctx().input(|i| i.max_texture_side);
     assert!(widest <= limit, "{widest} pixels, the limit is {limit}");
-    // the project keeps both levels
-    let saved = ui.app().project(Path::new("p.openpid.json"));
-    assert_eq!(
-        (saved.stft.smooth_freq, saved.stft.smooth_time),
-        (FreqSmoothing::Low, TimeSmoothing::High)
-    );
     // the lists in the other language of the interface
-    ui.pick("Smooth time", "low");
     ui.app_mut().prefs.lang = crate::i18n::Lang::Ua;
     ui.settle();
     assert!(ui.has("Згладж. частоти") && ui.has("Згладж. часу"));
     assert!(ui.has("Шкала кольору") && ui.sees("густина потужності (дБ)"));
-    ui.pick("Згладж. частоти", "висока");
-    assert_eq!(ui.app().tools.stft.smooth_freq, FreqSmoothing::High);
+    ui.pick("Згладж. частоти", "максимальна");
+    assert_eq!(ui.app().tools.stft.smooth_freq, FreqSmoothing::Max);
 }
 
 #[test]
@@ -495,13 +500,12 @@ fn time_tab_max_frequency_lowers_the_top_of_the_maps() {
 
 #[test]
 fn time_tab_says_when_the_window_is_too_short_for_a_segment() {
-    // a 1 kHz log: a segment is 300 samples, and at "low" the first column
-    // needs 150 + 300 + 1 of them; a window of 0.3 s has too few
+    // a 1 kHz log: a segment is 300 samples; a window of 0.2 s has fewer
     let mut ui = Ui::open(&[LOG_4_2], Tab::TimeHeatmap);
     assert!(ui.has_plot("time/roll"));
-    set_epoch(&mut ui, Some((2.0, 2.3)));
+    set_epoch(&mut ui, Some((2.0, 2.2)));
     assert!(ui.sees("A: not enough data"));
-    assert!(ui.sees("the first segment of 300 needs 451"));
+    assert!(ui.sees("samples, a segment needs 300"));
     assert!(!ui.has_plot("time/roll"));
     // a window with room for the columns brings the maps back
     set_epoch(&mut ui, Some((2.0, 6.0)));

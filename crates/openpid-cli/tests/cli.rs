@@ -389,7 +389,7 @@ fn png_of_a_heatmap() {
 #[test]
 fn the_time_map_takes_its_two_levels() {
     // betaflight-4.2.0.BFL is logged at 1 kHz: a segment of 0.3 s is 300
-    // samples, the rows are the bins 0 … 150
+    // samples, zero-padded to 512, the rows are the bins 0 … 256
     let l = log("betaflight-4.2.0.BFL");
     let f = l.to_str().unwrap();
     let map = |extra: &[&str]| -> serde_json::Value {
@@ -400,42 +400,49 @@ fn the_time_map_takes_its_two_levels() {
         serde_json::from_str(&out).expect("json")
     };
     let columns = |v: &serde_json::Value| v["grid"]["x"].as_array().unwrap().len();
-    // by default both lists at "low": half a segment between the columns
-    let low = map(&[]);
-    assert_eq!(low["smooth_freq"], "low");
-    assert_eq!(low["smooth_time"], "low");
+    let number = |v: &serde_json::Value, key: &str| v[key].as_u64();
+    // by default frequency "medium" and time "max": a tenth of a segment
+    // between the columns
+    let default = map(&[]);
+    assert_eq!(default["smooth_freq"], "medium");
+    assert_eq!(default["smooth_time"], "max");
     assert_eq!(
-        (low["nperseg"].as_u64(), low["hop"].as_u64()),
-        (Some(300), Some(150))
+        (
+            number(&default, "nperseg"),
+            number(&default, "nfft"),
+            number(&default, "hop")
+        ),
+        (Some(300), Some(512), Some(30))
     );
-    assert_eq!(low["grid"]["y"].as_array().unwrap().len(), 151);
-    assert_eq!(low["grid"]["z_label"], "power density (dB, (deg/s)²/Hz)");
-    // the other levels, "med" as the reference tool's list writes it
-    let other = map(&["--smooth-freq", "off", "--smooth-time", "high"]);
-    assert_eq!(other["smooth_freq"], "off");
-    assert_eq!(other["smooth_time"], "high");
-    assert_eq!(other["hop"], 30);
-    assert!(columns(&other) > 4 * columns(&low));
-    let medium = map(&["--smooth-freq", "med", "--smooth-time", "medium"]);
-    assert_eq!(medium["smooth_freq"], "medium");
-    assert_eq!(medium["hop"], 60);
-    let off = map(&["--smooth-time", "off"]);
-    assert_eq!(off["hop"], 300);
-    assert!(columns(&off) < columns(&low));
+    assert_eq!(default["grid"]["y"].as_array().unwrap().len(), 257);
+    assert_eq!(
+        default["grid"]["z_label"],
+        "power density (dB, (deg/s)²/Hz)"
+    );
+    // the other levels
+    let other = map(&["--smooth-freq", "low", "--smooth-time", "low"]);
+    assert_eq!(other["smooth_freq"], "low");
+    assert_eq!(other["smooth_time"], "low");
+    assert_eq!(other["hop"], 300);
+    assert!(columns(&default) > 9 * columns(&other));
+    let medium = map(&["--smooth-freq", "max", "--smooth-time", "medium"]);
+    assert_eq!(medium["smooth_freq"], "max");
+    assert_eq!(medium["hop"], 150);
+    assert_eq!(map(&["--smooth-time", "high"])["hop"], 60);
     // the smoothing along the frequency changes the cells, not the grid
-    assert_eq!(columns(&map(&["--smooth-freq", "high"])), columns(&low));
-    assert_ne!(
-        map(&["--smooth-freq", "high"])["grid"]["z"],
-        low["grid"]["z"]
-    );
+    let high = map(&["--smooth-freq", "high"]);
+    assert_eq!(columns(&high), columns(&default));
+    assert_ne!(high["grid"]["z"], default["grid"]["z"]);
     // a level that is not in the list is refused, and says what the list is
     for option in ["--smooth-freq", "--smooth-time"] {
-        let (ok, _, err) = run(&["run", "stft", f, option, "loud"]);
-        assert!(!ok, "{option}");
-        assert!(
-            err.contains(&format!("bad {option} loud: off, low, med or high")),
-            "{err}"
-        );
+        for level in ["loud", "off", "med"] {
+            let (ok, _, err) = run(&["run", "stft", f, option, level]);
+            assert!(!ok, "{option} {level}");
+            assert!(
+                err.contains(&format!("bad {option} {level}: low, medium, high or max")),
+                "{err}"
+            );
+        }
         let (ok, _, err) = run(&["run", "stft", f, option]);
         assert!(
             !ok && err.contains(&format!("{option} needs a level")),
@@ -443,7 +450,7 @@ fn the_time_map_takes_its_two_levels() {
         );
     }
     // a project gives its levels (one saved before the map followed the
-    // reference tool has none: both "low"), and the options win over them
+    // reference tool has none: the defaults), and the options win over them
     let project = temp("time.openpid.json");
     let saved = |stft: &str| {
         std::fs::write(
@@ -455,25 +462,25 @@ fn the_time_map_takes_its_two_levels() {
         )
         .unwrap();
     };
-    saved(r#"{"smooth_freq":"high","smooth_time":"off","max_hz":200.0}"#);
+    saved(r#"{"smooth_freq":"high","smooth_time":"low","max_hz":200.0}"#);
     let p = project.to_str().unwrap();
     let from_project = map(&["--project", p]);
     assert_eq!(from_project["smooth_freq"], "high");
     assert_eq!(from_project["hop"], 300);
     assert_eq!(
         from_project["grid"]["y"].as_array().unwrap().len(),
-        61,
-        "0 … 200 Hz"
+        103,
+        "0 … 200 Hz, 1000/512 Hz apart"
     );
-    let overridden = map(&["--project", p, "--smooth-time", "low"]);
+    let overridden = map(&["--project", p, "--smooth-time", "medium"]);
     assert_eq!(overridden["smooth_freq"], "high");
     assert_eq!(overridden["hop"], 150);
     saved(r#"{"segment_s":0.2,"hop":0.25,"window":"hann","max_hz":1000.0}"#);
     let old = map(&["--project", p]);
-    assert_eq!(old["smooth_freq"], "low");
+    assert_eq!(old["smooth_freq"], "medium");
     assert_eq!(
-        (old["nperseg"].as_u64(), old["hop"].as_u64()),
-        (Some(300), Some(150))
+        (number(&old, "nperseg"), number(&old, "hop")),
+        (Some(300), Some(30))
     );
     std::fs::remove_file(&project).ok();
     // the picture: a pixel per cell, the decibels on −30 … 10 dB, nothing
@@ -484,7 +491,7 @@ fn the_time_map_takes_its_two_levels() {
     let bytes = std::fs::read(&png).unwrap();
     let be =
         |at: usize| u32::from_be_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
-    assert_eq!((be(16) as usize, be(20) as usize), (columns(&low), 151));
+    assert_eq!((be(16) as usize, be(20) as usize), (columns(&default), 257));
     // signature 8, IHDR 25, IDAT length and name 8, zlib 2, block 5, filter 1
     assert_eq!(bytes[49 + 3], 255, "the first pixel is opaque");
     std::fs::remove_file(&png).ok();
