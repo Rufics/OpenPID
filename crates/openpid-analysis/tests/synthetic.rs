@@ -4,8 +4,8 @@
 
 use openpid_analysis::{
     Analysis, AnalysisCtx, FilterSimAnalysis, FilterSimOutput, FilterSimParams, MotorNoiseAnalysis,
-    MotorNoiseParams, PsdAnalysis, PsdParams, RateSource, RpmEstimateParams, RpmEstimator,
-    StepAnalysis, StepParams, ThrottleHeatmap, ThrottleHeatmapParams,
+    MotorNoiseParams, PrintedDelay, PsdAnalysis, PsdParams, RateSource, RpmEstimateParams,
+    RpmEstimator, StepAnalysis, StepParams, ThrottleHeatmap, ThrottleHeatmapParams,
 };
 use openpid_core::settings::{GyroFilterLayout, Lowpass, LowpassKind};
 use openpid_core::{Axis, ChannelId, FlightSession, GyroStage};
@@ -305,27 +305,81 @@ fn filter_curves_follow_the_loop_rate_and_the_simulation_the_log_rate() {
     assert!(gap(last) > 1.0, "{}", gap(last));
     assert!(craft.response.delay_100hz_ms > none.response.delay_100hz_ms + 0.05);
 
-    // the printed delays: a PT1 delays the low end by its time constant,
-    // 1 / (2π·fc) = 1.5915 and 0.5305 ms, whatever the rate
+    // the printed delays, at 25 Hz unless asked otherwise: a PT1 at 100 Hz
+    // on the 4 kHz loop delays a tone of 25 Hz by 1.5519 ms, a lag of
+    // 13.97°; the one at 300 Hz on the 8 kHz gyro by 0.5288 ms, 4.759°
     let r = &craft.response;
-    assert!((r.parts[0].delay_1hz_ms - 1.5915).abs() < 1e-4);
-    assert!((r.parts[1].delay_1hz_ms - 0.5305).abs() < 1e-4);
-    assert_eq!(
-        r.delay_lowpass_1hz_ms,
-        r.parts[0].delay_1hz_ms + r.parts[1].delay_1hz_ms
+    assert_eq!(r.delay_at_hz, 25.0);
+    let printed = |p: &openpid_analysis::PartResponse| (p.printed.delay_ms, p.printed.lag_deg);
+    let near = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-4 && (a.1 - b.1).abs() < 1e-3;
+    assert!(
+        near(printed(&r.parts[0]), (1.5519, 13.967)),
+        "{:?}",
+        r.parts[0].printed
     );
-    assert_eq!(r.delay_notch_1hz_ms, 0.0);
-    assert_eq!(r.delay_total_1hz_ms, r.delay_lowpass_1hz_ms);
-    assert!((r.total.delay_1hz_ms - r.delay_total_1hz_ms).abs() < 1e-9);
+    assert!(
+        near(printed(&r.parts[1]), (0.5288, 4.7595)),
+        "{:?}",
+        r.parts[1].printed
+    );
+    assert_eq!(
+        r.printed_lowpass.delay_ms,
+        r.parts[0].printed.delay_ms + r.parts[1].printed.delay_ms
+    );
+    assert_eq!(r.printed_notch, PrintedDelay::default());
+    assert_eq!(r.printed_total, r.printed_lowpass);
+    assert!((r.total.printed.delay_ms - r.printed_total.delay_ms).abs() < 1e-9);
+    assert!((r.printed_total.lag_deg - r.printed_total.delay_ms * 25.0 * 0.36).abs() < 1e-9);
+    // at 1 Hz, the low end of the curve: the time constants 1 / (2π·fc),
+    // 1.5915 and 0.5305 ms, whatever the rate
+    let mut s1 = s.clone();
+    s1.settings.loop_rates.gyro_hz = Some(8000.0);
+    s1.settings.loop_rates.pid_hz = Some(4000.0);
+    s1.settings.loop_rates.gyro_filter_layout = split;
+    let low = FilterSimAnalysis
+        .run(
+            &AnalysisCtx {
+                session: &s1,
+                epoch: None,
+            },
+            &FilterSimParams {
+                delay_at_hz: 1.0,
+                ..FilterSimParams::default()
+            },
+        )
+        .unwrap()
+        .response;
+    assert_eq!(low.delay_at_hz, 1.0);
+    assert!((low.parts[0].printed.delay_ms - 1.5915).abs() < 1e-4);
+    assert!((low.parts[1].printed.delay_ms - 0.5305).abs() < 1e-4);
+    // the curves do not depend on where the delays are read
+    assert_eq!(low.parts[0].delay_ms, r.parts[0].delay_ms);
+    assert_eq!(low.total.magnitude_db, r.total.magnitude_db);
+    // a frequency that is none is refused
+    for bad in [0.0, -1.0, f64::NAN] {
+        let refused = FilterSimAnalysis.run(
+            &AnalysisCtx {
+                session: &s1,
+                epoch: None,
+            },
+            &FilterSimParams {
+                delay_at_hz: bad,
+                ..FilterSimParams::default()
+            },
+        );
+        assert!(refused.is_err(), "{bad}");
+    }
 
     // the output says so in its JSON, as the CLI prints it
     let v = serde_json::to_value(&craft).unwrap();
     let lpf1 = &v["response"]["parts"][0];
     assert_eq!(lpf1["rate"]["hz"], 4000.0);
     assert_eq!(lpf1["rate"]["source"], "pid_loop_rate");
-    assert!(lpf1["delay_1hz_ms"].is_number());
+    assert!(lpf1["printed"]["delay_ms"].is_number());
+    assert!(lpf1["printed"]["lag_deg"].is_number());
     assert!(v["response"]["total"]["rate"].is_null());
-    assert!(v["response"]["delay_total_1hz_ms"].is_number());
+    assert_eq!(v["response"]["delay_at_hz"], 25.0);
+    assert!(v["response"]["printed_total"]["delay_ms"].is_number());
     let fallback = serde_json::to_value(&none).unwrap();
     assert_eq!(
         fallback["response"]["parts"][1]["rate"]["source"],

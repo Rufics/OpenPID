@@ -144,6 +144,17 @@ pub struct OperatingPoint {
     pub dyn_hz: Vec<f64>,
 }
 
+/// Which notch of the RPM filter a stage of [`ChainPart::stages`] is.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RpmHarmonic {
+    /// The motor, from 0.
+    pub motor: usize,
+    /// The harmonic, from 1 (the motor frequency itself).
+    pub harmonic: u32,
+    /// The notch centre, Hz.
+    pub hz: f64,
+}
+
 /// One part of a chain at an operating point: a low-pass, a static notch,
 /// all the RPM notches, or all the dynamic notches. Each stage carries the
 /// weight it is blended with (`weight · filtered + (1 − weight) · input`).
@@ -157,6 +168,9 @@ pub struct ChainPart {
     pub stage: FilterStage,
     /// The stages and their weights.
     pub stages: Vec<(Stage, f64)>,
+    /// For the RPM part, which motor and harmonic each stage is, in the
+    /// order of [`ChainPart::stages`]; empty for every other part.
+    pub harmonics: Vec<RpmHarmonic>,
 }
 
 impl ChainPart {
@@ -325,7 +339,7 @@ impl ChainModel {
 
     /// The chain's parts at the operating point `op`, in the order the
     /// signal passes them: RPM notches (per motor and harmonic, faded and
-    /// weighted as in [`ChainModel::run`]), static notches, the low-passes
+    /// weighted by [`rpm_curve_weight`]), static notches, the low-passes
     /// (a dynamic one at the cutoff for `op.throttle`), dynamic notches.
     /// Every stage at the rate the model runs a signal at, [`ChainModel::fs`].
     pub fn parts_at(&self, op: &OperatingPoint) -> Vec<ChainPart> {
@@ -356,6 +370,7 @@ impl ChainModel {
                         Stage::Biquad(Biquad::notch(n.center_hz, n.cutoff_hz, fs)),
                         1.0,
                     )],
+                    harmonics: Vec::new(),
                 });
             }
         }
@@ -377,6 +392,7 @@ impl ChainModel {
                     group: PartGroup::Lowpass,
                     stage,
                     stages: vec![(filter, 1.0)],
+                    harmonics: Vec::new(),
                 });
             }
         }
@@ -385,26 +401,33 @@ impl ChainModel {
     }
 
     /// The RPM notches at the motor frequencies of `op`, one stage per motor
-    /// and harmonic, faded and weighted as in [`ChainModel::run`], at the
-    /// rate `fs`.
+    /// and harmonic, at the rate `fs`, each weighted as the reference tool's
+    /// web edition 1.0 draws them (decision D-015, [`rpm_curve_weight`]).
     fn rpm_part(&self, op: &OperatingPoint, fs: f64) -> Option<ChainPart> {
         let r = self.rpm_notch.as_ref()?;
         if op.motor_hz.is_empty() {
             return None;
         }
         let nyq = MAX_NOTCH_FRACTION * fs;
-        let stages: Vec<(Stage, f64)> = op
-            .motor_hz
-            .iter()
-            .flat_map(|f_motor| (0..r.harmonics).map(move |k| (f_motor * f64::from(k + 1), k)))
-            .filter_map(|(f, k)| {
-                let weight = rpm_fade(r, f) * r.weights.get(k as usize).copied().unwrap_or(1.0);
-                (f < nyq && f > 0.0 && weight > 0.0).then(|| {
-                    let notch = Biquad::notch_q(f.max(r.min_hz), r.q, fs);
-                    (Stage::Biquad(notch), weight)
-                })
-            })
-            .collect();
+        let mut stages: Vec<(Stage, f64)> = Vec::new();
+        let mut harmonics = Vec::new();
+        for (motor, &f_motor) in op.motor_hz.iter().enumerate() {
+            for harmonic in 1..=r.harmonics {
+                let hz = f_motor * f64::from(harmonic);
+                let Some(weight) = rpm_curve_weight(r, f_motor, harmonic) else {
+                    continue;
+                };
+                if hz >= nyq || hz <= 0.0 || weight <= 0.0 {
+                    continue;
+                }
+                stages.push((Stage::Biquad(Biquad::notch_q(hz, r.q, fs)), weight));
+                harmonics.push(RpmHarmonic {
+                    motor,
+                    harmonic,
+                    hz,
+                });
+            }
+        }
         if stages.is_empty() {
             return None;
         }
@@ -418,6 +441,7 @@ impl ChainModel {
             group: PartGroup::Notch,
             stage: FilterStage::RpmNotch,
             stages,
+            harmonics,
         })
     }
 
@@ -440,6 +464,7 @@ impl ChainModel {
             group: PartGroup::Notch,
             stage: FilterStage::DynNotch,
             stages,
+            harmonics: Vec::new(),
         })
     }
 
@@ -586,8 +611,35 @@ impl ChainModel {
 }
 
 /// A low-pass stage of `l`'s topology at `cutoff_hz` (none for a zero cutoff).
-/// Fade-in of an RPM notch at `f`: 0 below `min_hz`, rising over the fade
-/// range (a hard switch without one).
+/// The weight of harmonic `harmonic` (from 1) of a motor at `f_motor` in
+/// the response curves, as the reference tool's web edition 1.0 draws its
+/// RPM notches (decision D-015): every harmonic fades with the motor
+/// frequency, `min(1, (f_motor − min_hz) / fade_range_hz)` times the
+/// harmonic's own weight, and a motor below `min_hz` has no RPM notches at
+/// all (`None`). Without a fade range the notches switch on at `min_hz`.
+///
+/// The firmware fades each harmonic by its own frequency instead
+/// (as [`ChainModel::run`] does); the two agree
+/// whenever the motor runs at `min_hz + fade_range_hz` or faster.
+pub fn rpm_curve_weight(r: &RpmNotchModel, f_motor: f64, harmonic: u32) -> Option<f64> {
+    if f_motor.is_nan() || f_motor < r.min_hz {
+        return None;
+    }
+    let fade = if r.fade_range_hz > 0.0 {
+        ((f_motor - r.min_hz) / r.fade_range_hz).min(1.0)
+    } else {
+        1.0
+    };
+    let own = r
+        .weights
+        .get(harmonic.saturating_sub(1) as usize)
+        .copied()
+        .unwrap_or(1.0);
+    Some(fade * own)
+}
+
+/// Fade-in of an RPM notch at `f`, as the firmware fades it: 0 below
+/// `min_hz`, rising over the fade range (a hard switch without one).
 fn rpm_fade(r: &RpmNotchModel, f: f64) -> f64 {
     if r.fade_range_hz > 0.0 {
         ((f - r.min_hz) / r.fade_range_hz).clamp(0.0, 1.0)
@@ -810,6 +862,64 @@ mod tests {
             far.parts_at(&OperatingPoint::default())
                 .iter()
                 .all(|p| !p.label.starts_with("Notch"))
+        );
+    }
+
+    #[test]
+    fn the_curves_fade_every_harmonic_with_the_motor_the_firmware_each_with_its_own() {
+        // a minimum of 100 Hz and a fade of 50 Hz; one motor at 110 Hz
+        let s = settings_with(|s| rpm(s).fade_range_hz = 50.0);
+        let m = ChainModel::from_settings(&s, ChainKind::Gyro, 8000.0);
+        let r = m.rpm_notch.as_ref().unwrap();
+        let op = |motor_hz: f64| OperatingPoint {
+            throttle: None,
+            motor_hz: vec![motor_hz],
+            dyn_hz: Vec::new(),
+        };
+        let rpm_of = |motor_hz: f64| {
+            m.parts_at(&op(motor_hz))
+                .into_iter()
+                .find(|p| p.stage == FilterStage::RpmNotch)
+        };
+        let part = rpm_of(110.0).unwrap();
+        let weights: Vec<f64> = part.stages.iter().map(|(_, w)| *w).collect();
+        assert!(
+            weights.iter().all(|w| (w - 0.2).abs() < 1e-12),
+            "{weights:?}"
+        );
+        let which: Vec<(usize, u32, f64)> = part
+            .harmonics
+            .iter()
+            .map(|h| (h.motor, h.harmonic, h.hz))
+            .collect();
+        assert_eq!(which, [(0, 1, 110.0), (0, 2, 220.0), (0, 3, 330.0)]);
+        // the firmware fades each harmonic by its own frequency: the second
+        // and third, at 220 and 330 Hz, are past the fade
+        let firmware: Vec<f64> = [110.0, 220.0, 330.0]
+            .iter()
+            .map(|f| rpm_fade(r, *f))
+            .collect();
+        assert!((firmware[0] - 0.2).abs() < 1e-12 && firmware[1..] == [1.0, 1.0]);
+        // the two agree from the end of the fade up
+        for f in [150.0, 200.0] {
+            for k in 1..=3 {
+                assert_eq!(
+                    rpm_curve_weight(r, f, k),
+                    Some(rpm_fade(r, f * f64::from(k)))
+                );
+            }
+        }
+        // below the minimum the curves have no RPM notches at all; the
+        // firmware keeps the harmonics above it
+        assert!(rpm_of(80.0).is_none());
+        assert_eq!(rpm_fade(r, 160.0), 1.0);
+        assert_eq!(rpm_curve_weight(r, f64::NAN, 1), None);
+        // the other parts carry no harmonics
+        assert!(
+            m.parts_at(&op(150.0))
+                .iter()
+                .filter(|p| p.stage != FilterStage::RpmNotch)
+                .all(|p| p.harmonics.is_empty())
         );
     }
 

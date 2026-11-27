@@ -309,26 +309,61 @@ fn filter_sim_command() {
         );
     }
     assert!(response["total"]["rate"].is_null());
-    // the printed delays: each part at 1 Hz, the low-passes, the notches,
-    // and both
-    let printed = |group: &str| -> f64 {
+    // the printed delays at 25 Hz: each part, the low-passes, the notches,
+    // and both, each with its phase lag
+    assert_eq!(response["delay_at_hz"], 25.0);
+    let printed = |group: &str, what: &str| -> f64 {
         parts
             .iter()
             .filter(|p| p["group"] == group)
-            .map(|p| p["delay_1hz_ms"].as_f64().unwrap())
+            .map(|p| p["printed"][what].as_f64().unwrap())
             .sum()
     };
+    let column = |name: &str, what: &str| response[name][what].as_f64().unwrap();
     let field = |name: &str| response[name].as_f64().unwrap();
-    assert!(printed("Lowpass") > 0.5 && printed("Notch") > 0.5);
-    assert!((field("delay_lowpass_1hz_ms") - printed("Lowpass")).abs() < 1e-12);
-    assert!((field("delay_notch_1hz_ms") - printed("Notch")).abs() < 1e-12);
-    assert!((field("delay_total_1hz_ms") - printed("Lowpass") - printed("Notch")).abs() < 1e-12);
-    // the second low-pass is a PT1 at 500 Hz: 1 / (2π·500) s = 1 / π ms = 0.3183 ms
-    let lpf2 = parts
+    for what in ["delay_ms", "lag_deg"] {
+        let (lowpass, notch) = (printed("Lowpass", what), printed("Notch", what));
+        assert!(lowpass > 0.5 && notch > 0.5, "{what}");
+        assert!((column("printed_lowpass", what) - lowpass).abs() < 1e-12);
+        assert!((column("printed_notch", what) - notch).abs() < 1e-12);
+        assert!((column("printed_total", what) - lowpass - notch).abs() < 1e-12);
+    }
+    // the RPM notches harmonic by harmonic, on one motor
+    let rpm = parts
         .iter()
-        .find(|p| p["label"] == "LPF2 PT1 500 Hz")
-        .expect("the second low-pass");
-    assert!((lpf2["delay_1hz_ms"].as_f64().unwrap() - std::f64::consts::FRAC_1_PI).abs() < 1e-4);
+        .find(|p| p["label"].as_str().unwrap().starts_with("RPM"))
+        .unwrap();
+    let harmonics = rpm["harmonics"].as_array().unwrap();
+    assert!(!harmonics.is_empty());
+    assert_eq!(harmonics[0]["harmonic"], 1);
+    // the second low-pass is a PT1 at 500 Hz on the 8 kHz gyro: 0.3179 ms
+    // at 25 Hz, a lag of 2.861°
+    let lpf2 = |v: &serde_json::Value| {
+        v["response"]["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["label"] == "LPF2 PT1 500 Hz")
+            .expect("the second low-pass")["printed"]
+            .clone()
+    };
+    let at25 = lpf2(&v);
+    assert!((at25["delay_ms"].as_f64().unwrap() - 0.317_869).abs() < 1e-6);
+    assert!((at25["lag_deg"].as_f64().unwrap() - 2.860_82).abs() < 1e-5);
+    // --set delay_at_hz=1: at the low end of the curve, 1 / (2π·500) s =
+    // 1 / π ms = 0.3183 ms
+    let (ok, out, err) = run(&["run", "filter-sim", f, "--set", "delay_at_hz=1"]);
+    assert!(ok, "{err}");
+    let low: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert_eq!(low["response"]["delay_at_hz"], 1.0);
+    let at1 = lpf2(&low)["delay_ms"].as_f64().unwrap();
+    assert!((at1 - std::f64::consts::FRAC_1_PI).abs() < 1e-4, "{at1}");
+    assert_eq!(
+        low["response"]["total"]["delay_ms"],
+        response["total"]["delay_ms"]
+    );
+    let (ok, _, err) = run(&["run", "filter-sim", f, "--set", "delay_at_hz=0"]);
+    assert!(!ok && err.contains("delay_at_hz"), "{err}");
     assert!(field("delay_100hz_ms") > 0.0, "it stays beside them");
     let (ok, out, err) = run(&[
         "run",
@@ -389,7 +424,7 @@ fn gen_command_writes_a_session_openpid_can_analyse() {
     assert_eq!(v["description"], serde_json::json!(["no filters"]));
     assert_eq!(v["fit"]["residual_rel"], v["fit"]["unfiltered_rel"]);
     assert_eq!(v["response"]["parts"], serde_json::json!([]));
-    assert_eq!(v["response"]["delay_total_1hz_ms"], 0.0);
+    assert_eq!(v["response"]["printed_total"]["delay_ms"], 0.0);
     // an edited spec
     let spec_path = temp("spec.json");
     std::fs::write(

@@ -153,6 +153,7 @@ static UA: &[(&str, &str)] = &[
     ("Debug mode", "Режим debug"),
     ("Decoder", "Декодер"),
     ("Delay", "Затримка"),
+    ("Delay at", "Затримка на"),
     ("Desynchronised frames", "Розсинхронізовані кадри"),
     ("Details", "Деталі"),
     ("Differences only", "Лише відмінності"),
@@ -508,13 +509,17 @@ static UA: &[(&str, &str)] = &[
     ("debug", "налагодження"),
     ("delay", "затримка"),
     ("delay (ms)", "затримка (мс)"),
-    ("delay at 1 Hz", "затримка на 1 Гц"),
+    ("delay at", "затримка на"),
     ("delay at 100 Hz", "затримка на 100 Гц"),
     (
         "drag a handle or the window; double-click = whole log",
         "тягніть ручку або вікно; подвійний клік = весь лог",
     ),
     ("drives LPF1", "керує LPF1"),
+    (
+        "each harmonic of the RPM notches on one motor: its centre, its weight (it fades in with the motor frequency over the fade range above the minimum, times the harmonic's own weight) and its delay; the notch column counts it once per motor",
+        "кожна гармоніка RPM-notch на одному моторі: її центр, вага (наростає з частотою мотора в діапазоні згасання над мінімумом, помножена на власну вагу гармоніки) і затримка; стовпець notch враховує її один раз на кожен мотор",
+    ),
     (
         "each throttle bin averages the segments within this distance of it",
         "кожен бін газу усереднює сегменти в межах цієї відстані від нього",
@@ -738,6 +743,7 @@ static UA: &[(&str, &str)] = &[
     ("other", "інше"),
     ("overshoot", "перерегулювання"),
     ("peak", "пік"),
+    ("per motor", "на мотор"),
     ("phase (deg)", "фаза (°)"),
     (
         "playback speed relative to the flight",
@@ -855,6 +861,10 @@ static UA: &[(&str, &str)] = &[
         "частота, яку вирізає notch; 0 вимикає його",
     ),
     (
+        "the frequency the printed delays and phase lags are read at: 25 Hz as the reference tool prints them, 1 Hz for the low end of the curve",
+        "частота, на якій читаються надруковані затримки й фазові відставання: 25 Гц, як їх друкує еталонний інструмент, 1 Гц — нижній кінець кривої",
+    ),
+    (
         "the gyro before the software filters, where the noise shows",
         "гіро до програмних фільтрів, де видно шум",
     ),
@@ -920,8 +930,8 @@ static UA: &[(&str, &str)] = &[
         "добротність notch: вища — вужчий, з меншою затримкою і меншим вирізанням",
     ),
     (
-        "the phase delay of each filter at 1 Hz, the low end of the curve, as the reference tool prints it: the low-passes together, the notches (RPM, static, dynamic) together, and both; each filter's own stands beside its name",
-        "фазова затримка кожного фільтра на 1 Гц, нижньому кінці кривої, як її друкує еталонний інструмент: усі low-pass разом, усі notch (RPM, статичні, динамічні) разом і все разом; затримка кожного фільтра — біля його назви",
+        "the phase delay and phase lag of each filter at the frequency chosen in the panel, as the reference tool prints them: the low-passes together, the notches (RPM on every motor, static, dynamic) together, and both; each filter's own stands beside its name",
+        "фазова затримка й фазове відставання кожного фільтра на частоті, вибраній на панелі, як їх друкує еталонний інструмент: усі low-pass разом, усі notch (RPM на кожному моторі, статичні, динамічні) разом і все разом; значення кожного фільтра — біля його назви",
     ),
     (
         "the rate of the log: the headers give a loop rate below it",

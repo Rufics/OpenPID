@@ -7,8 +7,9 @@
 //!
 //! The two columns are at two rates and each says its own: the curves on the
 //! left are the craft's filters at the rate of its loops, with the delays
-//! the reference tool prints; the simulation on the right runs the same
-//! filters on the samples of the log, at the rate of the log.
+//! the reference tool's web edition 1.0 prints (at 25 Hz, or at 1 Hz on
+//! request; D-015); the simulation on the right runs the same filters on
+//! the samples of the log, at the rate of the log.
 
 use crate::app::App;
 use crate::axis_layout::control_panel;
@@ -20,7 +21,8 @@ use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, Color32, RichText, Ui};
 use egui_plot::{Line, LineStyle, PlotPoints};
 use openpid_analysis::{
-    ChainResponse, FilterOverrides, FilterSimOutput, PartRate, PartResponse, RateSource,
+    ChainResponse, DEFAULT_DELAY_AT_HZ, FilterOverrides, FilterSimOutput, PartRate, PartResponse,
+    PrintedDelay, RateSource,
 };
 use openpid_core::Axis;
 use openpid_core::settings::LowpassKind;
@@ -188,23 +190,72 @@ pub(crate) fn curve_rates_text(r: &ChainResponse) -> Option<String> {
     ))
 }
 
+/// `v` to four significant digits, trailing zeros dropped, as the
+/// reference tool prints a delay or a lag: "0.6339", "0.063", "14.77".
+pub(crate) fn sig4(v: f64) -> String {
+    if v == 0.0 || !v.is_finite() {
+        return format!("{v}");
+    }
+    let decimals = (3 - v.abs().log10().floor() as i32).max(0) as usize;
+    let text = format!("{v:.decimals$}");
+    if text.contains('.') {
+        text.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        text
+    }
+}
+
+/// A printed delay with its lag: "0.6339 ms · 5.705°".
+fn delay_text(d: &PrintedDelay) -> String {
+    format!("{} ms · {}°", sig4(d.delay_ms), sig4(d.lag_deg))
+}
+
+/// "delay at 25 Hz".
+fn delay_at_text(hz: f64) -> String {
+    format!("{} {} Hz", tr("delay at"), sig4(hz))
+}
+
 /// The delays the reference tool prints: the low-passes, the notches and
-/// both, each the sum of its parts' phase delays at 1 Hz.
+/// both, each the sum of its parts' phase delays at the chosen frequency,
+/// with the phase lag they stand for there.
 pub(crate) fn printed_delays_text(r: &ChainResponse) -> String {
     format!(
-        "{}: {} {:.3} ms + {} {:.3} ms = {:.3} ms",
-        tr("delay at 1 Hz"),
+        "{}: {} {} + {} {} = {}",
+        delay_at_text(r.delay_at_hz),
         tr("low-pass"),
-        r.delay_lowpass_1hz_ms,
+        delay_text(&r.printed_lowpass),
         tr("notch"),
-        r.delay_notch_1hz_ms,
-        r.delay_total_1hz_ms
+        delay_text(&r.printed_notch),
+        delay_text(&r.printed_total)
     )
 }
 
 /// A part in the legend: its name and its printed delay.
-fn part_text(p: &PartResponse) -> String {
-    format!("{}: {:.3} ms", p.label, p.delay_1hz_ms)
+pub(crate) fn part_text(p: &PartResponse) -> String {
+    format!("{}: {}", p.label, delay_text(&p.printed))
+}
+
+/// The RPM part's harmonics, each a notch of one motor as the reference
+/// tool prints it: "per motor: H1 150 Hz · 100 % 0.2179 ms · 1.961°, …";
+/// `None` for a part without harmonics.
+pub(crate) fn harmonics_text(p: &PartResponse) -> Option<String> {
+    if p.harmonics.is_empty() {
+        return None;
+    }
+    let each: Vec<String> = p
+        .harmonics
+        .iter()
+        .map(|h| {
+            format!(
+                "H{} {:.0} Hz · {:.0} % {}",
+                h.harmonic,
+                h.hz,
+                h.weight * 100.0,
+                delay_text(&h.printed)
+            )
+        })
+        .collect();
+    Some(format!("{}: {}", tr("per motor"), each.join(", ")))
 }
 
 /// The printed delays and the rates of the curves, under the operating point.
@@ -214,7 +265,7 @@ fn delays_and_rates(ui: &mut Ui, r: &ChainResponse) {
     }
     ui.label(RichText::new(printed_delays_text(r)).color(MUTED))
         .on_hover_text(tr(
-            "the phase delay of each filter at 1 Hz, the low end of the curve, as the reference tool prints it: the low-passes together, the notches (RPM, static, dynamic) together, and both; each filter's own stands beside its name",
+            "the phase delay and phase lag of each filter at the frequency chosen in the panel, as the reference tool prints them: the low-passes together, the notches (RPM on every motor, static, dynamic) together, and both; each filter's own stands beside its name",
         ));
     if let Some(rates) = curve_rates_text(r) {
         ui.label(RichText::new(rates).color(MUTED).size(12.0))
@@ -269,7 +320,7 @@ fn chain_column(ui: &mut Ui, f: &FilterSimOutput) {
             if let Some(rate) = p.rate {
                 name.on_hover_text(format!(
                     "{} · {} {}",
-                    tr("delay at 1 Hz"),
+                    delay_at_text(r.delay_at_hz),
                     tr("computed at"),
                     rate_and_source(rate)
                 ));
@@ -283,6 +334,14 @@ fn chain_column(ui: &mut Ui, f: &FilterSimOutput) {
             );
         }
     });
+    for (i, p) in r.parts.iter().enumerate() {
+        if let Some(text) = harmonics_text(p) {
+            ui.label(RichText::new(text).color(part_colour(i)).size(12.0))
+                .on_hover_text(tr(
+                    "each harmonic of the RPM notches on one motor: its centre, its weight (it fades in with the motor frequency over the fade range above the minimum, times the harmonic's own weight) and its delay; the notch column counts it once per motor",
+                ));
+        }
+    }
     let h = ((ui.available_height() - 2.0 * ui.spacing().item_spacing.y - 20.0) / 3.0).max(60.0);
     let link = egui::Id::unique("fsim-chain-x");
     let rows = [
@@ -498,6 +557,33 @@ fn controls(app: &mut App, ui: &mut Ui, seed: Option<&ChainModel>, out: Option<&
         &mut app.tools.filter_sim.max_hz,
         500.0,
         "Hz",
+    );
+    delay_at_choice(ui, &mut app.tools.filter_sim.delay_at_hz);
+}
+
+/// The frequencies "Delay at" offers, Hz: the reference tool's 25 Hz and the
+/// low end of the curve.
+const DELAY_AT_HZ: [f64; 2] = [DEFAULT_DELAY_AT_HZ, 1.0];
+
+/// Where the printed delays are read: 25 or 1 Hz, and a frequency a project
+/// or the command line set besides them.
+fn delay_at_choice(ui: &mut Ui, value: &mut f64) {
+    let mut options: Vec<(f64, String)> = DELAY_AT_HZ
+        .iter()
+        .map(|hz| (*hz, format!("{} Hz", sig4(*hz))))
+        .collect();
+    if !DELAY_AT_HZ.contains(value) {
+        options.push((*value, format!("{} Hz", sig4(*value))));
+    }
+    panel::choice(
+        ui,
+        "fsim-delay-at",
+        tr("Delay at"),
+        tr(
+            "the frequency the printed delays and phase lags are read at: 25 Hz as the reference tool prints them, 1 Hz for the low end of the curve",
+        ),
+        value,
+        &options,
     );
 }
 
