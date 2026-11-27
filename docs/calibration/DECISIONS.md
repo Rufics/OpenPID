@@ -288,7 +288,7 @@ Taken by the owner on 2026-11-11:
 | Options | **A.** Follow the web edition 1.0: the decided rules are moved to it (spectrum, both maps, the filter simulator's delays, the stretch of "Without the first and last second"); the step response once a round has found its windows. OpenPID's own decisions stay (D-008, D-009, the automatic stretch of D-012, D-013, D-014). **B.** Stay with 0.94 and describe the web edition's differences. **C.** Both, with a choice of edition |
 | Recommendation | A: the web edition is the one in use, its differences are small and known exactly, and its zero-padding removes the scalloping of a tone between bins |
 | The owner's decision | **A** (2026-11-27) |
-| Carried out by | |
+| Carried out by | Every part against the web edition's own numbers on the probe logs of rounds W1 and W2: the spectrum curve #187 (132 curves to 2.4·10⁻⁶ dB); the step response #188, merged into #193 and #194 (every window count of 24 axes, the curves to 1.6·10⁻⁶; #193 keeps its own Peak, D-003 = B); the map against time #196 (62 maps to 0.0005 dB); the map against throttle #195 (105 maps to 6.3·10⁻⁶, 210 printed numbers to their digits); the filter simulator #197 (97 printed delays and lags to their digits; the simulated gyro keeps the firmware's per-harmonic RPM fade, the curves take the web edition's); "Without the first and last second" #200 (samples `fs … n − fs`, no short-log rule); the main window's line smoothing #199 (every level to 1.5·10⁻⁵). Since W2 the web edition agrees with OpenPID's own choices of D-009 (the sign of PID error) and D-014 (a map of a short stretch) |
 
 The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
 own mathematics. Whether one of them becomes an entry here is the owner's
