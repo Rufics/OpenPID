@@ -273,16 +273,19 @@ the throttle did. It shows how the noise changes over the flight (motor
 spin-up, propwash, resonances during certain manoeuvres). Manual markers from
 the Spectrum tab show here too.
 
-The map is computed as the reference tool computes its own (DESIGN §6.5). A
-column is the spectrum of 0.3 s of the log, and a cell is a **power density
-per Hz in decibels**, smoothed along the frequency; it is not an amplitude. A
-steady tone of amplitude `A` (in the channel's unit) reads about
-`20·log10(A) − 17.7` dB with the default smoothing, so a line of 10 deg/s is
-at about 2 dB and one of 1 deg/s at about −18 dB. The colours run from
-−30 dB (black) to 10 dB (brightest), the same on every log. There is no
-linear colour: the map is in decibels by definition. One thing is not copied
-from the reference tool: it draws a few of its first columns out of place,
-and here every column is at the middle of its 0.3 s.
+The map is computed as the web edition 1.0 of the reference tool computes
+its own (DESIGN §6.5; decisions D-006 and D-015). A column is the spectrum
+of 0.3 s of the log, zero-padded to a power of two (513 rows at 2 kHz), and
+a cell is a **power density per Hz in decibels**, averaged along the
+frequency; it is not an amplitude. At 2 kHz a steady tone of amplitude `A`
+(in the channel's unit) reads about `20·log10(A) − 18.5` dB with the default
+smoothing, so a line of 10 deg/s is at about 1.5 dB and one of 1 deg/s at
+about −18.5 dB. The colours run from −30 dB (black) to 10 dB (brightest), the
+same on every log. There is no linear colour: the map is in decibels by
+definition. As in the web edition, the first few columns (ten at "max") show
+the 0.3 s that *start* at their time, the later ones the 0.3 s around it, so
+the very start of the map sits up to 0.15 s early. A short window still gets
+a map, as long as it holds 0.3 s.
 
 ![Freq × time](screenshots/time.png)
 
@@ -300,14 +303,15 @@ The control panel on the right (hover any field for its explanation):
   finger drag in touch mode) scrub. The position is the Log viewer cursor: a
   cursor placed there moves the player and the player moves the cursor, so
   the epoch can be set from the place where the spectrum "lights up".
-- **Smooth frequency** (off, low, medium, high; low by default): how many
-  rows a cell is smoothed over along the frequency, none, 5, 11 or 21.
-  Higher reads calmer; it also lowers and widens a narrow line (a tone on
-  one row reads 3.4 dB lower at "low" than at "off").
-- **Smooth time** (off, low, medium, high; low by default): how close the
-  columns are, 0.3, 0.15, 0.06 or 0.03 s apart. Every column is still the
-  spectrum of 0.3 s; nothing is averaged along the time, a higher level only
-  draws more, overlapping, columns (and takes longer to compute).
+- **Time smoothing** (low, medium, high, max; max by default): how close
+  the columns are, 0.3, 0.15, 0.06 or 0.03 s apart. Every column is still
+  the spectrum of 0.3 s; nothing is averaged along the time, a higher level
+  only draws more, overlapping, columns (and takes longer to compute).
+- **Freq smoothing** (low, medium, high, max; medium by default): how many
+  rows a cell is averaged over along the frequency, 3, 5, 11 or 21 (fewer at
+  the bottom and the top of the axis). Higher reads calmer; it also lowers
+  and widens a narrow line (at 2 kHz a tone reads 1.3 dB below its bin at
+  "low" and 4.2 dB below it at "medium").
 - **Max frequency**: auto (half the logging rate) or a lower top of the
   frequency axis.
 
@@ -537,7 +541,7 @@ with a new log.
 | Step response | `openpid run step <log> --axis pitch --epoch 2..12` (`--json` carries `verdicts` against the project's targets, or the defaults) |
 | Spectrum | `openpid run psd <log> --channel gyro.raw.roll` |
 | Freq × throttle | `openpid run thr-heatmap <log> [--png out.png]` |
-| Freq × time | `openpid run stft <log> --channel motor.0 [--smooth-freq off\|low\|med\|high] [--smooth-time …] [--png out.png]` |
+| Freq × time | `openpid run stft <log> --channel motor.0 [--smooth-freq low\|medium\|high\|max] [--smooth-time …] [--png out.png]` |
 | Filter Sim | `openpid run filter-sim <log> --set lpf1_hz=100,lpf1_type=1` |
 | Motor noise (no tab) | `openpid run motor-noise <log>` |
 | Motor speed without eRPM | `openpid run rpm <log>` |

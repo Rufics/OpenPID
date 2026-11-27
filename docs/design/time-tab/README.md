@@ -122,3 +122,34 @@ Tests: `time_tab_stacks_the_axes_in_db_with_the_throttle_under_them`,
 `time_tab_max_frequency_lowers_the_top_of_the_maps`,
 `a_map_wider_than_a_texture_is_drawn_by_the_largest_cell_of_a_group`, and the
 earlier ones adapted. The pictures above show the tab before this revision.
+
+## Revision: the web edition 1.0 (2026-11-27, decision D-015)
+
+The owner decided that OpenPID follows the web edition 1.0 of the reference
+tool (D-015 = A). Its map was found exactly from its outputs (DESIGN §6.5).
+What that changed on this tab:
+
+- **The map**: every segment of 0.3 s is zero-padded to the next power of
+  two (513 rows at 2 kHz instead of 301), and the 0 Hz and half-rate bins
+  are both counted once.
+- **Time smoothing** (was "Smooth time"): low, medium, high, max, the
+  segments 0.3, 0.15, 0.06 or 0.03 s apart; **max** by default (it was
+  0.15 s).
+- **Freq smoothing** (was "Smooth frequency"): low, medium, high, max, a
+  moving average of the decibels over 3, 5, 11 or 21 rows, cut at the two
+  ends of the axis (it was a line fitted through 5, 11 or 21 rows, or none);
+  **medium** by default.
+- **The first columns**: as in the web edition, the first columns (as many
+  as the time factor: one at "low", ten at "max") show the segment that
+  starts at their time, the later ones the segment centred at it. Under
+  D-006 OpenPID drew every column centred; that exception is gone.
+- **A short window** still gets a map as soon as it holds one segment
+  (D-014).
+- Kept as they were: the rows, the channels, the colour scale and its
+  choices, the spectrum beside each row, the throttle strip, the player, the
+  exports.
+
+Tests: `time_tab_stacks_the_axes_in_db_with_the_throttle_under_them`,
+`time_tab_lists_set_the_two_levels_of_the_map`,
+`time_tab_says_when_the_window_is_too_short_for_a_segment`, adapted. The
+pictures above show the tab before this revision.
