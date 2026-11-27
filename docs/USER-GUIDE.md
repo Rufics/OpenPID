@@ -248,7 +248,7 @@ The control panel on the right (hover any field for its explanation):
 - **Colour max**: auto (the 99th percentile without the rows below 20 Hz) or a
   fixed ceiling; **Link scales** (on by default with several logs) gives every
   log the same ceiling, the largest of the automatic ones, so the same colour
-  means the same value. The same on Freq × time.
+  means the same value.
 - **RPM overlay** (off by default; when the log has eRPM): one thin line per harmonic
   `k·rpm/60` at the mean speed of the motors (**Harmonics** = how many to
   draw, 0 = as many as the RPM filter removes); **Per motor** draws a
@@ -263,33 +263,57 @@ The control panel on the right (hover any field for its explanation):
 
 ## 6. Freq × time
 
-Spectrograms (STFT) of roll, pitch and yaw of the **docked log** (the one in
-the dock at the bottom; click another log's chip to show it): time across,
-frequency up. By default the unfiltered gyro (**Prefilt**), where the motor
-noise shows as lines that follow the throttle, and the colour in **dB**, as
-the reference tool, so weak and strong lines show together. Beside each row,
-the spectrum at the player's position; under the rows, the throttle on the
-same time axis, so a burst of noise can be matched with what the throttle
-did. It shows how the noise changes over the flight (motor spin-up, propwash,
-resonances during certain manoeuvres). Manual markers from the Spectrum tab
-show here too.
+Spectrograms of roll, pitch and yaw of the **docked log** (the one in the
+dock at the bottom; click another log's chip to show it): time across,
+frequency up to half the logging rate. By default the unfiltered gyro
+(**Prefilt**), where the motor noise shows as lines that follow the throttle.
+Beside each row, the spectrum at the player's position; under the rows, the
+throttle on the same time axis, so a burst of noise can be matched with what
+the throttle did. It shows how the noise changes over the flight (motor
+spin-up, propwash, resonances during certain manoeuvres). Manual markers from
+the Spectrum tab show here too.
+
+The map is computed as the web edition 1.0 of the reference tool computes
+its own (DESIGN §6.5; decisions D-006 and D-015). A column is the spectrum
+of 0.3 s of the log, zero-padded to a power of two (513 rows at 2 kHz), and
+a cell is a **power density per Hz in decibels**, averaged along the
+frequency; it is not an amplitude. At 2 kHz a steady tone of amplitude `A`
+(in the channel's unit) reads about `20·log10(A) − 18.5` dB with the default
+smoothing, so a line of 10 deg/s is at about 1.5 dB and one of 1 deg/s at
+about −18.5 dB. The colours run from −30 dB (black) to 10 dB (brightest), the
+same on every log. There is no linear colour: the map is in decibels by
+definition. As in the web edition, the first few columns (ten at "max") show
+the 0.3 s that *start* at their time, the later ones the 0.3 s around it, so
+the very start of the map sits up to 0.15 s early. A short window still gets
+a map, as long as it holds 0.3 s.
 
 ![Freq × time](screenshots/time.png)
 
 The control panel on the right (hover any field for its explanation):
 
 - **Channel** and **Prefilt** (the gyro only; off: the filtered gyro).
-- **Scale**: dB (default) or linear. In dB, **Z min** / **Z max** are the
-  values drawn black and brightest (automatic: the background noise and the
-  strongest lines of the maps); in linear, **Colour max**. The colour bars
-  show relative values, without a unit.
+- **Colour scale**: **−30 … 10 dB** (default), on which every log reads
+  alike; **automatic**, from the background noise to the strongest lines of
+  the maps (the 30th and the 99.5th percentile of the decibels above 20 Hz),
+  for a quiet log; or **typed in**, with **Z min** and **Z max**, the values
+  drawn black and brightest (they start from the scale on screen).
 - **Player**: **Play / Pause** advances the position in real time
   (× **Speed**, looping at the end), **< step / step >** move one column,
   **To start** rewinds; the **Position** slider and a click on a map (a
   finger drag in touch mode) scrub. The position is the Log viewer cursor: a
   cursor placed there moves the player and the player moves the cursor, so
   the epoch can be set from the place where the spectrum "lights up".
-- **Segment** and **Max frequency**.
+- **Time smoothing** (low, medium, high, max; max by default): how close
+  the columns are, 0.3, 0.15, 0.06 or 0.03 s apart. Every column is still
+  the spectrum of 0.3 s; nothing is averaged along the time, a higher level
+  only draws more, overlapping, columns (and takes longer to compute).
+- **Freq smoothing** (low, medium, high, max; medium by default): how many
+  rows a cell is averaged over along the frequency, 3, 5, 11 or 21 (fewer at
+  the bottom and the top of the axis). Higher reads calmer; it also lowers
+  and widens a narrow line (at 2 kHz a tone reads 1.3 dB below its bin at
+  "low" and 4.2 dB below it at "medium").
+- **Max frequency**: auto (half the logging rate) or a lower top of the
+  frequency axis.
 
 ## 7. Filter Sim
 
@@ -517,7 +541,7 @@ with a new log.
 | Step response | `openpid run step <log> --axis pitch --epoch 2..12` (`--json` carries `verdicts` against the project's targets, or the defaults) |
 | Spectrum | `openpid run psd <log> --channel gyro.raw.roll` |
 | Freq × throttle | `openpid run thr-heatmap <log> [--png out.png]` |
-| Freq × time | `openpid run stft <log> --channel motor.0` |
+| Freq × time | `openpid run stft <log> --channel motor.0 [--smooth-freq low\|medium\|high\|max] [--smooth-time …] [--png out.png]` |
 | Filter Sim | `openpid run filter-sim <log> --set lpf1_hz=100,lpf1_type=1` |
 | Motor noise (no tab) | `openpid run motor-noise <log>` |
 | Motor speed without eRPM | `openpid run rpm <log>` |

@@ -84,3 +84,72 @@ btfl_027:
 Betaflight 4.5.1 (the throttle bursts line up with the noise):
 
 ![4.5.1](second-log.jpg)
+
+## Revision: the map of the reference tool (2026-11-14, decision D-006)
+
+The owner decided that the map is computed as the reference tool computes its
+own, with one stated exception (DESIGN §6.5; #174). What that changed on this
+tab:
+
+- **The map**: a column per segment of 0.3 s, a power density in decibels
+  (`10·log10(2·|X|² / (L·fs))`), rows to half the log rate, smoothed along
+  the frequency. It is no longer an amplitude shown as `20·log10`.
+- **No linear colour.** The map is decibels by definition and the reference
+  tool has no linear colour here, so the "Scale" switch (dB / linear) and the
+  linear "Colour max" left the panel.
+- **Smooth frequency** and **Smooth time**: two lists of the four levels of
+  the rule (off, low, medium, high; both "low" by default) in "Analysis";
+  each level is a job of its own. "Segment" left the panel: the rule has one
+  segment length.
+- **Colour scale**: a list in "Colour": the reference tool's fixed
+  −30 … 10 dB by default, "automatic" (the percentiles above, as before) or
+  "typed in" with "Z min" and "Z max", which start from the scale on screen.
+- **Max frequency**: auto is half the log rate; a value leaves out the rows
+  above it.
+- **A map wider than a texture**: at "high" a long log has more columns than
+  a texture may be wide; several columns then share a pixel, drawn in the
+  colour of the largest of them.
+- **Not copied**: the reference tool draws a few of its first columns out of
+  place; here every column is at the middle of its segment.
+- Kept as they were: the three rows of the docked log, prefilt by default,
+  the spectrum at the position beside each row (now in the new decibels, on
+  the scale of the maps), the throttle strip, the player, the value under the
+  pointer, the exports.
+
+Tests: `time_tab_stacks_the_axes_in_db_with_the_throttle_under_them`,
+`time_tab_lists_set_the_two_levels_of_the_map`,
+`time_tab_colour_scale_is_fixed_automatic_or_typed`,
+`time_tab_max_frequency_lowers_the_top_of_the_maps`,
+`a_map_wider_than_a_texture_is_drawn_by_the_largest_cell_of_a_group`, and the
+earlier ones adapted. The pictures above show the tab before this revision.
+
+## Revision: the web edition 1.0 (2026-11-27, decision D-015)
+
+The owner decided that OpenPID follows the web edition 1.0 of the reference
+tool (D-015 = A). Its map was found exactly from its outputs (DESIGN §6.5).
+What that changed on this tab:
+
+- **The map**: every segment of 0.3 s is zero-padded to the next power of
+  two (513 rows at 2 kHz instead of 301), and the 0 Hz and half-rate bins
+  are both counted once.
+- **Time smoothing** (was "Smooth time"): low, medium, high, max, the
+  segments 0.3, 0.15, 0.06 or 0.03 s apart; **max** by default (it was
+  0.15 s).
+- **Freq smoothing** (was "Smooth frequency"): low, medium, high, max, a
+  moving average of the decibels over 3, 5, 11 or 21 rows, cut at the two
+  ends of the axis (it was a line fitted through 5, 11 or 21 rows, or none);
+  **medium** by default.
+- **The first columns**: as in the web edition, the first columns (as many
+  as the time factor: one at "low", ten at "max") show the segment that
+  starts at their time, the later ones the segment centred at it. Under
+  D-006 OpenPID drew every column centred; that exception is gone.
+- **A short window** still gets a map as soon as it holds one segment
+  (D-014).
+- Kept as they were: the rows, the channels, the colour scale and its
+  choices, the spectrum beside each row, the throttle strip, the player, the
+  exports.
+
+Tests: `time_tab_stacks_the_axes_in_db_with_the_throttle_under_them`,
+`time_tab_lists_set_the_two_levels_of_the_map`,
+`time_tab_says_when_the_window_is_too_short_for_a_segment`, adapted. The
+pictures above show the tab before this revision.
