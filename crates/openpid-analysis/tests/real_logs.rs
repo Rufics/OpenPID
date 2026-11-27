@@ -353,7 +353,7 @@ fn fitness_of_the_real_logs() {
     let f = check_session(&log.sessions[0]);
     assert_eq!(f.overall, FitnessLevel::Ok, "{f:?}");
     for id in [
-        "rate", "duration", "raw_gyro", "erpm", "frames", "gaps", "sticks",
+        "rate", "duration", "raw_gyro", "erpm", "frames", "gaps", "clock", "sticks",
     ] {
         assert_eq!(f.level(id), FitnessLevel::Ok, "{id}: {:?}", f.check(id));
     }

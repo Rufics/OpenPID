@@ -33,7 +33,7 @@ impl Level {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Check {
     /// Stable identifier (`rate`, `duration`, `raw_gyro`, `erpm`, `frames`,
-    /// `gaps`, `sticks`, `throttle`, `debug_mode`).
+    /// `gaps`, `clock`, `sticks`, `throttle`, `debug_mode`).
     pub id: String,
     /// Outcome.
     pub level: Level,
@@ -77,6 +77,11 @@ const DURATION_WARN_S: f64 = 5.0;
 const CORRUPT_WARN: f64 = 0.005;
 const CORRUPT_FAIL: f64 = 0.05;
 const GAPS_WARN: usize = 3;
+/// The time stamps may run this far off the header's rate, and this share of
+/// the frames may be missing, before the clock check warns: past it another
+/// analysis tool that takes the samples by the header's rate shows other
+/// numbers (decision D-013 of the calibration).
+const CLOCK_WARN: f64 = 0.01;
 const STICKS_OK: usize = 10;
 const STICKS_WARN: usize = 5;
 /// Real flights sit in a band of the throttle range; the map needs a fair
@@ -100,6 +105,42 @@ fn check(id: &str, level: Level, title: &str, detail: String, fix: Option<&str>)
             .then(|| fix.map(str::to_string))
             .flatten(),
     }
+}
+
+/// Whether the time stamps run at the rate the header states and no frames
+/// are missing: how far the median step is off the header's, and the share
+/// of the frames the time stamps leave room for that are not there. `None`
+/// when the header states no rate or the session has fewer than two samples.
+fn clock_check(s: &FlightSession) -> Option<Check> {
+    let t = &s.timebase.time_us;
+    let nominal = s.timebase.nominal_dt_us.filter(|d| *d > 0.0)?;
+    let step = s.timebase.median_dt_us;
+    let (first, last) = (*t.first()?, *t.last()?);
+    if t.len() < 2 || step <= 0.0 {
+        return None;
+    }
+    let off = step / nominal - 1.0;
+    let room = (last - first) as f64 / step + 1.0;
+    let missing = (1.0 - t.len() as f64 / room).max(0.0);
+    let level = if off.abs() > CLOCK_WARN || missing > CLOCK_WARN {
+        Level::Warn
+    } else {
+        Level::Ok
+    };
+    Some(check(
+        "clock",
+        level,
+        "clock",
+        format!(
+            "time stamps {:+.1} % off the header's {:.0} Hz; {:.1} % of the frames missing",
+            off * 100.0,
+            1.0e6 / nominal,
+            missing * 100.0
+        ),
+        Some(
+            "OpenPID places the samples by their time stamps; a tool that takes them one after the other at the header's rate shows other frequencies and levels. Missing frames: check the SD card or flash write speed",
+        ),
+    ))
 }
 
 /// Whether the firmware is Betaflight 4.3 or newer (the `blackbox_disable_*`
@@ -264,6 +305,7 @@ pub fn check_session(s: &FlightSession) -> Fitness {
         format!("{gaps} gap(s) in the timebase"),
         Some("gaps come from dropped frames: see the frames check"),
     ));
+    checks.extend(clock_check(s));
     // stick input
     let ctx = AnalysisCtx {
         session: s,
@@ -377,7 +419,7 @@ mod tests {
     fn a_good_synthetic_log_passes_and_a_short_silent_one_fails() {
         let f = check_session(&session(30.0, true));
         assert_eq!(f.overall, Level::Ok, "{f:?}");
-        for id in ["rate", "duration", "frames", "gaps", "raw_gyro"] {
+        for id in ["rate", "duration", "frames", "gaps", "clock", "raw_gyro"] {
             assert_eq!(f.level(id), Level::Ok, "{id}: {:?}", f.check(id));
         }
         // the generator drives roll only: pitch has no windows, so sticks fail
@@ -385,7 +427,7 @@ mod tests {
         assert_eq!(sticks.level, Level::Fail);
         assert!(sticks.detail.contains("/ 0 pitch"), "{}", sticks.detail);
         assert!(f.check("debug_mode").is_some());
-        assert_eq!(f.checks.len(), 9);
+        assert_eq!(f.checks.len(), 10);
         assert!(f.check("rate").unwrap().fix.is_none(), "no fix when ok");
         let g = check_session(&session(3.0, false));
         assert_eq!(g.overall, Level::Fail);
@@ -401,6 +443,51 @@ mod tests {
         );
         assert_eq!(Level::Fail.marker(), "[x]");
         assert!(Level::Ok < Level::Warn && Level::Warn < Level::Fail);
+    }
+
+    #[test]
+    fn a_clock_off_its_rate_or_missing_frames_warn() {
+        // time stamps 2 % slower than the header's rate
+        let mut s = session(30.0, true);
+        let t0 = s.timebase.time_us[0];
+        let slow: Vec<i64> = s
+            .timebase
+            .time_us
+            .iter()
+            .map(|t| t0 + (t - t0) * 102 / 100)
+            .collect();
+        s.timebase = openpid_core::session::Timebase::from_times(slow, s.timebase.nominal_dt_us);
+        let c = check_session(&s).check("clock").cloned().unwrap();
+        assert_eq!(c.level, Level::Warn, "{c:?}");
+        assert!(
+            c.detail.starts_with("time stamps +2.0 % off"),
+            "{}",
+            c.detail
+        );
+        assert!(c.fix.unwrap().contains("time stamps"));
+        // 5 % of the frames missing, in pauses of 32 frames (4.9 % of the room
+        // the time stamps leave, as the first pause shortens it)
+        let mut s = session(30.0, true);
+        let kept: Vec<i64> = s
+            .timebase
+            .time_us
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| i % 640 >= 32)
+            .map(|(_, t)| *t)
+            .collect();
+        s.timebase = openpid_core::session::Timebase::from_times(kept, s.timebase.nominal_dt_us);
+        let c = check_session(&s).check("clock").cloned().unwrap();
+        assert_eq!(c.level, Level::Warn, "{c:?}");
+        assert!(
+            c.detail.contains("4.9 % of the frames missing"),
+            "{}",
+            c.detail
+        );
+        // no stated rate: no clock check
+        let mut s = session(30.0, true);
+        s.timebase.nominal_dt_us = None;
+        assert!(check_session(&s).check("clock").is_none());
     }
 
     #[test]
