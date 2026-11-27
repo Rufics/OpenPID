@@ -408,7 +408,13 @@ fn thr_heatmap_command() {
     let v = json(&[]);
     assert_eq!(v["smoothing"], "medium");
     assert_eq!(v["counts"].as_array().unwrap().len(), 100);
-    let rows = v["nperseg"].as_u64().unwrap() as usize / 2;
+    // the segment zero-padded to the next power of two: rows 0 … nfft / 2
+    let nfft = v["nfft"].as_u64().unwrap() as usize;
+    assert_eq!(
+        nfft,
+        (v["nperseg"].as_u64().unwrap() as usize).next_power_of_two()
+    );
+    let rows = nfft / 2 + 1;
     for grid in ["grid", "grid_db"] {
         assert_eq!(v[grid]["x"].as_array().unwrap().len(), 100, "{grid}");
         assert_eq!(v[grid]["y"].as_array().unwrap().len(), rows, "{grid}");
@@ -417,21 +423,48 @@ fn thr_heatmap_command() {
     assert_eq!(v["grid"]["x"][0], 0.5);
     let fs = v["fs"].as_f64().unwrap();
     let top = v["grid"]["y"][rows - 1].as_f64().unwrap();
-    assert!((top - (fs / 2.0 - fs / (2 * rows) as f64)).abs() < 1e-6);
+    assert!((top - fs / 2.0).abs() < 1e-6);
     let number = |v: &serde_json::Value, key: &str| v[key].as_f64().expect("a number");
     let (mean, peak) = (number(&v, "mean"), number(&v, "peak"));
     assert!(mean > 0.0 && peak > mean, "{mean} {peak}");
     assert!(number(&v, "peak_db") > number(&v, "mean_db"));
-    // the mean and the peak are those of the grid from rows/10 − 1 up
-    let z: Vec<f64> = v["grid"]["z"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|c| c.as_f64().unwrap())
-        .collect();
-    let cells = &z[(rows / 10 - 1) * 100..];
-    assert!((cells.iter().sum::<f64>() / cells.len() as f64 - mean).abs() < 1e-12);
-    assert!((cells.iter().copied().fold(0.0, f64::max) - peak).abs() < 1e-12);
+    // the mean and the peak are those of the grid from 100 Hz up
+    let values = |key: &str| -> Vec<f64> {
+        v["grid"][key]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c.as_f64().unwrap())
+            .collect()
+    };
+    let (y, z) = (values("y"), values("z"));
+    let between = |lo: f64, hi: f64| {
+        let rows: Vec<usize> = (0..rows).filter(|r| y[*r] >= lo && y[*r] <= hi).collect();
+        let cells: Vec<f64> = rows
+            .iter()
+            .flat_map(|r| z[r * 100..(r + 1) * 100].iter().copied())
+            .collect();
+        (
+            cells.iter().sum::<f64>() / cells.len() as f64,
+            cells.iter().copied().fold(0.0, f64::max),
+        )
+    };
+    let (m, p) = between(100.0, f64::INFINITY);
+    assert!((m - mean).abs() < 1e-12 && (p - peak).abs() < 1e-12);
+    // --freq-lims adds the numbers of the view below 100 Hz, between them
+    let lims = json(&["--freq-lims", "20..60"]);
+    assert_eq!(lims["freq_lims"]["lo_hz"], 20.0);
+    assert_eq!(lims["freq_lims"]["hi_hz"], 60.0);
+    let (m, p) = between(20.0, 60.0);
+    assert!((number(&lims["freq_lims"], "mean") - m).abs() < 1e-12);
+    assert!((number(&lims["freq_lims"], "peak") - p).abs() < 1e-12);
+    assert!(number(&lims["freq_lims"], "peak_db") >= number(&lims["freq_lims"], "mean_db"));
+    assert_eq!(lims["mean"], v["mean"]);
+    assert!(v.get("freq_lims").is_none());
+    for bad in ["60..20", "20", "a..60"] {
+        let (ok, _, err) = run(&["run", "thr-heatmap", f, "--freq-lims", bad]);
+        assert!(!ok && err.contains("bad --freq-lims"), "{bad}: {err}");
+    }
     // --smoothing by name or by number: a wider kernel lowers the peak
     let high = json(&["--smoothing", "high"]);
     assert_eq!(high["smoothing"], "high");
@@ -479,7 +512,7 @@ fn thr_heatmap_command() {
     std::fs::remove_file(&project).ok();
     // and the help names the options
     let (_, help, _) = run(&["--help"]);
-    assert!(help.contains("--smoothing") && help.contains("--db"));
+    assert!(help.contains("--smoothing") && help.contains("--db") && help.contains("--freq-lims"));
 }
 
 #[test]

@@ -150,7 +150,7 @@ fn throttle_tab_stacks_the_axes_with_prefilt_and_zooms_to_the_flown_range() {
     );
     // 0–100 % throttle as the reference tool; btfl_027 has three or more
     // segments in the bins from 14 to 29 %, and "Zoom to the flown range"
-    // ends the axis at the edges of those bins (bin c is c − 1 … c percent)
+    // ends the axis at the edges of those bins (bin j is j … j + 1 percent)
     assert_eq!(ui.app().throttle_view.x_range, Some((0.0, 100.0)));
     ui.check("Zoom to the flown range", true);
     let (lo, hi) = ui.app().throttle_view.x_range.expect("range applied");
@@ -462,7 +462,7 @@ fn throttle_maps_span_the_whole_range_and_print_their_mean_and_peak() {
         assert_eq!(t.grid.x.len(), 100);
         assert_eq!((t.grid.x[0], t.grid.x[99]), (0.5, 99.5));
         let top = t.grid.y.last().copied().unwrap();
-        assert!((top - (t.fs / 2.0 - t.fs / t.nperseg as f64)).abs() < 1e-9);
+        assert!((top - t.fs / 2.0).abs() < 1e-9);
         // and its two numbers are on screen, three significant digits
         let text = format!("mean={} peak={}", sig3(t.mean), sig3(t.peak));
         assert!(ui.sees(&text), "{text}");

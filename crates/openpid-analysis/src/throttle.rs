@@ -1,19 +1,23 @@
 //! Frequency × throttle map: the spectrum of a channel as a function of the
-//! throttle position, computed as the reference tool computes its own
-//! (decision D-005; `docs/DESIGN.md` §6.4 states the rule and what it was
-//! held to).
+//! throttle position, computed as the web edition 1.0 of the reference tool
+//! computes its own (decisions D-005 and D-015; `docs/DESIGN.md` §6.4 states
+//! the rule and what it was held to).
 //!
-//! The epoch is cut into overlapping segments of 0.3 s. Every segment gets
-//! the spectrum of its Hann-windowed samples, `|X| / L` with no compensation
-//! for the window, and the mean of its throttle. Column `c` of 100 holds the
-//! segments with `c − 1 < throttle ≤ c + 1` and is their plain mean; the
-//! matrix is then smoothed with a Gaussian kernel whose size follows the
-//! [`Smoothing`] level. A second matrix holds the same in decibels of a
-//! power density. [`ThrottleHeatmapOutput::mean`] and
-//! [`ThrottleHeatmapOutput::peak`] are the two numbers printed on a map.
+//! The epoch is cut into overlapping segments of 0.3 s, the last one that
+//! fits included. Every segment gets the spectrum of its Hann-windowed
+//! samples, zero-padded to the next power of two, `|X| / L` with no
+//! compensation for the window, and the mean of its throttle. Column `j` of
+//! 100 (drawn at `j + 0.5` %) holds the segments with
+//! `j − 1 ≤ throttle < j + 2` and is their plain mean; the matrix is then
+//! smoothed with a Gaussian kernel whose size follows the [`Smoothing`]
+//! level. A second matrix holds the same in decibels of a power density.
+//! [`ThrottleHeatmapOutput::mean`] and [`ThrottleHeatmapOutput::peak`] are
+//! the two numbers printed on a map: over the rows of [`BAND_FROM_HZ`] and
+//! up, or between two frequency limits in the view below 100 Hz
+//! ([`ThrottleHeatmapOutput::mean_peak_between`]).
 //!
 //! A cell is therefore **not** the amplitude of a tone: a tone of amplitude
-//! `A` on a bin reads `A / 4` before the smoothing and about `0.035 · A`
+//! `A` on a bin reads `A / 4` before the smoothing and about `0.067 · A`
 //! after the default one.
 //!
 //! When the log carries motor rpm, the output also holds an [`RpmOverlay`]:
@@ -51,9 +55,16 @@ pub const HOP_MEDIUM_FROM_S: f64 = 20.0;
 pub const HOP_LONG_FROM_S: f64 = 60.0;
 /// Percent of a segment's samples that must be valid for it to be used.
 pub const MIN_VALID_PERCENT: usize = 90;
-/// Number of throttle columns; column `c` (1-based) is drawn from `c − 1` to
-/// `c` percent.
+/// Number of throttle columns; column `j` (0-based) is drawn from `j` to
+/// `j + 1` percent.
 pub const COLUMNS: usize = 100;
+/// The printed mean and peak count the rows of this frequency and up, Hz.
+pub const BAND_FROM_HZ: f64 = 100.0;
+/// The top of the frequency axis in the view below 100 Hz, Hz.
+pub const LOW_VIEW_TOP_HZ: f64 = 100.0;
+/// The two frequency limits of the view below 100 Hz by default, Hz: the
+/// printed mean and peak of that view count the rows between them.
+pub const FREQ_LIMS: (f64, f64) = (20.0, 60.0);
 /// Standard deviation of the smoothing kernel, in cells along either axis.
 pub const KERNEL_SIGMA: f64 = 4.0;
 /// Value of the decibel matrix where there is nothing: a column without
@@ -197,20 +208,24 @@ pub struct ColumnMeans {
     pub fs: f64,
     /// Segment length in samples.
     pub nperseg: usize,
+    /// Length of the transform: `nperseg` zero-padded to the next power of
+    /// two.
+    pub nfft: usize,
     /// Distance between the starts of two segments, samples.
     pub hop: usize,
-    /// Number of segment positions in the epoch (used or not).
+    /// Number of segment positions in the epoch (used or not):
+    /// `floor((n − nperseg) / hop) + 1`.
     pub positions: usize,
     /// Number of segments used (enough valid samples).
     pub segments: usize,
-    /// Number of frequency rows: bins `0 … nperseg / 2 − 1`.
+    /// Number of frequency rows: bins `0 … nfft / 2`, 0 Hz to half the rate.
     pub rows: usize,
     /// Number of segments in every column.
     pub counts: Vec<usize>,
     /// Mean of `|X| / L`; 0 in a column without segments.
     pub linear: Vec<f64>,
-    /// Mean of `10·log10(2·|X|² / (L·fs))`; [`DB_FLOOR`] in a column without
-    /// segments.
+    /// Mean of `10·log10(2·|X|² / (L·fs))`, the power of 0 Hz and of half
+    /// the rate halved; [`DB_FLOOR`] in a column without segments.
     pub db: Vec<f64>,
     /// Per motor and column, the median of the segments' mean rpm.
     pub motors: Vec<Vec<Option<f64>>>,
@@ -227,14 +242,16 @@ pub struct ThrottleHeatmapOutput {
     pub fs: f64,
     /// Segment length in samples.
     pub nperseg: usize,
+    /// Length of the transform (`nperseg` zero-padded to a power of two).
+    pub nfft: usize,
     /// Distance between the starts of two segments, samples.
     pub hop: usize,
     /// Number of segments used.
     pub segments: usize,
     /// Smoothing level of both grids.
     pub smoothing: Smoothing,
-    /// Mean of `grid` over every column and the rows from a tenth of the
-    /// rows up (the lowest frequencies are left out).
+    /// Mean of `grid` over every column and the rows of [`BAND_FROM_HZ`] and
+    /// up (the lowest frequencies are left out).
     pub mean: f64,
     /// Maximum of `grid` over the same cells.
     pub peak: f64,
@@ -259,13 +276,21 @@ impl ThrottleHeatmapOutput {
         if db { &self.grid_db } else { &self.grid }
     }
 
-    /// `(mean, peak)` of a view.
+    /// `(mean, peak)` of a view, over the rows of [`BAND_FROM_HZ`] and up.
     pub fn mean_peak(&self, db: bool) -> (f64, f64) {
         if db {
             (self.mean_db, self.peak_db)
         } else {
             (self.mean, self.peak)
         }
+    }
+
+    /// `(mean, peak)` of a view over every column and the rows from `lo_hz`
+    /// to `hi_hz`, both included: the printed numbers of the view below
+    /// 100 Hz, between its two frequency limits.
+    pub fn mean_peak_between(&self, db: bool, lo_hz: f64, hi_hz: f64) -> (f64, f64) {
+        let grid = self.view(db);
+        mean_peak(&grid.z, grid.x.len(), band_rows(&grid.y, lo_hz, hi_hz))
     }
 }
 
@@ -282,10 +307,19 @@ pub fn hop_seconds(span_s: f64) -> f64 {
 }
 
 /// Whether a segment of mean throttle `throttle` belongs to column `column`
-/// (1-based): `column − 1 < throttle ≤ column + 1`.
+/// (0-based, drawn at `column + 0.5` %): `column − 1 ≤ throttle < column + 2`,
+/// three percent centred on the column.
 pub fn in_column(throttle: f64, column: usize) -> bool {
-    let c = column as f64;
-    c - 1.0 < throttle && throttle <= c + 1.0
+    let j = column as f64;
+    j - 1.0 <= throttle && throttle < j + 2.0
+}
+
+/// The columns (0-based) that hold a segment of mean throttle `throttle`:
+/// at most three.
+fn columns_of(throttle: f64) -> impl Iterator<Item = usize> {
+    // j − 1 ≤ T < j + 2 holds for j in (T − 2, T + 1]
+    let first = (throttle.floor() - 2.0).clamp(0.0, COLUMNS as f64) as usize;
+    (first..(first + 4).min(COLUMNS)).filter(move |j| in_column(throttle, *j))
 }
 
 /// Symmetric Hann window of `n` samples: `0.5 − 0.5·cos(2π·i / (n − 1))`.
@@ -305,6 +339,128 @@ fn median(mut v: Vec<f64>) -> Option<f64> {
     Some(v[v.len() / 2])
 }
 
+/// The spectrum of one segment: `|X| / L` and `10·log10(2·|X|² / (L·fs))`
+/// per row, the power of the first and the last row (0 Hz and half the
+/// rate) halved.
+struct SegmentSpectrum {
+    window: Vec<f64>,
+    fft: Fft,
+    fs: f64,
+    buf: Vec<f64>,
+    amp: Vec<f64>,
+    dens: Vec<f64>,
+}
+
+impl SegmentSpectrum {
+    fn new(nperseg: usize, nfft: usize, fs: f64) -> Self {
+        let rows = nfft / 2 + 1;
+        SegmentSpectrum {
+            window: hann_symmetric(nperseg),
+            fft: Fft::new(),
+            fs,
+            buf: vec![0.0; nfft],
+            amp: vec![0.0; rows],
+            dens: vec![0.0; rows],
+        }
+    }
+
+    /// Fills `amp` and `dens` from the samples of one segment.
+    fn compute(&mut self, x: &[f64]) {
+        let len = self.window.len() as f64;
+        // the samples through the window, zeros after them
+        for (b, (v, w)) in self.buf.iter_mut().zip(x.iter().zip(&self.window)) {
+            *b = v * w;
+        }
+        let spec = self.fft.rfft(&self.buf);
+        let last = self.amp.len() - 1;
+        for (b, c) in spec.iter().enumerate().take(self.amp.len()) {
+            let power = c.norm_sqr();
+            let half = if b == 0 || b == last { 0.5 } else { 1.0 };
+            self.amp[b] = power.sqrt() / len;
+            self.dens[b] = 10.0
+                * (half * 2.0 * power / (len * self.fs))
+                    .max(LOG_FLOOR)
+                    .log10();
+        }
+    }
+}
+
+/// The running sums of the columns while the segments come in.
+struct Accumulator {
+    rows: usize,
+    linear: Vec<f64>,
+    db: Vec<f64>,
+    counts: Vec<usize>,
+}
+
+impl Accumulator {
+    fn new(rows: usize) -> Self {
+        Accumulator {
+            rows,
+            linear: vec![0.0; COLUMNS * rows],
+            db: vec![0.0; COLUMNS * rows],
+            counts: vec![0; COLUMNS],
+        }
+    }
+
+    /// Adds one segment's spectrum to every column of its throttle.
+    fn add(&mut self, throttle: f64, spectrum: &SegmentSpectrum) {
+        for ix in columns_of(throttle) {
+            self.counts[ix] += 1;
+            for b in 0..self.rows {
+                self.linear[b * COLUMNS + ix] += spectrum.amp[b];
+                self.db[b * COLUMNS + ix] += spectrum.dens[b];
+            }
+        }
+    }
+
+    /// The sums divided by the counts; [`DB_FLOOR`] in an empty column.
+    fn finish(mut self) -> (Vec<f64>, Vec<f64>, Vec<usize>) {
+        for (ix, count) in self.counts.iter().enumerate() {
+            for b in 0..self.rows {
+                let at = b * COLUMNS + ix;
+                if *count > 0 {
+                    self.linear[at] /= *count as f64;
+                    self.db[at] /= *count as f64;
+                } else {
+                    self.db[at] = DB_FLOOR;
+                }
+            }
+        }
+        (self.linear, self.db, self.counts)
+    }
+}
+
+/// The mean rpm of `motor` over `start..end`, when at least half of those
+/// samples are valid.
+fn mean_rpm(motor: &Prepared, start: usize, end: usize) -> Option<f64> {
+    let (sum, count) = (start..end.min(motor.len()))
+        .filter(|&i| motor.data.valid[i])
+        .fold((0.0, 0usize), |(s, c), i| (s + motor.data.values[i], c + 1));
+    (count * 2 >= end - start).then(|| sum / count as f64)
+}
+
+/// Per motor and column (0-based), the median of the mean rpm of the
+/// segments in the column.
+fn column_medians(rpms: &[Vec<Option<f64>>], throttles: &[f64]) -> Vec<Vec<Option<f64>>> {
+    rpms.iter()
+        .map(|per_segment| {
+            (0..COLUMNS)
+                .map(|column| {
+                    median(
+                        per_segment
+                            .iter()
+                            .zip(throttles)
+                            .filter(|(_, th)| in_column(**th, column))
+                            .filter_map(|(r, _)| *r)
+                            .collect(),
+                    )
+                })
+                .collect()
+        })
+        .collect()
+}
+
 /// The matrices of `channel` over the context's epoch before the smoothing.
 pub fn column_means(
     ctx: &AnalysisCtx<'_>,
@@ -317,7 +473,8 @@ pub fn column_means(
         .collect();
     let fs = sig.fs;
     let nperseg = ((SEGMENT_S * fs).round() as usize).max(4);
-    let rows = nperseg / 2;
+    let nfft = nperseg.next_power_of_two();
+    let rows = nfft / 2 + 1;
     let x = sig.filled();
     let t = thr.filled();
     let n = x.len().min(t.len());
@@ -329,56 +486,25 @@ pub fn column_means(
     // an epoch holds the samples at both of its ends: 1 … 21 s at 2 kHz are
     // 40 001 samples, a span of 20 s
     let hop = ((hop_seconds((n - 1) as f64 / fs) * fs).round() as usize).max(1);
-    // the last position that would still fit is not taken
-    let positions = (n - nperseg) / hop;
-    let window = hann_symmetric(nperseg);
-    let fft = Fft::new();
-    let len = nperseg as f64;
-    let mut linear = vec![0.0; COLUMNS * rows];
-    let mut db = vec![0.0; COLUMNS * rows];
-    let mut counts = vec![0usize; COLUMNS];
+    // the last segment that fits is taken
+    let positions = (n - nperseg) / hop + 1;
+    let mut spectrum = SegmentSpectrum::new(nperseg, nfft, fs);
+    let mut sums = Accumulator::new(rows);
     // per used segment: its mean throttle and the mean rpm of every motor
     let mut throttles: Vec<f64> = Vec::new();
     let mut rpms: Vec<Vec<Option<f64>>> = vec![Vec::new(); motors.len()];
-    let mut buf = vec![0.0; nperseg];
-    let mut amp = vec![0.0; rows];
-    let mut dens = vec![0.0; rows];
     for k in 0..positions {
-        let start = k * hop;
-        let end = start + nperseg;
+        let (start, end) = (k * hop, k * hop + nperseg);
         let valid = sig.data.valid[start..end].iter().filter(|v| **v).count();
         if valid * 100 < nperseg * MIN_VALID_PERCENT {
             continue;
         }
-        for (b, (v, w)) in buf.iter_mut().zip(x[start..end].iter().zip(&window)) {
-            *b = v * w;
-        }
-        let spec = fft.rfft(&buf);
-        for (b, c) in spec.iter().take(rows).enumerate() {
-            let power = c.norm_sqr();
-            amp[b] = power.sqrt() / len;
-            dens[b] = 10.0 * (2.0 * power / (len * fs)).max(LOG_FLOOR).log10();
-        }
-        let throttle = t[start..end].iter().sum::<f64>() / len;
-        // the two columns around the throttle
-        let lowest = (throttle.floor() - 1.0).max(1.0) as usize;
-        for column in lowest..=(lowest + 3).min(COLUMNS) {
-            if !in_column(throttle, column) {
-                continue;
-            }
-            let ix = column - 1;
-            counts[ix] += 1;
-            for b in 0..rows {
-                linear[b * COLUMNS + ix] += amp[b];
-                db[b * COLUMNS + ix] += dens[b];
-            }
-        }
+        spectrum.compute(&x[start..end]);
+        let throttle = t[start..end].iter().sum::<f64>() / nperseg as f64;
+        sums.add(throttle, &spectrum);
         throttles.push(throttle);
         for (m, motor) in motors.iter().enumerate() {
-            let (sum, count) = (start..end.min(motor.len()))
-                .filter(|&i| motor.data.valid[i])
-                .fold((0.0, 0usize), |(s, c), i| (s + motor.data.values[i], c + 1));
-            rpms[m].push((count * 2 >= nperseg).then(|| sum / count as f64));
+            rpms[m].push(mean_rpm(motor, start, end));
         }
     }
     if throttles.is_empty() {
@@ -386,38 +512,12 @@ pub fn column_means(
             "no complete segment in the epoch".into(),
         ));
     }
-    for (ix, count) in counts.iter().enumerate() {
-        for b in 0..rows {
-            let at = b * COLUMNS + ix;
-            if *count > 0 {
-                linear[at] /= *count as f64;
-                db[at] /= *count as f64;
-            } else {
-                db[at] = DB_FLOOR;
-            }
-        }
-    }
-    let motors = rpms
-        .iter()
-        .map(|per_segment| {
-            (1..=COLUMNS)
-                .map(|column| {
-                    median(
-                        per_segment
-                            .iter()
-                            .zip(&throttles)
-                            .filter(|(_, th)| in_column(**th, column))
-                            .filter_map(|(r, _)| *r)
-                            .collect(),
-                    )
-                })
-                .collect()
-        })
-        .collect();
+    let (linear, db, counts) = sums.finish();
     Ok(ColumnMeans {
         unit: sig.unit.to_string(),
         fs,
         nperseg,
+        nfft,
         hop,
         positions,
         segments: throttles.len(),
@@ -425,7 +525,7 @@ pub fn column_means(
         counts,
         linear,
         db,
-        motors,
+        motors: column_medians(&rpms, &throttles),
     })
 }
 
@@ -486,17 +586,20 @@ pub fn smooth(z: &[f64], nx: usize, ny: usize, level: Smoothing, outside: f64) -
         .collect()
 }
 
-/// The first frequency row that counts for the printed mean and peak:
-/// `rows / 10 − 1`.
-pub fn first_counted_row(rows: usize) -> usize {
-    (rows / 10).saturating_sub(1)
+/// The rows of a frequency axis `y` (ascending, Hz) from `lo_hz` to `hi_hz`,
+/// both included.
+pub fn band_rows(y: &[f64], lo_hz: f64, hi_hz: f64) -> std::ops::Range<usize> {
+    let first = y.partition_point(|f| *f < lo_hz);
+    let end = y.partition_point(|f| *f <= hi_hz);
+    first..end.max(first)
 }
 
 /// `(mean, peak)` of a matrix (row-major, `nx` columns) over every column
-/// and the rows from [`first_counted_row`] up.
-pub fn mean_peak(z: &[f64], nx: usize) -> (f64, f64) {
-    let rows = z.len().checked_div(nx).unwrap_or(0);
-    let cells = &z[(first_counted_row(rows) * nx).min(z.len())..];
+/// and the rows `rows`; `(0, 0)` when that holds no cell.
+pub fn mean_peak(z: &[f64], nx: usize, rows: std::ops::Range<usize>) -> (f64, f64) {
+    let cells = z
+        .get(rows.start * nx..(rows.end * nx).min(z.len()))
+        .unwrap_or_default();
     if cells.is_empty() {
         return (0.0, 0.0);
     }
@@ -531,12 +634,13 @@ impl Analysis for ThrottleHeatmap {
         let rows = columns.rows;
         let linear = smooth(&columns.linear, COLUMNS, rows, p.smoothing, 0.0);
         let db = smooth(&columns.db, COLUMNS, rows, p.smoothing, DB_FLOOR);
-        let (mean, peak) = mean_peak(&linear, COLUMNS);
-        let (mean_db, peak_db) = mean_peak(&db, COLUMNS);
         let x: Vec<f64> = (0..COLUMNS).map(|c| c as f64 + 0.5).collect();
         let y: Vec<f64> = (0..rows)
-            .map(|b| b as f64 * columns.fs / columns.nperseg as f64)
+            .map(|b| b as f64 * columns.fs / columns.nfft as f64)
             .collect();
+        let band = band_rows(&y, BAND_FROM_HZ, f64::INFINITY);
+        let (mean, peak) = mean_peak(&linear, COLUMNS, band.clone());
+        let (mean_db, peak_db) = mean_peak(&db, COLUMNS, band);
         let grid = |z: Vec<f64>, z_label: String| Grid2D {
             x: x.clone(),
             y: y.clone(),
@@ -567,6 +671,7 @@ impl Analysis for ThrottleHeatmap {
             channel: p.channel.clone(),
             fs: columns.fs,
             nperseg: columns.nperseg,
+            nfft: columns.nfft,
             hop: columns.hop,
             segments: columns.segments,
             smoothing: p.smoothing,

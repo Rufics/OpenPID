@@ -452,8 +452,8 @@ fn heat_cell(
 }
 
 /// "mean=0.0322 peak=0.513" in the top left corner of a map, three
-/// significant digits: the mean and the maximum of the map from a tenth of
-/// its rows up (DESIGN §6.4). Painted over the plot, so the pointer still
+/// significant digits: the mean and the maximum of the map from 100 Hz up
+/// (DESIGN §6.4). Painted over the plot, so the pointer still
 /// reaches the map under it.
 fn printed_numbers(ui: &Ui, name: &str, frame: egui::Rect, mean: f64, peak: f64) {
     let text = format!("mean={} peak={}", sig3(mean), sig3(peak));
@@ -473,7 +473,7 @@ fn printed_numbers(ui: &Ui, name: &str, frame: egui::Rect, mean: f64, peak: f64)
     );
     ui.interact(rect, egui::Id::unique(("printed", name)), egui::Sense::hover())
         .on_hover_text(tr(
-            "the mean and the largest cell of this map, from a tenth of its frequency rows up; a cell is not the amplitude of a tone",
+            "the mean and the largest cell of this map, from 100 Hz up; a cell is not the amplitude of a tone",
         ))
         .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
 }

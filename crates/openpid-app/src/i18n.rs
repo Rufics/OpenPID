@@ -892,8 +892,8 @@ static UA: &[(&str, &str)] = &[
         "карта в децибелах густини потужності, на шкалі −40 … 10 дБ, замість лінійної на 0 … 0.5; порожній бін газу має −40 дБ",
     ),
     (
-        "the mean and the largest cell of this map, from a tenth of its frequency rows up; a cell is not the amplitude of a tone",
-        "середнє та найбільша комірка цієї карти, від десятої частини рядків частоти й вище; комірка не є амплітудою тону",
+        "the mean and the largest cell of this map, from 100 Hz up; a cell is not the amplitude of a tone",
+        "середнє та найбільша комірка цієї карти, від 100 Гц і вище; комірка не є амплітудою тону",
     ),
     (
         "the motor outputs, in the row under the axes (%)",

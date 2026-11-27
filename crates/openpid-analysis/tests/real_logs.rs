@@ -162,14 +162,16 @@ fn spectra_of_a_real_flight() {
     assert_eq!(hm.counts.len(), 100);
     assert_eq!(hm.grid.z.len(), hm.grid.x.len() * hm.grid.y.len());
     assert_eq!(hm.grid_db.z.len(), hm.grid.z.len());
-    // a segment is in two columns (one or none at the ends of the range)
+    // a segment is in three columns (fewer at the ends of the range)
     let held = hm.counts.iter().sum::<usize>();
-    assert!(held > hm.segments && held <= 2 * hm.segments, "{held}");
+    assert!(held > 2 * hm.segments && held <= 3 * hm.segments, "{held}");
     assert!(hm.grid.z.iter().all(|v| v.is_finite() && *v >= 0.0));
     assert!(hm.grid_db.z.iter().all(|v| v.is_finite()));
-    // rows to half the log rate, the last bin left out
+    // rows to half the log rate, on the grid of the zero-padded transform
     let top = hm.grid.y.last().copied().unwrap();
-    assert!((top - (hm.fs / 2.0 - hm.fs / hm.nperseg as f64)).abs() < 1e-9);
+    assert!((top - hm.fs / 2.0).abs() < 1e-9);
+    assert_eq!(hm.nfft, hm.nperseg.next_power_of_two());
+    assert_eq!(hm.grid.y.len(), hm.nfft / 2 + 1);
     assert!(hm.peak >= hm.mean && hm.mean > 0.0);
     // (a quiet gyro lies under the −40 dB of an empty column, so the decibel
     // mean has no lower bound there)

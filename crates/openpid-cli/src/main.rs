@@ -32,8 +32,9 @@ COMMANDS:
              psd             Welch power spectral density of --channel
              thr-heatmap     frequency x throttle map of --channel: 100 throttle columns,
                              rows to half the log rate, the linear and the decibel
-                             matrix with the mean and the peak printed on each
-                             (--smoothing sets the level)
+                             matrix with the mean and the peak printed on each, from
+                             100 Hz up (--smoothing sets the level, --freq-lims adds
+                             the numbers of the view below 100 Hz)
              stft            frequency x time heatmap of --channel
              motor-noise     per-motor harmonic amplitudes on the gyro (needs gyro.raw.<axis>;
                              motor speeds from eRPM or the rpm estimate)
@@ -87,6 +88,10 @@ OPTIONS:
                   med-high or high (or 1 to 5)
     --db          thr-heatmap: --png draws the decibel matrix (-40 … 10 dB) instead of
                   the linear one (0 … 0.5); the JSON always carries both
+    --freq-lims A..B
+                  thr-heatmap: also the mean and the peak over A to B Hz, both
+                  included (the view below 100 Hz; its default limits are 20..60),
+                  in the JSON as `freq_lims`
     --png <path>  thr-heatmap / stft: also write the grid as a PNG image (thr-heatmap:
                   what the Freq × throttle tab draws by default; stft: viridis)
     --project <p> run: take the log (slot A), session, epoch and tool parameters from
@@ -113,6 +118,8 @@ struct Args {
     png: Option<PathBuf>,
     smoothing: Option<String>,
     db: bool,
+    /// `--freq-lims A..B`, Hz.
+    freq_lims: Option<(f64, f64)>,
     project: Option<PathBuf>,
     file_b: Option<PathBuf>,
     session_b: Option<usize>,
@@ -136,6 +143,10 @@ fn parse_args() -> Result<Args, String> {
             "--db" => args.db = true,
             "--smoothing" => {
                 args.smoothing = Some(it.next().ok_or("--smoothing needs a level")?);
+            }
+            "--freq-lims" => {
+                let v = it.next().ok_or("--freq-lims needs A..B")?;
+                args.freq_lims = Some(parse_freq_lims(&v)?);
             }
             "--session-b" => {
                 let v = it.next().ok_or("--session-b needs a value")?;
@@ -482,6 +493,17 @@ fn parse_axis(s: Option<&str>) -> Result<openpid_core::Axis, String> {
     }
 }
 
+/// The two frequencies of `--freq-lims A..B`, Hz, the lower first.
+fn parse_freq_lims(v: &str) -> Result<(f64, f64), String> {
+    let bad = || format!("bad --freq-lims {v}: two frequencies A..B in Hz, A below B");
+    let (a, b) = v.split_once("..").ok_or_else(bad)?;
+    let a: f64 = a.trim().parse().map_err(|_| bad())?;
+    let b: f64 = b.trim().parse().map_err(|_| bad())?;
+    (a.is_finite() && b.is_finite() && a < b)
+        .then_some((a, b))
+        .ok_or_else(bad)
+}
+
 /// The picture of `--png`: width, height and RGBA pixels.
 type Picture = (usize, usize, Vec<u8>);
 
@@ -514,6 +536,24 @@ fn throttle_map(
         true,
     );
     Ok((out, picture))
+}
+
+/// The JSON of `run thr-heatmap`: the result and, with `--freq-lims`, the
+/// mean and the peak between the two frequencies as `freq_lims`.
+fn throttle_json(
+    out: &openpid_analysis::ThrottleHeatmapOutput,
+    freq_lims: Option<(f64, f64)>,
+) -> Result<serde_json::Value, String> {
+    let mut v = serde_json::to_value(out).map_err(|e| e.to_string())?;
+    if let Some((lo, hi)) = freq_lims {
+        let (mean, peak) = out.mean_peak_between(false, lo, hi);
+        let (mean_db, peak_db) = out.mean_peak_between(true, lo, hi);
+        v["freq_lims"] = serde_json::json!({
+            "lo_hz": lo, "hi_hz": hi,
+            "mean": mean, "peak": peak, "mean_db": mean_db, "peak_db": peak_db,
+        });
+    }
+    Ok(v)
 }
 
 fn cmd_run(args: &Args) -> Result<(), String> {
@@ -627,7 +667,7 @@ fn cmd_run(args: &Args) -> Result<(), String> {
         "thr-heatmap" => {
             let (out, picture) = throttle_map(&ctx, channel, args, base.throttle.smoothing)?;
             image = Some(picture);
-            serde_json::to_string_pretty(&out)
+            serde_json::to_string_pretty(&throttle_json(&out, args.freq_lims)?)
         }
         "stft" => {
             let p = openpid_analysis::StftParams {
