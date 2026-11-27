@@ -15,7 +15,7 @@ written in Rust, MIT licensed.
 
 ## What it does
 
-- **Step response**: setpoint-to-gyro deconvolution per axis, with verdicts
+- **Step response**: setpoint-to-gyro response per axis, computed as the reference tool computes it, with verdicts
   (rise, delay, overshoot, settling, final value) judged against Freestyle,
   Racing or Cinematic targets, and a target band on the plot.
 - **Noise**: Welch spectra with automatic peak markers, frequency × throttle

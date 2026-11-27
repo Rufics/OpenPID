@@ -4,7 +4,7 @@
 //! 50 % crossing, and the Y-offset correction brings the settled response to 1.
 #![allow(clippy::unwrap_used, reason = "tests may panic on unexpected data")]
 
-use openpid_analysis::{Analysis, AnalysisCtx, StepAnalysis, StepParams};
+use openpid_analysis::{Analysis, AnalysisCtx, StepAnalysis, StepMethod, StepParams};
 use openpid_core::session::Diagnostics;
 use openpid_core::{
     Axis, Channel, ChannelId, ChannelSet, FirmwareInfo, FlightSession, GyroStage, Origin, Series,
@@ -126,8 +126,54 @@ fn latency_equals_the_plant_delay_for_a_white_input() {
         m.final_value
     );
     assert_eq!(
-        out.windows_used, out.windows_total,
-        "white input is always above min_input"
+        out.windows_used + out.windows_rejected,
+        out.windows_total,
+        "a white input always has the stick far enough from its centre"
+    );
+    // six of the 201 windows this flight has settle farther from the
+    // others than three deviations; without that test every window counts
+    assert_eq!(out.windows_total, 201);
+    assert!(out.windows_rejected <= 8, "{}", out.windows_rejected);
+    let all = StepParams {
+        dist_to_median: false,
+        ..StepParams::default()
+    };
+    let every = StepAnalysis.run(&ctx, &all).unwrap();
+    assert!(every.windows_rejected <= 2, "{}", every.windows_rejected);
+    // the Wiener estimate takes every window
+    let wiener = StepParams {
+        method: StepMethod::Wiener,
+        ..StepParams::default()
+    };
+    let out = StepAnalysis.run(&ctx, &wiener).unwrap();
+    assert_eq!(out.windows_used, out.windows_total);
+    assert!((out.metrics.latency_ms.unwrap() - DELAY as f64).abs() <= 1.0);
+}
+
+#[test]
+fn the_window_length_sets_the_windows() {
+    // a window of 4 s is twice as long and twice as far from the next as
+    // one of 2 s: on 12 s, (12 − 4) / 0.1 + 1 = 81 windows, not 201
+    let s = session(12.0, white);
+    let ctx = AnalysisCtx {
+        session: &s,
+        epoch: None,
+    };
+    let two = StepAnalysis.run(&ctx, &StepParams::default()).unwrap();
+    let four = StepAnalysis
+        .run(
+            &ctx,
+            &StepParams {
+                window_s: 4.0,
+                ..StepParams::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(two.windows_total, 201);
+    assert_eq!(four.windows_total, 81);
+    assert!(
+        (four.metrics.latency_ms.unwrap() - DELAY as f64).abs() <= 1.0,
+        "the same plant through longer windows"
     );
 }
 
@@ -138,7 +184,20 @@ fn stick_input_latency_and_y_offset_correction() {
         session: &s,
         epoch: None,
     };
-    let plain = StepAnalysis.run(&ctx, &StepParams::default()).unwrap();
+    // the division: the latency lies as it does for the Wiener estimate
+    let division = StepAnalysis.run(&ctx, &StepParams::default()).unwrap();
+    let (latency, delay) = (
+        division.metrics.latency_ms.unwrap(),
+        division.metrics.delay_ms.unwrap(),
+    );
+    assert!(latency >= DELAY as f64 - 1.0 && latency <= delay + 1.0);
+    assert!((division.metrics.final_value - GAIN).abs() < 0.08);
+    // the Y-offset is a correction of the Wiener estimate
+    let wiener = StepParams {
+        method: StepMethod::Wiener,
+        ..StepParams::default()
+    };
+    let plain = StepAnalysis.run(&ctx, &wiener).unwrap();
     let m = plain.metrics;
     let latency = m.latency_ms.unwrap();
     let delay = m.delay_ms.unwrap();
@@ -151,7 +210,7 @@ fn stick_input_latency_and_y_offset_correction() {
             &ctx,
             &StepParams {
                 y_offset: true,
-                ..Default::default()
+                ..wiener.clone()
             },
         )
         .unwrap();
@@ -177,4 +236,60 @@ fn stick_input_latency_and_y_offset_correction() {
     let json = serde_json::to_value(c).unwrap();
     assert!(json["latency_ms"].is_number());
     assert!(json["delay_ms"].is_number());
+}
+
+/// The plant's own response to a unit step at sample 0.
+fn plant_step(i: usize) -> f64 {
+    if i < DELAY {
+        return 0.0;
+    }
+    let a = 1.0 - (-1.0 / TAU_MS).exp();
+    GAIN * (1.0 - (1.0 - a).powi((i - DELAY + 1) as i32))
+}
+
+#[test]
+fn the_curve_is_the_plant_step_response() {
+    // the plant's response to a unit step is known in closed form; the
+    // curve of the division is it, with and without the distance to the
+    // median, and the windows that test leaves out move it by little
+    let s = session(30.0, white);
+    let ctx = AnalysisCtx {
+        session: &s,
+        epoch: None,
+    };
+    let near = StepAnalysis.run(&ctx, &StepParams::default()).unwrap();
+    let all = StepAnalysis
+        .run(
+            &ctx,
+            &StepParams {
+                dist_to_median: false,
+                ..StepParams::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(near.mean.len(), 501);
+    assert!(near.windows_used < all.windows_used);
+    for out in [&near, &all] {
+        let worst = out
+            .mean
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (v - plant_step(i)).abs())
+            .fold(0.0, f64::max);
+        // 0.003 and 0.002 off the plant at most
+        assert!(worst < 0.004, "{worst}");
+    }
+    let moved = near
+        .mean
+        .iter()
+        .zip(&all.mean)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0, f64::max);
+    assert!(moved > 0.0 && moved < 0.003, "{moved}");
+    // the half-way time of a window, (i + 1)/fs − 1 ms at its first sample
+    // above 0.5: the plant's is sample 22, 22 ms
+    let half = (0..500).find(|i| plant_step(*i) > 0.5).unwrap();
+    assert_eq!(half, 22);
+    let latency = near.spread.half_ms_mean;
+    assert!((latency - 22.0).abs() < 0.25, "{latency}");
 }

@@ -129,6 +129,13 @@ before the next one starts.
   plots (`StepSpread` in `openpid-analysis`: mean and standard deviation of each
   window's peak and time to 50 %); the legend lists the logs only. Test:
   `step_tab_stacks_the_axes_and_the_panel_collapses`.
+- **Step response, the web edition's rule** (decision D-015, 2026-11-27): the
+  windowed division follows the web edition 1.0 of the reference tool
+  (DESIGN §6.2). Its one new choice, "Dist. to median" (on by default), is a
+  check box in the panel's Analysis section under Window, shown with the
+  division only; the test
+  `the_step_tab_ships_with_the_division_and_draws_what_the_reference_tool_reads`
+  switches it off and on.
 - **Step response, details** (owner's remark of 2026-11-09: the verdict table
   above the plots grew with every log): the table moves under the plots, in a
   bottom panel of the tab, closed by default. Closed, one line: a "Details"
