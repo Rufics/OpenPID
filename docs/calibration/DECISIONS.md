@@ -1,0 +1,295 @@
+# Calibration decisions
+
+Part of #167 (epic #166).
+
+Every disagreement between the reference tool, OpenPID and the exact value
+is recorded here, one entry each. **OpenPID's behaviour changes only after
+the owner has chosen**: an entry without a decision changes no code.
+
+An entry compares three things for one synthetic probe:
+
+- what **the reference tool** shows, as read from the owner's screenshots
+  and copies (neither they nor the numbers read from them are committed:
+  what a round found is written in these documents);
+- what **OpenPID** shows for the same probe;
+- **the exact value**, which is known because the probe is synthetic.
+
+The quantities are the rows of [INVENTORY.md](INVENTORY.md); the rounds that
+produce the evidence are in [ROUNDS.md](ROUNDS.md).
+
+## Process decisions
+
+Taken by the owner on 2026-11-11:
+
+1. The probe tool is a workspace crate, `crates/openpid-probe`, not a Python
+   tool.
+2. A pack reaches the owner as a zip and is reproducible from the
+   repository.
+3. Screenshots of the reference tool are not committed. Since 2026-11-13
+   neither are the numbers read from them, nor any other material of a
+   round: the repository holds the program's code and its tests, and the
+   comparison of this epic is done once. What a round found is written in
+   these documents; what it changes in OpenPID arrives as a pull request
+   of its own from `master`, with tests that need no data of a round.
+4. The order of the areas: Spectrum, Step response, Freq × throttle,
+   Freq × time, the rest.
+
+## How an entry is written
+
+- The id is `D-001`, `D-002`, … in the order the entries are opened; an id
+  is not reused.
+- "The exact value" is what the probe was built to give, with its
+  derivation in one line. Where no exact value exists (a display choice,
+  such as a default colour range), the field says so.
+- An entry is finished when it names the owner's decision with its date and
+  the pull request that carried it out.
+
+## Entry template
+
+```markdown
+### D-000 Short title
+
+| Field | |
+|---|---|
+| Id | D-000 |
+| Area | the area and the row of INVENTORY.md, for example "Spectrum, S1" |
+| Probe | the probe (name, round, pack commit) and what it contains |
+| The reference tool shows | the number or curve read from the screenshot or the copy |
+| OpenPID shows | the number or curve for the same probe, with the test or command that gives it |
+| The exact value | the value the probe was built to give and why; or "none: a display choice" |
+| Options | A. … B. … C. … (what a user would see with each) |
+| Recommendation | the option proposed and the reason |
+| The owner's decision | the option chosen, the date (YYYY-MM-DD) |
+| Carried out by | the pull request |
+```
+
+## Register
+
+### D-001 What the Spectrum curve is
+
+| Field | |
+|---|---|
+| Id | D-001 |
+| Area | Spectrum, S1, S2, S4 |
+| Probe | the nine probes of round 1 (pack `a82756a`); the numbers below are of `s1-levels-2k`, `s2-levels-1k`, `s3-levels-4k`: tones of 3, 10 and 30 deg/s over a floor of 1/3 (deg/s)² spread over half the log rate |
+| The reference tool shows | at its default "medium": a floor of −38.6 / −41.6 / −44.6 dB at 1 / 2 / 4 kHz; the 30 deg/s tone as a bump of 5.7 dB, the 3 deg/s tone as one of 1.7 dB. It computes one Hann-windowed transform of the whole log, `10·log10(2·\|X\|² / (fs·N))`, and smooths the decibel values by a local regression whose window is `L³·log10(points)` for level L = 1 … 5, so 5 … 555 points for a 30 s log at 2 kHz ([spectrum.md](spectrum.md)); the same level is a wider band in hertz for a short log than for a long one. A model built this way is within a pixel of all 45 pictures of round 1, gives the curves of round 2, read from vector copies, to 0.00002 dB, and gave the flown flight of round 3 (the hold-out: four logs, 72 plots) with nothing changed. In this curve noise reads 6.8 dB below its density; a steady tone of 20 deg/s is a bump of under 4 dB, the same tone switched on for half the log a peak of 40 dB |
+| OpenPID shows | a floor of −31.8 / −34.8 / −37.8 dB; the 30 deg/s tone 53.5 dB above it. Welch: 0.25 s segments, the mean of their powers, the window's loss put back, smoothing of the power (`our_spectrum_is_a_power_density` in `crates/openpid-probe`) |
+| The exact value | the floor: `10·log10((0.25 + 1/12) / (fs/2))` = −31.8 / −34.8 / −37.8 dB, the density of the noise. A tone has no density: its height depends on the resolution in any spectrum |
+| Options | **A.** The reference tool's curve by default (one transform, its level, decibel smoothing with its five levels), and OpenPID's density as a second mode. A user sees the same numbers as in the reference tool and its tutorials; narrow lines are hidden unless the mode is switched. **B.** OpenPID's density by default, the reference tool's curve as a second mode. Noise reads 6.8 dB higher than in the reference tool, tones stand out; numbers from tutorials do not carry over unless the mode is switched. **C.** OpenPID's curve only, the offset documented. |
+| Recommendation | A: the epic's aim is that a user who knows the reference tool reads the same numbers. The density stays one switch away because it is the exact quantity, the only one the probes can check to a tenth of a decibel, and the one that shows a steady resonance. The other six probes of round 1 are in and do not change it. They add a caution for either order of the two modes: in the reference tool's curve the height of a peak follows its width, so a fixed resonance is shown weakly and anything that changes during the flight strongly |
+| The owner's decision | **A**, 2026-11-11: the reference tool's curve by default, OpenPID's density as a second mode |
+| Carried out by | #187 (on its own from `master`; it replaces #181, which stood on the branches of the test tools) |
+
+### D-002 What the Step response curve is
+
+| Field | |
+|---|---|
+| Id | D-002 |
+| Area | Step response: the mean curve, its peak, the time to 50 %, the number of windows |
+| Probe | `t1-plants-2k`, `t2-plants-1k`, `t3-plants-4k`, `t9-short-2k` of round 4 (pack `dad54b3`): random stick moves through a pure delay of 10 ms, a first-order plant (20 ms after 5 ms) and a second-order plant (15 Hz, damping 0.4, after 5 ms), whose step responses are known in closed form |
+| The reference tool shows | the true response to a few thousandths: a peak of 0.9998 on the delay and 1.2511 … 1.2525 on the second-order plant at 1, 2 and 4 kHz; the half-way time within 0.08 ms on the two smooth plants; 256 … 259 windows for 30 s ([step.md](step.md)). How it computes them is identified on this round (2026-11-12): windows of 2 s every 0.1 s, the gyro's transform divided by the setpoint's after a Hann window, 200 zeros and a constant of 0.0001, the running sum of the result; a window counts when the stick was 20 deg/s from its centre on average and the response stays between 0.5 and 1.5 after 150 ms. A model built this way gives all 45 mean curves and 5 610 single windows of the round to 0.0000004 |
+| OpenPID shows | the same bias on every log: a peak of 1.06 on the pure delay, 1.29 … 1.30 on the second-order plant; the half-way time 0.5 ms early on the second-order plant and 1 ms late on the first-order one; 207 … 209 windows (`openpid run step`) |
+| The exact value | the delay: no overshoot, a step at 10 ms. The second-order plant: a peak of 1.2538 (`exp(−π·ζ/√(1−ζ²))` over 1), half way at 18.110 ms. The first-order plant: no overshoot, half way at 18.863 ms |
+| Options | **A.** OpenPID computes the response as the reference tool does (identified on round 4, to be confirmed on rounds 5 and 6): the same curve, peak and window count as the reference tool, and on these probes the truth. **B.** OpenPID keeps its own estimator and it is corrected against the closed-form responses (its smoothing of the spectrum and its regularisation are what bias it); numbers stay close to the reference tool's without being the same. **C.** No change; the bias is documented. |
+| Recommendation | A, if the identified method stays as close to the truth on the confirming and the hold-out rounds as it is here: then matching the reference tool and being right are the same change. To be put to the owner when the method is identified |
+| The owner's decision | **A**, 2026-11-12: OpenPID computes the response as the reference tool does. Decided before rounds 5 and 6: what they correct in the rule is corrected in OpenPID with it |
+| Carried out by | #188 (on its own from `master`; it replaces #184), with the Peak of round 5 and the distance between windows of version 0.94 (0.05 s; round 6) |
+
+### D-003 Where the Peak of a step response is read
+
+| Field | |
+|---|---|
+| Id | D-003 |
+| Area | Step response: the Peak plot and its bar |
+| Probe | `u4-slow-2k` of round 5 (pack `407c2cd`): second-order plants of 2.5 Hz and of 4 Hz, damping 0.5, after 5 ms; and the plants of 15 Hz of rounds 4 and 5 at 1, 2 and 4 kHz |
+| The reference tool shows | Peak 0.953 for the plant of 2.5 Hz: the value of its curve just before 150 ms, where it stops looking; the curve it draws goes on to 1.122 at 226 ms. Peak 1.137 for the plant of 4 Hz, which tops before 150 ms. The bar is the spread over the windows of each window's highest value among its first 150 samples, whatever the log rate: 150 ms at 1 kHz, 75 ms at 2 kHz, 37.5 ms at 4 kHz, where it ends before the top of a response that peaks at 40 ms |
+| OpenPID shows | the same, since D-002 (#188), until #193. Version 0.94 of the reference tool reads both as 0.9 did (round 6, at 8 kHz too, where the 150 samples are 19 ms) |
+| The exact value | both plants overshoot to 1.163, at 236 and at 149 ms |
+| Options | **A.** As the reference tool (what OpenPID does now): a craft whose response tops after 150 ms shows a Peak below the overshoot its own curve draws, and the bar covers a stretch that depends on the log rate. **B.** Peak is the highest value of the whole curve (500 ms) and the bar the spread of the windows' highest values over the same stretch: 1.122 for the plant of 2.5 Hz (the method itself reads a slow plant low; the truth is 1.163); the same point as now for every response that tops before 150 ms; the bar differs from the reference tool's at every rate. **C.** The point as the reference tool, the bar over 150 ms instead of 150 samples: the reference tool's Peak, and a bar that means the same at every log rate |
+| Recommendation | B. The number is called Peak and is read as the overshoot; on a slow craft the reference tool's reading is not the overshoot, and its bar is over a stretch nobody chose. The point changes on slow crafts only, where the reference tool's value misleads |
+| The owner's decision | **B**, 2026-11-13: the Peak is the highest value of the whole curve, its bar the spread of the windows' highest values over the same 500 ms |
+| Carried out by | #193 (on top of #188, where the code it changes is) |
+
+### D-004 The performance numbers of a step response
+
+| Field | |
+|---|---|
+| Id | D-004 |
+| Area | Step response: rise time, bandwidth, sensitivity peak and its frequency, phase margin, crossover frequency (new in version 0.94 of the reference tool; the owner decided on 2026-11-13 that OpenPID shows them) |
+| Probe | the eight logs of round 7 (pack `7066f96`) and the five of round 6: plants with analytic answers |
+| The reference tool shows | six numbers per axis, read off the mean curve after it is brought to a gain of 1 (the rise time excepted). Its arithmetic for five of them is not found: some 2 000 plain definitions come near and none is exact. It reads the phase margin at a grid point of 0.977 Hz, so the same plant shows 32.5° … 35.4° at different log rates |
+| OpenPID shows | until #194 the rise time only (10 % → 90 % of where the mean curve settles) |
+| The exact value | known for every plant of round 7. The tool is within 0.10 Hz (bandwidth), 0.06 dB (sensitivity), 1.0° (margin) and 0.19 Hz (crossover) of it in the median, and up to 1.0 Hz, 0.27 dB, 9.2° and 0.57 Hz off on slow or sharp responses |
+| Options | **A.** A plain, documented computation on the same mean curve: differences of the curve over its last value, the tool's frequency grid, bandwidth at −3 dB, the highest `\|1 − T\|`, crossover and margin of `T / (1 − T)` with the phase read between grid points. Within 0.13 Hz, 0.03 dB, 0.03 Hz and 1.4° of the tool in the median, and as near the truth as the tool or nearer. A user comparing the two programs sees the same numbers to the first decimal on an ordinary craft. **B.** The same, but the phase margin read at the grid point as the tool reads it: within 0.3° of the tool in the median, and its jump of up to 3° between log rates with it. **C.** Wait until the tool's arithmetic is found exactly (more rounds, with no promise that it can be), and show nothing until then |
+| Recommendation | A. The numbers are engineering estimates with a spread larger than the difference between the two programs; A has a definition one can write down and test against the analytic plants, and no artefact of the grid. If the tool's arithmetic is found later, the difference is a small change |
+| The owner's decision | **A**, 2026-11-13: the plain, documented computation, with the phase margin read between grid points |
+| Carried out by | #194 (on top of #188) |
+
+### D-005 How the map of frequency against throttle is computed
+
+| Field | |
+|---|---|
+| Id | D-005 |
+| Area | Freq × throttle, T1–T4: the cells of the map, its smoothing, its colour scale, the numbers printed on it |
+| Probe | the eight logs of round 8 (pack `7038aac`): a throttle that climbs stairs, rises evenly, is held and climbs stairs a few tenths of a percent apart, with tones and noise of known size on both gyro channels |
+| The reference tool shows | a map whose rule was found and holds on 156 copied maps to one colour step ([throttle.md](throttle.md)): segments of 0.3 s that overlap; a tone of amplitude `A` reads `A / 4`; 100 columns, each the mean of the segments within ±1 % of throttle; a Gaussian over 15 × 3 cells by default, with five levels to choose from; a second map in decibels; "mean=" and "peak=" printed on every map; the colour scale 0 … 0.5 unless typed. For a tone of 10 deg/s at a held throttle: a peak of 0.35 in a spot 16 columns wide; white noise of 5 deg/s RMS: a mean of 0.064 |
+| OpenPID shows | another quantity on another grid: segments of 0.2 s side by side; a tone reads `A`; 101 columns, each the mean of the segments within ±6 %; a fixed box of 9 columns; no decibels, no printed numbers; the colour scale from the map itself. The same tone: a peak of 4.03 in a spot 21 columns wide; the same noise: about 0.5 |
+| The exact value | the tone has an amplitude of 10 deg/s at one throttle and one frequency; neither map shows that number, and neither claims to: both smooth it over cells. The reference tool's is a quarter of the amplitude before smoothing because nothing makes up for its window |
+| Options | **A.** As the reference tool, all of it: its segments, columns, value (`A / 4`), the five smoothing levels with "medium" as the default, the map in decibels as a second view, mean and peak printed on the map, and its colour scale of 0 … 0.5 as the default with OpenPID's automatic scale as a choice. A user sees the picture and the numbers the reference tool shows, and can compare a log in both; the user guide says that a cell is not a tone's amplitude. **B.** Keep OpenPID's map as it is and say in the user guide how it differs. Nothing to compare with the reference tool: neither the picture nor a number. **C.** The reference tool's grid and smoothing, but a cell multiplied by 4 so that a tone on a bin reads its amplitude before smoothing; the decibel view and the printed numbers follow. The picture is the reference tool's with a colour scale four times as long; its printed mean and peak are four times the tool's |
+| Recommendation | A. The printed mean and peak are what people quote when they compare noise between flights and between crafts, and they are only worth quoting if they are the tool's numbers; after the smoothing a cell is not an amplitude in either unit, so the factor of C buys little. Two parts of the rule are not settled and need round 9 before the code: the distance between segments in logs of other lengths, and which throttle the tool reads. The RPM lines and the notch bands OpenPID draws over the map (T5, T6) stay |
+| The owner's decision | **A**, 2026-11-14: as the reference tool, all of it |
+| Carried out by | #195 (on its own from `master`). Round 9 settled which throttle is read (not the motors) and gave the distance between segments for seven lengths of stretch; round 10 put the two places where it changes inside (19, 21.25] and (57.25, 64] s, and 20 and 60 s are the round numbers there |
+
+### D-006 How the map of frequency against time is computed
+
+| Field | |
+|---|---|
+| Id | D-006 |
+| Area | Freq × time, F1 and F2: the cells of the map, its smoothing, its colour scale |
+| Probe | the four logs of round 10 (pack `a022b4d`): tones that come and go, a tone that climbs, a tone of 300 Hz at 1 … 40 deg/s, close pairs of tones and noise of known density, on both gyro channels, at 2 and 4 kHz and in a flight of 16.5 s |
+| The reference tool shows | a map whose rule was found and holds on 30 copied maps, a million cells of them to the colour step ([time.md](time.md)): segments of 0.3 s every 0.15 s, without the first and the last second of the log; a power density in decibels, in which a tone of amplitude `A` reads `20·log10(A) − 14.3` dB; along the frequency a line through five rows, fitted to the decibels, after which the tone reads `20·log10(A) − 17.7` dB; two lists of four smoothing levels, one for each axis; colours from −30 to 10 dB unless typed. The tone of 300 Hz at 10 deg/s: 2.3 dB |
+| OpenPID shows | another quantity on another grid: segments of 0.2 s every 0.05 s over the whole log; an amplitude shown as `20·log10(A)`; no smoothing; rows to 1 000 Hz; the colour range from the map itself (its 30th and 99.5th percentile) unless typed. The same tone: 20.0 dB |
+| The exact value | the tone has an amplitude of 10 deg/s, which is 20 dB re 1 deg/s: OpenPID's number. The reference tool's 2.3 dB is not wrong either: it is a density per Hz, lowered by its window and its smoothing, and it does not claim to be the amplitude |
+| Options | **A.** As the reference tool: its segments, its decibels, its smoothing along the frequency with the four levels of each list ("low" as the default), its colour scale of −30 … 10 dB as the default with OpenPID's automatic range as a choice. A user sees the picture and the levels the reference tool shows and can compare a log in both; the user guide says that a cell is a density, not an amplitude. Not copied: the reference tool draws its second column twice, which puts its first two columns 0.15 s early; OpenPID keeps every column at the middle of its segment, where the tool has all the others. **B.** Keep OpenPID's map and say in the user guide how it differs. Nothing to compare with the reference tool: the levels are 17.7 dB apart on a tone and the pictures differ in grain. **C.** The reference tool's segments and smoothing, in OpenPID's unit (14.3 dB more, so that a tone on a bin reads its amplitude before smoothing). The picture is the reference tool's with a colour scale moved by 14.3 dB; no level is the tool's |
+| Recommendation | A, as for the throttle map (D-005): the levels people quote from this window, and the −30 … 10 dB scale they know it by, are only worth having if they are the tool's. The spectrum beside each row and the throttle strip (F4, F5) stay, in the new decibels. Before the code a round has to read the other three levels of the two smoothing lists and the segments in logs of other lengths and rates (round 11 read the lists: the one for the frequency is the line through 5, 11 or 21 rows or none, the one for the time sets the distance between segments to 0.3, 0.15, 0.06 or 0.03 s) |
+| The owner's decision | **A**, 2026-11-14: as the reference tool, every column at the middle of its segment |
+| Carried out by | #196 (on its own from `master`). Its map is the reference tool's, cell by cell, on a log of round 11 at nine settings of the two lists (2.9 million cells, each the very colour step), but for the reference tool's first columns, which are not copied. The second run of round 11 saw the same rule on stretches of 43 and 82 s and at 1 and 8 kHz |
+
+### D-007 At which rate the filter curves are computed, and which delays are printed
+
+| Field | |
+|---|---|
+| Id | D-007 |
+| Area | Filter Sim, X1–X4 and X6: the magnitude, phase and delay curves of the filter chain and the delay printed with them |
+| Probe | the filter simulator of the reference tool with filters typed in (rounds 13 and 14, packs `959ad7c` and `b7990bb`): its copied curves and the delays it prints, nine settings of them written down before the run |
+| The reference tool shows | every filter computed at the loop rate chosen in its list (8 kHz as it comes up), with the same formulas OpenPID has ([filters.md](filters.md)); per filter its phase delay at 1 Hz, per column their sum (an RPM notch once per motor) and the total: for two first-order low-passes at 250 and 500 Hz, RPM notches from 100 Hz on four motors and a notch at 500 Hz, 0.955 + 2.393 = 3.348 ms at 8 kHz |
+| OpenPID shows | the same filters computed at the rate of the log, whatever the loop rate of the craft, and one figure, "delay at 100 Hz", of the whole chain. For a log at 2 kHz of a craft that filters at 8 kHz, the low-pass at 250 Hz reads 0.28 of magnitude at 1 000 Hz in place of 0.23, and the notch at 500 Hz delays by 0.050 ms in place of 0.063; the reference tool itself, set to 2 kHz, prints 3.276 ms for the chain above |
+| The exact value | the craft's filters run at its loop rate, which the log's headers give; a curve computed at the rate of the log is that of another filter above a few hundred Hz. Which single delay to print has no exact value: a display choice |
+| Options | **A.** The curves of the chain (magnitude, phase, delay) computed at the craft's loop rate from the headers, and the delays printed as the reference tool prints them: per part at the low end of the curve, the sum of the low-passes, of the notches and in total; "delay at 100 Hz" stays beside them. The simulated gyro, which runs on the samples of the log, stays at the rate of the log, and the tab says so. A user reads the numbers the reference tool gives for the same filters. **B.** Keep OpenPID as it is and say in the user guide that its curves are those of the filters at the rate of the log. **C.** Only the rate: the curves at the loop rate, OpenPID's own "delay at 100 Hz" as the one printed figure |
+| Recommendation | A. The rate is a matter of being right about the craft's filters, whatever the reference tool does; the printed sums cost little and are what a user would compare. The two things the reference tool has and OpenPID does not need — a filter drawn alone with its step response, and the chirp — are left out |
+| The owner's decision | **A**, 2026-11-16 |
+| Carried out by | #197 (on its own from `master`): each part of the chain at the rate of the loop it runs in (Betaflight 4.2 and later: the second low-pass at the gyro rate, the others at the PID loop rate; elsewhere all at the gyro rate, which is taken to be so), the delays at 1 Hz per part, summed and in total; the simulated gyro stays at the rate of the log |
+
+### D-008 What a motor's percent is
+
+| Field | |
+|---|---|
+| Id | D-008 |
+| Area | Log viewer, L6: the motor lines and the motors at the cursor |
+| Probe | `q1-values-2k` of round 15 (pack `fdfb71e`): motors 1 to 4 held at 158, 630, 1102 and 2047, with the header `motorOutput:158,2047` |
+| The reference tool shows | 7.88, 31.48 and 55.08 % on the copied lines and "M1: 8%", "M2: 32%", "M3: 55%", "M4: 102%" at the cursor: the logged number over 20. The fourth motor is above its plot, which ends at 100 % ([log-viewer.md](log-viewer.md)) |
+| OpenPID shows | 0, 25.0, 50.0 and 100 %: the share of the range between the two numbers of `motorOutput` (`openpid decode --scaled`) |
+| The exact value | none: a choice of what 0 % and 100 % mean. The headers say that this craft's motors go from 158 to 2047; a digital motor command as such runs from 48 to 2047, in which 158 is 5.5 % |
+| Options | **A.** Keep OpenPID's: 0 % is the lowest output of the armed craft and 100 % the highest, by its headers; a motor at its limit reads 100. The numbers are not the reference tool's (about 8 % apart at idle, 2 % at full). **B.** As the reference tool: the logged number over 20. A user reads the same percent in both programs; a motor at full reads 102 % and an idling one about 8 %. The reference tool's rule for outputs that are not digital (1000 … 2000) is not known and would need a probe first. **C.** The share of the digital command (48 … 2047): idle reads 5.5 %, full 100 %; neither program's number today |
+| Recommendation | A. The motors row is read for "is a motor at its limit" and "how far apart are the motors", and both read best on the craft's own range; the reference tool's number passes 100 % |
+| The owner's decision | **A**, 2026-11-16: OpenPID's percent stays |
+| Carried out by | nothing to change |
+
+### D-009 The sign of the PID error
+
+| Field | |
+|---|---|
+| Id | D-009 |
+| Area | Log viewer, L5 (and the "PID error" quantity of the Spectrum, S8, where a sign does not show) |
+| Probe | `q1-values-2k` of round 15: a gyro of 100 deg/s under a setpoint of 0, 100, 200 and 400 deg/s on roll; 200 under 60 on pitch; −150 under −40 on yaw |
+| The reference tool shows | 100, 0, −100, −300 on roll, 140 on pitch, −110 on yaw: the gyro less the setpoint |
+| OpenPID shows | −100, 0, 100, 300; −140; 110: the setpoint less the gyro |
+| The exact value | the firmware's own error is the setpoint less the gyro: its P term is that error times the gain, so a craft that turns slower than asked has a positive error and a positive P |
+| Options | **A.** Keep OpenPID's sign, the firmware's: the error line and the P term point the same way. **B.** As the reference tool: the line is a mirror image of today's, and of the P term |
+| Recommendation | A. The line is read next to the P term, which is this error times a gain; the reference tool's sign puts the two on opposite sides of zero |
+| The owner's decision | **A**, 2026-11-16, after seeing both signs drawn on a stick move of a real log (there the P term is 1.45 times the setpoint less the gyro): OpenPID's sign stays |
+| Carried out by | nothing to change |
+
+### D-010 The unit of the motor speed
+
+| Field | |
+|---|---|
+| Id | D-010 |
+| Area | Log viewer, L8: the motor speed lines |
+| Probe | `q1-values-2k` of round 15: motors turning at 6 000, 12 000, 18 000 and 24 000 rpm (`eRPM` 420 … 1680, 14 poles) |
+| The reference tool shows | "RPS (Hz)": the first motor at 100.0 on an axis of 0 … 150 that it shares with the motors' percent; the other three (200, 300, 400) are off that plot |
+| OpenPID shows | 6 000, 12 000, 18 000 and 24 000 rpm, in a row of their own |
+| The exact value | none: a display choice. The two are the same speed, 60 apart |
+| Options | **A.** Keep rpm. **B.** Revolutions per second (Hz), as the reference tool: the number is the frequency at which that motor's noise stands in the spectrum and in the two maps, and the one the RPM filter follows. The row of its own stays, so nothing is cut off. **C.** A unit to choose in the settings, as for the rate (deg/s or rad/s) |
+| Recommendation | B. In a tuning tool the motor speed is looked up as a frequency; rpm has to be divided by 60 every time |
+| The owner's decision | **B**, 2026-11-16: revolutions per second |
+| Carried out by | #198 (on its own from `master`): the lines of the motor speed row and their values at the cursor in Hz; the channel itself stays in rpm |
+
+### D-011 What of the reference tool's main window OpenPID adds
+
+| Field | |
+|---|---|
+| Id | D-011 |
+| Area | Log viewer, L4 and L11: what the reference tool's main window has and OpenPID's Log viewer has not |
+| Probe | `v3-samp-1k` and `v1-deriv-2k` of round 16 (pack `b8d035e`): pulses of 1, 5 and 50 samples, a step under noise, triangle and tone gyros |
+| The reference tool shows | four things OpenPID does not have ([log-viewer.md](log-viewer.md)): **line smoothing**, off or a local quadratic regression with tricube weights over 11, 21, 41 or 81 samples, found exactly; **D-term(pf)**, minus the change of the filtered gyro from one sample to the next times a factor that was not found (198 on roll, 40 on pitch in one log); **"Period"**, the time between two clicked moments and its frequency; **"Markup"**, a line drawn between two clicks |
+| OpenPID shows | the lines as logged, no line computed from the gyro, and a cursor whose time and values are read out on every row |
+| The exact value | none: a choice of what the Log viewer offers |
+| Options | **A.** Add nothing; the Log viewer stays as it is. **B.** Add the line smoothing, as the reference tool computes it (a list with its five levels, off by default): it is known exactly and makes a noisy gyro readable. **C.** B, and a period measure: the time between the cursor and a second point and its frequency. D-term(pf) is not offered in any option: its scale is not known, and OpenPID shows the logged D term |
+| Recommendation | B. The smoothing is the one of the four that is known to the last digit and that changes how a trace reads; a period can already be read from the cursor's time, and a drawn line adds nothing to the data |
+| The owner's decision | **C**, 2026-11-17: the line smoothing and a period measure |
+| Carried out by | #199 (on its own from `master`): the line smoothing as the reference tool computes it, its span counted in samples (seen at 1 kHz only), and a second mark beside the cursor with the time between them and its frequency |
+
+### D-012 The stretch of a log the analyses take by default
+
+| Field | |
+|---|---|
+| Id | D-012 |
+| Area | Common to every area, C3: the stretch the spectrum curve, both maps and the step response take when the user has chosen none |
+| Probe | round 17 (pack `fdb8812`, OpenPID's results from `verify-7f192b3`): the spectrum at 1 and 4 kHz, both maps on 47 s and on 11 to 13 s; rounds 1–16 for the reference tool's rule |
+| The reference tool shows | always the log without its first and last second: from sample `fs + 2` (one sample later on some logs), `fs·(T − 2) − 1` samples; it does not draw the log's first sample. A log of 10 s or less is taken whole (the switch lies in (10, 11] s) |
+| OpenPID shows | its automatic stretch: from one second after take-off to one second before landing, by the throttle and the motor speeds, so on a probe from sample `fs`, `fs·(T − 2)` samples. On a flown log it also leaves out the time on the ground; on a log under 11 s it trims too. The difference on round 17: up to 0.38 dB on the spectrum curve below 100 Hz, about 1 dB on noise over the full range, 1 … 4 % of the pixels of a map, up to 3.7 % of a printed peak of a short log. The step response is not affected. On the reference tool's stretch every copy agrees to its resolution |
+| The exact value | none: a choice of which part of a log is analysed |
+| Options | **A.** Keep the automatic stretch as the default, and add the reference tool's stretch as a choice beside it ("as the reference tool": from sample `fs + 2`, `fs·(T − 2) − 1` samples, a log of 10 s or less whole), so that a log can be put side by side with the reference tool exactly. **B.** The reference tool's stretch as the default, the automatic one as a choice: every number is the reference tool's out of the box, the time on the ground included. **C.** Keep it as it is and say so in the user guide |
+| Recommendation | A. The time on the ground is not the flight and does not belong in a spectrum or a map; the exact stretch as a choice makes the comparison with the reference tool (#176) exact without making OpenPID analyse the ground by default |
+| The owner's decision | **A** (2026-11-18): the automatic trim stays the default; the reference tool's stretch is a choice beside it |
+| Carried out by | #200: "Without the first and last second" in the Auto menu and `--epoch ends` (`epoch::cut_ends`); a log of 10 s or less whole (round 18 placed the switch in (10, 10.1] s) |
+
+### D-013 Samples whose time stamps are not the header's rate
+
+| Field | |
+|---|---|
+| Id | D-013 |
+| Area | Common to every area, C1 and C2: what an analysis takes when a log's time stamps do not run at the rate its header states, or frames are missing |
+| Probe | round 18 (pack `3b4051b`, OpenPID's results from `verify-524b754`): `b2-clk-2k`, a header of 2 kHz with time stamps 510 µs apart; `b4-gap-2k`, 5 % of its frames missing in pauses of 32 ms. Both with tones of known frequency |
+| The reference tool shows | the samples as they come, one after the other, at the header's rate: the tones of `b2` at their frequencies by the header (140.2 and 329.1 Hz on roll), the samples of `b4` joined end to end over the gaps (no filling); the level computed with the header's rate. The stretch is chosen by the time stamps (`b2`: 44 118 samples from sample 1 962; `b4`: 34 207 samples). Every copy agrees with that reading to its resolution (median 0.0032 dB) |
+| OpenPID shows | the samples brought onto a uniform grid at the header's rate by their time stamps, a gap filled by a straight line (C2): the tones of `b2` 2 % lower (at the frequencies their time stamps give), the gaps of `b4` bridged. The difference: 1.9 dB median over the full range on `b2`, 0.5 … 7 dB on `b4` |
+| The exact value | the probe's tones lie where their time stamps put them; on a real craft the time stamps are the flight controller's clock, the header's rate is the loop it was set to run |
+| Options | **A.** As the reference tool: samples by index at the header's rate, gaps joined, the stretch by the time stamps. Every number the reference tool's on such logs; a frequency off by as much as the loop runs off its setting, a phase jump at every gap. **B.** Keep OpenPID's grid by the time stamps and say so in the user guide: the frequencies where the clock puts them, a gap bridged. **C.** B, and a warning in the log check (U1) when a log's time stamps run more than 1 % off its header's rate or more than 1 % of its frames are missing, so that a user comparing the two programs knows why they differ |
+| Recommendation | C. The time stamps are the craft's own clock, and a spectrum with phase jumps at every gap is not the flight's; the warning tells the user where the two programs part. Logs that run off their rate or drop frames are rare on a healthy craft, and the round's other logs, whose clocks run true, agree |
+| The owner's decision | **C** (2026-11-27): OpenPID keeps its grid by the time stamps; the log check warns and the user guide says why |
+| Carried out by | #203: the `clock` check (a warning past 1 %); on the logs of `tests/logs` it warns on four flown logs (−1.3 … +1.9 %, 1.5 and 6.2 % of the frames missing), so such logs are less rare than the recommendation assumed |
+
+### D-014 The map against time of a short stretch
+
+| Field | |
+|---|---|
+| Id | D-014 |
+| Area | Freq × time (F1): a map of a stretch under about 9 s |
+| Probe | rounds 11, 16 and 18: logs of 8, 10, 10.1, 10.25, 10.5, 10.75 and 14 s |
+| The reference tool shows | no map for a log of 8 s (whole) and for logs of 10.1 to 10.75 s (trimmed to 8.1 … 8.75 s): an empty window, nothing to copy. A map for the log of 10 s (taken whole) and of 14 s (12 s) |
+| OpenPID shows | a map of any stretch that holds a segment |
+| The exact value | none: whether a map of a few seconds is worth showing |
+| Options | **A.** As the reference tool: no map below a stretch of 9 s (the switch lies between 8.75 and 10 s), with a line that says why. **B.** Keep OpenPID's map of any stretch and say in the user guide that the reference tool shows none below about 9 s |
+| Recommendation | B. A short log still has something to show, and OpenPID marks its stretch on the time axis; the two programs differ only where the reference tool shows nothing |
+| The owner's decision | **B** (2026-11-27): the map of any stretch stays |
+| Carried out by | #203 (the user guide) |
+
+### D-015 Which edition of the reference tool OpenPID follows
+
+| Field | |
+|---|---|
+| Id | D-015 |
+| Area | Every area: the rules the decisions D-001 to D-007 and D-012 took from version 0.94 |
+| Probe | round W1 (2026-11-27): four logs of round 17 in the web edition 1.0 ([web.md](web.md)) |
+| The reference tool shows | the web edition 1.0 computes the spectrum, both maps and the stretch differently from 0.94 (zero-padding to a power of two, moving averages instead of the local line, a centred column of 3 % on the throttle map, 0.03 s on the time map, the stretch `fs … fs·(T − 1)`), prints the filter delays at 25 Hz, and keeps other step response windows |
+| OpenPID shows | the rules of 0.94, as decided: 0.23 … 0.35 dB off the web edition in the median of a spectrum, 1.5 … 2 % on the throttle map's numbers |
+| The exact value | none: which edition users compare with |
+| Options | **A.** Follow the web edition 1.0: the decided rules are moved to it (spectrum, both maps, the filter simulator's delays, the stretch of "Without the first and last second"); the step response once a round has found its windows. OpenPID's own decisions stay (D-008, D-009, the automatic stretch of D-012, D-013, D-014). **B.** Stay with 0.94 and describe the web edition's differences. **C.** Both, with a choice of edition |
+| Recommendation | A: the web edition is the one in use, its differences are small and known exactly, and its zero-padding removes the scalloping of a tone between bins |
+| The owner's decision | **A** (2026-11-27) |
+| Carried out by | Every part against the web edition's own numbers on the probe logs of rounds W1 and W2: the spectrum curve #187 (132 curves to 2.4·10⁻⁶ dB); the step response #188, merged into #193 and #194 (every window count of 24 axes, the curves to 1.6·10⁻⁶; #193 keeps its own Peak, D-003 = B); the map against time #196 (62 maps to 0.0005 dB); the map against throttle #195 (105 maps to 6.3·10⁻⁶, 210 printed numbers to their digits); the filter simulator #197 (97 printed delays and lags to their digits; the simulated gyro keeps the firmware's per-harmonic RPM fade, the curves take the web edition's); "Without the first and last second" #200 (samples `fs … n − fs`, no short-log rule); the main window's line smoothing #199 (every level to 1.5·10⁻⁵). Since W2 the web edition agrees with OpenPID's own choices of D-009 (the sign of PID error) and D-014 (a map of a short stretch) |
+
+The open points at the end of [INVENTORY.md](INVENTORY.md) concern OpenPID's
+own mathematics. Whether one of them becomes an entry here is the owner's
+call.
