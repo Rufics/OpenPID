@@ -1529,6 +1529,12 @@ pub fn compare(round: u32, dir: &Path, ours: Option<&Path>) -> Result<Report, St
             catalogue::ROUNDS
         )
     })?;
+    if !crate::capture::planned(round) {
+        return Err(format!(
+            "round {round} is run by hand on the web edition of the reference tool: it has no \
+             capture plan, and no copies to compare"
+        ));
+    }
     let plan = crate::capture::plan(round, &probes);
     let copies = plan.copies();
     let (file, source) = results_of(ours)?;

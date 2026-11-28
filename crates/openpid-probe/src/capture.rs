@@ -2767,6 +2767,18 @@ fn verification(steps: &mut Vec<Step>, round: u32, probes: &[Probe]) {
 /// Its plan is made for its own logs.
 pub const CONFIRMATION: u32 = 18;
 
+/// The first round run by hand: from round 19 on (W3) the rounds are run
+/// on the web edition 1.0 of the reference tool, which the owner drives
+/// in the browser, and the pack holds no capture plan, script or note (the
+/// script clicks where version 0.94 has its buttons and fits no other).
+pub const BY_HAND_FROM: u32 = 19;
+
+/// Whether the pack of `round` holds a capture plan: every round before
+/// [`BY_HAND_FROM`].
+pub fn planned(round: u32) -> bool {
+    round < BY_HAND_FROM
+}
+
 /// The logs of round [`CONFIRMATION`] each part of its plan is for, by
 /// name: the spectrum window as it comes up; the flight of both maps; the
 /// step response window as it comes up; the main window; the short
@@ -5106,7 +5118,7 @@ mod tests {
     fn the_names_of_every_round_fit_the_open_dialog() {
         // the script refuses names that make more than 250 characters: the
         // name field of the dialog holds about 259
-        for round in catalogue::ROUNDS {
+        for round in catalogue::ROUNDS.iter().filter(|r| planned(**r)) {
             let plan = plan(*round, &catalogue::round(*round).unwrap_or_default());
             let paths = plan.steps[1].paths.clone().unwrap_or_default();
             let typed: Vec<String> = paths.iter().map(|p| format!("\"{p}\"")).collect();
@@ -5206,7 +5218,7 @@ mod tests {
 
     #[test]
     fn every_position_of_every_round_lies_inside_its_frame() {
-        for round in catalogue::ROUNDS {
+        for round in catalogue::ROUNDS.iter().filter(|r| planned(**r)) {
             let plan = plan(*round, &catalogue::round(*round).unwrap_or_default());
             let mut positions = 0;
             for step in &plan.steps {

@@ -21,10 +21,17 @@ them. It holds:
 | File | What it is |
 |---|---|
 | `*.bbl` | the probe logs, Betaflight 2025.12 |
-| `manifest.json` | what is true about each log (with its size and FNV-1a hash); from round 17 on also what is true about the channels beyond the gyro a log carries (`channels`), the three answers of the stick's path (`inputs` of an axis) and the filters typed into the filter simulator (`filters`); from round 18 on what a log does beyond what the craft's logs do (`flight.quirks`: header lines, a clock that runs off the header's rate, frames left out) |
+| `manifest.json` | what is true about each log (with its size and FNV-1a hash); from round 17 on also what is true about the channels beyond the gyro a log carries (`channels`), the three answers of the stick's path (`inputs` of an axis) and the filters typed into the filter simulator (`filters`); from round 18 on what a log does beyond what the craft's logs do (`flight.quirks`: header lines, a clock that runs off the header's rate, frames left out); from round 19 on the filter between the two gyro channels of an axis (`filter`: its rule and delay, and the lag or the low-pass factor measured on the written log), the response of a plant at the moment the stick moves (`response_at_start`), how a term follows the filtered gyro (`follows_gyro` of a channel: the factor and the delay, and both measured on the written log) and the speed of every motor (`motors`: rpm, harmonics, the logged eRPM and the speed it stands for) |
 | `ours.json` | what OpenPID computes for the same logs: the spectra of every axis (up to round 16 the power density, on the log without its first and last second). From round 17 on, on the stretch the app takes as a log comes up (its automatic trim) and at the app's own default settings: the spectrum the Spectrum tab draws (the reference tool's curve once decision D-001 is in), for the logs of the spectrum window only, and for a log of its list of channels the spectra of those channels; the step response of every log of that window |
 | `predictions.json` | where a model exists, what it expects the reference tool to show, written before the run |
-| `steps.json`, `capture.ps1`, `run.cmd`, `README.txt` | the capture script and its steps |
+| `steps.json`, `capture.ps1`, `run.cmd`, `README.txt` | the capture script and its steps; not in a round run by hand |
+
+From round 19 on (W3 of [web.md](web.md)) a round is run on the web
+edition 1.0 of the reference tool, which the owner drives by hand in the
+browser: its pack holds no capture plan, script or note (the script clicks
+where version 0.94 has its buttons), and only the logs and `manifest.json`
+matter. `ours.json` and `predictions.json` are still written; `compare`
+refuses such a round, which has no copies of a plan.
 
 Zip the folder and record the commit in the ledger of
 [ROUNDS.md](ROUNDS.md) before the pack leaves.

@@ -389,7 +389,7 @@ fn an_unknown_round_is_refused() {
     assert_eq!(
         catalogue::ROUNDS,
         [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
         ]
     );
 }
@@ -1669,5 +1669,108 @@ fn the_pack_of_round_18_says_what_its_logs_do_and_predicts_every_window_length()
             Some(bytes.len() as u64),
             "{name}"
         );
+    }
+}
+
+#[test]
+fn the_pack_of_round_19_is_logs_and_a_manifest_that_says_what_they_hold() {
+    let pack = pack::build(19, "test").unwrap();
+    assert!(pack.plan.is_none());
+    let files = pack.files();
+    let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
+    // no capture plan, script or note: the round is run by hand
+    assert_eq!(
+        names,
+        [
+            "f1-fdelay-2k.bbl",
+            "k1-dterm-2k.bbl",
+            "m1-mnoise-2k.bbl",
+            "n1-len104-2k.bbl",
+            "r1-mstart-2k.bbl",
+            "t3-thr61-1k.bbl",
+            "t4-thr61-8k.bbl",
+            "manifest.json",
+            "ours.json",
+            "predictions.json",
+        ]
+    );
+    let file = |name: &str| &files.iter().find(|(n, _)| n == name).unwrap().1;
+    let text = String::from_utf8_lossy(file("manifest.json")).into_owned();
+    assert!(!text.contains("NaN"));
+    let manifest: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(manifest["round"], 19);
+    let probes = manifest["probes"].as_array().unwrap();
+    let probe = |id: &str| probes.iter().find(|p| p["id"] == id).unwrap().clone();
+    let number = |v: &serde_json::Value| v.as_f64().unwrap();
+    // every log as the manifest says, the largest under 25 MB
+    for (name, bytes) in &pack.logs {
+        let id = name.trim_end_matches(".bbl");
+        assert_eq!(probe(id)["bytes"].as_u64(), Some(bytes.len() as u64));
+        assert!(bytes.len() < 25_000_000, "{name}: {}", bytes.len());
+    }
+    assert_eq!(probe("n1-len104-2k")["samples"], 20_800);
+    assert_eq!(probe("t4-thr61-8k")["samples"], 504_000);
+    // the motors: their speeds as the logged eRPM says them
+    let motors = probe("m1-mnoise-2k")["motors"].as_array().unwrap().clone();
+    let speeds: Vec<f64> = motors.iter().map(|m| number(&m["logged_hz"])).collect();
+    assert_eq!(speeds, catalogue::MOTOR_HZ);
+    assert_eq!(
+        motors[2]["harmonics_hz"],
+        serde_json::json!([230.0, 460.0, 690.0])
+    );
+    // the gyro of the motor noise: its floor and its tone
+    let roll = &probe("m1-mnoise-2k")["axes"][0]["filtered"];
+    assert_eq!(number(&roll["noise_density"]), 0.004);
+    let tone = &roll["tones"][0];
+    assert_eq!(
+        (number(&tone["hz"]), number(&tone["amplitude"])),
+        (237.0, 20.0)
+    );
+    assert!((number(&tone["logged_amplitude"]) - 20.0).abs() < 0.06);
+    // the filters, measured a second way on the written log
+    let filter = |axis: usize| probe("f1-fdelay-2k")["axes"][axis]["filter"].clone();
+    assert_eq!(filter(0)["delay_samples"], 5.0);
+    assert_eq!(filter(0)["delay_ms"], 2.5);
+    assert_eq!(filter(0)["logged_lag_samples"], 5);
+    assert_eq!(filter(1)["gain"], 0.239_057);
+    assert!((number(&filter(1)["logged_gain"]) - 0.239_057).abs() < 0.001);
+    assert_eq!(filter(2)["delay_samples"], 0.0);
+    assert_eq!(filter(2)["logged_lag_samples"], 0);
+    // the D terms that follow the gyro: the factor and the delay asked
+    // for, and as the written log has them
+    for (id, field, gain, delay) in [
+        ("f1-fdelay-2k", "axisD[0]", 20.0, 4),
+        ("f1-fdelay-2k", "axisD[1]", 20.0, 4),
+        ("k1-dterm-2k", "axisD[0]", 10.0, 0),
+        ("k1-dterm-2k", "axisD[1]", 25.0, 0),
+    ] {
+        let channels = probe(id)["channels"].as_array().unwrap().clone();
+        let entry = channels.iter().find(|c| c["field"] == field).unwrap();
+        let follows = &entry["follows_gyro"];
+        assert_eq!(number(&follows["gain"]), gain, "{id} {field}");
+        assert_eq!(follows["delay_samples"], delay, "{id} {field}");
+        assert_eq!(number(&follows["logged_gain"]), gain, "{id} {field}");
+        assert_eq!(follows["logged_delay_samples"], delay, "{id} {field}");
+    }
+    // the response of each plant at the start of a move
+    let starts: Vec<f64> = probe("r1-mstart-2k")["axes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| number(&a["response_at_start"]))
+        .collect();
+    assert_eq!(starts, [0.139_292, 0.0, 0.5]);
+    // what the manifests of the rounds before say is as it was
+    let earlier = round_1().files();
+    let (_, then) = earlier.iter().find(|(n, _)| n == "manifest.json").unwrap();
+    let then = String::from_utf8_lossy(then).into_owned();
+    for new in [
+        "\"filter\":",
+        "\"follows_gyro\"",
+        "\"motors\"",
+        "\"response_at_start\"",
+    ] {
+        assert!(!then.contains(new), "{new}");
+        assert!(text.contains(new), "{new}");
     }
 }

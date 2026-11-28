@@ -182,6 +182,19 @@ pub enum Wave {
         /// The factor on the size of the move.
         gain: f64,
     },
+    /// Minus `gain` times the change of the filtered gyro of the axis the
+    /// wave belongs to from one sample to the next, `delay` samples later:
+    /// `−gain·(g[n − delay] − g[n − delay − 1])`, nothing where that
+    /// reaches before the first sample. The gyro is taken as the log holds
+    /// it (whole deg/s), so a whole `gain` gives a term the log holds
+    /// exactly: a D term without its filters (round 19). Nothing on a
+    /// channel of no axis or on the setpoint, which the gyro follows.
+    GyroChange {
+        /// The factor.
+        gain: f64,
+        /// How many samples later.
+        delay: u32,
+    },
 }
 
 impl Wave {
@@ -284,6 +297,7 @@ impl Wave {
             Wave::Triangle { from, to, period_s } => triangle(n, period_s * fs, *from, *to),
             Wave::Echo { delay_ms, scale } => echo(timeline, delay_ms / 1000.0, *scale),
             Wave::Kicks { ms, gain } => kicks(timeline, ms / 1000.0, *gain),
+            Wave::GyroChange { gain, delay } => gyro_change(timeline.gyro, n, *gain, *delay),
             Wave::Pulse {
                 at_s,
                 samples,
@@ -342,6 +356,39 @@ fn kicks(timeline: &Timeline<'_>, width_s: f64, gain: f64) -> Vec<f64> {
         level = *to;
     }
     out
+}
+
+/// `n` samples of minus `gain` times the change of `gyro` from one sample
+/// to the next, `delay` samples later: see [`Wave::GyroChange`]. Zero
+/// where the change reaches before the first sample or past the gyro.
+fn gyro_change(gyro: &[f64], n: usize, gain: f64, delay: u32) -> Vec<f64> {
+    let delay = delay as usize;
+    (0..n)
+        .map(|i| match i.checked_sub(delay + 1) {
+            Some(before) if before + 1 < gyro.len() => -gain * (gyro[before + 1] - gyro[before]),
+            _ => 0.0,
+        })
+        .collect()
+}
+
+/// The first-order low-pass of `hz` at the log rate `fs` the filtered gyro
+/// of [`Filtered::LowPass`] is made with: `y[n] = y[n − 1] + k·(x[n] −
+/// y[n − 1])`, `y[−1] = 0`, with `k = ω / (1 + ω)` and `ω = 2π·hz / fs`.
+pub fn low_pass_gain(hz: f64, fs: f64) -> f64 {
+    let omega = TAU * hz / fs;
+    omega / (1.0 + omega)
+}
+
+/// `x` through the low-pass of [`low_pass_gain`].
+fn low_pass(x: &[f64], hz: f64, fs: f64) -> Vec<f64> {
+    let k = low_pass_gain(hz, fs);
+    let mut y = 0.0;
+    x.iter()
+        .map(|v| {
+            y += k * (v - y);
+            y
+        })
+        .collect()
 }
 
 /// A triangle of `n` samples with a period of `period` samples: see
@@ -520,9 +567,40 @@ pub enum Plant {
         /// Steady-state gain of a large move.
         large_gain: f64,
     },
+    /// `jump` of every move at once and the rest through `1 / (1 + s·τ)`
+    /// after the delay: a gyro that follows a part of the stick in the
+    /// same sample (round 19). Gain 1.
+    Jump {
+        /// The part followed at once.
+        jump: f64,
+        /// Time constant of the rest, ms.
+        tau_ms: f64,
+        /// Transport delay of the rest, ms.
+        delay_ms: f64,
+    },
 }
 
 impl Plant {
+    /// The first-order part of [`Plant::Jump`] alone, with the gain the
+    /// jump leaves it; `None` for any other plant.
+    pub fn after_jump(&self) -> Option<(f64, Plant)> {
+        match *self {
+            Plant::Jump {
+                jump,
+                tau_ms,
+                delay_ms,
+            } => Some((
+                jump,
+                Plant::FirstOrder {
+                    tau_ms,
+                    delay_ms,
+                    gain: 1.0 - jump,
+                },
+            )),
+            _ => None,
+        }
+    }
+
     /// The plant a small move of the stick sees: for [`Plant::Graded`] the
     /// second-order plant of its small gain, the plant itself otherwise.
     pub fn small(&self) -> Plant {
@@ -565,10 +643,11 @@ impl Plant {
         }
     }
 
-    /// Transport delay, seconds.
+    /// Transport delay, seconds: below zero for a plant that leads the
+    /// stick; zero for [`Plant::Jump`], whose jump comes at once.
     fn delay_s(&self) -> f64 {
         match self {
-            Plant::None => 0.0,
+            Plant::None | Plant::Jump { .. } => 0.0,
             Plant::Graded { .. } => self.small().delay_s(),
             Plant::Delay { delay_ms }
             | Plant::FirstOrder { delay_ms, .. }
@@ -580,7 +659,7 @@ impl Plant {
     pub fn gain(&self) -> f64 {
         match self {
             Plant::None => 0.0,
-            Plant::Delay { .. } => 1.0,
+            Plant::Delay { .. } | Plant::Jump { .. } => 1.0,
             Plant::FirstOrder { gain, .. } | Plant::SecondOrder { gain, .. } => *gain,
             Plant::Graded { .. } => self.small().gain(),
         }
@@ -592,6 +671,9 @@ impl Plant {
         let slowest = match self {
             Plant::None | Plant::Delay { .. } => 0.0,
             Plant::Graded { .. } => return self.small().settled_s(),
+            Plant::Jump { .. } => {
+                return self.after_jump().map_or(0.0, |(_, rest)| rest.settled_s());
+            }
             Plant::FirstOrder { tau_ms, .. } => tau_ms / 1000.0,
             Plant::SecondOrder {
                 natural_hz,
@@ -616,6 +698,13 @@ impl Plant {
         if let Plant::Graded { .. } = self {
             return self.small().step_response(t);
         }
+        if let Some((jump, rest)) = self.after_jump() {
+            return if t < -SAME_TIME_S {
+                0.0
+            } else {
+                jump + rest.step_response(t)
+            };
+        }
         let t = t - self.delay_s();
         if t < -SAME_TIME_S {
             return 0.0;
@@ -625,6 +714,7 @@ impl Plant {
             Plant::None => 0.0,
             Plant::Delay { .. } => 1.0,
             Plant::Graded { .. } => unreachable!("taken as the plant of a small move above"),
+            Plant::Jump { .. } => unreachable!("taken as its jump and its rest above"),
             Plant::FirstOrder { tau_ms, gain, .. } => {
                 if *tau_ms <= 0.0 {
                     return *gain;
@@ -680,6 +770,29 @@ pub enum Filtered {
         /// Components of the filtered gyro.
         waves: Vec<Wave>,
     },
+    /// The unfiltered gyro `samples` samples later, zero before: a filter
+    /// that only delays (round 19).
+    Delayed {
+        /// How many samples later.
+        samples: u32,
+    },
+    /// The unfiltered gyro through a first-order low-pass of `hz` at the
+    /// log rate, as [`low_pass_gain`] says (round 19).
+    LowPass {
+        /// Cut-off, Hz.
+        hz: f64,
+    },
+}
+
+impl Filtered {
+    /// The waves the filtered gyro carries of its own: none but for
+    /// [`Filtered::Separate`].
+    pub fn own_waves(&self) -> &[Wave] {
+        match self {
+            Filtered::Separate { waves } => waves,
+            Filtered::Same | Filtered::Delayed { .. } | Filtered::LowPass { .. } => &[],
+        }
+    }
 }
 
 /// One axis of a probe flight.
@@ -1014,6 +1127,9 @@ struct Timeline<'a> {
     /// The moves of the stick of the axis, `(seconds, deg/s)`: none for a
     /// channel of no axis.
     stick: &'a [(f64, f64)],
+    /// The filtered gyro of the axis as a log holds it, for
+    /// [`Wave::GyroChange`]: empty where the channel does not follow it.
+    gyro: &'a [f64],
 }
 
 /// A whole probe flight.
@@ -1238,23 +1354,38 @@ impl FlightSpec {
     /// What the flight's carried channels `channel` hold: the sum of their
     /// waves, `None` when it carries nothing there.
     pub fn carried_samples(&self, channel: Carrier) -> Option<Vec<f64>> {
-        let mut waves = self
+        let waves: Vec<&Wave> = self
             .carried
             .iter()
             .filter(|c| c.channel == channel)
             .flat_map(|c| &c.waves)
-            .peekable();
-        waves.peek()?;
+            .collect();
+        if waves.is_empty() {
+            return None;
+        }
         let throttle = self.throttle_samples();
         let stick = channel
             .axis()
             .map(|axis| self.axis(axis).stick.breakpoints(self.duration_s))
             .unwrap_or_default();
+        // the gyro a term follows, as the log holds it; never for the
+        // setpoint, from which the gyro itself is made
+        let follows = waves.iter().any(|w| matches!(w, Wave::GyroChange { .. }));
+        let gyro = match channel {
+            Carrier::Term { axis, .. } if follows => self
+                .samples(axis)
+                .filtered
+                .iter()
+                .map(|v| v.round_ties_even())
+                .collect(),
+            _ => Vec::new(),
+        };
         let timeline = Timeline {
             fs: self.fs,
             duration_s: self.duration_s,
             throttle: &throttle,
             stick: &stick,
+            gyro: &gyro,
         };
         let mut out = vec![0.0; self.len()];
         for wave in waves {
@@ -1284,6 +1415,7 @@ impl FlightSpec {
             duration_s: self.duration_s,
             throttle: &throttle,
             stick: &steps,
+            gyro: &[],
         };
         let mut setpoint = vec![0.0; n];
         let mut response = vec![0.0; n];
@@ -1302,7 +1434,10 @@ impl FlightSpec {
             }
             let plant = spec.plant.for_move(change);
             let done = (((at + plant.settled_s()) * fs).ceil() as usize + 1).min(n);
-            for (i, value) in response.iter_mut().enumerate().take(done).skip(first) {
+            // a plant that leads the stick moves before the setpoint does
+            let lead = plant.delay_s().min(0.0);
+            let moves = ((at + lead - SAME_TIME_S) * fs).ceil().max(0.0) as usize;
+            for (i, value) in response.iter_mut().enumerate().take(done).skip(moves) {
                 *value += change * plant.step_response(i as f64 / fs - at);
             }
             settled[done] += change * plant.gain();
@@ -1325,6 +1460,13 @@ impl FlightSpec {
         let filtered = match &spec.filtered {
             Filtered::Same => unfiltered.clone(),
             Filtered::Separate { waves } => add(waves),
+            Filtered::Delayed { samples } => {
+                let later = (*samples as usize).min(n);
+                let mut out = vec![0.0; later];
+                out.extend_from_slice(&unfiltered[..n - later]);
+                out
+            }
+            Filtered::LowPass { hz } => low_pass(&unfiltered, *hz, fs),
         };
         if let Some(more) = self.carried_samples(Carrier::Setpoint { axis }) {
             setpoint.iter_mut().zip(more).for_each(|(v, m)| *v += m);

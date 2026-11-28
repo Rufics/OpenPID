@@ -17,7 +17,8 @@
 //!   `predictions.json` with what the model expects the reference tool to
 //!   show.
 //! - [`capture`]: the steps of the script that walks the reference tool
-//!   through a round and saves its screens; the script travels in the pack.
+//!   through a round and saves its screens; the script travels in the pack
+//!   of every round before the rounds run by hand ([`capture::planned`]).
 //! - [`model`]: the spectrum curve of the reference tool as the rounds have
 //!   identified it, for the predictions of the next round. It was held to
 //!   the tool's own copies of its plots during the rounds, a one-off

@@ -11,7 +11,7 @@
 use crate::capture;
 use crate::catalogue::{self, Area, Probe};
 use crate::model;
-use crate::signal::{AxisSamples, Carrier, FlightSpec, Wave, band_bins};
+use crate::signal::{AxisSamples, Carrier, Filtered, FlightSpec, Wave, band_bins};
 use crate::step_model;
 use crate::truth::ResponseTruth;
 use openpid_analysis::{
@@ -38,6 +38,14 @@ pub const TARGET: Target = Target::V2025_12;
 /// frequency domain. The manifests of the rounds before it stay as they
 /// were when the rounds were run.
 const TRUTH_FROM_ROUND: u32 = 7;
+/// The first round whose manifest says what its logs hold beyond the
+/// tones and the noise of their channels: the filter between the two gyro
+/// channels of an axis, the speed of every motor, the response of a plant
+/// at the moment the stick moves. The manifests of the rounds before it
+/// stay as they were.
+const FACTS_FROM_ROUND: u32 = 19;
+/// The longest lag between two channels a manifest looks for, samples.
+const MAX_LAG: usize = 20;
 /// Seconds left out at each end of a log before `OpenPID`'s own analysis, as
 /// the reference tool leaves them out (`docs/DESIGN.md` §6.7).
 const TRIM_S: f64 = 1.0;
@@ -160,6 +168,77 @@ pub struct AxisEntry {
     /// is not the setpoint's (round 17 on).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inputs: Option<StickPaths>,
+    /// The filter between the two gyro channels, for an axis whose
+    /// filtered gyro is the unfiltered one or is made of it (round 19 on).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<FilterFact>,
+    /// The plant's response to a unit step at the moment the stick moves,
+    /// for an axis that follows its stick (round 19 on): above zero for a
+    /// plant that leads the stick or follows a part of it at once.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_at_start: Option<f64>,
+}
+
+/// The filter that makes the filtered gyro of an axis of the unfiltered
+/// one, and what the written log says of it, measured a second way.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FilterFact {
+    /// How the filtered gyro follows from the unfiltered one.
+    pub rule: String,
+    /// The delay of the filter at low frequencies, samples: exact for a
+    /// filter that only delays, `(1 − k)/k` for the low-pass.
+    pub delay_samples: f64,
+    /// The same, ms.
+    pub delay_ms: f64,
+    /// The `k` of the low-pass ([`crate::signal::low_pass_gain`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gain: Option<f64>,
+    /// The lag of 0 … 20 samples at which the logged filtered gyro is
+    /// most like the logged unfiltered one: the largest cross-correlation.
+    pub logged_lag_samples: usize,
+    /// For the low-pass, its `k` fitted to the logged channels by least
+    /// squares: the change of the filtered gyro over the unfiltered less
+    /// the filtered one sample before.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logged_gain: Option<f64>,
+}
+
+/// A term that follows the filtered gyro ([`Wave::GyroChange`]): what it
+/// is, and what the written log says of it, measured a second way.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct GyroChangeFact {
+    /// How the term follows from the filtered gyro `g`.
+    pub rule: String,
+    /// The factor.
+    pub gain: f64,
+    /// How many samples later it follows the change.
+    pub delay_samples: u32,
+    /// The lag of 0 … 20 samples at which the logged term is most like
+    /// minus the change of the logged filtered gyro: the largest
+    /// cross-correlation.
+    pub logged_delay_samples: usize,
+    /// The least-squares factor of the logged term on minus that change,
+    /// at that lag.
+    pub logged_gain: f64,
+}
+
+/// The speed of a motor that reports one, and what the written log holds.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MotorFact {
+    /// The motor, 1 to 4.
+    pub motor: usize,
+    /// Its output, percent: the mean over the flight.
+    pub output_percent: f64,
+    /// Its speed, revolutions per minute (mechanical).
+    pub rpm: f64,
+    /// Its speed, Hz, and its second and third harmonics.
+    pub harmonics_hz: [f64; 3],
+    /// The eRPM the log holds (electrical revolutions per minute over
+    /// 100), its mean.
+    pub logged_erpm: f64,
+    /// The speed the logged eRPM stands for with the header's motor poles:
+    /// `eRPM·100 / (poles / 2) / 60`, Hz.
+    pub logged_hz: f64,
 }
 
 /// The step response of an axis as it comes out with each of three
@@ -201,6 +280,9 @@ pub struct ChannelEntry {
     /// Its tones (the level of each: `power_db`), noise and logged range,
     /// in the unit of the truth.
     pub truth: ChannelTruth,
+    /// For a term that follows the filtered gyro: how (round 19 on).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub follows_gyro: Option<GyroChangeFact>,
 }
 
 /// One probe in the manifest.
@@ -231,6 +313,10 @@ pub struct ProbeEntry {
     /// those that follow from them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub channels: Vec<ChannelEntry>,
+    /// The speed of every motor, for a flight whose motors report one
+    /// (round 19 on).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub motors: Vec<MotorFact>,
     /// The whole flight, as the generator takes it.
     pub flight: FlightSpec,
 }
@@ -506,8 +592,9 @@ pub struct Pack {
     pub predictions: Option<Predictions>,
     /// File name and bytes of every log.
     pub logs: Vec<(String, Vec<u8>)>,
-    /// What the capture script does with them in the reference tool.
-    pub plan: capture::Plan,
+    /// What the capture script does with them in the reference tool: none
+    /// for a round run by hand ([`capture::planned`]).
+    pub plan: Option<capture::Plan>,
 }
 
 /// FNV-1a, 64 bit.
@@ -1387,6 +1474,10 @@ fn carried_entry(
     } else {
         1.0
     };
+    let follows_gyro = match carrier {
+        Carrier::Term { axis, .. } => follows_gyro(&waves, session, axis, &logged)?,
+        _ => None,
+    };
     Ok(ChannelEntry {
         field,
         listed_as: listed,
@@ -1394,7 +1485,76 @@ fn carried_entry(
         logged_per_unit: rounded(per),
         reference_per_unit: rounded(reference),
         truth: channel_truth(flight, &waves, &truth, &logged),
+        follows_gyro,
     })
+}
+
+/// `Σ x[i]·y[i + lag]` over the samples both have.
+fn correlation(x: &[f64], y: &[f64], lag: usize) -> f64 {
+    x.iter().zip(y.iter().skip(lag)).map(|(a, b)| a * b).sum()
+}
+
+/// The lag of 0 … [`MAX_LAG`] samples at which `y` is most like `x`
+/// later: the largest cross-correlation (the first of equal ones).
+fn best_lag(x: &[f64], y: &[f64]) -> usize {
+    let mut best = (0, f64::NEG_INFINITY);
+    for lag in 0..=MAX_LAG {
+        let c = correlation(x, y, lag);
+        if c > best.1 {
+            best = (lag, c);
+        }
+    }
+    best.0
+}
+
+/// Minus the change of `g` from one sample to the next: `−(g[i + 1] −
+/// g[i])` at `i + 1`, 0 at the first sample.
+fn minus_change(g: &[f64]) -> Vec<f64> {
+    std::iter::once(0.0)
+        .chain(g.windows(2).map(|w| w[0] - w[1]))
+        .collect()
+}
+
+/// What a term made of [`Wave::GyroChange`] is and what its `logged`
+/// samples say of it against the logged filtered gyro of `axis`; `None`
+/// for a term of other waves.
+fn follows_gyro(
+    waves: &[Wave],
+    session: &FlightSession,
+    axis: Axis,
+    logged_term: &[f64],
+) -> Result<Option<GyroChangeFact>, PackError> {
+    let Some((gain, delay)) = waves.iter().find_map(|w| match w {
+        Wave::GyroChange { gain, delay } => Some((*gain, *delay)),
+        _ => None,
+    }) else {
+        return Ok(None);
+    };
+    let g = logged(session, axis, GyroStage::Filtered, "carried channel")?;
+    let change = minus_change(&g);
+    let lag = best_lag(&change, logged_term);
+    let (num, den) = change
+        .iter()
+        .zip(logged_term.iter().skip(lag))
+        .fold((0.0, 0.0), |(n, d), (c, t)| (n + c * t, d + c * c));
+    let at = |k: u32| {
+        if k == 0 {
+            "n".to_string()
+        } else {
+            format!("n − {k}")
+        }
+    };
+    let (now, before) = (at(delay), at(delay + 1));
+    Ok(Some(GyroChangeFact {
+        rule: format!(
+            "−{gain}·(g[{now}] − g[{before}]), g the filtered gyro as the log holds it (whole \
+             deg/s); 0 where that reaches before the first sample"
+        ),
+        gain,
+        delay_samples: delay,
+        logged_delay_samples: lag,
+        logged_gain: rounded(num / den.max(f64::MIN_POSITIVE)),
+    }))
 }
 
 /// What is true about the PID error of `axis`, the setpoint less the
@@ -1414,7 +1574,7 @@ fn pid_error_entry(
     let mut waves: Vec<Wave> = carried_waves(flight, Carrier::Setpoint { axis })
         .cloned()
         .collect();
-    if let crate::signal::Filtered::Separate { waves: more } = &flight.axis(axis).filtered {
+    if let Filtered::Separate { waves: more } = &flight.axis(axis).filtered {
         waves.extend(more.iter().cloned());
     }
     let field = format!("pidError[{}]", axis.index());
@@ -1427,6 +1587,7 @@ fn pid_error_entry(
         logged_per_unit: 1.0,
         reference_per_unit: 1.0,
         truth: channel_truth(flight, &waves, &exact, &logged),
+        follows_gyro: None,
     })
 }
 
@@ -1457,6 +1618,7 @@ fn pid_sum_entry(
         logged_per_unit: 1.0,
         reference_per_unit: 1.0,
         truth: channel_truth(flight, &waves, &sum, &logged),
+        follows_gyro: None,
     })
 }
 
@@ -1497,6 +1659,108 @@ fn channel_entries(
     Ok(out)
 }
 
+/// The response of `plant` at the moment the stick moves, in the manifest
+/// of `round`: from round [`FACTS_FROM_ROUND`] on, for a plant that follows
+/// the stick.
+fn response_at_start(round: u32, plant: crate::signal::Plant) -> Option<f64> {
+    (round >= FACTS_FROM_ROUND && plant != crate::signal::Plant::None)
+        .then(|| rounded(plant.step_response(0.0)))
+}
+
+/// What the filter `filtered` between the logged unfiltered gyro `raw`
+/// and the logged filtered one `gyro` of a log at `fs` is, and what the two
+/// say of it, in the manifest of `round`: from round [`FACTS_FROM_ROUND`]
+/// on, but for a filtered gyro of waves of its own.
+fn filter_fact(
+    round: u32,
+    filtered: &Filtered,
+    fs: f64,
+    (raw, gyro): (&[f64], &[f64]),
+) -> Option<FilterFact> {
+    if round < FACTS_FROM_ROUND {
+        return None;
+    }
+    let (rule, delay_samples, gain, logged_gain) = match filtered {
+        Filtered::Separate { .. } => return None,
+        Filtered::Same => (
+            "the same samples as the unfiltered gyro".to_string(),
+            0.0,
+            None,
+            None,
+        ),
+        Filtered::Delayed { samples } => (
+            format!("the unfiltered gyro {samples} samples later, 0 before"),
+            f64::from(*samples),
+            None,
+            None,
+        ),
+        Filtered::LowPass { hz } => {
+            let k = crate::signal::low_pass_gain(*hz, fs);
+            // y[n] − y[n − 1] = k·(x[n] − y[n − 1]), by least squares
+            let (num, den) = (1..raw.len().min(gyro.len())).fold((0.0, 0.0), |(n, d), i| {
+                let e = raw[i] - gyro[i - 1];
+                (n + (gyro[i] - gyro[i - 1]) * e, d + e * e)
+            });
+            (
+                format!(
+                    "the unfiltered gyro x through a first-order low-pass of {hz} Hz: y[n] = \
+                     y[n − 1] + k·(x[n] − y[n − 1]), y[−1] = 0, k = ω/(1 + ω), ω = 2π·{hz}/{fs}"
+                ),
+                (1.0 - k) / k,
+                Some(rounded(k)),
+                Some(rounded(num / den.max(f64::MIN_POSITIVE))),
+            )
+        }
+    };
+    Some(FilterFact {
+        rule,
+        delay_samples: rounded(delay_samples),
+        delay_ms: rounded(delay_samples * 1000.0 / fs),
+        gain,
+        logged_lag_samples: best_lag(raw, gyro),
+        logged_gain,
+    })
+}
+
+/// The speed of every motor of `flight`, when its motors report one, and
+/// what the written log `session` holds of it, in the manifest of `round`:
+/// from round [`FACTS_FROM_ROUND`] on.
+fn motor_facts(
+    round: u32,
+    flight: &FlightSpec,
+    session: &FlightSession,
+    probe: &'static str,
+) -> Result<Vec<MotorFact>, PackError> {
+    let Some(rpm) = flight.motor_rpm.filter(|_| round >= FACTS_FROM_ROUND) else {
+        return Ok(Vec::new());
+    };
+    let read = |message: String| PackError::Read { probe, message };
+    let poles = session
+        .settings
+        .motor
+        .poles
+        .filter(|p| *p > 0)
+        .ok_or_else(|| read("the written log states no motor poles".into()))?;
+    let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len().max(1) as f64;
+    (0..4)
+        .map(|idx| {
+            let id = ChannelId::Erpm { idx: idx as u8 };
+            let erpm = values_of(session, &id)
+                .ok_or_else(|| read(format!("the written log has no complete {}", id.key())))?;
+            let logged_erpm = mean(&erpm);
+            let hz = rpm[idx] / 60.0;
+            Ok(MotorFact {
+                motor: idx + 1,
+                output_percent: rounded(mean(&flight.motor_samples_of(idx))),
+                rpm: rpm[idx],
+                harmonics_hz: [1.0, 2.0, 3.0].map(|h| rounded(h * hz)),
+                logged_erpm: rounded(logged_erpm),
+                logged_hz: rounded(logged_erpm * 100.0 / (f64::from(poles) / 2.0) / 60.0),
+            })
+        })
+        .collect()
+}
+
 /// One probe: its log, its manifest entry, `OpenPID`'s results and the
 /// model's predictions.
 fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
@@ -1521,29 +1785,26 @@ fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
             filtered,
             ..
         } = flight.samples(axis);
-        let filtered_waves = match &spec.filtered {
-            crate::signal::Filtered::Same => &spec.waves,
-            crate::signal::Filtered::Separate { waves } => waves,
+        // a filter that only delays keeps the tones and the noise; a
+        // low-pass keeps neither as they were asked for
+        let filtered_waves: &[Wave] = match &spec.filtered {
+            Filtered::Same | Filtered::Delayed { .. } => &spec.waves,
+            Filtered::Separate { waves } => waves,
+            Filtered::LowPass { .. } => &[],
         };
+        let raw = logged_on_grid(&session, flight, (axis, GyroStage::Raw), id)?;
+        let gyro = logged_on_grid(&session, flight, (axis, GyroStage::Filtered), id)?;
         axes.push(AxisEntry {
             axis: axis_name(axis),
             purpose,
-            unfiltered: channel_truth(
-                flight,
-                &spec.waves,
-                &unfiltered,
-                &logged_on_grid(&session, flight, (axis, GyroStage::Raw), id)?,
-            ),
-            filtered: channel_truth(
-                flight,
-                filtered_waves,
-                &filtered,
-                &logged_on_grid(&session, flight, (axis, GyroStage::Filtered), id)?,
-            ),
+            unfiltered: channel_truth(flight, &spec.waves, &unfiltered, &raw),
+            filtered: channel_truth(flight, filtered_waves, &filtered, &gyro),
             response: (round >= TRUTH_FROM_ROUND)
                 .then(|| ResponseTruth::of(spec.plant))
                 .flatten(),
             inputs: stick_paths(flight, axis),
+            filter: filter_fact(round, &spec.filtered, flight.fs, (&raw, &gyro)),
+            response_at_start: response_at_start(round, spec.plant),
         });
         // from the round after SPECTRA_ONLY_UP_TO on, a spectrum is a curve
         // of every bin of the stretch: only the probes of the spectrum
@@ -1580,6 +1841,7 @@ fn build_probe(probe: &Probe, round: u32) -> Result<Built, PackError> {
         samples: flight.len(),
         axes,
         channels: channel_entries(flight, &session)?,
+        motors: motor_facts(round, flight, &session, id)?,
         flight: flight.clone(),
     };
     let ours = OursProbe {
@@ -1664,7 +1926,7 @@ pub fn build(round: u32, built_from: &str) -> Result<Pack, PackError> {
         None
     };
     Ok(Pack {
-        plan: capture::plan(round, &probes),
+        plan: capture::planned(round).then(|| capture::plan(round, &probes)),
         manifest,
         ours,
         predictions,
@@ -1682,7 +1944,7 @@ fn json(value: &impl Serialize) -> Vec<u8> {
 impl Pack {
     /// Every file of the pack: name and content, the logs first, then what
     /// is true and what `OpenPID` computes, then the capture script with its
-    /// steps.
+    /// steps, for a round that has them.
     pub fn files(&self) -> Vec<(String, Vec<u8>)> {
         let mut out = self.logs.clone();
         out.push(("manifest.json".into(), json(&self.manifest)));
@@ -1690,12 +1952,14 @@ impl Pack {
         if let Some(predictions) = &self.predictions {
             out.push(("predictions.json".into(), json(predictions)));
         }
-        out.push(("steps.json".into(), json(&self.plan)));
-        out.extend(capture::files_of(
-            self.manifest.round,
-            &self.plan,
-            self.predictions.is_some(),
-        ));
+        if let Some(plan) = &self.plan {
+            out.push(("steps.json".into(), json(plan)));
+            out.extend(capture::files_of(
+                self.manifest.round,
+                plan,
+                self.predictions.is_some(),
+            ));
+        }
         out
     }
 

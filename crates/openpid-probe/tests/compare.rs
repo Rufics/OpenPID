@@ -1000,3 +1000,12 @@ fn the_motors_and_the_line_smoothing_of_the_main_window() {
     assert_eq!(verdict(&report, smooth), Verdict::Fail, "{report:?}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_round_run_by_hand_has_nothing_to_compare() {
+    assert!(!capture::planned(19) && capture::planned(18));
+    let dir = folder("by-hand");
+    let error = compare(19, &dir, None).unwrap_err();
+    assert!(error.contains("run by hand"), "{error}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

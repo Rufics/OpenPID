@@ -3182,6 +3182,326 @@ fn round_18() -> Vec<Probe> {
     probes
 }
 
+/// Round 19 is the third round with the web edition 1.0 of the reference
+/// tool (W3): what round W2 left open. The seeds of its noise and sticks
+/// start here.
+const WEB_SEED: u64 = 1901;
+
+/// The speed of motors 1 to 4 of the probe of the motor noise column, Hz
+/// (mechanical): each its own, constant over the flight.
+pub const MOTOR_HZ: [f64; 4] = [150.0, 190.0, 230.0, 270.0];
+/// The output of motors 1 to 4 of that probe, percent.
+pub const MOTOR_OUTPUTS: [f64; 4] = [40.0, 45.0, 50.0, 55.0];
+/// The tone of the gyro of roll and of yaw of that probe, `(Hz, deg/s)`:
+/// 7 Hz above the fundamental of motor 3 and 5 Hz above the second
+/// harmonic of motor 2, inside the ±20 Hz of the column around each.
+pub const NOISE_TONES: [(f64, f64); 2] = [(237.0, 20.0), (385.0, 20.0)];
+/// The white noise of every axis of that probe, deg/s RMS.
+pub const NOISE_FLOOR: f64 = 2.0;
+
+/// The probe of the spectrum window's column "Motor Noise" (W2: its
+/// segments are found, its level per segment is not): four motors at
+/// speeds of their own, reported as eRPM, under a gyro of white noise of
+/// known density with one tone near a motor harmonic on roll and yaw.
+fn motor_noise() -> Probe {
+    let seed = WEB_SEED;
+    let noise = |k: u64| Wave::Noise {
+        rms: NOISE_FLOOR,
+        seed: seed + k,
+    };
+    let [(near_hz, near), (second_hz, second)] = NOISE_TONES;
+    Probe {
+        id: "m1-mnoise-2k",
+        area: Area::Spectrum,
+        title: "Four motors at constant speeds of their own, 150, 190, 230 and 270 Hz \
+                (9000 to 16200 rpm, logged as eRPM over a header of 14 poles; outputs 40, \
+                45, 50 and 55 %), throttle 50 %, under a gyro of white noise of 2 deg/s RMS \
+                (0.004 (deg/s)²/Hz) on both gyro channels: what the spectrum window's column \
+                \"Motor Noise\" reads at each motor's first three harmonics; 2 kHz, 20 s",
+        purpose: [
+            "white noise of 2 deg/s RMS and a tone of 20 deg/s at 237 Hz, 7 Hz above the \
+             fundamental of motor 3 and outside ±20 Hz of every other harmonic",
+            "white noise of 2 deg/s RMS alone: the column on the floor",
+            "white noise of 2 deg/s RMS and a tone of 20 deg/s at 385 Hz, 5 Hz above the \
+             second harmonic of motor 2 (380 Hz) and outside ±20 Hz of every other one",
+        ],
+        flight: FlightSpec {
+            roll: AxisSpec::of(vec![Wave::tone(near_hz, near), noise(0)]),
+            pitch: AxisSpec::of(vec![noise(1)]),
+            yaw: AxisSpec::of(vec![Wave::tone(second_hz, second), noise(2)]),
+            motor_levels: Some(MOTOR_OUTPUTS),
+            motor_rpm: Some(MOTOR_HZ.map(|hz| 60.0 * hz)),
+            ..FlightSpec::quiet(2000.0, 20.0)
+        },
+    }
+}
+
+/// The terms of the controller of the probes of round 19 that log a D
+/// term of their own: P, I, D and F all zero, the D term's waves on top.
+const NO_TERMS: PidTerms = PidTerms {
+    p: [0.0; 3],
+    i: [0.0; 3],
+    d: [0.0; 3],
+    f: [0.0; 3],
+};
+
+/// The D term of `axis` as `gain` times the change of its filtered gyro,
+/// `delay` samples later ([`Wave::GyroChange`]).
+fn d_from_gyro(axis: Axis, gain: f64, delay: u32) -> Carried {
+    Carried {
+        channel: Carrier::Term {
+            axis,
+            term: PidTerm::D,
+        },
+        waves: vec![Wave::GyroChange { gain, delay }],
+    }
+}
+
+/// How many samples the filtered gyro of roll of the probe of the filter
+/// delay is later than the unfiltered one, and the cut-off of the
+/// low-pass between the two on pitch, Hz.
+pub const FILTER_DELAY: (u32, f64) = (5, 100.0);
+/// The factor of the D term of roll and pitch of that probe on the change
+/// of the filtered gyro, and how many samples later it follows it.
+pub const FILTER_D: (f64, u32) = (20.0, 4);
+
+/// The probe of the spectrum window's column "Filt. Delay": broadband
+/// noise on the unfiltered gyro, and a filtered gyro that is it delayed
+/// by a known number of samples, through a known low-pass, or the same;
+/// a D term that follows the filtered gyro some samples later.
+fn filter_delay() -> Probe {
+    let seed = WEB_SEED + 10;
+    let (samples, hz) = FILTER_DELAY;
+    let (gain, delay) = FILTER_D;
+    let broadband = |k: u64, filtered: Filtered| AxisSpec {
+        filtered,
+        ..AxisSpec::of(vec![Wave::Noise {
+            rms: 50.0,
+            seed: seed + k,
+        }])
+    };
+    Probe {
+        id: "f1-fdelay-2k",
+        area: Area::Spectrum,
+        title: "Broadband noise on the unfiltered gyro (white, 50 deg/s RMS) and a filtered \
+                gyro made of it by a filter of known delay: what the spectrum window's column \
+                \"Filt. Delay\" reads, and how it reads the D term; P, I and F zero; 2 kHz, \
+                20 s",
+        purpose: [
+            "the filtered gyro is the unfiltered one exactly 5 samples (2.5 ms) later; the D \
+             term is −20 times the change of the filtered gyro from one sample to the next, 4 \
+             samples (2 ms) later: −20·(g[n − 4] − g[n − 5]), 9 samples after the unfiltered \
+             gyro",
+            "the filtered gyro is the unfiltered one through a first-order low-pass at 100 Hz: \
+             y[n] = y[n − 1] + k·(x[n] − y[n − 1]), k = ω/(1 + ω), ω = 2π·100/2000 (k = \
+             0.239057), y[−1] = 0, a delay of (1 − k)/k = 3.18 samples (1.59 ms) at low \
+             frequencies; the D term as on roll, 4 samples later",
+            "the filtered gyro is the unfiltered one, the same samples: no delay; no D term \
+             (the craft has no D gain on yaw)",
+        ],
+        flight: FlightSpec {
+            roll: broadband(0, Filtered::Delayed { samples }),
+            pitch: broadband(1, Filtered::LowPass { hz }),
+            yaw: broadband(2, Filtered::Same),
+            pid_terms: Some(NO_TERMS),
+            carried: vec![
+                d_from_gyro(Axis::Roll, gain, delay),
+                d_from_gyro(Axis::Pitch, gain, delay),
+            ],
+            ..FlightSpec::quiet(2000.0, 20.0)
+        },
+    }
+}
+
+/// The factor of the D term of roll and pitch of the probe of "D term
+/// raw" on the change of the filtered gyro.
+pub const D_GAINS: [f64; 2] = [10.0, 25.0];
+/// The tone the unfiltered gyro of every axis of that probe carries beyond
+/// the filtered one, `(Hz, deg/s)`.
+pub const UNFILTERED_ONLY: (f64, f64) = (330.0, 20.0);
+
+/// The probe of the factor of "D term raw" in the window of frequency
+/// against time (W2: minus the change of the filtered gyro times a factor
+/// not found): a D term that is exactly a known factor times that change,
+/// under the craft's gains in the header (D 30, 34 and 0, D-max 40, 46
+/// and 0), so that the factor can be held against both.
+fn d_term() -> Probe {
+    let seed = WEB_SEED + 20;
+    let [roll_gain, pitch_gain] = D_GAINS;
+    let (only_hz, only) = UNFILTERED_ONLY;
+    // the same dither on both channels: the unfiltered gyro is the filtered
+    // one and the tone of its own
+    let axis = |mut waves: Vec<Wave>, k: u64| {
+        waves.push(dither(seed + k));
+        let mut unfiltered = waves.clone();
+        unfiltered.push(Wave::tone(only_hz, only));
+        AxisSpec {
+            filtered: Filtered::Separate { waves },
+            ..AxisSpec::of(unfiltered)
+        }
+    };
+    Probe {
+        id: "k1-dterm-2k",
+        area: Area::Time,
+        title: "A D term that is exactly a known factor times the change of the filtered gyro \
+                from one sample to the next, −c·(g[n] − g[n − 1]), c = 10 on roll and 25 on \
+                pitch, no D on yaw; P, I and F zero; the craft's gains in the header (rollPID \
+                45,80,30, pitchPID 47,84,34, yawPID 45,80,0, d_max 40,46,0): the factor of \
+                \"D term raw\" in the window of frequency against time, against the logged D \
+                term and the header; the unfiltered gyro carries a tone of 20 deg/s at 330 Hz \
+                more on every axis, for which gyro it is taken from; 2 kHz, 20 s",
+        purpose: [
+            "filtered gyro a triangle from −100 to 100 deg/s with a period of 40 ms (5 deg/s \
+             a sample, so its change is ±5 and the D term a square wave of ∓50 at 25 Hz) \
+             over white noise of 0.5 deg/s RMS; the D term −10·(g[n] − g[n − 1])",
+            "filtered gyro a tone of 60 deg/s at 120 Hz over white noise of 0.5 deg/s RMS; \
+             the D term −25·(g[n] − g[n − 1]), a tone of about 562 at 120 Hz",
+            "filtered gyro a tone of 40 deg/s at 80 Hz over white noise of 0.5 deg/s RMS; no \
+             D term (the craft has no D gain on yaw)",
+        ],
+        flight: FlightSpec {
+            roll: axis(
+                vec![Wave::Triangle {
+                    from: -100.0,
+                    to: 100.0,
+                    period_s: 0.04,
+                }],
+                0,
+            ),
+            pitch: axis(vec![Wave::tone(120.0, 60.0)], 1),
+            yaw: axis(vec![Wave::tone(80.0, 40.0)], 2),
+            pid_terms: Some(NO_TERMS),
+            carried: vec![
+                d_from_gyro(Axis::Roll, roll_gain, 0),
+                d_from_gyro(Axis::Pitch, pitch_gain, 0),
+            ],
+            ..FlightSpec::quiet(2000.0, 20.0)
+        },
+    }
+}
+
+/// The plant of roll of the probe of "Max start": a first-order response
+/// of 20 ms that leads the stick by 3 ms, so that a window's response is
+/// 1 − e^(−3/20) = 0.139 at its start.
+pub const LEADING: Plant = Plant::FirstOrder {
+    tau_ms: 20.0,
+    delay_ms: -3.0,
+    gain: 1.0,
+};
+/// The plant of yaw of that probe: half of every move at once, the other
+/// half through a first-order response of 26 ms after 9 ms.
+pub const HALF_AT_ONCE: Plant = Plant::Jump {
+    jump: 0.5,
+    tau_ms: 26.0,
+    delay_ms: 9.0,
+};
+
+/// The probe of the step response's "Max start" (never active on the logs
+/// of W2): random stick moves as those of round 17's `e3-step-2k`,
+/// through plants whose response is not zero at the start of a window.
+fn max_start() -> Probe {
+    made_for_none(
+        (
+            "r1-mstart-2k",
+            Area::StepResponse,
+            "Random stick moves as in e3-step-2k of round 17, through plants whose response \
+             starts above zero on roll and yaw: whether \"Max start\" of the step response \
+             window drops windows, and from what start; motor noise that follows a wandering \
+             throttle (30 to 70 %), a resonance, gyro noise; 2 kHz, 20 s",
+        ),
+        [
+            "stick moves within 300 deg/s; a first-order response of 20 ms that leads the \
+             setpoint by 3 ms: the gyro moves 3 ms before the setpoint, and the response of a \
+             window is 0.139 at 0 ms; motor noise of 8 deg/s at 62 Hz + 3.1 Hz per percent; \
+             a resonance at 365 Hz; white noise of 2.5 deg/s RMS; the filtered gyro keeps \
+             0.35 of the noise",
+            "stick moves within 240 deg/s; a second-order response of 11 Hz, damping 0.88, \
+             after 10 ms: a response of 0 up to 10 ms; motor noise of 7 deg/s; a resonance at \
+             415 Hz; white noise of 2 deg/s RMS",
+            "stick moves within 160 deg/s; half of every move in the same sample, the other \
+             half through a first-order response of 26 ms after 9 ms (gyro = 0.5·setpoint + \
+             0.5·the delayed plant): a response of 0.5 from 0 ms; motor noise of 5 deg/s; a \
+             resonance at 305 Hz; white noise of 1.5 deg/s RMS",
+        ],
+        (2000.0, 20.0),
+        (WEB_SEED + 30, (30.0, 70.0)),
+        &[
+            (300.0, LEADING, noisy((62.0, 3.1), 8.0, 365.0, 2.5)),
+            (
+                240.0,
+                second(11.0, 0.88, 10.0),
+                noisy((62.0, 3.1), 7.0, 415.0, 2.0),
+            ),
+            (160.0, HALF_AT_ONCE, noisy((62.0, 3.1), 5.0, 305.0, 1.5)),
+        ],
+    )
+}
+
+/// The probe of a length that is not a whole number of seconds: 10.4 s,
+/// 20 800 samples at 2 kHz, the stairs of the throttle of round 16's short
+/// flights (`w7-len10-2k`, 0.75 s a stair) and a tone on every axis.
+fn odd_length() -> Probe {
+    let seed = WEB_SEED + 40;
+    Probe {
+        id: "n1-len104-2k",
+        area: Area::Throttle,
+        title: "A log of 10.4 s, 20 800 samples at 2 kHz, a length that is no whole number of \
+                seconds: whether the stretch every window takes ends at T − 1 s with T = n/fs \
+                (9.4 s) or at a whole second; the stairs of the throttle of w7-len10-2k of \
+                round 16 (10 to 90 %, 0.75 s a stair, 1.825 s at 50 % before and after) and a \
+                tone of 10 deg/s at 150 Hz on every axis",
+        purpose: [
+            "a tone of 10 deg/s at 150 Hz over white noise of 0.5 deg/s RMS",
+            "the same tone over noise of another seed",
+            "the same tone over noise of another seed",
+        ],
+        flight: FlightSpec {
+            roll: tones(seed, &[(150.0, 10.0)]),
+            pitch: tones(seed + 1, &[(150.0, 10.0)]),
+            yaw: tones(seed + 2, &[(150.0, 10.0)]),
+            throttle: stairs(0.75, 10.4),
+            ..FlightSpec::quiet(2000.0, 10.4)
+        },
+    }
+}
+
+/// Round 19, the third round with the web edition 1.0 of the reference
+/// tool (W3), which the owner drives by hand in the browser: its pack holds
+/// the logs and the manifest, and no capture plan
+/// ([`crate::capture::planned`]). What round W2 left open:
+///
+/// - the spectrum window's two columns: "Motor Noise" ([`motor_noise`])
+///   and "Filt. Delay" ([`filter_delay`]);
+/// - the factor of "D term raw" in the window of frequency against time
+///   ([`d_term`]);
+/// - "Max start" of the step response ([`max_start`]);
+/// - a log whose length is not a whole number of seconds
+///   ([`odd_length`]);
+/// - the throttle map above 60 s at other log rates: the stairs of round
+///   16's `w6-len63-2k` (63 s, 6.5 s a stair) at 1 and at 8 kHz, with
+///   their tone that follows the throttle.
+///
+/// The logs are in the order of their names.
+fn round_19() -> Vec<Probe> {
+    let mut probes = vec![
+        motor_noise(),
+        filter_delay(),
+        d_term(),
+        max_start(),
+        odd_length(),
+    ];
+    probes.extend(
+        [("t3-thr61-1k", 1000.0), ("t4-thr61-8k", 8000.0)].map(|(id, fs)| Probe {
+            title: "The stairs of the throttle of w6-len63-2k of round 16 (63 s, 6.5 s a \
+                    stair, a stretch of 61 s) at another log rate: the map of frequency against \
+                    throttle above 60 s at 1 and at 8 kHz",
+            ..stairs_in(id, fs, 6.5, 63.0)
+        }),
+    );
+    probes.sort_by_key(|p| p.id);
+    probes
+}
+
 /// The probes of `round`, or `None` for a round that does not exist.
 pub fn round(round: u32) -> Option<Vec<Probe>> {
     match round {
@@ -3203,13 +3523,14 @@ pub fn round(round: u32) -> Option<Vec<Probe>> {
         16 => Some(round_16()),
         17 => Some(round_17()),
         18 => Some(round_18()),
+        19 => Some(round_19()),
         _ => None,
     }
 }
 
 /// The rounds that exist.
 pub const ROUNDS: &[u32] = &[
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
 ];
 
 #[cfg(test)]
@@ -3445,10 +3766,7 @@ mod tests {
             if let Stick::Random { seed, .. } = spec.stick {
                 seeds.insert(seed);
             }
-            let filtered = match &spec.filtered {
-                Filtered::Same => &[][..],
-                Filtered::Separate { waves } => waves,
-            };
+            let filtered = spec.filtered.own_waves();
             for wave in spec.waves.iter().chain(filtered) {
                 if let Wave::Noise { seed, .. } | Wave::Band { seed, .. } = wave {
                     seeds.insert(*seed);
@@ -3678,10 +3996,7 @@ mod tests {
                 assert_eq!(spec.plant, Plant::None, "{at}");
                 // every tone is below the Nyquist frequency of its log, at
                 // any throttle
-                let filtered: &[Wave] = match &spec.filtered {
-                    Filtered::Same => &[],
-                    Filtered::Separate { waves } => waves,
-                };
+                let filtered = spec.filtered.own_waves();
                 for wave in spec.waves.iter().chain(filtered) {
                     let top = match wave {
                         Wave::Tone { hz, .. } => *hz,
@@ -3834,10 +4149,7 @@ mod tests {
         assert_eq!((throttle[0], throttle[59_999]), (35.0, 40.0));
         for axis in Axis::ALL {
             let spec = flight.axis(axis);
-            let filtered: &[Wave] = match &spec.filtered {
-                Filtered::Same => &[],
-                Filtered::Separate { waves } => waves,
-            };
+            let filtered = spec.filtered.own_waves();
             for wave in spec.waves.iter().chain(filtered) {
                 if let Wave::ThrottleTone {
                     hz_at_zero,
@@ -4697,10 +5009,7 @@ mod tests {
         for axis in Axis::ALL {
             let spec = flight.axis(axis);
             assert_eq!(spec.stick, Stick::Silence);
-            let filtered: &[Wave] = match &spec.filtered {
-                Filtered::Same => &[],
-                Filtered::Separate { waves } => waves,
-            };
+            let filtered = spec.filtered.own_waves();
             for wave in spec.waves.iter().chain(filtered) {
                 match wave {
                     Wave::ThrottleTone {
@@ -4772,10 +5081,7 @@ mod tests {
             for axis in Axis::ALL {
                 let spec = p.flight.axis(axis);
                 assert_eq!(spec.stick, Stick::Silence, "{}", p.id);
-                let filtered: &[Wave] = match &spec.filtered {
-                    Filtered::Same => &[],
-                    Filtered::Separate { waves } => waves,
-                };
+                let filtered = spec.filtered.own_waves();
                 for wave in spec.waves.iter().chain(filtered) {
                     match wave {
                         Wave::Tone { hz, to_s, .. } => {
@@ -5278,5 +5584,317 @@ mod tests {
             .map(|(s, r)| (s - r).abs())
             .fold(0.0, f64::max);
         assert!(tone > 14.0, "{tone}");
+    }
+
+    fn web(id: &str) -> Probe {
+        let found = round(19).unwrap().into_iter().find(|p| p.id == id);
+        found.unwrap_or_else(|| panic!("round 19 has no {id}"))
+    }
+
+    /// The samples of a term of the controller of a log.
+    fn term_of(session: &FlightSession, axis: Axis, term: PidTerm) -> Option<Vec<f64>> {
+        let channel = session.channel(&ChannelId::PidTerm { axis, term })?;
+        assert!(channel.data.all_valid());
+        Some(channel.data.values().to_vec())
+    }
+
+    /// The lag of 0 … 20 samples at which `y` is most like `x` later.
+    fn lag_of(x: &[f64], y: &[f64]) -> usize {
+        let correlation = |lag: usize| -> f64 { x.iter().zip(&y[lag..]).map(|(a, b)| a * b).sum() };
+        (0..=20)
+            .max_by(|a, b| correlation(*a).total_cmp(&correlation(*b)))
+            .unwrap()
+    }
+
+    /// Minus the change of `g` from one sample to the next, 0 at the first.
+    fn minus_change(g: &[f64]) -> Vec<f64> {
+        std::iter::once(0.0)
+            .chain(g.windows(2).map(|w| w[0] - w[1]))
+            .collect()
+    }
+
+    /// The sine and cosine parts of the `hz` component of `x` at `fs`.
+    fn parts_at(x: &[f64], hz: f64, fs: f64) -> (f64, f64) {
+        let n = x.len() as f64;
+        x.iter().enumerate().fold((0.0, 0.0), |(s, c), (i, v)| {
+            let phase = std::f64::consts::TAU * hz * i as f64 / fs;
+            (s + 2.0 * v * phase.sin() / n, c + 2.0 * v * phase.cos() / n)
+        })
+    }
+
+    #[test]
+    fn round_19_is_seven_logs_in_the_order_of_their_names() {
+        let probes = round(19).unwrap();
+        let shape: Vec<(&str, Area, f64, f64)> = probes
+            .iter()
+            .map(|p| (p.id, p.area, p.flight.fs, p.flight.duration_s))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("f1-fdelay-2k", Area::Spectrum, 2000.0, 20.0),
+                ("k1-dterm-2k", Area::Time, 2000.0, 20.0),
+                ("m1-mnoise-2k", Area::Spectrum, 2000.0, 20.0),
+                ("n1-len104-2k", Area::Throttle, 2000.0, 10.4),
+                ("r1-mstart-2k", Area::StepResponse, 2000.0, 20.0),
+                ("t3-thr61-1k", Area::Throttle, 1000.0, 63.0),
+                ("t4-thr61-8k", Area::Throttle, 8000.0, 63.0),
+            ][..]
+        );
+        let mut names: Vec<&str> = probes.iter().map(|p| p.id).collect();
+        names.sort_unstable();
+        assert!(names.iter().zip(&probes).all(|(n, p)| *n == p.id));
+        assert!(probes.iter().all(|p| p.id.len() <= 12));
+        // a length that is no whole number of seconds
+        assert_eq!(web("n1-len104-2k").flight.len(), 20_800);
+        assert_eq!(web("n1-len104-2k").flight.throttle, stairs(0.75, 10.4));
+        // the long stairs are those of round 16 at other rates
+        let long = open_end("w6-len63-2k").flight;
+        for id in ["t3-thr61-1k", "t4-thr61-8k"] {
+            let flight = web(id).flight;
+            assert_eq!(
+                FlightSpec {
+                    fs: long.fs,
+                    ..flight
+                },
+                long,
+                "{id}"
+            );
+        }
+        // what a log of round 19 does is in no log of an earlier round
+        let earlier = ROUNDS
+            .iter()
+            .filter(|r| **r < 19)
+            .flat_map(|r| round(*r).unwrap());
+        for probe in earlier {
+            let text = serde_json::to_string(&probe.flight).unwrap();
+            for new in [
+                "\"gyro_change\"",
+                "\"delayed\"",
+                "\"low_pass\"",
+                "\"jump\"",
+                "\"delay_ms\":-",
+            ] {
+                assert!(!text.contains(new), "{}: {new}", probe.id);
+            }
+        }
+    }
+
+    #[test]
+    fn the_log_of_the_motor_noise_holds_every_motor_s_speed_and_a_known_gyro() {
+        let probe = web("m1-mnoise-2k");
+        let fs = probe.flight.fs;
+        let (head, session) = log_of(&probe);
+        assert!(head.contains("H motor_poles:14\n"));
+        let mut speeds = Vec::new();
+        for (idx, hz) in MOTOR_HZ.into_iter().enumerate() {
+            let id = ChannelId::Erpm { idx: idx as u8 };
+            let erpm = session.channel(&id).unwrap().data.values().to_vec();
+            // the speed the log stands for, by the rule of round W2
+            let logged_hz = |v: f64| v * 100.0 / (14.0 / 2.0) / 60.0;
+            assert!(
+                erpm.iter().all(|v| (logged_hz(*v) - hz).abs() < 1e-9),
+                "{idx}"
+            );
+            speeds.push(erpm[0]);
+            let motor = session
+                .channel(&ChannelId::Motor { idx: idx as u8 })
+                .unwrap();
+            let first = motor.data.values()[0];
+            assert!(motor.data.values().iter().all(|v| *v == first));
+        }
+        assert_eq!(speeds, [630.0, 798.0, 966.0, 1134.0]);
+        // the tones and the floor, measured a second way: the tone's
+        // projection, and the RMS of what is left (the noise and the
+        // rounding of the log, 1/12)
+        let [roll_tone, yaw_tone] = NOISE_TONES;
+        for (axis, tone) in [
+            (Axis::Roll, Some(roll_tone)),
+            (Axis::Pitch, None),
+            (Axis::Yaw, Some(yaw_tone)),
+        ] {
+            let raw = gyro_of(&session, axis, GyroStage::Raw);
+            assert_eq!(raw, gyro_of(&session, axis, GyroStage::Filtered));
+            let mut rest = raw.clone();
+            if let Some((hz, amplitude)) = tone {
+                let (s, c) = parts_at(&raw, hz, fs);
+                assert!((s.hypot(c) - amplitude).abs() < 0.06, "{axis:?}");
+                for (i, v) in rest.iter_mut().enumerate() {
+                    let phase = std::f64::consts::TAU * hz * i as f64 / fs;
+                    *v -= s * phase.sin() + c * phase.cos();
+                }
+            }
+            let rms = (rest.iter().map(|v| v * v).sum::<f64>() / rest.len() as f64).sqrt();
+            let want = (NOISE_FLOOR.powi(2) + 1.0 / 12.0).sqrt();
+            assert!(
+                (rms / want - 1.0).abs() < 0.015,
+                "{axis:?}: {rms} for {want}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_filtered_gyro_of_the_filter_delay_is_the_unfiltered_one_later() {
+        let probe = web("f1-fdelay-2k");
+        let (_, session) = log_of(&probe);
+        let (samples, hz) = FILTER_DELAY;
+        let (gain, delay) = FILTER_D;
+        let raw = |axis: Axis| gyro_of(&session, axis, GyroStage::Raw);
+        let filtered = |axis: Axis| gyro_of(&session, axis, GyroStage::Filtered);
+        // roll: the same samples, five later
+        let (x, y) = (raw(Axis::Roll), filtered(Axis::Roll));
+        let later = samples as usize;
+        assert!(y[..later].iter().all(|v| *v == 0.0));
+        assert_eq!(y[later..], x[..x.len() - later]);
+        // and a second way: the lag of the largest cross-correlation
+        assert_eq!(lag_of(&x, &y), later);
+        // pitch: the low-pass computed again from the logged unfiltered
+        // gyro, within the rounding of both channels
+        let (x, y) = (raw(Axis::Pitch), filtered(Axis::Pitch));
+        let k = crate::signal::low_pass_gain(hz, probe.flight.fs);
+        assert!((k - 0.239_057).abs() < 1e-6);
+        let mut state = 0.0;
+        let off = x.iter().zip(&y).fold(0.0f64, |m, (x, y)| {
+            state += k * (x - state);
+            m.max((state - y).abs())
+        });
+        assert!(off <= 1.0, "{off}");
+        // yaw: the same samples
+        assert_eq!(raw(Axis::Yaw), filtered(Axis::Yaw));
+        // the D term: exactly −20 times the change of the logged filtered
+        // gyro, four samples later; and the lag a second way
+        for axis in [Axis::Roll, Axis::Pitch] {
+            let change = minus_change(&filtered(axis));
+            let d = term_of(&session, axis, PidTerm::D).unwrap();
+            let later = delay as usize;
+            assert!(d[..later].iter().all(|v| *v == 0.0));
+            assert!(
+                d[later..].iter().zip(&change).all(|(d, c)| *d == gain * c),
+                "{axis:?}"
+            );
+            assert_eq!(lag_of(&change, &d), later, "{axis:?}");
+        }
+        assert!(term_of(&session, Axis::Yaw, PidTerm::D).is_none());
+    }
+
+    #[test]
+    fn the_d_term_of_its_probe_is_a_known_factor_times_the_change_of_the_gyro() {
+        let probe = web("k1-dterm-2k");
+        let fs = probe.flight.fs;
+        let (head, session) = log_of(&probe);
+        for line in [
+            "H rollPID:45,80,30\n",
+            "H pitchPID:47,84,34\n",
+            "H yawPID:45,80,0\n",
+            "H d_max:40,46,0\n",
+        ] {
+            assert!(head.contains(line), "{line}");
+        }
+        for (axis, gain) in [(Axis::Roll, D_GAINS[0]), (Axis::Pitch, D_GAINS[1])] {
+            let change = minus_change(&gyro_of(&session, axis, GyroStage::Filtered));
+            let d = term_of(&session, axis, PidTerm::D).unwrap();
+            // the factor by regression on minus the change, and sample by
+            // sample
+            let (num, den) = change
+                .iter()
+                .zip(&d)
+                .fold((0.0, 0.0), |(n, s), (c, d)| (n + c * d, s + c * c));
+            assert!((num / den - gain).abs() < 1e-12, "{axis:?}: {}", num / den);
+            assert!(d.iter().zip(&change).all(|(d, c)| *d == gain * c));
+        }
+        // the triangle of roll changes by 5 deg/s a sample: the D term is
+        // ∓50 but where the dither moves a sample
+        let roll = term_of(&session, Axis::Roll, PidTerm::D).unwrap();
+        let fifty = roll.iter().filter(|v| v.abs() == 50.0).count();
+        assert!(fifty > roll.len() / 2, "{fifty}");
+        // P, I and F zero, and no D term on yaw
+        for axis in Axis::ALL {
+            for term in [PidTerm::P, PidTerm::I, PidTerm::F] {
+                let values = term_of(&session, axis, term).unwrap();
+                assert!(values.iter().all(|v| *v == 0.0), "{axis:?} {term:?}");
+            }
+        }
+        assert!(term_of(&session, Axis::Yaw, PidTerm::D).is_none());
+        // the unfiltered gyro is the filtered one and a tone of its own
+        let (hz, amplitude) = UNFILTERED_ONLY;
+        for axis in Axis::ALL {
+            let raw = gyro_of(&session, axis, GyroStage::Raw);
+            let filtered = gyro_of(&session, axis, GyroStage::Filtered);
+            let more: Vec<f64> = raw.iter().zip(&filtered).map(|(r, f)| r - f).collect();
+            let (s, c) = parts_at(&more, hz, fs);
+            assert!((s.hypot(c) - amplitude).abs() < 0.05, "{axis:?}");
+            assert!(more.iter().all(|v| v.abs() <= amplitude + 1.0));
+        }
+    }
+
+    #[test]
+    fn the_plants_of_max_start_answer_from_the_start_of_a_move() {
+        let probe = web("r1-mstart-2k");
+        let flight = &probe.flight;
+        let fs = flight.fs;
+        assert_eq!(flight.roll.plant, LEADING);
+        assert_eq!(flight.pitch.plant, second(11.0, 0.88, 10.0));
+        assert_eq!(flight.yaw.plant, HALF_AT_ONCE);
+        // a unit step: roll leads by 3 ms, yaw jumps by half at once
+        let at_start = 1.0 - (-3.0f64 / 20.0).exp();
+        assert!((LEADING.step_response(0.0) - at_start).abs() < 1e-12);
+        assert_eq!(LEADING.step_response(-0.0031), 0.0);
+        assert!(LEADING.step_response(-0.0029) > 0.0);
+        assert_eq!(HALF_AT_ONCE.step_response(-0.0001), 0.0);
+        assert_eq!(HALF_AT_ONCE.step_response(0.0), 0.5);
+        assert_eq!(HALF_AT_ONCE.step_response(0.009), 0.5);
+        assert!(HALF_AT_ONCE.step_response(1.0) > 0.999_999);
+        assert_eq!(HALF_AT_ONCE.gain(), 1.0);
+        assert!((HALF_AT_ONCE.transfer(0.0).re - 1.0).abs() < 1e-12);
+        assert!((HALF_AT_ONCE.transfer(1000.0).norm() - 0.5).abs() < 0.01);
+        // the flight: around every move of its first two seconds, the response
+        // is the sum of every move through the plant, a move of roll
+        // moving it from 3 ms (6 samples) before the setpoint does
+        for axis in Axis::ALL {
+            let spec = flight.axis(axis);
+            let moves = spec.stick.breakpoints(flight.duration_s);
+            let samples = flight.samples(axis);
+            let through = |i: usize, upto: usize| {
+                let mut level = 0.0;
+                let mut sum = 0.0;
+                for (at, to) in &moves[..upto] {
+                    sum += (to - level) * spec.plant.step_response(i as f64 / fs - at);
+                    level = *to;
+                }
+                sum
+            };
+            let early: Vec<usize> = (1..moves.len()).filter(|k| moves[*k].0 < 2.0).collect();
+            assert!(early.len() >= 2, "{axis:?}");
+            for k in early {
+                let (at, to) = moves[k];
+                let change = to - moves[k - 1].1;
+                let first = (at * fs).round() as usize;
+                assert_eq!(samples.setpoint[first], to);
+                for i in first - 10..first + 10 {
+                    let want = through(i, moves.len());
+                    assert!((samples.response[i] - want).abs() < 1e-6, "{axis:?} {i}");
+                }
+                // what this move adds before the setpoint moves, and at it
+                let added = |i: usize| through(i, k + 1) - through(i, k);
+                let (before, now) = (added(first - 1), added(first));
+                match axis {
+                    Axis::Roll => {
+                        assert!(added(first - 5).abs() > 0.01 && added(first - 6).abs() < 1e-9);
+                        assert!((now - change * at_start).abs() < 1e-9);
+                    }
+                    Axis::Pitch => assert!(before == 0.0 && added(first + 19) == 0.0),
+                    Axis::Yaw => assert!(before == 0.0 && (now - change / 2.0).abs() < 1e-9),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_log_of_the_odd_length_holds_every_sample() {
+        let probe = web("n1-len104-2k");
+        let (_, session) = log_of(&probe);
+        assert_eq!(session.len(), 20_800);
+        let t = &session.timebase.time_us;
+        assert_eq!(t[t.len() - 1] - t[0], 20_799 * 500);
     }
 }

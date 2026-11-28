@@ -22,8 +22,9 @@ COMMANDS:
            computes for the same logs), predictions.json where there is a model (what the
            model of the reference tool expects it to show), and the capture script
            with its steps (capture.ps1, steps.json, run.cmd), which walks version
-           0.94 of the reference tool through the round on Windows. The same round
-           always gives the same bytes.
+           0.94 of the reference tool through the round on Windows; a round run by
+           hand (19 on) has no capture plan. The same round always gives the same
+           bytes.
            --built-from records the commit in the manifest.
     compare
            Hold every vector copy (.emf) in <capture-results-dir> that the round's
@@ -81,6 +82,16 @@ ROUNDS:
              with a tone of its own; the stick's path into the step response (an RC command
              and a feedforward that are not the setpoint's); the log of round 16 that counts
              its samples at 2 and 4 kHz, and its stairs in flights of 11, 12 and 13 s.
+    18       The confirmation of the reference tool's stretch: flights made for no question
+             for every window, short stairs of 10.1 to 10.9 s, a log whose clock runs off
+             its rate and one that pauses, the step response from windows of 4 and 5 s.
+    19       The third round with the web edition 1.0 of the reference tool (W3), run by
+             hand: logs and a manifest only, no capture plan. The spectrum's columns
+             \"Motor Noise\" (motors at speeds of their own, as eRPM) and \"Filt. Delay\" (a
+             filtered gyro of known delay), the factor of \"D term raw\" (a D term that is a
+             known factor times the change of the gyro), \"Max start\" of the step response
+             (plants that lead the stick or jump at once), a log of 10.4 s, and the stairs
+             of the throttle of 63 s at 1 and 8 kHz.
 ";
 
 /// Runs the tool with `args` (without the program name), printing to `out`.
