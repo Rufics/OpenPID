@@ -155,10 +155,13 @@ this tab follows (DESIGN §6.6):
   part's colour, "per motor: H1 150 Hz · 100 % 0.2179 ms · 1.961°, H2 …",
   the notch of one motor (the mean over the motors). The notch column counts
   it once per motor.
-- **The fade** of the RPM notches in the curves: every harmonic by the motor
-  frequency, `min(1, (f1 − min) / fade)` times its own weight, none below the
-  minimum. The simulation keeps the firmware's fade (each harmonic by its
-  own frequency): the column on the right is checked against the log.
+- **The fade** of the RPM notches, in the curves and in the simulation
+  alike: every harmonic by the motor frequency, `min(1, (f1 − min) / fade)`
+  times its own weight, none below the minimum (both follow the web edition
+  1.0, D-015; for the simulation the owner's choice of 2026-11-28). The
+  firmware fades each harmonic by its own frequency; the two agree once the
+  motors run at the minimum plus the fade range, so the column on the right
+  still matches the log.
 - `FilterSimParams::delay_at_hz`; `PartResponse::printed` and `harmonics`;
   `ChainResponse::delay_at_hz`, `printed_lowpass`, `printed_notch`,
   `printed_total`; `ChainPart::harmonics` and `rpm_curve_weight`

@@ -322,14 +322,15 @@ the batch sampler.
   dynamic) and both, each with its lag. These are the numbers to compare
   with the reference tool's filter simulator set to the same filters, loop
   rate and delay frequency.
-- **The RPM notches fade** in the curves as the reference tool draws them:
-  every harmonic weighs from 0 at the RPM filter's minimum frequency to its
-  full weight at the minimum plus the fade range, by the motor frequency
-  (20 % at 110 Hz for a minimum of 100 Hz and a fade of 50 Hz), and a motor
-  below the minimum has no RPM notches at all. The firmware fades each
-  harmonic by its own frequency, and so does the simulation on the right;
-  the two only differ when the motors turn slower than the minimum plus the
-  fade range.
+- **The RPM notches fade** as the reference tool's web edition 1.0 draws
+  them, in the curves and in the simulation on the right alike: every
+  harmonic weighs from 0 at the RPM filter's minimum frequency to its full
+  weight at the minimum plus the fade range, by the motor frequency (20 % at
+  110 Hz for a minimum of 100 Hz and a fade of 50 Hz), and a motor below the
+  minimum has no RPM notches at all. The firmware fades each harmonic by its
+  own frequency; that only differs when the motors turn slower than the
+  minimum plus the fade range, so the simulation still follows the logged
+  filtered gyro as closely.
 - **Two rates.** The curves on the left are the craft's filters as the craft
   runs them: each at the rate of the loop it runs in, read from the log's
   headers. On Betaflight 4.2 and later the second low-pass runs at the gyro

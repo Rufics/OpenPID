@@ -548,16 +548,15 @@ impl ChainModel {
                 for (m, motor) in drive.rpm.iter().enumerate() {
                     let rpm_now = motor.get(i).copied().unwrap_or(0.0).max(0.0);
                     let f_motor = smoothers[m].update(rpm_now / 60.0);
-                    for (k, notch) in filters[m].iter_mut().enumerate() {
-                        let f = f_motor * (k + 1) as f64;
-                        let weight =
-                            rpm_fade(model, f) * model.weights.get(k).copied().unwrap_or(1.0);
+                    for (harmonic, notch) in (1..).zip(filters[m].iter_mut()) {
+                        let f = f_motor * f64::from(harmonic);
+                        let weight = rpm_curve_weight(model, f_motor, harmonic).unwrap_or(0.0);
                         if f >= nyq || weight <= 0.0 || f <= 0.0 {
                             // the notch keeps running on its last centre but contributes nothing
                             notch.update(v);
                             continue;
                         }
-                        notch.retune(&Biquad::notch_q(f.max(model.min_hz), model.q, fs));
+                        notch.retune(&Biquad::notch_q(f, model.q, fs));
                         v = notch.update_weighted(v, weight);
                     }
                 }
@@ -610,17 +609,18 @@ impl ChainModel {
     }
 }
 
-/// A low-pass stage of `l`'s topology at `cutoff_hz` (none for a zero cutoff).
-/// The weight of harmonic `harmonic` (from 1) of a motor at `f_motor` in
-/// the response curves, as the reference tool's web edition 1.0 draws its
-/// RPM notches (decision D-015): every harmonic fades with the motor
-/// frequency, `min(1, (f_motor − min_hz) / fade_range_hz)` times the
-/// harmonic's own weight, and a motor below `min_hz` has no RPM notches at
-/// all (`None`). Without a fade range the notches switch on at `min_hz`.
+/// The weight of harmonic `harmonic` (from 1) of a motor at `f_motor`, as
+/// the reference tool's web edition 1.0 weighs its RPM notches (decision
+/// D-015): every harmonic fades with the motor frequency,
+/// `min(1, (f_motor − min_hz) / fade_range_hz)` times the harmonic's own
+/// weight, and a motor below `min_hz` has no RPM notches at all (`None`).
+/// Without a fade range the notches switch on at `min_hz`.
 ///
-/// The firmware fades each harmonic by its own frequency instead
-/// (as [`ChainModel::run`] does); the two agree
-/// whenever the motor runs at `min_hz + fade_range_hz` or faster.
+/// The one rule for both the response curves ([`ChainModel::parts_at`]) and
+/// the simulated gyro ([`ChainModel::run`]), the owner's choice of
+/// 2026-11-28. The firmware fades each harmonic by its own frequency
+/// instead; the two agree whenever the motor runs at
+/// `min_hz + fade_range_hz` or faster.
 pub fn rpm_curve_weight(r: &RpmNotchModel, f_motor: f64, harmonic: u32) -> Option<f64> {
     if f_motor.is_nan() || f_motor < r.min_hz {
         return None;
@@ -638,18 +638,6 @@ pub fn rpm_curve_weight(r: &RpmNotchModel, f_motor: f64, harmonic: u32) -> Optio
     Some(fade * own)
 }
 
-/// Fade-in of an RPM notch at `f`, as the firmware fades it: 0 below
-/// `min_hz`, rising over the fade range (a hard switch without one).
-fn rpm_fade(r: &RpmNotchModel, f: f64) -> f64 {
-    if r.fade_range_hz > 0.0 {
-        ((f - r.min_hz) / r.fade_range_hz).clamp(0.0, 1.0)
-    } else if f >= r.min_hz {
-        1.0
-    } else {
-        0.0
-    }
-}
-
 fn kind_label(k: &LowpassKind) -> &'static str {
     match k {
         LowpassKind::Pt2 => "PT2",
@@ -659,6 +647,7 @@ fn kind_label(k: &LowpassKind) -> &'static str {
     }
 }
 
+/// A low-pass stage of `l`'s topology at `cutoff_hz` (none for a zero cutoff).
 fn lowpass_stage(l: &LowpassModel, cutoff_hz: f64, fs: f64) -> Option<Stage> {
     if cutoff_hz <= 0.0 {
         return None;
@@ -866,7 +855,7 @@ mod tests {
     }
 
     #[test]
-    fn the_curves_fade_every_harmonic_with_the_motor_the_firmware_each_with_its_own() {
+    fn the_curves_fade_every_harmonic_with_the_motor() {
         // a minimum of 100 Hz and a fade of 50 Hz; one motor at 110 Hz
         let s = settings_with(|s| rpm(s).fade_range_hz = 50.0);
         let m = ChainModel::from_settings(&s, ChainKind::Gyro, 8000.0);
@@ -881,6 +870,8 @@ mod tests {
                 .into_iter()
                 .find(|p| p.stage == FilterStage::RpmNotch)
         };
+        // every harmonic is faded by the fundamental, the second and third
+        // at 220 and 330 Hz as much as the first
         let part = rpm_of(110.0).unwrap();
         let weights: Vec<f64> = part.stages.iter().map(|(_, w)| *w).collect();
         assert!(
@@ -893,26 +884,15 @@ mod tests {
             .map(|h| (h.motor, h.harmonic, h.hz))
             .collect();
         assert_eq!(which, [(0, 1, 110.0), (0, 2, 220.0), (0, 3, 330.0)]);
-        // the firmware fades each harmonic by its own frequency: the second
-        // and third, at 220 and 330 Hz, are past the fade
-        let firmware: Vec<f64> = [110.0, 220.0, 330.0]
-            .iter()
-            .map(|f| rpm_fade(r, *f))
-            .collect();
-        assert!((firmware[0] - 0.2).abs() < 1e-12 && firmware[1..] == [1.0, 1.0]);
-        // the two agree from the end of the fade up
+        // from the end of the fade up every harmonic is at full weight
         for f in [150.0, 200.0] {
             for k in 1..=3 {
-                assert_eq!(
-                    rpm_curve_weight(r, f, k),
-                    Some(rpm_fade(r, f * f64::from(k)))
-                );
+                assert_eq!(rpm_curve_weight(r, f, k), Some(1.0));
             }
         }
-        // below the minimum the curves have no RPM notches at all; the
-        // firmware keeps the harmonics above it
+        // below the minimum there are no RPM notches at all
         assert!(rpm_of(80.0).is_none());
-        assert_eq!(rpm_fade(r, 160.0), 1.0);
+        assert_eq!(rpm_curve_weight(r, 80.0, 2), None);
         assert_eq!(rpm_curve_weight(r, f64::NAN, 1), None);
         // the other parts carry no harmonics
         assert!(
@@ -921,6 +901,62 @@ mod tests {
                 .filter(|p| p.stage != FilterStage::RpmNotch)
                 .all(|p| p.harmonics.is_empty())
         );
+    }
+
+    #[test]
+    fn the_simulated_gyro_fades_the_rpm_notches_as_the_curves_do() {
+        // only the RPM notches: a minimum of 100 Hz and a fade of 50 Hz
+        let s = settings_with(|s| rpm(s).fade_range_hz = 50.0);
+        let mut m = ChainModel::from_settings(&s, ChainKind::Gyro, FS);
+        m.dyn_notch = None;
+        m.notches.clear();
+        m.lowpass1 = None;
+        m.lowpass2 = None;
+        let n = 6000;
+        let gain = |motor_hz: f64, tone_hz: f64| {
+            let x: Vec<f64> = (0..n)
+                .map(|i| (2.0 * std::f64::consts::PI * tone_hz * i as f64 / FS).sin())
+                .collect();
+            let rpm = vec![motor_hz * 60.0; n];
+            let y = m.run(
+                &x,
+                &Drive {
+                    rpm: vec![&rpm],
+                    ..Default::default()
+                },
+            );
+            let tail = &y[3000..];
+            (tail.iter().map(|v| v * v).sum::<f64>() / tail.len() as f64).sqrt()
+                * std::f64::consts::SQRT_2
+        };
+        let curve = |motor_hz: f64, tone_hz: f64| {
+            m.parts_at(&OperatingPoint {
+                throttle: None,
+                motor_hz: vec![motor_hz],
+                dyn_hz: Vec::new(),
+            })
+            .into_iter()
+            .find(|p| p.stage == FilterStage::RpmNotch)
+            .map_or(1.0, |p| p.response(tone_hz).norm())
+        };
+        // a motor at 110 Hz: every harmonic at 20 %, so a tone on the second
+        // keeps about 80 % (the firmware's own rule would notch it out)
+        for tone in [110.0, 220.0, 330.0] {
+            let (sim, drawn) = (gain(110.0, tone), curve(110.0, tone));
+            assert!((sim - drawn).abs() < 0.01, "{tone} Hz: {sim} vs {drawn}");
+            assert!(sim > 0.75 && sim < 0.85, "{tone} Hz: {sim}");
+        }
+        // a motor at 80 Hz, under the minimum: nothing is filtered, not even
+        // the harmonics above it
+        for tone in [160.0, 240.0] {
+            assert_eq!(curve(80.0, tone), 1.0);
+            assert!((gain(80.0, tone) - 1.0).abs() < 1e-3, "{tone} Hz");
+        }
+        // past the fade both notch every harmonic fully
+        for tone in [200.0, 400.0] {
+            let (sim, drawn) = (gain(200.0, tone), curve(200.0, tone));
+            assert!(sim < 0.05 && drawn < 1e-6, "{tone} Hz: {sim} vs {drawn}");
+        }
     }
 
     /// Phase delay of `part` at `f_hz`, ms.
