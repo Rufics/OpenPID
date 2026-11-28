@@ -249,7 +249,10 @@ fn project_file_saves_and_restores_the_view() {
         });
         a.tools.step.cutoff_hz = 31.0;
         a.tools.psd.segment_s = 0.4;
+        a.tools.throttle.smoothing = openpid_analysis::ThrottleSmoothing::MedHigh;
         a.tools.min_segments = 7;
+        a.tools.throttle_display.below_100 = true;
+        a.tools.throttle_display.freq_lims = (10.0, 80.0);
         a.tools.filter_sim.overrides.set("lpf1_hz", 80.0).unwrap();
         a.touch_mode = true;
     }
@@ -268,6 +271,8 @@ fn project_file_saves_and_restores_the_view() {
     assert_eq!(saved.tab, "spectrum");
     assert!(saved.touch_mode);
     assert_eq!(saved.step.cutoff_hz, 31.0);
+    assert!(saved.throttle_below_100);
+    assert_eq!(saved.throttle_freq_lims, (10.0, 80.0));
     drop(ui);
     // a project on the command line restores everything once the log is in
     let ui = Ui::setup().files([file.clone()]).open();
@@ -286,7 +291,14 @@ fn project_file_saves_and_restores_the_view() {
     assert!(a.touch_mode);
     assert_eq!(a.tools.step.cutoff_hz, 31.0);
     assert_eq!(a.tools.psd.segment_s, 0.4);
+    assert_eq!(
+        a.tools.throttle.smoothing,
+        openpid_analysis::ThrottleSmoothing::MedHigh
+    );
     assert_eq!(a.tools.min_segments, 7);
+    // the view below 100 Hz of the throttle maps, which sets their numbers
+    assert!(a.tools.throttle_display.below_100);
+    assert_eq!(a.tools.throttle_display.freq_lims, (10.0, 80.0));
     assert_eq!(a.tools.filter_sim.overrides.lpf1_hz, Some(80.0));
     assert!(a.loaded(Slot::B).is_none());
     assert_eq!(a.project(&file), saved, "round trip");
@@ -314,6 +326,22 @@ fn project_file_saves_and_restores_the_view() {
         ui.app().loaded(Slot::A).unwrap().session,
         1,
         "longest of two"
+    );
+    // a project from before the view below 100 Hz opens with it off
+    let mut old: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    let fields = old.as_object_mut().unwrap();
+    assert!(fields.remove("throttle_below_100").is_some());
+    assert!(fields.remove("throttle_freq_lims").is_some());
+    let file3 = dir.join("old.openpid.json");
+    std::fs::write(&file3, old.to_string()).unwrap();
+    ui.app_mut().tools.throttle_display.below_100 = true;
+    ui.app_mut().open_project(file3);
+    ui.settle();
+    assert!(!ui.app().tools.throttle_display.below_100);
+    assert_eq!(
+        ui.app().tools.throttle_display.freq_lims,
+        openpid_analysis::throttle::FREQ_LIMS
     );
     let _ = std::fs::remove_dir_all(dir);
 }

@@ -174,6 +174,52 @@ pub fn drag_usize(
     })
 }
 
+/// Two numbers of a range in one row, "low – high unit", each within
+/// `bounds` and the low one never above the high one. `names` are the
+/// fields' own names (for screen readers and tests); the hint is on both.
+pub fn range_pair(
+    ui: &mut Ui,
+    label: &str,
+    hint: &str,
+    names: [&str; 2],
+    values: &mut (f64, f64),
+    bounds: std::ops::RangeInclusive<f64>,
+    unit: &str,
+) {
+    let (lo, hi) = *values;
+    let (min, max) = (*bounds.start(), *bounds.end());
+    let mut low = lo;
+    let mut high = hi;
+    // the fields keep their own names: the row's label would replace them
+    laid_out(ui, label, hint, false, |ui| {
+        // the row is laid out right to left: the unit, the high end, the low end
+        unit_label(ui, unit, Some(UNIT_W));
+        // (the row puts the hint on the field it is given)
+        let h = named_number(ui, &mut high, lo.max(min)..=max, names[1]);
+        ui.label(RichText::new("–").color(MUTED));
+        named_number(ui, &mut low, min..=hi.min(max), names[0]).on_hover_text(hint);
+        h
+    });
+    let low = low.clamp(min, max);
+    *values = (low, high.clamp(low, max));
+}
+
+/// A number field named `name` for screen readers and tests.
+fn named_number(
+    ui: &mut Ui,
+    value: &mut f64,
+    range: std::ops::RangeInclusive<f64>,
+    name: &str,
+) -> Response {
+    let r = ui.add(egui::DragValue::new(value).speed(1.0).range(range));
+    let (v, enabled) = (*value, ui.is_enabled());
+    r.widget_info(|| egui::WidgetInfo {
+        label: Some(name.to_string()),
+        ..egui::WidgetInfo::drag_value(enabled, v)
+    });
+    r
+}
+
 /// A choice among `options` (value, text): a combo box in the value column.
 pub fn choice<T: PartialEq + Copy>(
     ui: &mut Ui,

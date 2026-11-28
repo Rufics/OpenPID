@@ -376,14 +376,143 @@ fn png_of_a_heatmap() {
         &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]
     );
     assert!(
-        bytes.len() > 4 * 101 * 100,
-        "101 throttle bins × frequency rows"
+        bytes.len() > 4 * 100 * 100,
+        "100 throttle columns × frequency rows"
     );
     let (ok, _, err) = run(&["run", "stft", f, "--png", png.to_str().unwrap()]);
     assert!(ok, "{err}");
     let (ok, _, err) = run(&["run", "psd", f, "--png", png.to_str().unwrap()]);
     assert!(!ok && err.contains("--png is for"), "{err}");
     std::fs::remove_file(&png).ok();
+}
+
+/// Width and height of a PNG, from its IHDR chunk.
+fn png_size(bytes: &[u8]) -> (u32, u32) {
+    let be = |at: usize| u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap());
+    (be(16), be(20))
+}
+
+#[test]
+fn thr_heatmap_command() {
+    let l = log("betaflight-2025.12.2-btfl_027.bbl");
+    let f = l.to_str().unwrap();
+    let json = |args: &[&str]| -> serde_json::Value {
+        let mut all = vec!["run", "thr-heatmap", f];
+        all.extend_from_slice(args);
+        let (ok, out, err) = run(&all);
+        assert!(ok, "{args:?}: {err}");
+        serde_json::from_str(&out).expect("json")
+    };
+    // the JSON carries the two printed numbers of both matrices, the
+    // segments per column and both grids: 100 columns, rows to half the rate
+    let v = json(&[]);
+    assert_eq!(v["smoothing"], "medium");
+    assert_eq!(v["counts"].as_array().unwrap().len(), 100);
+    // the segment zero-padded to the next power of two: rows 0 … nfft / 2
+    let nfft = v["nfft"].as_u64().unwrap() as usize;
+    assert_eq!(
+        nfft,
+        (v["nperseg"].as_u64().unwrap() as usize).next_power_of_two()
+    );
+    let rows = nfft / 2 + 1;
+    for grid in ["grid", "grid_db"] {
+        assert_eq!(v[grid]["x"].as_array().unwrap().len(), 100, "{grid}");
+        assert_eq!(v[grid]["y"].as_array().unwrap().len(), rows, "{grid}");
+        assert_eq!(v[grid]["z"].as_array().unwrap().len(), 100 * rows);
+    }
+    assert_eq!(v["grid"]["x"][0], 0.5);
+    let fs = v["fs"].as_f64().unwrap();
+    let top = v["grid"]["y"][rows - 1].as_f64().unwrap();
+    assert!((top - fs / 2.0).abs() < 1e-6);
+    let number = |v: &serde_json::Value, key: &str| v[key].as_f64().expect("a number");
+    let (mean, peak) = (number(&v, "mean"), number(&v, "peak"));
+    assert!(mean > 0.0 && peak > mean, "{mean} {peak}");
+    assert!(number(&v, "peak_db") > number(&v, "mean_db"));
+    // the mean and the peak are those of the grid from 100 Hz up
+    let values = |key: &str| -> Vec<f64> {
+        v["grid"][key]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c.as_f64().unwrap())
+            .collect()
+    };
+    let (y, z) = (values("y"), values("z"));
+    let between = |lo: f64, hi: f64| {
+        let rows: Vec<usize> = (0..rows).filter(|r| y[*r] >= lo && y[*r] <= hi).collect();
+        let cells: Vec<f64> = rows
+            .iter()
+            .flat_map(|r| z[r * 100..(r + 1) * 100].iter().copied())
+            .collect();
+        (
+            cells.iter().sum::<f64>() / cells.len() as f64,
+            cells.iter().copied().fold(0.0, f64::max),
+        )
+    };
+    let (m, p) = between(100.0, f64::INFINITY);
+    assert!((m - mean).abs() < 1e-12 && (p - peak).abs() < 1e-12);
+    // --freq-lims adds the numbers of the view below 100 Hz, between them
+    let lims = json(&["--freq-lims", "20..60"]);
+    assert_eq!(lims["freq_lims"]["lo_hz"], 20.0);
+    assert_eq!(lims["freq_lims"]["hi_hz"], 60.0);
+    let (m, p) = between(20.0, 60.0);
+    assert!((number(&lims["freq_lims"], "mean") - m).abs() < 1e-12);
+    assert!((number(&lims["freq_lims"], "peak") - p).abs() < 1e-12);
+    assert!(number(&lims["freq_lims"], "peak_db") >= number(&lims["freq_lims"], "mean_db"));
+    assert_eq!(lims["mean"], v["mean"]);
+    assert!(v.get("freq_lims").is_none());
+    for bad in ["60..20", "20", "a..60"] {
+        let (ok, _, err) = run(&["run", "thr-heatmap", f, "--freq-lims", bad]);
+        assert!(!ok && err.contains("bad --freq-lims"), "{bad}: {err}");
+    }
+    // --smoothing by name or by number: a wider kernel lowers the peak
+    let high = json(&["--smoothing", "high"]);
+    assert_eq!(high["smoothing"], "high");
+    assert!(number(&high, "peak") < peak);
+    assert_eq!(high["counts"], v["counts"]);
+    let low = json(&["--smoothing", "1"]);
+    assert_eq!(low["smoothing"], "low");
+    assert!(number(&low, "peak") > peak);
+    let (ok, _, err) = run(&["run", "thr-heatmap", f, "--smoothing", "strong"]);
+    assert!(!ok && err.contains("bad --smoothing strong"), "{err}");
+    let (ok, _, err) = run(&["run", "thr-heatmap", f, "--smoothing"]);
+    assert!(!ok && err.contains("--smoothing needs a level"), "{err}");
+    // --png draws the linear matrix as the tab does by default, --db the
+    // decibel one; the JSON is the same either way
+    let (linear, decibels) = (temp("thr-linear.png"), temp("thr-db.png"));
+    let with_png = json(&["--png", linear.to_str().unwrap()]);
+    assert_eq!(with_png, v);
+    let with_db = json(&["--db", "--png", decibels.to_str().unwrap()]);
+    assert_eq!(with_db, v);
+    let (a, b) = (
+        std::fs::read(&linear).unwrap(),
+        std::fs::read(&decibels).unwrap(),
+    );
+    assert_eq!(png_size(&a), (100, rows as u32));
+    assert_eq!(png_size(&b), (100, rows as u32));
+    assert_ne!(a, b, "two different pictures");
+    std::fs::remove_file(&linear).ok();
+    std::fs::remove_file(&decibels).ok();
+    // a project gives the level; the parameters of a project saved before
+    // the map followed the reference tool are ignored
+    let project = temp("thr.openpid.json");
+    std::fs::write(
+        &project,
+        format!(
+            r#"{{"version":2,"slots":[{{"path":"{}","session":0}}],"throttle":{{"smoothing":"low","segment_s":0.2,"half_window":6.0,"window":"hann","max_hz":1000.0,"smooth_throttle":8,"smooth_freq_frac":0.01}}}}"#,
+            f.replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    let (ok, out, err) = run(&["run", "thr-heatmap", "--project", project.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    let from_project: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert_eq!(from_project["smoothing"], "low");
+    assert_eq!(from_project["peak"], low["peak"]);
+    std::fs::remove_file(&project).ok();
+    // and the help names the options
+    let (_, help, _) = run(&["--help"]);
+    assert!(help.contains("--smoothing") && help.contains("--db") && help.contains("--freq-lims"));
 }
 
 #[test]

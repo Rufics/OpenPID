@@ -90,6 +90,8 @@ S (≈ 1–1½ days).
 - CLI: `openpid info` prints the `fitness` block, `--json` adds `fitness` to the session.
 - Deviations from the threshold table after checking against real logs:
   `rate` Ok from **950 Hz** (1 kHz with jitter logs 997 Hz); `throttle` counts
-  the coverage with a ±3 % throttle window, as the heatmap does, Ok from **30 %**
+  the coverage with a ±3 % throttle window, as the heatmap did then (the map
+  has since been computed as the reference tool computes its own, DESIGN
+  §6.4; the check keeps its own count), Ok from **30 %**
   and Warn from 10 % (a 40 s freestyle log covers ~30 % of the range, not 50 %);
   the dots became the ASCII markers `[ok] [!] [x]` (the egui font lacks the glyphs).

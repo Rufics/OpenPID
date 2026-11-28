@@ -89,6 +89,11 @@ pub struct Project {
     pub heatmap_link: bool,
     /// Throttle bins with fewer segments are greyed out.
     pub min_segments: usize,
+    /// Freq × throttle: the view below 100 Hz (decision D-015), off in a
+    /// project that does not have it.
+    pub throttle_below_100: bool,
+    /// Freq × throttle: the two frequency limits of that view, Hz.
+    pub throttle_freq_lims: (f64, f64),
     /// Channels the log viewer shows besides its quantities ("Other channels").
     pub viewer_channels: Vec<ChannelId>,
 }
@@ -118,6 +123,8 @@ impl Default for Project {
             heatmap_max: 0.0,
             heatmap_link: true,
             min_segments: 3,
+            throttle_below_100: false,
+            throttle_freq_lims: crate::throttle::FREQ_LIMS,
             viewer_channels: Vec::new(),
         }
     }
@@ -206,6 +213,8 @@ mod tests {
         });
         p.step.cutoff_hz = 33.0;
         p.tab = "step".into();
+        p.throttle_below_100 = true;
+        p.throttle_freq_lims = (10.0, 80.0);
         assert_eq!(p.slots[0].path, PathBuf::from("logs").join("a.bbl"));
         assert_eq!(
             Project::resolve(&file, &p.slots[0].path),
@@ -228,6 +237,9 @@ mod tests {
         let loaded = Project::load(&file).unwrap();
         assert_eq!(loaded.tab, "spectrum");
         assert_eq!(loaded.step, StepParams::default());
+        // a project without the view below 100 Hz opens with it off
+        assert!(!loaded.throttle_below_100);
+        assert_eq!(loaded.throttle_freq_lims, crate::throttle::FREQ_LIMS);
         std::fs::write(&file, r#"{"version":99}"#).unwrap();
         assert!(Project::load(&file).unwrap_err().contains("newer"));
         std::fs::write(&file, "nope").unwrap();

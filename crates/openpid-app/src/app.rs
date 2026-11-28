@@ -731,6 +731,8 @@ impl App {
             heatmap_max: t.heatmap_max,
             heatmap_link: t.heatmap_link,
             min_segments: t.min_segments,
+            throttle_below_100: t.throttle_display.below_100,
+            throttle_freq_lims: t.throttle_display.freq_lims,
             viewer_channels: t.viewer_channels.clone(),
             ..Project::default()
         }
@@ -762,12 +764,18 @@ impl App {
             heatmap_link: p.heatmap_link,
             min_segments: p.min_segments,
             viewer_channels: p.viewer_channels.clone(),
-            // display options are the viewer's, not the project's
+            // display options are the viewer's, not the project's, but for
+            // the view below 100 Hz of the throttle maps, which changes the
+            // printed numbers
             log_display: self.tools.log_display.clone(),
             axis_focus: self.tools.axis_focus,
             step_display: self.tools.step_display.clone(),
             spectrum_display: self.tools.spectrum_display.clone(),
-            throttle_display: self.tools.throttle_display.clone(),
+            throttle_display: crate::throttle_tab::ThrottleDisplay {
+                below_100: p.throttle_below_100,
+                freq_lims: p.throttle_freq_lims,
+                ..self.tools.throttle_display.clone()
+            },
             time_display: self.tools.time_display.clone(),
             advice_display: self.tools.advice_display.clone(),
             setup_display: self.tools.setup_display.clone(),

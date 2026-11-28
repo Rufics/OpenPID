@@ -83,10 +83,12 @@ const STICKS_WARN: usize = 5;
 /// part of it, not all of it (a 40 s freestyle log covers ~30 %).
 const THROTTLE_OK: f64 = 0.3;
 const THROTTLE_WARN: f64 = 0.1;
-/// A segment counts for the bins within this many percent, as the heatmap's
-/// throttle window averages them.
+/// A segment counts for the bins within this many percent. The check is a
+/// measure of its own of how much of the throttle range a log visited: it
+/// does not count the columns of the freq × throttle map, whose segments
+/// overlap and whose columns are two percent wide (`throttle.rs`).
 const THROTTLE_HALF_WINDOW: usize = 3;
-/// Segment length for the throttle coverage count (as the heatmap's default).
+/// Segment length for the throttle coverage count.
 const THROTTLE_SEGMENT_S: f64 = 0.2;
 const THROTTLE_MIN_SEGMENTS: usize = 3;
 

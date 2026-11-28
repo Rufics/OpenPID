@@ -124,7 +124,6 @@ fn throttle_heatmap_ridge_follows_the_motor_speed() {
                     axis: Axis::Roll,
                     stage: GyroStage::Raw,
                 },
-                max_hz: 500.0,
                 ..Default::default()
             },
         )

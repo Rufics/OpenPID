@@ -70,6 +70,7 @@ pub fn tr_text(en: &str) -> String {
 /// English → Ukrainian, sorted by the English key (binary search).
 static UA: &[(&str, &str)] = &[
     ("1 change proposed", "запропоновано 1 зміну"),
+    ("< 100 Hz", "< 100 Гц"),
     ("< step", "< крок"),
     ("Acceleration", "Прискорення"),
     ("Add log", "Додати лог"),
@@ -125,6 +126,7 @@ static UA: &[(&str, &str)] = &[
     ),
     ("Colour", "Колір"),
     ("Colour max", "Макс. кольору"),
+    ("Colour scale", "Шкала кольору"),
     ("Colour-blind safe", "Для дальтоніків"),
     ("Control panel", "Панель керування"),
     ("Copy", "Копіювати"),
@@ -151,6 +153,7 @@ static UA: &[(&str, &str)] = &[
     ("Data", "Дані"),
     ("Debug", "Налагодження"),
     ("Debug mode", "Режим debug"),
+    ("Decibels", "Децибели"),
     ("Decoder", "Декодер"),
     ("Delay", "Затримка"),
     ("Desynchronised frames", "Розсинхронізовані кадри"),
@@ -178,6 +181,7 @@ static UA: &[(&str, &str)] = &[
     ("Flight modes", "Режими польоту"),
     ("Frames", "Кадри"),
     ("Freestyle", "Фрістайл"),
+    ("Freq lims", "Межі частот"),
     ("Freq × throttle", "Частота × газ"),
     ("Freq × time", "Частота × час"),
     ("Go to Advice", "До порад"),
@@ -194,6 +198,7 @@ static UA: &[(&str, &str)] = &[
     ("Help", "Довідка"),
     ("Hide the control panel", "Сховати панель керування"),
     ("High input", "Сильний вхід"),
+    ("High limit", "Верхня межа"),
     ("I gain", "Підсилення I"),
     ("I-term", "I-складова"),
     ("I-term relax", "I-term relax"),
@@ -211,6 +216,7 @@ static UA: &[(&str, &str)] = &[
     ("Log viewer", "Перегляд логу"),
     ("Logging rate", "Частота запису"),
     ("Logs", "Логи"),
+    ("Low limit", "Нижня межа"),
     ("Low-pass 1", "Low-pass 1"),
     ("Low-pass 2", "Low-pass 2"),
     ("Master multiplier", "Загальний множник"),
@@ -381,7 +387,6 @@ static UA: &[(&str, &str)] = &[
     ("Throttle", "Газ"),
     ("Throttle boost", "Throttle boost"),
     ("Throttle curve", "Крива газу"),
-    ("Throttle window ±", "Вікно газу ±"),
     ("To start", "На початок"),
     ("Touch mode", "Сенсорний режим"),
     ("Tour", "Тур"),
@@ -468,6 +473,7 @@ static UA: &[(&str, &str)] = &[
     ("as flown:", "як у польоті:"),
     ("at", "при"),
     ("auto", "авто"),
+    ("automatic", "автоматична"),
     ("axes", "осі"),
     ("axis", "вісь"),
     (
@@ -513,10 +519,6 @@ static UA: &[(&str, &str)] = &[
         "тягніть ручку або вікно; подвійний клік = весь лог",
     ),
     ("drives LPF1", "керує LPF1"),
-    (
-        "each throttle bin averages the segments within this distance of it",
-        "кожен бін газу усереднює сегменти в межах цієї відстані від нього",
-    ),
     ("empty", "порожній"),
     ("end", "кінець"),
     ("end = cursor", "кінець = курсор"),
@@ -558,6 +560,10 @@ static UA: &[(&str, &str)] = &[
     (
         "hover the map for a value",
         "наведіть на карту, щоб побачити значення",
+    ),
+    (
+        "how far a cell is spread over its neighbours along the throttle and the frequency: higher reads calmer and lowers the peaks",
+        "наскільки комірка розмивається на сусідні вздовж газу й частоти: вище дає спокійнішу карту й нижчі піки",
     ),
     (
         "how far a noise peak must stand above the spectrum around it to count",
@@ -621,10 +627,6 @@ static UA: &[(&str, &str)] = &[
     (
         "length of each spectrum along the log: longer gives finer frequency steps and coarser time steps",
         "довжина кожного спектра вздовж логу: довший дає дрібніший крок частоти й грубший крок часу",
-    ),
-    (
-        "length of each spectrum along the log: longer gives finer frequency steps, fewer segments per throttle bin",
-        "довжина кожного спектра вздовж логу: довший дає дрібніший крок частоти й менше сегментів на бін газу",
     ),
     (
         "length of each spectrum segment: longer gives finer frequency steps and fewer averages",
@@ -837,6 +839,10 @@ static UA: &[(&str, &str)] = &[
         "режими польоту під вказівником або курсором, на тій самій картці",
     ),
     (
+        "the frequencies from 0 to 100 Hz, with dashed lines at the two frequency limits and the printed mean and peak taken between them instead of from 100 Hz up; the maps are the same",
+        "частоти від 0 до 100 Гц, з пунктирними лініями на двох межах частот, а надруковані середнє та пік беруться між ними замість від 100 Гц і вище; карти ті самі",
+    ),
+    (
         "the frequency the notch removes; 0 switches it off",
         "частота, яку вирізає notch; 0 вимикає його",
     ),
@@ -889,6 +895,18 @@ static UA: &[(&str, &str)] = &[
         "найнижча частота, за якою йдуть notch",
     ),
     ("the lowest notch centre", "найнижчий центр notch"),
+    (
+        "the map in decibels of a power density, on −40 … 10 dB, instead of the linear one on 0 … 0.5; an empty throttle bin is −40 dB",
+        "карта в децибелах густини потужності, на шкалі −40 … 10 дБ, замість лінійної на 0 … 0.5; порожній бін газу має −40 дБ",
+    ),
+    (
+        "the mean and the largest cell of this map between the two frequency limits, both included; a cell is not the amplitude of a tone",
+        "середнє та найбільша комірка цієї карти між двома межами частот, обидві включно; комірка не є амплітудою тону",
+    ),
+    (
+        "the mean and the largest cell of this map, from 100 Hz up; a cell is not the amplitude of a tone",
+        "середнє та найбільша комірка цієї карти, від 100 Гц і вище; комірка не є амплітудою тону",
+    ),
     (
         "the motor outputs, in the row under the axes (%)",
         "виходи моторів, у рядку під осями (%)",
@@ -952,6 +970,10 @@ static UA: &[(&str, &str)] = &[
         "верх осей частоти; auto: половина частоти логування",
     ),
     (
+        "the two frequencies between which the printed mean and peak are taken, both included, drawn as dashed lines; 20 and 60 Hz by default, at most half the logging rate",
+        "дві частоти, між якими беруться надруковані середнє та пік, обидві включно, позначені пунктирними лініями; типово 20 і 60 Гц, не більше половини частоти запису",
+    ),
+    (
         "the unfiltered gyro beside the filtered one; the gyro only",
         "нефільтрований гіро поруч із фільтрованим; лише для гіро",
     ),
@@ -980,6 +1002,10 @@ static UA: &[(&str, &str)] = &[
         "значення, що малюється найяскравішим; авто: найсильніші лінії карт",
     ),
     (
+        "the value drawn in the brightest colour",
+        "значення найяскравішого кольору",
+    ),
+    (
         "the verdict table: every log and axis against the targets",
         "таблиця вердиктів: кожен лог і вісь проти цілей",
     ),
@@ -996,15 +1022,19 @@ static UA: &[(&str, &str)] = &[
     ("time (ms)", "час (мс)"),
     ("time (s)", "час (с)"),
     ("timeline", "таймлайн"),
-    ("top of the frequency axis", "верх осі частот"),
     (
         "top of the frequency axis, at most half the logging rate",
         "верх осі частот, не більше половини частоти запису",
+    ),
+    (
+        "top of the frequency axis; auto: half the logging rate, as far as the map goes",
+        "верх осі частот; авто: половина частоти запису, доки сягає карта",
     ),
     ("top peak", "головний пік"),
     ("total", "разом"),
     ("total as flown", "разом, як у польоті"),
     ("type", "тип"),
+    ("typed in", "задана вручну"),
     (
         "under the proposals, what every other rule saw: satisfied, or not judged and why",
         "під пропозиціями — що побачило кожне інше правило: виконано або не оцінено й чому",
@@ -1035,6 +1065,10 @@ static UA: &[(&str, &str)] = &[
         "що прочитано з файлу: семпли, кадри і те, що прочитати не вдалося",
     ),
     ("what-if", "що-якщо"),
+    (
+        "where the colours end: the fixed scale, on which every log and every map reads alike; automatic, the 99th percentile of the log's maps above 20 Hz, for a quiet log; or a maximum typed in",
+        "де закінчуються кольори: фіксована шкала, на якій усі логи й усі карти читаються однаково; автоматична, 99-й перцентиль карт логу вище 20 Гц, для тихого логу; або стеля, задана вручну",
+    ),
     (
         "whether the log is fit for analysis: its rate, length, what was logged, and the fix where something is missing",
         "чи придатний лог для аналізу: частота, тривалість, що записано, і як виправити, якщо чогось бракує",
