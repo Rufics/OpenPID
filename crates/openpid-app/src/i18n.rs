@@ -70,6 +70,7 @@ pub fn tr_text(en: &str) -> String {
 /// English → Ukrainian, sorted by the English key (binary search).
 static UA: &[(&str, &str)] = &[
     ("1 change proposed", "запропоновано 1 зміну"),
+    ("< 100 Hz", "< 100 Гц"),
     ("< step", "< крок"),
     ("Acceleration", "Прискорення"),
     ("Add log", "Додати лог"),
@@ -180,6 +181,7 @@ static UA: &[(&str, &str)] = &[
     ("Flight modes", "Режими польоту"),
     ("Frames", "Кадри"),
     ("Freestyle", "Фрістайл"),
+    ("Freq lims", "Межі частот"),
     ("Freq × throttle", "Частота × газ"),
     ("Freq × time", "Частота × час"),
     ("Go to Advice", "До порад"),
@@ -196,6 +198,7 @@ static UA: &[(&str, &str)] = &[
     ("Help", "Довідка"),
     ("Hide the control panel", "Сховати панель керування"),
     ("High input", "Сильний вхід"),
+    ("High limit", "Верхня межа"),
     ("I gain", "Підсилення I"),
     ("I-term", "I-складова"),
     ("I-term relax", "I-term relax"),
@@ -213,6 +216,7 @@ static UA: &[(&str, &str)] = &[
     ("Log viewer", "Перегляд логу"),
     ("Logging rate", "Частота запису"),
     ("Logs", "Логи"),
+    ("Low limit", "Нижня межа"),
     ("Low-pass 1", "Low-pass 1"),
     ("Low-pass 2", "Low-pass 2"),
     ("Master multiplier", "Загальний множник"),
@@ -835,6 +839,10 @@ static UA: &[(&str, &str)] = &[
         "режими польоту під вказівником або курсором, на тій самій картці",
     ),
     (
+        "the frequencies from 0 to 100 Hz, with dashed lines at the two frequency limits and the printed mean and peak taken between them instead of from 100 Hz up; the maps are the same",
+        "частоти від 0 до 100 Гц, з пунктирними лініями на двох межах частот, а надруковані середнє та пік беруться між ними замість від 100 Гц і вище; карти ті самі",
+    ),
+    (
         "the frequency the notch removes; 0 switches it off",
         "частота, яку вирізає notch; 0 вимикає його",
     ),
@@ -890,6 +898,10 @@ static UA: &[(&str, &str)] = &[
     (
         "the map in decibels of a power density, on −40 … 10 dB, instead of the linear one on 0 … 0.5; an empty throttle bin is −40 dB",
         "карта в децибелах густини потужності, на шкалі −40 … 10 дБ, замість лінійної на 0 … 0.5; порожній бін газу має −40 дБ",
+    ),
+    (
+        "the mean and the largest cell of this map between the two frequency limits, both included; a cell is not the amplitude of a tone",
+        "середнє та найбільша комірка цієї карти між двома межами частот, обидві включно; комірка не є амплітудою тону",
     ),
     (
         "the mean and the largest cell of this map, from 100 Hz up; a cell is not the amplitude of a tone",
@@ -956,6 +968,10 @@ static UA: &[(&str, &str)] = &[
     (
         "the top of the frequency axes; auto: half the logging rate",
         "верх осей частоти; auto: половина частоти логування",
+    ),
+    (
+        "the two frequencies between which the printed mean and peak are taken, both included, drawn as dashed lines; 20 and 60 Hz by default, at most half the logging rate",
+        "дві частоти, між якими беруться надруковані середнє та пік, обидві включно, позначені пунктирними лініями; типово 20 і 60 Гц, не більше половини частоти запису",
     ),
     (
         "the unfiltered gyro beside the filtered one; the gyro only",

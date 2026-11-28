@@ -4,6 +4,8 @@
 //! Every map is the one of DESIGN §6.4: 100 throttle columns from 0 to
 //! 100 %, rows to half the log rate, linear or in decibels, with its mean
 //! and peak printed on it. Every control is in the panel on the right.
+//! The view below 100 Hz (decision D-015) shows the maps from 0 to 100 Hz
+//! with two frequency limits and the mean and peak between them.
 
 use crate::app::App;
 use crate::axis_layout::{PlotCell, control_panel};
@@ -17,7 +19,7 @@ use crate::views::{
 use crate::worker::{Kind, Output, Slot};
 use eframe::egui::{self, RichText, Ui};
 use openpid_analysis::render::sig3;
-use openpid_analysis::throttle::{DB_SCALE, LINEAR_SCALE};
+use openpid_analysis::throttle::{DB_SCALE, FREQ_LIMS, LINEAR_SCALE, LOW_VIEW_TOP_HZ};
 use openpid_analysis::{ThrottleHeatmapOutput, ThrottleHeatmapParams, ThrottleSmoothing};
 use openpid_core::{Axis, ChannelId};
 use std::sync::Arc;
@@ -50,6 +52,12 @@ pub struct ThrottleDisplay {
     /// Top of the frequency axis, Hz; `None`: half the log rate, as far as
     /// the map goes.
     pub max_hz: Option<f64>,
+    /// The view below 100 Hz (decision D-015): the frequency axis from 0 to
+    /// 100 Hz, dashed lines at `freq_lims` and the printed mean and peak
+    /// between them; the maps are the same. Kept in the project.
+    pub below_100: bool,
+    /// The two frequency limits of that view, Hz, low first.
+    pub freq_lims: (f64, f64),
 }
 
 impl Default for ThrottleDisplay {
@@ -60,6 +68,8 @@ impl Default for ThrottleDisplay {
             db: false,
             auto_scale: false,
             max_hz: None,
+            below_100: false,
+            freq_lims: FREQ_LIMS,
         }
     }
 }
@@ -71,6 +81,8 @@ pub struct ThrottleView {
     pub x_range: Option<(f64, f64)>,
     /// The top of the frequency axis the plots were last set to, Hz.
     pub y_top: Option<f64>,
+    /// The frequency-limit lines drawn last frame, Hz, over every map.
+    pub limit_lines: Vec<f64>,
 }
 
 /// What ends the colour scale of the maps.
@@ -127,6 +139,8 @@ struct Frame {
     y_top: f64,
     /// The plots are set to `range` and `y_top` this frame.
     reset: bool,
+    /// The two frequency limits of the view below 100 Hz, when it is on.
+    lims: Option<(f64, f64)>,
 }
 
 /// The tab.
@@ -153,15 +167,24 @@ pub fn throttle(app: &mut App, ui: &mut Ui) {
     }
     scales(app, &mut logs, &display);
     let range = throttle_range(&logs, app.tools.min_segments, !display.zoom_flown);
-    let y_top = frequency_top(&logs, display.max_hz);
+    // the view below 100 Hz sets the top of the axis, else "Max frequency"
+    let top_hz = display
+        .below_100
+        .then_some(LOW_VIEW_TOP_HZ)
+        .or(display.max_hz);
+    let y_top = frequency_top(&logs, top_hz);
     let frame = Frame {
         db: display.db,
         range,
         y_top,
         reset: app.throttle_view.x_range != Some(range) || app.throttle_view.y_top != Some(y_top),
+        lims: display
+            .below_100
+            .then(|| clamp_lims(display.freq_lims, nyquist(app))),
     };
     app.throttle_view.x_range = Some(range);
     app.throttle_view.y_top = Some(y_top);
+    app.throttle_view.limit_lines.clear();
     app.heatmap_hover = None;
     let columns = logs
         .iter()
@@ -434,28 +457,97 @@ fn heat_cell(
             draw_rpm_overlay(pu, o, &grid.x, y_max, &overlay);
         }
         marker_hlines(pu, &markers);
+        limit_hlines(pu, frame.lims);
         hover = heatmap_hover(pu, slot, grid);
     });
     if hover.is_some() {
         app.heatmap_hover = hover;
     }
+    app.throttle_view
+        .limit_lines
+        .extend(frame.lims.into_iter().flat_map(|(lo, hi)| [lo, hi]));
     let name = format!(
         "throttle/{}/{}{}",
         slot.name(),
         axis.name(),
         if cell.prefilt { "/prefilt" } else { "" }
     );
-    let (mean, peak) = t.mean_peak(frame.db);
-    printed_numbers(ui, &name, *shown.transform.frame(), mean, peak);
+    let (numbers, hint) = printed_values(t, frame);
+    printed_numbers(ui, &name, *shown.transform.frame(), numbers, hint);
     app.probes
         .insert(name, crate::probe::PlotProbe::of(&shown.transform));
 }
 
+/// The mean and the peak printed on a map, and the hint that says which rows
+/// they count: from 100 Hz up, or between the two frequency limits of the
+/// view below 100 Hz.
+fn printed_values(t: &ThrottleHeatmapOutput, frame: Frame) -> ((f64, f64), &'static str) {
+    match frame.lims {
+        Some((lo, hi)) => (
+            t.mean_peak_between(frame.db, lo, hi),
+            tr(
+                "the mean and the largest cell of this map between the two frequency limits, both included; a cell is not the amplitude of a tone",
+            ),
+        ),
+        None => (
+            t.mean_peak(frame.db),
+            tr(
+                "the mean and the largest cell of this map, from 100 Hz up; a cell is not the amplitude of a tone",
+            ),
+        ),
+    }
+}
+
+/// The dashed lines of the two frequency limits of the view below 100 Hz,
+/// when it is on.
+fn limit_hlines(pu: &mut egui_plot::PlotUi<'_>, lims: Option<(f64, f64)>) {
+    let Some((lo, hi)) = lims else { return };
+    for hz in [lo, hi] {
+        pu.hline(
+            egui_plot::HLine::new(format!("freq lim {} Hz", sig3(hz)), hz)
+                .color(egui::Color32::WHITE)
+                .style(egui_plot::LineStyle::dashed_loose())
+                .width(1.0),
+        );
+    }
+}
+
+/// Half the highest log rate of the visible logs, Hz, the rate the maps are
+/// computed at: their top row (the highest frequency that can be typed in
+/// when no log is open).
+fn nyquist(app: &App) -> f64 {
+    app.visible_slots()
+        .into_iter()
+        .filter_map(|slot| {
+            let session = app.loaded(slot)?.current()?;
+            Some(0.5e6 / openpid_analysis::prepare::nominal_dt_us(session))
+        })
+        .reduce(f64::max)
+        .unwrap_or(MAX_TOP_HZ)
+}
+
+/// The frequency limits held to 0 … `nyquist`, the low one not above the
+/// high one (a project can carry any pair).
+fn clamp_lims((lo, hi): (f64, f64), nyquist: f64) -> (f64, f64) {
+    let lo = if lo.is_finite() {
+        lo.clamp(0.0, nyquist)
+    } else {
+        0.0
+    };
+    let hi = if hi.is_finite() {
+        hi.clamp(lo, nyquist)
+    } else {
+        nyquist
+    };
+    (lo, hi)
+}
+
 /// "mean=0.0322 peak=0.513" in the top left corner of a map, three
-/// significant digits: the mean and the maximum of the map from 100 Hz up
-/// (DESIGN §6.4). Painted over the plot, so the pointer still
+/// significant digits: the mean and the maximum of the map from 100 Hz up,
+/// or between the two frequency limits in the view below 100 Hz (DESIGN
+/// §6.4); `hint` says which. Painted over the plot, so the pointer still
 /// reaches the map under it.
-fn printed_numbers(ui: &Ui, name: &str, frame: egui::Rect, mean: f64, peak: f64) {
+fn printed_numbers(ui: &Ui, name: &str, frame: egui::Rect, (mean, peak): (f64, f64), hint: &str) {
     let text = format!("mean={} peak={}", sig3(mean), sig3(peak));
     let painter = ui.painter_at(frame);
     let galley = painter.layout_no_wrap(
@@ -471,11 +563,13 @@ fn printed_numbers(ui: &Ui, name: &str, frame: egui::Rect, mean: f64, peak: f64)
         galley,
         egui::Color32::WHITE,
     );
-    ui.interact(rect, egui::Id::unique(("printed", name)), egui::Sense::hover())
-        .on_hover_text(tr(
-            "the mean and the largest cell of this map, from 100 Hz up; a cell is not the amplitude of a tone",
-        ))
-        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
+    ui.interact(
+        rect,
+        egui::Id::unique(("printed", name)),
+        egui::Sense::hover(),
+    )
+    .on_hover_text(hint)
+    .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
 }
 
 /// The panel of the tab.
@@ -531,16 +625,7 @@ fn controls(app: &mut App, ui: &mut Ui) {
         tr("Zoom to the flown range"),
         tr("the throttle axis from the first to the last sampled bin instead of 0–100 %"),
     );
-    let mut top = app.tools.throttle_display.max_hz;
-    panel::optional(
-        ui,
-        tr("Max frequency"),
-        tr("top of the frequency axis; auto: half the logging rate, as far as the map goes"),
-        &mut top,
-        1000.0,
-        "Hz",
-    );
-    app.tools.throttle_display.max_hz = top.map(|hz| hz.clamp(MIN_TOP_HZ, MAX_TOP_HZ));
+    frequency_rows(app, ui);
     panel::section(ui, tr("Analysis"));
     let levels: Vec<(ThrottleSmoothing, String)> = ThrottleSmoothing::ALL
         .iter()
@@ -563,6 +648,47 @@ fn controls(app: &mut App, ui: &mut Ui) {
         &mut app.tools.min_segments,
         1..=1000,
     );
+}
+
+/// "< 100 Hz" and, with it, "Freq lims"; without it "Max frequency", which
+/// that view replaces.
+fn frequency_rows(app: &mut App, ui: &mut Ui) {
+    let nyquist = nyquist(app);
+    let d = &mut app.tools.throttle_display;
+    panel::check(
+        ui,
+        &mut d.below_100,
+        tr("< 100 Hz"),
+        tr(
+            "the frequencies from 0 to 100 Hz, with dashed lines at the two frequency limits and the printed mean and peak taken between them instead of from 100 Hz up; the maps are the same",
+        ),
+    );
+    if d.below_100 {
+        let mut lims = clamp_lims(d.freq_lims, nyquist);
+        panel::range_pair(
+            ui,
+            tr("Freq lims"),
+            tr(
+                "the two frequencies between which the printed mean and peak are taken, both included, drawn as dashed lines; 20 and 60 Hz by default, at most half the logging rate",
+            ),
+            [tr("Low limit"), tr("High limit")],
+            &mut lims,
+            0.0..=nyquist,
+            "Hz",
+        );
+        d.freq_lims = lims;
+        return;
+    }
+    let mut top = d.max_hz;
+    panel::optional(
+        ui,
+        tr("Max frequency"),
+        tr("top of the frequency axis; auto: half the logging rate, as far as the map goes"),
+        &mut top,
+        1000.0,
+        "Hz",
+    );
+    d.max_hz = top.map(|hz| hz.clamp(MIN_TOP_HZ, MAX_TOP_HZ));
 }
 
 /// "Colour scale" and, for a typed maximum, "Colour max".

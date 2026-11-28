@@ -509,6 +509,116 @@ fn throttle_maps_span_the_whole_range_and_print_their_mean_and_peak() {
     assert!(ui.sees("a cell is not the amplitude of a tone"));
 }
 
+/// The printed numbers of every map of slot A between `lims` (`None`: from
+/// 100 Hz up), as the tab prints them.
+fn printed(ui: &Ui, db: bool, lims: Option<(f64, f64)>) -> Vec<String> {
+    use openpid_analysis::render::sig3;
+    maps(ui)
+        .iter()
+        .map(|t| {
+            let (mean, peak) = match lims {
+                Some((lo, hi)) => t.mean_peak_between(db, lo, hi),
+                None => t.mean_peak(db),
+            };
+            format!("mean={} peak={}", sig3(mean), sig3(peak))
+        })
+        .collect()
+}
+
+#[test]
+fn throttle_view_below_100_hz_prints_the_numbers_between_the_limits() {
+    // the web edition's "< 100 Hz" (decision D-015, the owner's decision of
+    // 2026-11-28): the axis to 100 Hz, two dashed limits, the numbers between
+    let mut ui = Ui::open(&[LOG_2025], Tab::ThrottleHeatmap);
+    assert!(!ui.is_checked("< 100 Hz"), "off by default");
+    assert!(!ui.has("Freq lims"));
+    assert!(ui.app().throttle_view.limit_lines.is_empty());
+    let top = shown_map(&ui).grid.y.last().copied().unwrap();
+    let cached = ui.app().cache.len();
+    ui.hover("< 100 Hz");
+    assert!(ui.sees("the maps are the same"));
+    ui.check("< 100 Hz", true);
+    assert!(ui.app().tools.throttle_display.below_100);
+    // every map from 0 to 100 Hz
+    assert_eq!(ui.app().throttle_view.y_top, Some(100.0));
+    for name in [
+        "throttle/A/roll",
+        "throttle/A/pitch/prefilt",
+        "throttle/A/yaw",
+    ] {
+        let (y0, y1) = ui.plot(name).y_range();
+        assert!(
+            y0.abs() < 0.5 && (y1 - 100.0).abs() < 0.5,
+            "{name}: {y0}..{y1}"
+        );
+    }
+    // two dashed lines on each of the six maps, at 20 and 60 Hz by default
+    assert_eq!(ui.app().tools.throttle_display.freq_lims, (20.0, 60.0));
+    let lines = ui.app().throttle_view.limit_lines.clone();
+    assert_eq!(lines.len(), 12);
+    assert_eq!(lines.iter().filter(|hz| **hz == 20.0).count(), 6);
+    assert_eq!(lines.iter().filter(|hz| **hz == 60.0).count(), 6);
+    // the printed numbers are those between the limits, not from 100 Hz up
+    let between = printed(&ui, false, Some((20.0, 60.0)));
+    let above = printed(&ui, false, None);
+    for (b, a) in between.iter().zip(&above) {
+        assert!(ui.sees(b), "{b}");
+        assert_ne!(a, b);
+        assert!(!ui.sees(a), "{a}");
+    }
+    assert_eq!(ui.count_seen("mean="), 6);
+    ui.hover(&between[0]);
+    assert!(ui.sees("between the two frequency limits, both included"));
+    // in decibels, the decibel matrix between them
+    ui.check("Decibels", true);
+    for text in printed(&ui, true, Some((20.0, 60.0))) {
+        assert!(ui.sees(&text), "{text}");
+    }
+    ui.check("Decibels", false);
+    // the limits: two fields in place of "Max frequency"
+    assert!(
+        !ui.has("Max frequency"),
+        "the view sets the top of the axis"
+    );
+    ui.hover_role(eframe::egui::accesskit::Role::SpinButton, "Low limit");
+    assert!(ui.sees("20 and 60 Hz by default"));
+    ui.set("High limit", 80.0);
+    ui.set("Low limit", 30.0);
+    assert_eq!(ui.app().tools.throttle_display.freq_lims, (30.0, 80.0));
+    for text in printed(&ui, false, Some((30.0, 80.0))) {
+        assert!(ui.sees(&text), "{text}");
+    }
+    let lines = &ui.app().throttle_view.limit_lines;
+    assert!(
+        lines.iter().all(|hz| *hz == 30.0 || *hz == 80.0),
+        "{lines:?}"
+    );
+    // the low one never above the high one, both within 0 … half the rate
+    ui.set("High limit", 10.0);
+    assert_eq!(ui.app().tools.throttle_display.freq_lims, (30.0, 30.0));
+    ui.set("Low limit", 50.0);
+    assert_eq!(ui.app().tools.throttle_display.freq_lims, (30.0, 30.0));
+    ui.set("High limit", 1.0e6);
+    let nyquist = ui.app().tools.throttle_display.freq_lims.1;
+    assert!((nyquist - top).abs() < 1e-6, "{nyquist} against {top}");
+    ui.set("Low limit", -5.0);
+    assert_eq!(ui.app().tools.throttle_display.freq_lims.0, 0.0);
+    // a limit carried in from elsewhere is held as well
+    ui.app_mut().tools.throttle_display.freq_lims = (70.0, 40.0);
+    ui.settle();
+    assert_eq!(ui.app().tools.throttle_display.freq_lims, (70.0, 70.0));
+    assert_eq!(ui.app().cache.len(), cached, "a view, not an analysis");
+    // off: the whole axis, no lines, the numbers from 100 Hz up
+    ui.check("< 100 Hz", false);
+    assert_eq!(ui.app().throttle_view.y_top, Some(top));
+    assert!(ui.app().throttle_view.limit_lines.is_empty());
+    for text in printed(&ui, false, None) {
+        assert!(ui.sees(&text), "{text}");
+    }
+    assert!(ui.has("Max frequency"));
+    assert!(!ui.has("Low limit"));
+}
+
 #[test]
 fn throttle_smoothing_has_five_levels() {
     use openpid_analysis::ThrottleSmoothing;

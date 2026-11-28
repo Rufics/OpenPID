@@ -179,9 +179,37 @@ and their numbers changed:
   tenth of the rows); the hint says so.
 - **Smoothing** keeps its five levels with "medium" by default, the
   web edition's list.
-- **Not taken**: the web edition's view below 100 Hz ("< 100 Hz" with two
-  frequency limits, 20 … 60 Hz by default, between which its numbers are then
-  taken). "Max frequency" lowers the axis as before and changes no number;
-  the numbers of that view are in the CLI (`--freq-lims`).
+- **Not taken** at first: the web edition's view below 100 Hz ("< 100 Hz"
+  with two frequency limits, 20 … 60 Hz by default, between which its
+  numbers are then taken); its numbers were in the CLI (`--freq-lims`). The
+  tab has it since the revision below.
 
 Tests: the same, with the top row at half the log rate.
+
+## Revision: the view below 100 Hz (2026-11-28)
+
+The owner decided (2026-11-28) that the tab takes the web edition's view
+below 100 Hz after all, which the revision above had left to the CLI. The
+data are the same 513-row maps; the view changes the axis and the two
+printed numbers (DESIGN §6.4, step 7):
+
+- **"< 100 Hz"**, a check box in "Range", off by default: every map from 0
+  to 100 Hz (half the log rate on a log slower than 200 Hz), two dashed
+  white lines at the frequency limits, and `mean=` / `peak=` from
+  `ThrottleHeatmapOutput::mean_peak_between(lo, hi)`, the rows between the
+  limits, both included, in the view's unit (amplitude, or decibels with
+  "Decibels"). The hint on the numbers says which rows they count.
+- **"Freq lims"**, shown while the view is on, in place of "Max frequency"
+  (which the view replaces): two numbers in one row, "low – high Hz", 20
+  and 60 by default, held to 0 … half the log rate with the low one never
+  above the high one; the fields are named "Low limit" and "High limit".
+  `panel::range_pair` draws the row.
+- **The project file** keeps the view and its limits
+  (`throttle_below_100`, `throttle_freq_lims`), the one display option of
+  the tab that does, because it changes the printed numbers; a project
+  without them opens with the view off and the limits at 20 … 60 Hz.
+
+Tests: `throttle_view_below_100_hz_prints_the_numbers_between_the_limits`
+(the axis, the twelve lines, the numbers in both units, the hints, the
+limits and their clamping, back off); the project round trip and an old
+project in `project_file_saves_and_restores_the_view`.

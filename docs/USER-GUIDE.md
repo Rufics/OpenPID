@@ -259,10 +259,8 @@ How to read it:
   in °/s use the Spectrum tab.
 - **mean=… peak=…** in the corner of every map: the mean and the largest
   cell of that map over every throttle bin and the frequencies from 100 Hz
-  up, three significant digits. (The reference tool's view below 100 Hz
-  prints the numbers between its two frequency limits, 20 … 60 Hz by
-  default; the tab has no such view, the CLI gives them with
-  `--freq-lims 20..60`.) The mean falls when the map
+  up, three significant digits; with **< 100 Hz** on, over the frequencies
+  between the two limits instead (see below). The mean falls when the map
   is quieter overall or when less of the throttle range was flown (an empty
   bin counts as 0, in decibels as −40 dB); the peak is the strongest spot,
   usually a motor line or a resonance, and falls with a higher smoothing.
@@ -298,6 +296,16 @@ The control panel on the right (hover any field for its explanation):
 - **Zoom to the flown range** narrows the throttle axis from 0–100 % to the
   bins the logs sampled; **Max frequency** lowers the top of the frequency
   axis (auto: half the logging rate). Neither changes a map or its numbers.
+- **< 100 Hz** (off by default) is the web edition's view below 100 Hz: every
+  map shows 0 … 100 Hz (up to half the logging rate on a slower log), two
+  dashed lines mark the **Freq lims** (two numbers in Hz, 20 and 60 by
+  default, from 0 to half the logging rate, the low one never above the
+  high one), and the printed `mean=… peak=…` are taken over the frequencies
+  between the two limits, both included, instead of from 100 Hz up (in
+  decibels with **Decibels**). The maps are the same; only the axis and the
+  two numbers change. It replaces **Max frequency** while it is on, and the
+  project file keeps it with its limits. The CLI gives the same numbers with
+  `--freq-lims 20..60`.
 - **Smoothing**: low, low-med, medium (default), med-high, high: how far a
   cell is spread over its neighbours. Higher reads calmer and lowers the
   peak; the mean moves little.
