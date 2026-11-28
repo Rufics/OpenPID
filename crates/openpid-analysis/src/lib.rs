@@ -19,8 +19,9 @@ pub mod targets;
 pub mod throttle;
 
 pub use filter_sim::{
-    ChainResponse, FilterFit, FilterOverrides, FilterSimAnalysis, FilterSimOutput, FilterSimParams,
-    PartResponse,
+    ChainResponse, DEFAULT_DELAY_AT_HZ, FilterFit, FilterOverrides, FilterSimAnalysis,
+    FilterSimOutput, FilterSimParams, HarmonicDelay, PartRate, PartResponse, PrintedDelay,
+    RateSource, chain_response, curve_rate,
 };
 pub use fitness::{Check, Fitness, Level as FitnessLevel, check_session};
 pub use motor_noise::{

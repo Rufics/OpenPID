@@ -90,3 +90,85 @@ dynamic notch):
 Betaflight 4.5.1 (two static notches as well):
 
 ![4.5.1](second-log.jpg)
+
+## Revision: the curves at the craft's loop rate, the delays printed (2026-11-16, decision D-007)
+
+The owner decided (#166) that the curves of the chain are computed at the
+rate the craft filters at, not at the rate of its log, and that the delays
+are printed as the reference tool prints them (DESIGN §6.6). The layout S2
+stays; what changed on this tab:
+
+- **The curves** (left column) are the craft's filters, each part at the
+  rate of the loop it runs in on the craft, from the log's headers: on
+  Betaflight 4.2 and later the second low-pass at the gyro rate and every
+  other filter at the PID loop rate; on older Betaflight and the other
+  firmwares every filter at the gyro rate (taken to be so, not known).
+  Without a usable rate in the headers a part is computed at the rate of the
+  log. The frequency axis is as before, to half the rate of the log.
+- **The simulation** (right column) is unchanged: it runs the same filters
+  on the samples of the log, at the rate of the log.
+- **Each column says its rate.** Under the operating point: "the craft's
+  filters, computed at 4 kHz (its PID loop rate), 8 kHz (its gyro rate)",
+  or "… at 1 kHz (the rate of the log: the headers give no loop rate)".
+  Under the fit: "sim: the same filters at the rate of the log, 1 kHz". The
+  hints of the two lines say why the columns part towards half the log rate.
+- **The printed delays** (at 25 Hz since the next revision): a line "delay
+  at 1 Hz: low-pass 0.803 ms + notch 1.567 ms = 2.369 ms" (the sum of the low-pass parts, of the notch parts,
+  and both), and each part's own delay beside its name in the legend ("LPF2
+  PT1 500 Hz: 0.318 ms"), whose hint names the rate the part was computed
+  at. A legend entry no longer breaks in the middle. "Delay at 100 Hz" stays
+  on the line of the operating point.
+- **Not taken over** from the reference tool's filter screen: the step
+  response of a single filter, the chirp, the magnitude as a ratio.
+- No mathematics in the app: the rates, their reasons and the delays come in
+  `FilterSimOutput::response` (`PartResponse::rate`, `delay_1hz_ms`, the
+  three sums); `filter_tab.rs` puts them in words (`i18n.rs`, English and
+  Ukrainian).
+
+Tests: `a_gyro_filter_runs_in_the_loop_its_firmware_puts_it_in`
+(`openpid-core`), `the_gyro_filter_layout_follows_the_firmware_and_its_version`
+(`openpid-fmt-blackbox`), `parts_at_the_rates_of_the_craft` (`openpid-sim`),
+`the_formulas_give_the_figures_the_reference_tool_prints`,
+`printed_delays_at_8_khz_are_the_reference_figures`,
+`printed_delays_of_the_other_types_and_of_a_4_khz_loop`,
+`curves_at_the_loop_rate_part_from_those_at_the_log_rate_towards_its_half`,
+`the_curve_rate_is_the_loop_rate_or_falls_back_to_the_log_rate` and
+`filter_curves_follow_the_loop_rate_and_the_simulation_the_log_rate`
+(`openpid-analysis`), `filter_sim_tab_prints_the_delays_and_says_which_rate_is_which`
+(`openpid-app`), `filter_sim_command` (`openpid-cli`). The pictures above show
+the tab before this revision; `docs/screenshots/filter.png` shows it after.
+
+## Revision: the delays at 25 Hz and the RPM fade (2026-11-27, decision D-015)
+
+The owner decided that OpenPID follows the reference tool's web edition 1.0
+(D-015). Its filter simulator has the filters of version 0.94 at the chosen
+loop rate; what it prints and how it fades the RPM notches changed, and
+this tab follows (DESIGN §6.6):
+
+- **"Delay at"** in the panel's Analysis section: 25 Hz (as it comes up) or
+  1 Hz. The line under the operating point reads "delay at 25 Hz: low-pass
+  0.9517 ms · 8.565° + notch 1.641 ms · 14.77° = 2.593 ms · 23.33°", each
+  delay with its phase lag at that frequency, to four significant digits as
+  the reference tool prints them; each part's own in the legend ("LPF1 PT1
+  250 Hz: 0.6339 ms · 5.705°").
+- **The RPM notches per harmonic**: a line under the legend, in the RPM
+  part's colour, "per motor: H1 150 Hz · 100 % 0.2179 ms · 1.961°, H2 …",
+  the notch of one motor (the mean over the motors). The notch column counts
+  it once per motor.
+- **The fade** of the RPM notches, in the curves and in the simulation
+  alike: every harmonic by the motor frequency, `min(1, (f1 − min) / fade)`
+  times its own weight, none below the minimum (both follow the web edition
+  1.0, D-015; for the simulation the owner's choice of 2026-11-28). The
+  firmware fades each harmonic by its own frequency; the two agree once the
+  motors run at the minimum plus the fade range, so the column on the right
+  still matches the log.
+- `FilterSimParams::delay_at_hz`; `PartResponse::printed` and `harmonics`;
+  `ChainResponse::delay_at_hz`, `printed_lowpass`, `printed_notch`,
+  `printed_total`; `ChainPart::harmonics` and `rpm_curve_weight`
+  (`openpid-sim`). The CLI reads the frequency from `--set delay_at_hz=…`.
+
+Tests: `a_first_order_low_pass_delays_by_its_phase_at_the_chosen_frequency`,
+`printed_delays_at_25_and_1_hz_as_the_reference_tool_prints_them`,
+`the_rpm_notches_fade_with_the_motor_frequency` (`openpid-analysis`),
+`the_curves_fade_every_harmonic_with_the_motor_the_firmware_each_with_its_own`
+(`openpid-sim`), and the tests of the previous revision with the new fields.

@@ -110,6 +110,129 @@ fn filter_sim_tab_validates_the_model_and_applies_what_if_changes() {
 }
 
 #[test]
+fn filter_sim_tab_prints_the_delays_and_says_which_rate_is_which() {
+    use crate::filter_tab::{
+        curve_rates_text, harmonics_text, part_text, printed_delays_text, sig4,
+    };
+    use openpid_analysis::{PartRate, RateSource};
+    // the headers of this log: an 8 kHz gyro, the PID loop at 4 kHz, the
+    // log at 1 kHz; Betaflight runs only its second low-pass at the gyro rate
+    let mut ui = Ui::open(&[LOG_2025], Tab::FilterSim);
+    let sim = result(&ui, |o| match o {
+        Output::FilterSim(f) => Some(f.clone()),
+        _ => None,
+    })
+    .expect("filter sim ran");
+    let r = &sim.response;
+    assert_eq!(sim.fs, 1000.0);
+    // each column says its rate: the curves are the craft's filters at its
+    // loop rates, the simulation runs them at the rate of the log
+    assert!(
+        ui.sees(
+            "the craft's filters, computed at 4 kHz (its PID loop rate), 8 kHz (its gyro rate)"
+        )
+    );
+    assert!(ui.sees("sim: the same filters at the rate of the log, 1 kHz"));
+    // the printed delays at 25 Hz: the low-passes, the notches and both,
+    // each with its phase lag, and each part's own beside its name in the
+    // legend
+    assert_eq!(r.delay_at_hz, 25.0);
+    assert!(ui.sees("delay at 25 Hz: low-pass "));
+    assert!(
+        ui.sees(&printed_delays_text(r)),
+        "{}",
+        printed_delays_text(r)
+    );
+    assert!(
+        (r.printed_total.delay_ms - r.printed_lowpass.delay_ms - r.printed_notch.delay_ms).abs()
+            < 1e-12
+            && r.printed_lowpass.delay_ms > 0.5
+            && r.printed_notch.delay_ms > 0.5
+    );
+    assert_eq!(r.parts.len(), 4);
+    for p in &r.parts {
+        assert!(ui.sees(&part_text(p)), "{}", part_text(p));
+    }
+    // a PT1 at 500 Hz on the 8 kHz gyro: 0.3179 ms at 25 Hz, a lag of
+    // 0.3179 ms · 25 Hz · 0.36 = 2.861°
+    assert!(ui.sees("LPF2 PT1 500 Hz: 0.3179 ms · 2.861°"));
+    // the RPM notches, harmonic by harmonic on one motor
+    let rpm = r.parts.iter().find(|p| !p.harmonics.is_empty()).unwrap();
+    let per_motor = harmonics_text(rpm).unwrap();
+    assert!(per_motor.starts_with("per motor: H1 "), "{per_motor}");
+    assert!(ui.sees(&per_motor), "{per_motor}");
+    assert_eq!(
+        r.parts
+            .iter()
+            .filter(|p| harmonics_text(p).is_some())
+            .count(),
+        1
+    );
+    // the figures as the reference tool prints them: four significant
+    // digits, trailing zeros dropped
+    assert_eq!(
+        [0.633_948, 0.063_004, 14.770_2, 0.957_01, 1.62, 25.0, 0.0].map(sig4),
+        ["0.6339", "0.063", "14.77", "0.957", "1.62", "25", "0"]
+    );
+    // the delay at 100 Hz stays beside them
+    assert!(ui.sees("delay at 100 Hz"));
+    // a part's name says on hover at which rate it was computed
+    ui.hover("LPF2 PT1 500 Hz");
+    assert!(ui.sees("delay at 25 Hz · computed at 8 kHz (its gyro rate)"));
+
+    // without a usable rate in the headers the note names the fallback and
+    // its reason; a chain without parts has no curves to speak of
+    let at_log_rate = |source| {
+        let mut fallback = r.clone();
+        for p in &mut fallback.parts {
+            p.rate = Some(PartRate { hz: 997.0, source });
+        }
+        curve_rates_text(&fallback)
+    };
+    assert_eq!(
+        at_log_rate(RateSource::LogRateNoLoopRate).as_deref(),
+        Some(
+            "the craft's filters, computed at 997 Hz (the rate of the log: the headers give no loop rate)"
+        )
+    );
+    assert_eq!(
+        at_log_rate(RateSource::LogRateLoopBelowLog).as_deref(),
+        Some(
+            "the craft's filters, computed at 997 Hz (the rate of the log: the headers give a loop rate below it)"
+        )
+    );
+    let mut odd = r.clone();
+    odd.parts[0].rate = Some(PartRate {
+        hz: 3200.0,
+        source: RateSource::GyroRate,
+    });
+    assert!(
+        curve_rates_text(&odd)
+            .unwrap()
+            .starts_with("the craft's filters, computed at 3.2 kHz (its gyro rate), 4 kHz")
+    );
+    let mut empty = r.clone();
+    empty.parts.clear();
+    assert_eq!(curve_rates_text(&empty), None);
+
+    // at 1 Hz, chosen in the panel: the low end of the curve, 1 / (2π·500)
+    ui.choose("Delay at", "1 Hz");
+    assert_eq!(ui.app().tools.filter_sim.delay_at_hz, 1.0);
+    let low = result(&ui, |o| match o {
+        Output::FilterSim(f) if f.response.delay_at_hz == 1.0 => Some(f.response.clone()),
+        _ => None,
+    })
+    .expect("filter sim at 1 Hz");
+    assert!(ui.sees("delay at 1 Hz: low-pass "));
+    assert!(ui.sees("LPF2 PT1 500 Hz: 0.3183 ms · 0.1146°"));
+    assert!(ui.sees(&printed_delays_text(&low)));
+    assert_eq!(
+        low.parts[0].delay_ms, r.parts[0].delay_ms,
+        "the same curves"
+    );
+}
+
+#[test]
 fn advice_tab_lists_proposals_evidence_and_cli() {
     // docs/design/advice-tab (A2)
     // the 4.2.0 log on its automatic trim: roll overshoots, so a card with

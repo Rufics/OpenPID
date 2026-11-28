@@ -37,7 +37,12 @@ COMMANDS:
              rpm             motor speed estimated from the gyro's noise peaks (needs
                              gyro.raw.<axis>; validated against motor_rpm when logged)
              filter-sim      unfiltered gyro through the modelled filter chain (needs
-                             gyro.raw.<axis>; --set lpf1_hz=…,lpf1_type=… for what-if)
+                             gyro.raw.<axis>; --set lpf1_hz=…,lpf1_type=… for what-if);
+                             `response` holds the curves of the craft's filters at its
+                             loop rates (each part with its `rate` and its `printed` delay
+                             and phase lag at `delay_at_hz`, 25 Hz unless --set
+                             delay_at_hz=1, and their sums), the simulation runs at the
+                             log rate `fs`
              recommend       rule-based tuning proposals with their evidence (overshoot →
                              more D, an uncovered spectrum peak → a notch, headroom above
                              the gyro LPF → a higher cutoff); --cli prints them as
@@ -69,7 +74,8 @@ OPTIONS:
                   for filter-sim the what-if filter keys: lpf1_hz, lpf1_type (0 PT1, 1 biquad,
                   2 PT2, 3 PT3), lpf1_dyn_min_hz, lpf1_dyn_max_hz, lpf2_hz, lpf2_type,
                   rpm_harmonics, rpm_q, rpm_min_hz, dyn_count, dyn_q, dyn_min_hz, dyn_max_hz,
-                  notch_hz, notch_cutoff_hz (0 switches a stage off)
+                  notch_hz, notch_cutoff_hz (0 switches a stage off); and delay_at_hz, the
+                  frequency the printed delays are read at (default 25)
     --epoch A..B  Analyse only seconds A to B of the session; `auto` trims the
                   take-off and landing (throttle / motor rpm), `active` takes
                   the most active 20 s (stick input)
@@ -665,7 +671,11 @@ fn cmd_run(args: &Args) -> Result<(), String> {
                 ..base.filter_sim
             };
             for (k, v) in &args.set {
-                p.overrides.set(k, *v)?;
+                if k == "delay_at_hz" {
+                    p.delay_at_hz = *v;
+                } else {
+                    p.overrides.set(k, *v)?;
+                }
             }
             serde_json::to_string_pretty(
                 &openpid_analysis::FilterSimAnalysis

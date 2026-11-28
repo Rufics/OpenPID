@@ -16,7 +16,7 @@ pub mod signal;
 pub use filter::{Biquad, Chain, Filter, Pt1, Ptn, Stage, notch_q, pt_cutoff_correction};
 pub use model::{
     ChainKind, ChainModel, ChainPart, Drive, DynLowpass, DynNotchModel, LowpassModel,
-    OperatingPoint, PartGroup, RpmNotchModel, track_peaks,
+    OperatingPoint, PartGroup, RpmHarmonic, RpmNotchModel, rpm_curve_weight, track_peaks,
 };
 pub use openpid_dsp::Complex;
 pub use signal::{

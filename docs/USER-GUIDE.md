@@ -310,6 +310,41 @@ the batch sampler.
   The delay is the phase delay: how many milliseconds a sine of that
   frequency comes out late; the line above it gives it at 100 Hz. A notch
   delays the frequencies below its centre and leads those above it.
+- **The printed delays** (the line "delay at 25 Hz"): the phase delay of
+  each filter at 25 Hz and the phase lag it stands for there, as the
+  reference tool's web edition 1.0 prints them; **Delay at** in the panel
+  reads them at 1 Hz instead, the low end of the curve, where its version
+  0.94 read them. Each part has its own beside its name in the legend (the
+  RPM part adds every motor's notches), and the line under the legend gives
+  the RPM notches harmonic by harmonic on one motor ("per motor: H1 150 Hz
+  · 100 % 0.2179 ms · 1.961°, …"). The line gives the sum of the
+  low-passes, the sum of the notches (RPM on every motor, static and
+  dynamic) and both, each with its lag. These are the numbers to compare
+  with the reference tool's filter simulator set to the same filters, loop
+  rate and delay frequency.
+- **The RPM notches fade** as the reference tool's web edition 1.0 draws
+  them, in the curves and in the simulation on the right alike: every
+  harmonic weighs from 0 at the RPM filter's minimum frequency to its full
+  weight at the minimum plus the fade range, by the motor frequency (20 % at
+  110 Hz for a minimum of 100 Hz and a fade of 50 Hz), and a motor below the
+  minimum has no RPM notches at all. The firmware fades each harmonic by its
+  own frequency; that only differs when the motors turn slower than the
+  minimum plus the fade range, so the simulation still follows the logged
+  filtered gyro as closely.
+- **Two rates.** The curves on the left are the craft's filters as the craft
+  runs them: each at the rate of the loop it runs in, read from the log's
+  headers. On Betaflight 4.2 and later the second low-pass runs at the gyro
+  rate and everything else at the PID loop rate; on older Betaflight and on
+  every other firmware all of them are taken to run at the gyro rate (an
+  assumption, not something the log says). The simulation on the right runs
+  the same filters on the samples of the log, so at the rate of the log,
+  which is usually lower. The two agree at low frequencies and part towards
+  half the rate of the log, where a filter computed at the log rate is no
+  longer the craft's. The line under the delays names the rates the curves
+  were computed at, the line under the fit the rate of the simulation; hover
+  over a part's name for its own rate. When the headers give no usable loop
+  rate (none, or one below the rate of the log), the curves are computed at
+  the rate of the log and the line says so.
 - **On the log** (right): the spectrum and the time trace of the unfiltered
   gyro, the filtered gyro the log carries and the simulation. The **fit**
   line gives the residual `gyro.sim − gyro.filtered` in % of the filtered RMS
@@ -518,7 +553,7 @@ with a new log.
 | Spectrum | `openpid run psd <log> --channel gyro.raw.roll` |
 | Freq × throttle | `openpid run thr-heatmap <log> [--png out.png]` |
 | Freq × time | `openpid run stft <log> --channel motor.0` |
-| Filter Sim | `openpid run filter-sim <log> --set lpf1_hz=100,lpf1_type=1` |
+| Filter Sim | `openpid run filter-sim <log> --set lpf1_hz=100,lpf1_type=1` (`response` carries, per part, `rate` — the rate its curves were computed at and where it comes from — and `printed` — its delay `delay_ms` and lag `lag_deg` at `delay_at_hz`, 25 Hz unless `--set delay_at_hz=1` — with `harmonics` for the RPM notches, and `printed_lowpass`, `printed_notch`, `printed_total` and `delay_100hz_ms` of the chain; `fs` is the rate of the simulation) |
 | Motor noise (no tab) | `openpid run motor-noise <log>` |
 | Motor speed without eRPM | `openpid run rpm <log>` |
 | PID sliders | `openpid sliders <log> --set …` |
